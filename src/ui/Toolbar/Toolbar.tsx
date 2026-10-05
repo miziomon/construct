@@ -1,4 +1,4 @@
-import { Code, Copy, Download, FileBox, FilePlus, FolderOpen, Group, Move3d, Redo2, Rotate3d, Save, Trash2, Ungroup, Undo2, CircleDashed } from 'lucide-react';
+import { Code, Copy, Lock, Unlock, Download, FileBox, FilePlus, FolderOpen, Group, Move3d, Redo2, Rotate3d, Save, Trash2, Ungroup, Undo2, CircleDashed } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useStore } from 'zustand';
 import { useSceneStore } from '../../scene/store';
@@ -44,6 +44,7 @@ export function Toolbar() {
   const rootSelection = s.selection.filter((id) => s.scene.rootIds.includes(id));
   const hasObjects = s.scene.rootIds.length > 0;
   const group = s.selection.length === 1 ? s.scene.nodes[s.selection[0]] : undefined;
+  const allLocked = hasSelection && s.selection.every((id) => s.scene.nodes[id]?.locked);
   const allHoles = hasSelection && s.selection.every((id) => s.scene.nodes[id]?.mode === 'hole');
 
   return (
@@ -73,6 +74,7 @@ export function Toolbar() {
         <ToolbarButton title="Raggruppa (Ctrl+G)" disabled={rootSelection.length < 2} onClick={s.groupSelected}><Group size={18} /></ToolbarButton>
         <ToolbarButton title="Separa gruppo (Ctrl+Maiusc+G)" disabled={group?.type !== 'group' || !s.scene.rootIds.includes(group.id)} onClick={s.ungroupSelected}><Ungroup size={18} /></ToolbarButton>
         <ToolbarButton title="Solido / Foro (H)" active={allHoles} disabled={!hasSelection} onClick={s.toggleHoleSelected}><CircleDashed size={18} /></ToolbarButton>
+        <ToolbarButton title={allLocked ? 'Sblocca (L)' : 'Blocca (L)'} active={allLocked} disabled={!hasSelection} onClick={s.toggleLockSelected}>{allLocked ? <Lock size={18} /> : <Unlock size={18} />}</ToolbarButton>
         <ToolbarButton title="Duplica (Ctrl+D)" disabled={rootSelection.length === 0} onClick={s.duplicateSelected}><Copy size={18} /></ToolbarButton>
         <ToolbarButton title="Elimina (Canc)" disabled={!hasSelection} onClick={s.removeSelected}><Trash2 size={18} /></ToolbarButton>
       </div>

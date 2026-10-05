@@ -13,6 +13,8 @@ const SNAP_ROTATE = THREE.MathUtils.degToRad(15);
 interface Props {
   mesh: NodeMesh;
   selected: boolean;
+  /** Oggetto bloccato: il contorno di selezione diventa giallo. */
+  locked: boolean;
   /** Il gizmo si mostra solo con un singolo oggetto selezionato. */
   showGizmo: boolean;
 }
@@ -28,7 +30,7 @@ function nodeMatrix(position: Vec3, rotation: Vec3): THREE.Matrix4 {
  * durante il trascinamento del gizmo si applica solo una matrice di spostamento al gruppo
  * (anteprima istantanea), e al rilascio la nuova posizione va nello store e il kernel ricalcola.
  */
-export function SceneObject({ mesh, selected, showGizmo }: Props) {
+export function SceneObject({ mesh, selected, locked, showGizmo }: Props) {
   const node = useSceneStore((s) => s.scene.nodes[mesh.id]);
   const gizmoMode = useSceneStore((s) => s.gizmoMode);
   const select = useSceneStore((s) => s.select);
@@ -115,7 +117,7 @@ export function SceneObject({ mesh, selected, showGizmo }: Props) {
             opacity={mesh.isHole ? 0.45 : 1}
             depthWrite={!mesh.isHole}
           />
-          {selected && <Edges threshold={20} color="#ffffff" />}
+          {selected && <Edges threshold={20} color={locked ? '#f0b429' : '#ffffff'} />}
         </mesh>
       </group>
 

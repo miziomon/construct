@@ -10,13 +10,14 @@ interface Props {
   max?: number;
   step?: number;
   unit?: string;
+  disabled?: boolean;
 }
 
 /**
  * Campo numerico che modifica la scena solo alla conferma (Invio o uscita dal campo):
  * ogni modifica è così una singola voce di undo e non si ricalcola la geometria a ogni tasto.
  */
-export function NumberField({ label, value, onCommit, min = -Infinity, max = Infinity, step = 1, unit }: Props) {
+export function NumberField({ label, value, onCommit, min = -Infinity, max = Infinity, step = 1, unit, disabled }: Props) {
   const [text, setText] = useState(String(value));
   const [focused, setFocused] = useState(false);
 
@@ -44,6 +45,7 @@ export function NumberField({ label, value, onCommit, min = -Infinity, max = Inf
         className="number-field__input"
         type="text"
         inputMode="decimal"
+        disabled={disabled}
         value={text}
         onFocus={(e) => {
           setFocused(true);

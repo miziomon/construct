@@ -15,6 +15,8 @@ interface BaseNode {
   mode: NodeMode;
   /** Colore esadecimale, usato anche come materiale nel 3MF. */
   color: string;
+  /** Oggetto bloccato: non si sposta, ruota, modifica, elimina o raggruppa per errore. */
+  locked?: boolean;
 }
 
 export type PrimitiveKind = 'box' | 'cylinder' | 'cone' | 'sphere' | 'torus';

@@ -26,6 +26,11 @@
     font-size: 12px;
     text-align: right;
     @include focus-ring;
+
+    &:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
   }
 
   &__unit {

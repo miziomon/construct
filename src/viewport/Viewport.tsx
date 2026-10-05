@@ -1,7 +1,7 @@
 import { Canvas } from '@react-three/fiber';
 import { GizmoHelper, GizmoViewport, OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
-import { useSceneStore } from '../scene/store';
+import { isLocked, useSceneStore } from '../scene/store';
 import { useResultStore } from '../kernel/useKernel';
 import { Bed } from './Bed';
 import { SceneObject } from './SceneObject';
@@ -15,9 +15,10 @@ export function Viewport() {
   const selection = useSceneStore((s) => s.selection);
   const select = useSceneStore((s) => s.select);
   const rootIds = useSceneStore((s) => s.scene.rootIds);
+  const scene = useSceneStore((s) => s.scene);
 
-  // Gizmo solo con un oggetto selezionato che sta alla radice
-  const gizmoId = selection.length === 1 && rootIds.includes(selection[0]) ? selection[0] : undefined;
+  // Gizmo solo con un oggetto selezionato, alla radice e non bloccato
+  const gizmoId = selection.length === 1 && rootIds.includes(selection[0]) && !isLocked(scene, selection[0]) ? selection[0] : undefined;
 
   return (
     <div className="viewport">
@@ -37,7 +38,7 @@ export function Viewport() {
 
         <Bed />
         {meshes.map((m) => (
-          <SceneObject key={m.id} mesh={m} selected={selection.includes(m.id)} showGizmo={m.id === gizmoId} />
+          <SceneObject key={m.id} mesh={m} selected={selection.includes(m.id)} locked={isLocked(scene, m.id)} showGizmo={m.id === gizmoId} />
         ))}
 
         <OrbitControls makeDefault target={[0, 0, 20]} enableDamping={false} maxDistance={2500} />

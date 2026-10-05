@@ -22,6 +22,7 @@ interface SceneState {
   groupSelected: () => void;
   ungroupSelected: () => void;
   toggleHoleSelected: () => void;
+  toggleLockSelected: () => void;
   nudgeSelected: (delta: Vec3) => void;
   setGizmoMode: (mode: GizmoMode) => void;
   loadScene: (scene: Scene) => void;
@@ -52,6 +53,17 @@ export function descendants(scene: Scene, id: string): string[] {
 export function parentOf(scene: Scene, id: string): string | undefined {
   return Object.values(scene.nodes).find((n) => n.type === 'group' && n.children.includes(id))?.id;
 }
+
+/** Un nodo è bloccato se lo è lui o uno dei gruppi che lo contengono. */
+export function isLocked(scene: Scene, id: string): boolean {
+  for (let cur: string | undefined = id; cur; cur = parentOf(scene, cur)) {
+    if (scene.nodes[cur]?.locked) return true;
+  }
+  return false;
+}
+
+/** Campi che si possono cambiare anche su un oggetto bloccato. */
+const ALWAYS_EDITABLE = new Set(['name', 'color', 'locked']);
 
 /** Nodi selezionati che stanno alla radice della scena (solo questi si possono muovere, duplicare, raggruppare). */
 function selectedRoots(scene: Scene, selection: string[]): string[] {
@@ -84,7 +96,10 @@ export const useSceneStore = create<SceneState>()(
       updateNode: (id, patch) =>
         set((s) => {
           const node = s.scene.nodes[id];
-          if (node) Object.assign(node, patch);
+          if (!node) return;
+          // Su un oggetto bloccato passano solo nome, colore e il blocco stesso
+          if (isLocked(s.scene, id) && Object.keys(patch).some((k) => !ALWAYS_EDITABLE.has(k))) return;
+          Object.assign(node, patch);
         }),
 
       select: (ids, additive = false) =>
@@ -96,13 +111,14 @@ export const useSceneStore = create<SceneState>()(
       removeSelected: () =>
         set((s) => {
           // Elimina i nodi selezionati e i loro discendenti, poi pulisce i riferimenti
-          const doomed = new Set(s.selection.flatMap((id) => [id, ...descendants(s.scene, id)]));
+          const removable = s.selection.filter((id) => !isLocked(s.scene, id));
+          const doomed = new Set(removable.flatMap((id) => [id, ...descendants(s.scene, id)]));
           for (const id of doomed) delete s.scene.nodes[id];
           s.scene.rootIds = s.scene.rootIds.filter((id) => !doomed.has(id));
           for (const n of Object.values(s.scene.nodes)) {
             if (n.type === 'group') n.children = n.children.filter((c) => !doomed.has(c));
           }
-          s.selection = [];
+          s.selection = s.selection.filter((id) => !doomed.has(id));
         }),
 
       duplicateSelected: () =>
@@ -113,6 +129,7 @@ export const useSceneStore = create<SceneState>()(
             const src = s.scene.nodes[id];
             const copy = JSON.parse(JSON.stringify(src)) as SceneNode;
             copy.id = newId();
+            copy.locked = false;
             copy.name = uniqueName(s.scene, src.name.replace(/ \d+$/, ''));
             if (copy.type === 'group') copy.children = copy.children.map(clone);
             s.scene.nodes[copy.id] = copy;
@@ -131,7 +148,7 @@ export const useSceneStore = create<SceneState>()(
 
       groupSelected: () =>
         set((s) => {
-          const ids = selectedRoots(s.scene, s.selection);
+          const ids = selectedRoots(s.scene, s.selection).filter((id) => !isLocked(s.scene, id));
           if (ids.length < 2) return;
           const nodes = ids.map((id) => s.scene.nodes[id]);
           // Il gruppo nasce al centroide dei figli, con rotazione nulla: le posizioni nel mondo non cambiano
@@ -161,7 +178,7 @@ export const useSceneStore = create<SceneState>()(
           const released: string[] = [];
           for (const id of selectedRoots(s.scene, s.selection)) {
             const g = s.scene.nodes[id];
-            if (g.type !== 'group') continue;
+            if (g.type !== 'group' || isLocked(s.scene, id)) continue;
             // Ricompone la trasformazione del gruppo su ogni figlio per non spostarlo nel mondo
             for (const cid of g.children) {
               const child = s.scene.nodes[cid];
@@ -181,13 +198,24 @@ export const useSceneStore = create<SceneState>()(
         set((s) => {
           for (const id of s.selection) {
             const n = s.scene.nodes[id];
-            if (n) n.mode = n.mode === 'solid' ? 'hole' : 'solid';
+            if (n && !isLocked(s.scene, id)) n.mode = n.mode === 'solid' ? 'hole' : 'solid';
+          }
+        }),
+
+      toggleLockSelected: () =>
+        set((s) => {
+          // Se almeno uno è sbloccato li blocca tutti, altrimenti li sblocca tutti
+          const lockAll = s.selection.some((id) => !s.scene.nodes[id]?.locked);
+          for (const id of s.selection) {
+            const n = s.scene.nodes[id];
+            if (n) n.locked = lockAll;
           }
         }),
 
       nudgeSelected: (delta) =>
         set((s) => {
           for (const id of selectedRoots(s.scene, s.selection)) {
+            if (isLocked(s.scene, id)) continue;
             const n = s.scene.nodes[id];
             n.position = [n.position[0] + delta[0], n.position[1] + delta[1], n.position[2] + delta[2]];
           }

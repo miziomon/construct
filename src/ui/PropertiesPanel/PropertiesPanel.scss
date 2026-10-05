@@ -60,6 +60,17 @@
     background: transparent;
   }
 
+  &__checkbox {
+    width: 16px;
+    height: 16px;
+    accent-color: color('accent');
+  }
+
+  &__hint {
+    font-size: 11px;
+    color: color('text-muted');
+  }
+
   &__range {
     flex: 1;
     min-width: 0;
@@ -89,6 +100,11 @@
     background: color('bg');
     font-size: 12px;
     @include focus-ring;
+
+    &:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
 
     &--active {
       background: color('accent-soft');

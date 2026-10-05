@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, CircleDashed, Group } from 'lucide-react';
-import { useSceneStore } from '../../scene/store';
+import { ChevronDown, ChevronRight, CircleDashed, Group, Lock } from 'lucide-react';
+import { isLocked, useSceneStore } from '../../scene/store';
 import { PRIMITIVE_ICONS } from '../ShapeLibrary/ShapeLibrary';
 import './Outliner.scss';
 
@@ -16,6 +16,7 @@ function Row({ id, depth, collapsed, toggle }: RowProps) {
   const node = useSceneStore((s) => s.scene.nodes[id]);
   const selected = useSceneStore((s) => s.selection.includes(id));
   const select = useSceneStore((s) => s.select);
+  const locked = useSceneStore((s) => isLocked(s.scene, id));
   if (!node) return null;
 
   const isGroup = node.type === 'group';
@@ -51,6 +52,7 @@ function Row({ id, depth, collapsed, toggle }: RowProps) {
           )}
           <Icon size={15} className="outliner__icon" />
           <span className="outliner__name">{node.name}</span>
+          {locked && <Lock size={13} className={`outliner__lock${node.locked ? '' : ' outliner__lock--inherited'}`} aria-label="Bloccato" />}
           {node.mode === 'hole' && <CircleDashed size={14} className="outliner__hole-badge" aria-label="Foro" />}
         </div>
       </li>

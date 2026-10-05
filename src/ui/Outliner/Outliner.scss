@@ -75,6 +75,15 @@
     white-space: nowrap;
   }
 
+  &__lock {
+    flex: none;
+    color: color('warn');
+
+    &--inherited {
+      opacity: 0.5;
+    }
+  }
+
   &__hole-badge {
     flex: none;
     color: color('hole');

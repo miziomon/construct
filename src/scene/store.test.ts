@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { useSceneStore } from './store';
+import { isLocked, useSceneStore } from './store';
 import { composeTransform, eulerToMatrix, matrixToEuler } from './math';
 
 const st = () => useSceneStore.getState();
@@ -75,5 +75,62 @@ describe('store della scena', () => {
     const w = composeTransform({ position: [1, 2, 3], rotation: [0, 0, 90] }, { position: [1, 0, 0], rotation: [0, 0, 0] });
     expect(w.position[0]).toBeCloseTo(1, 6);
     expect(w.position[1]).toBeCloseTo(3, 6);
+  });
+
+  describe('blocco oggetti', () => {
+    it('un oggetto bloccato non si sposta, non si elimina e non si modifica nella geometria', () => {
+      st().addPrimitive('box');
+      const [id] = st().scene.rootIds;
+      st().toggleLockSelected();
+      expect(st().scene.nodes[id].locked).toBe(true);
+
+      st().nudgeSelected([10, 0, 0]);
+      st().updateNode(id, { position: [50, 50, 50] });
+      st().updateNode(id, { size: [5, 5, 5] } as never);
+      st().toggleHoleSelected();
+      st().removeSelected();
+      const n = st().scene.nodes[id];
+      expect(n.position).toEqual([0, 0, 10]);
+      expect(n.mode).toBe('solid');
+      expect(st().scene.rootIds).toEqual([id]);
+
+      // Nome e colore restano modificabili
+      st().updateNode(id, { name: 'Base', color: '#ff0000' });
+      expect(st().scene.nodes[id].name).toBe('Base');
+
+      // Sbloccando torna tutto possibile
+      st().toggleLockSelected();
+      st().nudgeSelected([10, 0, 0]);
+      expect(st().scene.nodes[id].position[0]).toBe(10);
+    });
+
+    it('un gruppo bloccato blocca anche i figli; la copia nasce sbloccata', () => {
+      st().addPrimitive('box');
+      st().addPrimitive('sphere');
+      st().select(st().scene.rootIds);
+      st().groupSelected();
+      const [gid] = st().scene.rootIds;
+      const child = (st().scene.nodes[gid] as { children: string[] }).children[0];
+      st().toggleLockSelected();
+      expect(isLocked(st().scene, child)).toBe(true);
+      st().updateNode(child, { position: [99, 0, 0] });
+      expect(st().scene.nodes[child].position[0]).not.toBe(99);
+
+      st().duplicateSelected();
+      const copy = st().selection[0];
+      expect(st().scene.nodes[copy].locked).toBe(false);
+      expect(st().scene.nodes[gid].locked).toBe(true);
+    });
+
+    it('i bloccati non entrano nei gruppi e non si separano', () => {
+      st().addPrimitive('box');
+      st().addPrimitive('cone');
+      const [a, b] = st().scene.rootIds;
+      st().select([a]);
+      st().toggleLockSelected();
+      st().select([a, b]);
+      st().groupSelected(); // resta un solo oggetto sbloccato: nessun gruppo
+      expect(st().scene.rootIds).toEqual([a, b]);
+    });
   });
 });
