@@ -1,0 +1,10 @@
+@use 'sass:map';
+@use 'tokens' as *;
+
+// Restituisce il riferimento alla custom property del colore, es. color('accent') -> var(--color-accent)
+@function color($name) {
+  @if not map.has-key($colors, $name) {
+    @error 'Colore sconosciuto: #{$name}';
+  }
+  @return var(--color-#{$name});
+}

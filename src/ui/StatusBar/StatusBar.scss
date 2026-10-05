@@ -1,0 +1,29 @@
+@use '../../styles/abstracts' as *;
+
+.status-bar {
+  display: flex;
+  align-items: center;
+  gap: $space-4;
+  height: $statusbar-height;
+  padding: 0 $space-3;
+  border-top: 1px solid color('border');
+  background: color('panel');
+  font-size: 12px;
+  color: color('text-muted');
+
+  &__spacer {
+    flex: 1;
+  }
+
+  &__item {
+    white-space: nowrap;
+
+    &--ok {
+      color: color('ok');
+    }
+
+    &--error {
+      color: color('danger');
+    }
+  }
+}

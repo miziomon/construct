@@ -1,0 +1,42 @@
+@use '../../styles/abstracts' as *;
+
+.update-prompt {
+  position: fixed;
+  right: $space-4;
+  bottom: $statusbar-height + $space-4;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: $space-3;
+  padding: $space-3 $space-4;
+  border: 1px solid color('accent');
+  border-radius: $radius-lg;
+  background: color('panel-raised');
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+
+  &__text {
+    margin: 0;
+  }
+
+  &__button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px $space-3;
+    border: 1px solid color('border');
+    border-radius: $radius-sm;
+    background: transparent;
+    @include focus-ring;
+
+    &:hover {
+      border-color: color('accent');
+    }
+
+    &--primary {
+      border-color: color('accent-strong');
+      background: color('accent-strong');
+      color: #fff;
+      font-weight: 600;
+    }
+  }
+}

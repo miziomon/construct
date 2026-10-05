@@ -1,0 +1,27 @@
+@use 'sass:map';
+@use '../abstracts' as *;
+
+// Esporta i colori come custom property CSS
+:root {
+  color-scheme: dark;
+
+  @each $name, $value in $colors {
+    --color-#{$name}: #{$value};
+  }
+}
+
+body {
+  font-family: $font-sans;
+  font-size: 13px;
+  line-height: 1.4;
+  color: color('text');
+  background: color('bg');
+  // L'editor è a schermo intero: niente scroll della pagina
+  overflow: hidden;
+  user-select: none;
+}
+
+input,
+textarea {
+  user-select: text;
+}

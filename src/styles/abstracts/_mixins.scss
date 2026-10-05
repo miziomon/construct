@@ -1,0 +1,27 @@
+@use 'functions' as *;
+@use 'tokens' as *;
+
+// Stato di focus visibile coerente per tutti i controlli
+@mixin focus-ring {
+  &:focus-visible {
+    outline: 2px solid color('accent');
+    outline-offset: 1px;
+  }
+}
+
+// Barra di scorrimento sottile adatta al tema scuro
+@mixin thin-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: color('border') transparent;
+}
+
+// Titolo di sezione dei pannelli
+@mixin section-title {
+  margin: 0;
+  padding: $space-2 $space-3;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: color('text-muted');
+}

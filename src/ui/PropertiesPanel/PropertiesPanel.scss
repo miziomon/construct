@@ -1,0 +1,104 @@
+@use '../../styles/abstracts' as *;
+
+.properties {
+  display: flex;
+  flex-direction: column;
+
+  &__empty {
+    margin: 0;
+    padding: $space-4 $space-3;
+    font-size: 12px;
+    color: color('text-muted');
+  }
+
+  &__section {
+    padding-bottom: $space-3;
+    border-bottom: 1px solid color('border');
+  }
+
+  &__section-title {
+    @include section-title;
+  }
+
+  &__fields {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 0 $space-3;
+  }
+
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: $space-2;
+    min-height: 28px;
+  }
+
+  &__label {
+    flex: none;
+    width: 76px;
+    font-size: 12px;
+    color: color('text-muted');
+  }
+
+  &__text {
+    flex: 1;
+    min-width: 0;
+    padding: 5px $space-2;
+    border: 1px solid color('border');
+    border-radius: $radius-sm;
+    background: color('bg');
+    @include focus-ring;
+  }
+
+  &__color {
+    width: 44px;
+    height: 26px;
+    padding: 0;
+    border: 1px solid color('border');
+    border-radius: $radius-sm;
+    background: transparent;
+  }
+
+  &__range {
+    flex: 1;
+    min-width: 0;
+    accent-color: color('accent');
+  }
+
+  &__output {
+    flex: none;
+    width: 28px;
+    font-family: $font-mono;
+    font-size: 12px;
+    text-align: right;
+  }
+
+  &__segmented {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+    border: 1px solid color('border');
+    border-radius: $radius-sm;
+  }
+
+  &__segment {
+    flex: 1;
+    padding: 5px $space-2;
+    border: 0;
+    background: color('bg');
+    font-size: 12px;
+    @include focus-ring;
+
+    &--active {
+      background: color('accent-soft');
+      color: color('accent');
+      font-weight: 600;
+    }
+
+    &--active#{&}--hole {
+      background: rgba(255, 77, 77, 0.16);
+      color: color('hole');
+    }
+  }
+}

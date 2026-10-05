@@ -1,0 +1,82 @@
+@use '../../styles/abstracts' as *;
+
+.outliner {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+
+  &__title {
+    @include section-title;
+  }
+
+  &__empty {
+    margin: 0;
+    padding: 0 $space-3;
+    font-size: 12px;
+    color: color('text-muted');
+  }
+
+  &__list {
+    flex: 1;
+    margin: 0;
+    padding: 0 $space-1 $space-2;
+    overflow-y: auto;
+    list-style: none;
+    @include thin-scrollbar;
+  }
+
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding-right: $space-2;
+    border-radius: $radius-sm;
+    cursor: pointer;
+    @include focus-ring;
+
+    &:hover {
+      background: color('panel-raised');
+    }
+
+    &--selected,
+    &--selected:hover {
+      background: color('accent-soft');
+      color: color('accent');
+    }
+
+    &--hole .outliner__name {
+      color: color('hole');
+    }
+  }
+
+  &__chevron {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: color('text-muted');
+  }
+
+  &__icon {
+    flex: none;
+  }
+
+  &__name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__hole-badge {
+    flex: none;
+    color: color('hole');
+  }
+}

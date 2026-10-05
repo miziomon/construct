@@ -1,0 +1,13 @@
+@use '../styles/abstracts' as *;
+
+.viewport {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background: color('bg');
+
+  // Il canvas riempie il contenitore
+  canvas {
+    display: block;
+  }
+}

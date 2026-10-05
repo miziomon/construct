@@ -1,0 +1,30 @@
+@use './styles/abstracts' as *;
+
+// Layout a tre colonne: libreria/oggetti, viewport, proprietà/codice
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+
+  &__body {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+  }
+
+  &__left {
+    display: flex;
+    flex-direction: column;
+    width: $sidebar-left-width;
+    min-height: 0;
+    border-right: 1px solid color('border');
+    background: color('panel');
+  }
+
+  &__center {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+  }
+}
