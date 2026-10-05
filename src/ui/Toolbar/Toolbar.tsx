@@ -4,6 +4,7 @@ import { useStore } from 'zustand';
 import { useSceneStore } from '../../scene/store';
 import { useUiStore } from '../uiStore';
 import { export3mf, exportStl, openProject, saveProject } from '../fileActions';
+import { confirmDialog } from '../notify/notifyStore';
 import './Toolbar.scss';
 
 interface ButtonProps {
@@ -26,6 +27,11 @@ function ToolbarButton({ title, onClick, children, active, disabled, label }: Bu
   );
 }
 
+/** Svuota la scena; se non è vuota chiede conferma (l'azione resta annullabile con Ctrl+Z). */
+async function newProject(hasObjects: boolean) {
+  if (!hasObjects || (await confirmDialog('Svuotare la scena? Potrai annullare con Ctrl+Z.', 'Svuota'))) useSceneStore.getState().clear();
+}
+
 const Divider = () => <span className="toolbar__divider" role="separator" />;
 
 export function Toolbar() {
@@ -45,7 +51,7 @@ export function Toolbar() {
       <div className="toolbar__brand">WebCAD</div>
 
       <div className="toolbar__group">
-        <ToolbarButton title="Nuovo progetto" onClick={() => (!hasObjects || confirm('Svuotare la scena? Si potrà annullare con Ctrl+Z.')) && s.clear()}><FilePlus size={18} /></ToolbarButton>
+        <ToolbarButton title="Nuovo progetto" onClick={() => void newProject(hasObjects)}><FilePlus size={18} /></ToolbarButton>
         <ToolbarButton title="Apri progetto (JSON)" onClick={openProject}><FolderOpen size={18} /></ToolbarButton>
         <ToolbarButton title="Salva progetto (JSON)" onClick={saveProject}><Save size={18} /></ToolbarButton>
       </div>

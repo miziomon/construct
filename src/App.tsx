@@ -4,6 +4,7 @@ import { Outliner } from './ui/Outliner/Outliner';
 import { Sidebar } from './ui/Sidebar/Sidebar';
 import { StatusBar } from './ui/StatusBar/StatusBar';
 import { UpdatePrompt } from './ui/UpdatePrompt/UpdatePrompt';
+import { Notifications } from './ui/notify/Notifications';
 import { Viewport } from './viewport/Viewport';
 import { useShortcuts } from './hooks/useShortcuts';
 import './App.scss';
@@ -26,6 +27,7 @@ export default function App() {
         <Sidebar />
       </div>
       <UpdatePrompt />
+      <Notifications />
     </div>
   );
 }

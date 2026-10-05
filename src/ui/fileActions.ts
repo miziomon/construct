@@ -2,6 +2,7 @@ import { getKernel } from '../kernel/client';
 import { useSceneStore } from '../scene/store';
 import { sceneFromJson, sceneToJson } from '../scene/persistence';
 import { sceneToOpenScad } from '../codegen/openscad';
+import { notify } from './notify/notifyStore';
 
 /** Avvia il download di un file generato in memoria. */
 export function download(data: BlobPart, filename: string, type: string): void {
@@ -43,7 +44,7 @@ export function openProject(): void {
     try {
       useSceneStore.getState().loadScene(sceneFromJson(await file.text()));
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Impossibile aprire il file.');
+      notify.error(err instanceof Error ? err.message : 'Impossibile aprire il file.');
     }
   };
   input.click();

@@ -1,0 +1,94 @@
+@use '../../styles/abstracts' as *;
+
+.toast-list {
+  position: fixed;
+  bottom: $statusbar-height + $space-4;
+  left: $sidebar-left-width + $space-4;
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  gap: $space-2;
+  max-width: 420px;
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: $space-3;
+  padding: $space-3 $space-4;
+  border: 1px solid color('border');
+  border-left-width: 4px;
+  border-radius: $radius-md;
+  background: color('panel-raised');
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+
+  &--info {
+    border-left-color: color('accent');
+  }
+
+  &--error {
+    border-left-color: color('danger');
+  }
+
+  &__text {
+    flex: 1;
+  }
+
+  &__close {
+    display: inline-flex;
+    padding: 2px;
+    border: 0;
+    background: transparent;
+    color: color('text-muted');
+    @include focus-ring;
+
+    &:hover {
+      color: color('text');
+    }
+  }
+}
+
+.dialog {
+  min-width: 320px;
+  max-width: 440px;
+  padding: $space-5;
+  border: 1px solid color('border');
+  border-radius: $radius-lg;
+  background: color('panel');
+  color: color('text');
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
+
+  &::backdrop {
+    background: rgba(0, 0, 0, 0.55);
+  }
+
+  &__message {
+    margin: 0 0 $space-5;
+    line-height: 1.5;
+  }
+
+  &__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: $space-2;
+  }
+
+  &__button {
+    padding: 6px $space-4;
+    border: 1px solid color('border');
+    border-radius: $radius-sm;
+    background: color('panel-raised');
+    @include focus-ring;
+
+    &:hover {
+      border-color: color('accent');
+    }
+
+    &--primary {
+      border-color: color('accent-strong');
+      background: color('accent-strong');
+      color: #fff;
+      font-weight: 600;
+    }
+  }
+}
