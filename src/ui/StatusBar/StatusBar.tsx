@@ -41,6 +41,7 @@ export function StatusBar() {
       )}
       <span className="status-bar__spacer" />
       <span className="status-bar__item">{busy ? 'Calcolo…' : `Calcolo ${ms.toFixed(0)} ms`}</span>
+      <span className="status-bar__item">v{__APP_VERSION__}</span>
     </footer>
   );
 }
