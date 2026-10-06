@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import { temporal } from 'zundo';
-import type { GroupNode, PrimitiveKind, PrimitiveNode, Scene, SceneNode, Vec3 } from './types';
+import type { GroupNode, GroupOp, PrimitiveKind, PrimitiveNode, Scene, SceneNode, Vec3 } from './types';
 import { DEFAULT_COLOR, PRIMITIVE_LABELS, halfHeight, primitiveDefaults } from './defaults';
 import { composeTransform, round } from './math';
 
@@ -19,15 +19,24 @@ interface SceneState {
   select: (ids: string[], additive?: boolean) => void;
   removeSelected: () => void;
   duplicateSelected: () => void;
+  /** Combina gli oggetti selezionati (in ordine di selezione) in un gruppo con l'operazione data. */
+  combineSelected: (op: GroupOp) => void;
   groupSelected: () => void;
+  /** Differenza: il secondo figlio diventa la base (rotazione dell'ordine dei figli). */
+  cycleBase: (groupId: string) => void;
   ungroupSelected: () => void;
   toggleHoleSelected: () => void;
   toggleLockSelected: () => void;
+  /** Abbassa gli oggetti selezionati finché il loro punto più basso tocca il piatto (minZ per id, in mm). */
+  dropToBed: (minZById: Record<string, number>) => void;
   nudgeSelected: (delta: Vec3) => void;
   setGizmoMode: (mode: GizmoMode) => void;
   loadScene: (scene: Scene) => void;
   clear: () => void;
 }
+
+/** Nome base del gruppo creato da ogni operazione. */
+const GROUP_LABELS: Record<GroupOp, string> = { union: 'Unione', intersection: 'Intersezione', difference: 'Differenza' };
 
 export const emptyScene = (): Scene => ({ nodes: {}, rootIds: [] });
 
@@ -72,7 +81,7 @@ function selectedRoots(scene: Scene, selection: string[]): string[] {
 
 export const useSceneStore = create<SceneState>()(
   temporal(
-    immer((set) => ({
+    immer((set, get) => ({
       scene: emptyScene(),
       selection: [],
       gizmoMode: 'translate',
@@ -146,7 +155,7 @@ export const useSceneStore = create<SceneState>()(
           if (copies.length) s.selection = copies;
         }),
 
-      groupSelected: () =>
+      combineSelected: (op) =>
         set((s) => {
           const ids = selectedRoots(s.scene, s.selection).filter((id) => !isLocked(s.scene, id));
           if (ids.length < 2) return;
@@ -157,12 +166,12 @@ export const useSceneStore = create<SceneState>()(
           const group: GroupNode = {
             id: newId(),
             type: 'group',
-            name: uniqueName(s.scene, 'Gruppo'),
+            name: uniqueName(s.scene, GROUP_LABELS[op]),
             position: c,
             rotation: [0, 0, 0],
             mode: 'solid',
             color: DEFAULT_COLOR,
-            op: 'union',
+            op,
             children: ids,
           };
           s.scene.nodes[group.id] = group;
@@ -171,6 +180,16 @@ export const useSceneStore = create<SceneState>()(
           s.scene.rootIds = s.scene.rootIds.filter((id) => !ids.includes(id));
           s.scene.rootIds.splice(first, 0, group.id);
           s.selection = [group.id];
+        }),
+
+      // Raggruppa = unione: stessa logica di combineSelected
+      groupSelected: () => get().combineSelected('union'),
+
+      cycleBase: (groupId) =>
+        set((s) => {
+          const g = s.scene.nodes[groupId];
+          if (g?.type !== 'group' || isLocked(s.scene, groupId) || g.children.length < 2) return;
+          g.children.push(g.children.shift()!);
         }),
 
       ungroupSelected: () =>
@@ -209,6 +228,16 @@ export const useSceneStore = create<SceneState>()(
           for (const id of s.selection) {
             const n = s.scene.nodes[id];
             if (n) n.locked = lockAll;
+          }
+        }),
+
+      dropToBed: (minZById) =>
+        set((s) => {
+          for (const id of selectedRoots(s.scene, s.selection)) {
+            const minZ = minZById[id];
+            if (minZ === undefined || isLocked(s.scene, id)) continue;
+            const n = s.scene.nodes[id];
+            n.position = [n.position[0], n.position[1], round(n.position[2] - minZ)];
           }
         }),
 

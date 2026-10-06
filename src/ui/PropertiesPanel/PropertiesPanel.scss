@@ -60,6 +60,33 @@
     background: transparent;
   }
 
+  &__value {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__action {
+    flex: none;
+    padding: 4px $space-3;
+    border: 1px solid color('border');
+    border-radius: $radius-sm;
+    background: color('panel-raised');
+    font-size: 12px;
+    @include focus-ring;
+
+    &:hover:not(:disabled) {
+      border-color: color('accent');
+    }
+
+    &:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+  }
+
   &__checkbox {
     width: 16px;
     height: 16px;

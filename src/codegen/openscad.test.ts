@@ -37,4 +37,13 @@ describe('sceneToOpenScad', () => {
   it('scena vuota o con soli hole alla radice non produce geometria', () => {
     expect(sceneToOpenScad({ nodes: {}, rootIds: [] })).toContain('// Scena vuota');
   });
+
+  it('gruppo di tipo differenza: difference() con i figli in ordine', () => {
+    const sc = scene();
+    (sc.nodes.g as GroupNode).op = 'difference';
+    const code = sceneToOpenScad(sc);
+    expect(code).toContain('difference() {');
+    expect(code.indexOf('// Scatola')).toBeLessThan(code.indexOf('// Foro'));
+    expect(code).not.toContain('union()');
+  });
 });

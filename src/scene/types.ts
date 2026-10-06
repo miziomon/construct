@@ -29,10 +29,15 @@ export type PrimitiveNode = BaseNode & { type: 'primitive' } & (
   | { kind: 'torus'; majorRadius: number; minorRadius: number; segments: number }
 );
 
+export type GroupOp = 'union' | 'intersection' | 'difference';
+
 export type GroupNode = BaseNode & {
   type: 'group';
-  /** union: somma dei solid meno gli hole; intersection: parte comune dei solid meno gli hole. */
-  op: 'union' | 'intersection';
+  /**
+   * union: somma dei solid meno gli hole; intersection: parte comune dei solid meno gli hole;
+   * difference: il primo figlio meno tutti gli altri (il modo solid/hole dei figli è ignorato).
+   */
+  op: GroupOp;
   children: string[];
 };
 

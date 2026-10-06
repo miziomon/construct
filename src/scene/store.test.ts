@@ -133,4 +133,40 @@ describe('store della scena', () => {
       expect(st().scene.rootIds).toEqual([a, b]);
     });
   });
+
+  it('dropToBed abbassa gli oggetti selezionati fino al piatto e ignora i bloccati', () => {
+    st().addPrimitive('box');
+    st().addPrimitive('box');
+    const [a, b] = st().scene.rootIds;
+    st().updateNode(a, { position: [0, 0, 35] });
+    st().updateNode(b, { position: [0, 0, 35] });
+    st().select([b]);
+    st().toggleLockSelected();
+    st().select([a, b]);
+    // Il kernel dice che il punto più basso di entrambi è a Z = 25
+    st().dropToBed({ [a]: 25, [b]: 25 });
+    expect(st().scene.nodes[a].position[2]).toBe(10);
+    expect(st().scene.nodes[b].position[2]).toBe(35);
+  });
+
+  describe('operazioni booleane rapide', () => {
+    it('combineSelected rispetta l ordine di selezione e cycleBase cambia la base', () => {
+      st().addPrimitive('box');
+      st().addPrimitive('sphere');
+      const [a, b] = st().scene.rootIds;
+      // Seleziono prima la sfera, poi la scatola: la sfera sarà la base
+      st().select([b]);
+      st().select([a], true);
+      st().combineSelected('difference');
+      const [gid] = st().scene.rootIds;
+      const g = st().scene.nodes[gid];
+      expect(g.type === 'group' && g.op).toBe('difference');
+      expect(g.type === 'group' && g.children).toEqual([b, a]);
+      expect(g.name).toBe('Differenza');
+
+      st().cycleBase(gid);
+      const after = st().scene.nodes[gid];
+      expect(after.type === 'group' && after.children).toEqual([a, b]);
+    });
+  });
 });

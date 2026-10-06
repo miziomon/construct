@@ -101,4 +101,15 @@ describe('Evaluator', () => {
     expect(meshes[0].status).toBe('NoError');
     expect(ms).toBeLessThan(500); // soglia larga per CI lente; il criterio del POC è 200 ms su desktop
   });
+
+  it('differenza: il primo figlio meno gli altri, ignorando il modo solid/hole', () => {
+    const a = prim('a', 'box', { size: [20, 20, 20] } as Partial<PrimitiveNode>);
+    const b = prim('b', 'box', { size: [10, 20, 20], position: [5, 0, 0] } as Partial<PrimitiveNode>);
+    const scene: Scene = { nodes: { a, b, g: group('g', ['a', 'b'], { op: 'difference' }) }, rootIds: ['g'] };
+    const [m] = new Evaluator(wasm).evaluate(scene).meshes;
+    expect(m.volume).toBeCloseTo(4000, 1); // resta metà scatola
+    // Scambiando la base resta solo la parte di B che non si sovrappone: nulla, perché B sta dentro A
+    const swapped: Scene = { nodes: { a, b, g: group('g', ['b', 'a'], { op: 'difference' }) }, rootIds: ['g'] };
+    expect(new Evaluator(wasm).evaluate(swapped).meshes[0].empty).toBe(true);
+  });
 });

@@ -52,6 +52,11 @@ function groupLines(scene: Scene, g: GroupNode, head: string, colored: string, d
   const holes = kids.filter((k) => k.mode === 'hole');
   const body = (list: SceneNode[], d: number) => list.flatMap((k) => nodeLines(scene, k, d));
 
+  // Differenza: il primo figlio meno gli altri, indipendentemente dal modo solid/hole
+  if (g.op === 'difference') {
+    return [`${head} ${colored}{`, `${pad}${IND}difference() {`, ...body(kids, depth + 2), `${pad}${IND}}`, `${pad}}`];
+  }
+
   // Blocco dei solid combinati; se ci sono hole, difference(solids, holes)
   const combine = g.op === 'union' ? 'union' : 'intersection';
   const lines: string[] = [`${head} ${colored}{`];

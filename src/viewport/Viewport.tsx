@@ -5,6 +5,7 @@ import { isLocked, useSceneStore } from '../scene/store';
 import { useResultStore } from '../kernel/useKernel';
 import { Bed } from './Bed';
 import { SceneObject } from './SceneObject';
+import { SelectionActions } from '../ui/SelectionActions/SelectionActions';
 import './Viewport.scss';
 
 // Asse Z verso l'alto come negli slicer: va impostato prima della creazione di camera e controlli
@@ -22,6 +23,7 @@ export function Viewport() {
 
   return (
     <div className="viewport">
+      <SelectionActions />
       <Canvas
         // Il rendering parte solo quando serve (movimenti, modifiche): meno consumo di CPU/GPU
         frameloop="demand"

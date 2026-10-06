@@ -1,0 +1,45 @@
+@use '../../styles/abstracts' as *;
+
+.selection-actions {
+  position: absolute;
+  top: $space-3;
+  left: 50%;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: $space-1;
+  padding: $space-1;
+  transform: translateX(-50%);
+  border: 1px solid color('border');
+  border-radius: $radius-lg;
+  background: color('panel');
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+
+  &__button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px $space-3;
+    border: 1px solid transparent;
+    border-radius: $radius-md;
+    background: transparent;
+    font-weight: 600;
+    @include focus-ring;
+
+    &:hover {
+      background: color('accent-soft');
+      color: color('accent');
+    }
+  }
+
+  &__hint {
+    max-width: 240px;
+    padding: 0 $space-3;
+    overflow: hidden;
+    border-left: 1px solid color('border');
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: color('text-muted');
+  }
+}

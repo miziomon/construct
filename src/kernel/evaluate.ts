@@ -96,9 +96,18 @@ export class Evaluator {
     } else {
       // Gruppo: solid combinati con union/intersection, poi si sottrae l'unione degli hole
       const kids = node.children.map((c) => scene.nodes[c]);
+      const { Manifold } = this.wasm;
+      if (node.op === 'difference') {
+        // Differenza: il primo figlio è la base, tutti gli altri vengono sottratti
+        const parts = kids.map((k) => this.build(scene, k));
+        const result = parts.length ? Manifold.difference(parts) : Manifold.union([]);
+        const placed = result.rotate(node.rotation).translate(node.position);
+        result.delete();
+        this.cache.set(key, placed);
+        return placed;
+      }
       const solids = kids.filter((k) => k.mode === 'solid').map((k) => this.build(scene, k));
       const holes = kids.filter((k) => k.mode === 'hole').map((k) => this.build(scene, k));
-      const { Manifold } = this.wasm;
       const base = node.op === 'union' ? Manifold.union(solids) : solids.length ? Manifold.intersection(solids) : Manifold.union([]);
       local = holes.length ? Manifold.difference([base, ...holes]) : base;
       // Se nessuna sottrazione è avvenuta, base è già il risultato: niente da liberare

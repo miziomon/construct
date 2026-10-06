@@ -22,6 +22,11 @@ export function PropertiesPanel() {
   const node = useSceneStore((s) => (s.selection.length === 1 ? s.scene.nodes[s.selection[0]] : undefined));
   const inGroup = useSceneStore((s) => s.selection.length === 1 && !s.scene.rootIds.includes(s.selection[0]));
   const updateNode = useSceneStore((s) => s.updateNode);
+  const cycleBase = useSceneStore((s) => s.cycleBase);
+  const baseName = useSceneStore((s) => {
+    const n = s.selection.length === 1 ? s.scene.nodes[s.selection[0]] : undefined;
+    return n?.type === 'group' && n.op === 'difference' ? s.scene.nodes[n.children[0]]?.name : undefined;
+  });
   // Bloccato lui o un gruppo che lo contiene
   const locked = useSceneStore((s) => s.selection.length === 1 && isLocked(s.scene, s.selection[0]));
 
@@ -72,12 +77,21 @@ export function PropertiesPanel() {
           <div className="properties__row">
             <span className="properties__label">Operazione</span>
             <div className="properties__segmented" role="group" aria-label="Operazione del gruppo">
-              {(['union', 'intersection'] as const).map((op) => (
+              {(['union', 'difference', 'intersection'] as const).map((op) => (
                 <button key={op} type="button" className={`properties__segment${node.op === op ? ' properties__segment--active' : ''}`} aria-pressed={node.op === op} disabled={locked} onClick={() => patch({ op })}>
-                  {op === 'union' ? 'Unione' : 'Intersezione'}
+                  {op === 'union' ? 'Unione' : op === 'difference' ? 'Differenza' : 'Intersezione'}
                 </button>
               ))}
             </div>
+          </div>
+        )}
+        {node.type === 'group' && node.op === 'difference' && (
+          <div className="properties__row">
+            <span className="properties__label">Base</span>
+            <span className="properties__value">{baseName}</span>
+            <button type="button" className="properties__action" disabled={locked} onClick={() => cycleBase(node.id)} title="Il figlio successivo diventa la base">
+              Scambia base
+            </button>
           </div>
         )}
       </Section>

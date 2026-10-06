@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useSceneStore } from '../scene/store';
 import { useUiStore } from '../ui/uiStore';
+import { dropSelectionToBed } from '../kernel/placement';
 
 const isTyping = (t: EventTarget | null) => t instanceof HTMLElement && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
 
@@ -30,6 +31,7 @@ export function useShortcuts(): void {
       else if (key === 'delete' || key === 'backspace') { e.preventDefault(); s.removeSelected(); }
       else if (!mod && key === 'h') s.toggleHoleSelected();
       else if (!mod && key === 'l') s.toggleLockSelected();
+      else if (!mod && key === 'b') dropSelectionToBed();
       else if (!mod && key === 'w') s.setGizmoMode('translate');
       else if (!mod && key === 'e') s.setGizmoMode('rotate');
       else if (key in arrows) { e.preventDefault(); s.nudgeSelected(arrows[key]); }
