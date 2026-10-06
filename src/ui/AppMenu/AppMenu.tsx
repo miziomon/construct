@@ -50,6 +50,8 @@ const SHORTCUTS: { title: string; rows: [string, string][] }[] = [
     title: 'Oggetti',
     rows: [
       ['Ctrl+D', 'Duplica'],
+      ['F', 'Raccordo tra due superfici (Invio conferma, Esc annulla)'],
+      ['S', 'Smusso tra due superfici (Invio conferma, Esc annulla)'],
       ['Ctrl+G', 'Raggruppa (gli oggetti restano separati)'],
       ['U', 'Unisci in un solo solido (unione booleana)'],
       ['F2', 'Rinomina l\'oggetto selezionato'],

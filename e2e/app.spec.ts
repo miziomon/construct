@@ -538,3 +538,143 @@ test('un clic su un oggetto raggruppato seleziona il gruppo, Alt+clic il singolo
   await page.keyboard.up('Alt');
   expect(await page.evaluate(() => window.__webcad!.store.getState().selection)).toEqual([cubeId]);
 });
+
+/** Numero di passi di Annulla disponibili. */
+const history = (page: import('@playwright/test').Page) => page.evaluate(() => window.__webcad!.store.temporal.getState().pastStates.length);
+
+/** Volume della prima mesh calcolata dal kernel. */
+const firstVolume = (page: import('@playwright/test').Page) => page.evaluate(() => window.__webcad!.results.getState().meshes[0].volume);
+
+/** Sceglie due superfici di un cubo da 20 mm: la superiore e la frontale (visibili dalla camera di partenza). */
+async function pickTopAndFront(page: import('@playwright/test').Page) {
+  for (const point of [[0, 0, 20], [0, -10, 10]] as [number, number, number][]) {
+    const at = await project(page, point);
+    await page.mouse.move(at.x, at.y);
+    await page.mouse.click(at.x, at.y);
+  }
+}
+
+test('Raccordo: scelta di due superfici, anteprima dal vivo, OK in un solo passo di Annulla', async ({ page }) => {
+  await addShape(page, 'Cubo');
+  expect(await firstVolume(page)).toBeCloseTo(8000, 3);
+
+  await page.keyboard.press('f');
+  const panel = page.getByRole('region', { name: 'Raccordo' });
+  await expect(panel).toBeVisible();
+  await pickTopAndFront(page);
+  await settled(page);
+  await expect(panel).toContainText('Spigolo convesso');
+  const withFillet = await firstVolume(page);
+  expect(withFillet).toBeLessThan(8000);
+  expect(withFillet).toBeGreaterThan(7980);
+
+  // Il raggio si cambia dal pannello e l'anteprima segue
+  const radius = panel.locator('.slider-field', { hasText: 'Raggio' }).locator('.number-field__input');
+  await radius.fill('4');
+  await radius.press('Enter');
+  await settled(page);
+  expect(await firstVolume(page)).toBeLessThan(withFillet);
+
+  await panel.getByRole('button', { name: 'OK' }).click();
+  await expect(panel).toBeHidden();
+  await settled(page);
+  const scene = await sceneState(page);
+  const root = scene.nodes[scene.rootIds[0]];
+  expect(scene.rootIds).toHaveLength(1);
+  expect(root.type).toBe('group');
+  expect(root.op).toBe('difference');
+  const edge = scene.nodes[root.children[1]];
+  expect(edge).toMatchObject({ type: 'edge', treatment: 'fillet', convex: true, radius: 4 });
+  expect(edge.name).toBe('Raccordo');
+
+  // Il codice contiene il taglierino
+  const code = await readCode(page);
+  expect(code).toContain('difference() {');
+  expect(code).toContain('circle(r = 4, $fn = 64);');
+
+  // Un solo Annulla riporta il cubo intero
+  await page.keyboard.press('Control+z');
+  await settled(page);
+  expect((await sceneState(page)).rootIds).toHaveLength(1);
+  expect((await sceneState(page)).nodes[(await sceneState(page)).rootIds[0]].type).toBe('primitive');
+  expect(await firstVolume(page)).toBeCloseTo(8000, 3);
+});
+
+test('Raccordo: Esc e Annulla non lasciano tracce nella scena', async ({ page }) => {
+  await addShape(page, 'Cubo');
+  const before = JSON.stringify(await sceneState(page));
+  const historyBefore = await history(page);
+  await page.keyboard.press('f');
+  await pickTopAndFront(page);
+  await settled(page);
+  expect(await firstVolume(page)).toBeLessThan(8000);
+  await page.keyboard.press('Escape');
+  await settled(page);
+  expect(JSON.stringify(await sceneState(page))).toBe(before);
+  expect(await firstVolume(page)).toBeCloseTo(8000, 3);
+
+  await page.getByRole('button', { name: /^Smusso/ }).click();
+  await pickTopAndFront(page);
+  await page.getByRole('region', { name: 'Smusso' }).getByRole('button', { name: 'Annulla' }).click();
+  await settled(page);
+  expect(JSON.stringify(await sceneState(page))).toBe(before);
+  // Annullare lo strumento non lascia voci nella cronologia (resta solo quella dell'aggiunta del cubo)
+  expect(await history(page)).toBe(historyBefore);
+});
+
+test('Smusso con due distanze e modifica successiva dal pannello delle proprietà', async ({ page }) => {
+  await addShape(page, 'Cubo');
+  await page.keyboard.press('s');
+  const panel = page.getByRole('region', { name: 'Smusso' });
+  await expect(panel).toBeVisible();
+  await pickTopAndFront(page);
+  await settled(page);
+
+  await panel.getByRole('button', { name: 'Due distanze' }).click();
+  const field = (label: string) => panel.locator('.slider-field', { hasText: label }).locator('.number-field__input');
+  await field('Distanza 1').fill('2');
+  await field('Distanza 1').press('Enter');
+  await field('Distanza 2').fill('5');
+  await field('Distanza 2').press('Enter');
+  await settled(page);
+  // Triangolo con cateti 2 e 5 lungo uno spigolo di 20 mm
+  expect(await firstVolume(page)).toBeCloseTo(8000 - 0.5 * 2 * 5 * 20, 2);
+  await panel.getByRole('button', { name: 'OK' }).click();
+  await settled(page);
+
+  // Si seleziona il taglierino dall'elenco: la sidebar di destra mostra le misure e le modifica dal vivo
+  await page.locator('.outliner__row', { hasText: 'Smusso' }).last().click();
+  await expect(page.locator('.properties__section-title').first()).toHaveText('Smusso');
+  const d2 = page.locator('.slider-field', { hasText: 'Distanza 2' }).locator('.number-field__input');
+  await d2.fill('4');
+  await d2.press('Enter');
+  await settled(page);
+  expect(await firstVolume(page)).toBeCloseTo(8000 - 0.5 * 2 * 4 * 20, 2);
+});
+
+test('Raccordo: due sfaccettature lontane di una sfera non hanno uno spigolo in comune', async ({ page }) => {
+  await addShape(page, 'Sfera');
+  await page.keyboard.press('f');
+  const panel = page.getByRole('region', { name: 'Raccordo' });
+  for (const point of [[0, 0, 19], [9, 0, 10]] as [number, number, number][]) {
+    const at = await project(page, point);
+    await page.mouse.move(at.x, at.y);
+    await page.mouse.click(at.x, at.y);
+  }
+  await expect(panel.getByRole('alert')).toBeVisible();
+  // La seconda scelta si scarta e resta la prima
+  await expect(panel).toContainText('Superficie 1scelta');
+  await expect(panel.getByRole('button', { name: 'OK' })).toBeDisabled();
+});
+
+test('Raccordo: la stessa superficie si toglie con un secondo clic e due superfici non adiacenti sono rifiutate', async ({ page }) => {
+  await addShape(page, 'Cubo');
+  await page.keyboard.press('f');
+  const panel = page.getByRole('region', { name: 'Raccordo' });
+  const top = await project(page, [0, 0, 20]);
+  await page.mouse.move(top.x, top.y);
+  await page.mouse.click(top.x, top.y);
+  await expect(panel.getByText('scelta', { exact: true })).toHaveCount(1);
+  await page.mouse.click(top.x, top.y);
+  await expect(panel.getByText('da scegliere')).toHaveCount(2);
+});

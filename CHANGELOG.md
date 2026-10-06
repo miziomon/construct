@@ -18,6 +18,19 @@ I messaggi di commit seguono i [Conventional Commits](https://www.conventionalco
 
 ## [Non rilasciato]
 
+## [0.8.0] - 2026-10-06
+
+### Aggiunto
+- **Raccordo** (pulsante e tasto F) e **Smusso** (pulsante e tasto S) tra due superfici piane, con un pannello come in Fusion 360: si fa clic su due superfici (evidenziate al passaggio del mouse), il raggio o le distanze si regolano con anteprima dal vivo, OK conferma ed Esc annulla.
+- Smusso a distanza uguale, a due distanze oppure con distanza e angolo.
+- Funziona su spigoli convessi (toglie materiale) e concavi (ne aggiunge), anche con estremità oblique, su oggetti ruotati, dentro gruppi e su mesh importate.
+- Il raccordo è un oggetto dell'elenco (gruppo Differenza o Unione con un "Raccordo" o "Smusso") e si modifica dalla sidebar di destra.
+- Nel codice OpenSCAD esce come estrusione di una sezione 2D dentro `difference()` o `union()`, senza `polyhedron` né `minkowski`. Il volume del codice reso con OpenSCAD coincide con quello del kernel.
+
+### Limiti
+- Solo superfici piane e spigoli rettilinei; niente angoli con tre raccordi né raggio variabile.
+- Se il pezzo cambia dopo il raccordo, il taglierino non si ricalcola da solo.
+
 ## [0.7.0] - 2026-10-06
 
 ### Aggiunto

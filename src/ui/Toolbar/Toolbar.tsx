@@ -6,6 +6,8 @@ import { useUiStore } from '../uiStore';
 import type { BedMode } from '../uiStore';
 import { dropSelectionToBed } from '../../kernel/placement';
 import { AppMenu } from '../AppMenu/AppMenu';
+import { EDGE_ICONS } from '../groupIcons';
+import { useEdgeTool } from '../EdgeTool/edgeToolStore';
 import './Toolbar.scss';
 
 interface ButtonProps {
@@ -40,6 +42,11 @@ export function Toolbar() {
   const canRedo = useStore(useSceneStore.temporal, (t) => t.futureStates.length > 0);
   const { codeOpen, toggleCode, theme, toggleTheme, bedMode, cycleBed } = useUiStore();
 
+  const edgeTool = useEdgeTool((e) => e.tool);
+  const hasObjects = s.scene.rootIds.length > 0;
+  /** Apre Raccordo o Smusso; un secondo clic sullo stesso pulsante annulla l'operazione. */
+  const toggleEdgeTool = (kind: 'fillet' | 'chamfer') => (edgeTool === kind ? useEdgeTool.getState().cancel() : useEdgeTool.getState().start(kind));
+
   const hasSelection = s.selection.length > 0;
   const rootSelection = s.selection.filter((id) => s.scene.rootIds.includes(id));
   const group = s.selection.length === 1 ? s.scene.nodes[s.selection[0]] : undefined;
@@ -73,6 +80,8 @@ export function Toolbar() {
         <ToolbarButton title="Separa il gruppo o l'unione (Ctrl+Maiusc+G)" disabled={group?.type !== 'group' || !s.scene.rootIds.includes(group.id)} onClick={s.ungroupSelected}><Ungroup size={18} /></ToolbarButton>
         <ToolbarButton title="Solido / Foro (H)" active={allHoles} disabled={!hasSelection} onClick={s.toggleHoleSelected}><CircleDashed size={18} /></ToolbarButton>
         <ToolbarButton title={allLocked ? 'Sblocca (L)' : 'Blocca (L)'} active={allLocked} disabled={!hasSelection} onClick={s.toggleLockSelected}>{allLocked ? <Lock size={18} /> : <Unlock size={18} />}</ToolbarButton>
+        <ToolbarButton title="Raccordo: arrotonda lo spigolo tra due superfici (F)" active={edgeTool === 'fillet'} disabled={!hasObjects} onClick={() => toggleEdgeTool('fillet')}><EDGE_ICONS.fillet size={18} /></ToolbarButton>
+        <ToolbarButton title="Smusso: taglia lo spigolo tra due superfici (S)" active={edgeTool === 'chamfer'} disabled={!hasObjects} onClick={() => toggleEdgeTool('chamfer')}><EDGE_ICONS.chamfer size={18} /></ToolbarButton>
         <ToolbarButton title="Appoggia sul piatto (B)" disabled={rootSelection.length === 0} onClick={dropSelectionToBed}><ArrowDownToLine size={18} /></ToolbarButton>
         <ToolbarButton title="Duplica (Ctrl+D)" disabled={rootSelection.length === 0} onClick={s.duplicateSelected}><Copy size={18} /></ToolbarButton>
         <ToolbarButton title="Elimina (Canc o Backspace)" disabled={!hasSelection} onClick={s.removeSelected}><Trash2 size={18} /></ToolbarButton>

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import { temporal } from 'zundo';
-import type { GroupNode, GroupOp, MeshNode, PrimitiveKind, PrimitiveNode, Scene, SceneNode, Shape2DKind, Shape2DNode, Vec3 } from './types';
+import type { EdgeNode, GroupNode, GroupOp, MeshNode, PrimitiveKind, PrimitiveNode, Scene, SceneNode, Shape2DKind, Shape2DNode, Vec3 } from './types';
 import { randomColor } from './color';
 import { DEFAULT_COLOR, PRIMITIVE_LABELS, SHAPE2D_LABELS, halfHeight, primitiveDefaults, shape2dDefaults } from './defaults';
 import { composeTransform, round, toLocalTransform } from './math';
@@ -19,7 +19,7 @@ interface SceneState {
   /** Aggiunge una mesh importata, appoggiata sul piatto e centrata in XY. */
   addMesh: (input: { assetId: string; name: string; fileName: string; color?: string; origin: Vec3; size: Vec3; triangles: number }) => string;
   /** Aggiorna campi di un nodo (patch parziale, validata dal chiamante). */
-  updateNode: (id: string, patch: Partial<PrimitiveNode> | Partial<Shape2DNode> | Partial<MeshNode> | Partial<GroupNode>) => void;
+  updateNode: (id: string, patch: Partial<PrimitiveNode> | Partial<Shape2DNode> | Partial<MeshNode> | Partial<GroupNode> | Partial<EdgeNode>) => void;
   select: (ids: string[], additive?: boolean) => void;
   removeSelected: () => void;
   duplicateSelected: () => void;
@@ -49,10 +49,10 @@ const GROUP_LABELS: Record<GroupOp, string> = { group: 'Gruppo', union: 'Unione'
 
 export const emptyScene = (): Scene => ({ nodes: {}, rootIds: [] });
 
-const newId = () => crypto.randomUUID().slice(0, 8);
+export const newId = () => crypto.randomUUID().slice(0, 8);
 
 /** Nome progressivo unico per etichetta, es. "Cubo 2". */
-function uniqueName(scene: Scene, base: string): string {
+export function uniqueName(scene: Scene, base: string): string {
   const used = new Set(Object.values(scene.nodes).map((n) => n.name));
   if (!used.has(base)) return base;
   let i = 2;

@@ -8,6 +8,8 @@ import { useViewportPalette } from './palette';
 import { round } from '../scene/math';
 import { halfHeight } from '../scene/defaults';
 import { applyScale } from '../scene/resize';
+import { faceMap } from '../scene/edgeTool';
+import { useEdgeTool } from '../ui/EdgeTool/edgeToolStore';
 import type { Vec3 } from '../scene/types';
 
 const SNAP_MOVE = 1; // mm
@@ -52,8 +54,38 @@ function Part({ mesh, selected, locked, onPointerDown }: PartProps) {
   }, [mesh]);
   useEffect(() => () => geometry.dispose(), [geometry]);
 
+  // Con Raccordo o Smusso attivi i clic scelgono le facce al posto di selezionare l'oggetto
+  const tool = useEdgeTool((s) => s.tool);
+  const choosing = useEdgeTool((s) => s.tool !== null && s.preview === null);
+  const { setHover, pickFace } = useEdgeTool.getState();
+  /** Faccia sotto il puntatore (indice del triangolo colpito, tradotto nella faccia piana a cui appartiene). */
+  const faceAt = (e: ThreeEvent<PointerEvent | MouseEvent>) => (e.faceIndex == null ? -1 : faceMap(mesh).triFace[e.faceIndex]);
+
   return (
-    <mesh geometry={geometry} onPointerDown={(e) => onPointerDown(e, mesh)}>
+    <mesh
+      geometry={geometry}
+      onPointerDown={tool ? undefined : (e) => onPointerDown(e, mesh)}
+      onPointerMove={
+        choosing
+          ? (e) => {
+              e.stopPropagation();
+              const face = faceAt(e);
+              setHover(face >= 0 ? { mesh, face } : null);
+            }
+          : undefined
+      }
+      onPointerOut={tool ? () => setHover(null) : undefined}
+      onClick={
+        choosing
+          ? (e) => {
+              // Un trascinamento (rotazione della vista) non è una scelta
+              if (e.delta > 3) return;
+              e.stopPropagation();
+              pickFace(mesh, faceAt(e));
+            }
+          : undefined
+      }
+    >
       <meshStandardMaterial
         color={mesh.isHole ? '#ff4d4d' : mesh.color}
         flatShading

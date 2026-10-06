@@ -1,9 +1,10 @@
 import type { ReactNode } from 'react';
 import { isAppGroup, isLocked, parentOf, useSceneStore } from '../../scene/store';
-import { GROUP_ICONS, GROUP_NAMES } from '../groupIcons';
+import { EDGE_ICONS, GROUP_ICONS, GROUP_NAMES } from '../groupIcons';
+import { maxFilletRadius } from '../../scene/edgeProfile';
 import { MAX_SEGMENTS, MIN_SEGMENTS, MIN_SPHERE_SEGMENTS, SEGMENT_PRESETS } from '../../scene/defaults';
 import { BED_SIZE } from '../../scene/types';
-import type { GroupNode, MeshNode, PrimitiveNode, SceneNode, Shape2DNode, Vec3 } from '../../scene/types';
+import type { EdgeNode, GroupNode, MeshNode, PrimitiveNode, SceneNode, Shape2DNode, Vec3 } from '../../scene/types';
 import { NumberField } from '../NumberField/NumberField';
 import { SliderField } from '../SliderField/SliderField';
 import { TIPS } from './tooltips';
@@ -43,7 +44,7 @@ export function PropertiesPanel() {
   if (selection.length === 0) return <p className="properties__empty">Seleziona un oggetto per modificarne le proprietà.</p>;
   if (!node) return <p className="properties__empty">{selection.length} oggetti selezionati. Ctrl+G li raggruppa (restano separati), U li unisce in un solo solido.</p>;
 
-  const patch = (p: Partial<PrimitiveNode> | Partial<Shape2DNode> | Partial<MeshNode> | Partial<GroupNode>) => updateNode(node.id, p);
+  const patch = (p: Partial<PrimitiveNode> | Partial<Shape2DNode> | Partial<MeshNode> | Partial<GroupNode> | Partial<EdgeNode>) => updateNode(node.id, p);
   const setVec = (key: 'position' | 'rotation', i: number, v: number) => {
     const next = [...node[key]] as Vec3;
     next[i] = v;
@@ -53,22 +54,32 @@ export function PropertiesPanel() {
   return (
     <div className="properties">
       <Section
-        title={node.type === 'group' ? GROUP_NAMES[node.op] : 'Oggetto'}
-        icon={node.type === 'group' ? (() => { const Icon = GROUP_ICONS[node.op]; return <Icon size={14} className="properties__section-icon" aria-hidden="true" />; })() : undefined}
+        title={node.type === 'group' ? GROUP_NAMES[node.op] : node.type === 'edge' ? (node.treatment === 'fillet' ? 'Raccordo' : 'Smusso') : 'Oggetto'}
+        icon={
+          node.type === 'group' || node.type === 'edge'
+            ? (() => {
+                const Icon = node.type === 'group' ? GROUP_ICONS[node.op] : EDGE_ICONS[node.treatment];
+                return <Icon size={14} className="properties__section-icon" aria-hidden="true" />;
+              })()
+            : undefined
+        }
       >
         <label className="properties__row">
           <span className="properties__label">Nome</span>
           <input className="properties__text" value={node.name} onChange={(e) => patch({ name: e.target.value })} />
         </label>
-        <label className="properties__row">
-          <span className="properties__label">Colore</span>
-          <input className="properties__color" type="color" value={node.color} onChange={(e) => patch({ color: e.target.value })} />
-        </label>
+        {node.type !== 'edge' && (
+          <label className="properties__row">
+            <span className="properties__label">Colore</span>
+            <input className="properties__color" type="color" value={node.color} onChange={(e) => patch({ color: e.target.value })} />
+          </label>
+        )}
         <label className="properties__row">
           <span className="properties__label">Blocco</span>
           <input type="checkbox" className="properties__checkbox" checked={!!node.locked} onChange={(e) => patch({ locked: e.target.checked })} />
           <span className="properties__hint">{locked && !node.locked ? 'Bloccato dal gruppo' : 'Impedisce spostamenti e modifiche'}</span>
         </label>
+        {node.type !== 'edge' && (
         <div className="properties__row">
           <span className="properties__label">Tipo</span>
           <div className="properties__segmented" role="group" aria-label="Solido o foro">
@@ -87,6 +98,7 @@ export function PropertiesPanel() {
             ))}
           </div>
         </div>
+        )}
         {isAppGroup(node) && <p className="properties__note">Gli oggetti restano separati (colori e codice propri) e si muovono insieme. Per fonderli in un solo solido usa Unisci (U).</p>}
         {node.type === 'group' && node.op !== 'group' && (
           <div className="properties__row">
@@ -111,6 +123,8 @@ export function PropertiesPanel() {
         )}
       </Section>
 
+      {node.type !== 'edge' && (
+      <>
       <Section title={inGroup ? 'Posizione (relativa al gruppo)' : 'Posizione'}>
         {AXES.map((a, i) => (
           <SliderField
@@ -143,6 +157,10 @@ export function PropertiesPanel() {
         ))}
       </Section>
 
+      </>
+      )}
+
+      {node.type === 'edge' && <EdgeFields node={node} patch={patch} locked={locked} />}
       {node.type === 'primitive' && <PrimitiveFields node={node} patch={patch} locked={locked} />}
       {node.type === 'mesh' && (
         <Section title="Mesh importata">
@@ -159,6 +177,62 @@ export function PropertiesPanel() {
       )}
       {node.type === 'shape2d' && <Shape2DFields node={node} patch={patch} locked={locked} />}
     </div>
+  );
+}
+
+/** Misure di un raccordo o di uno smusso già creato: stesse del pannello dello strumento, modificabili dal vivo. */
+function EdgeFields({ node, patch, locked }: { node: EdgeNode; patch: (p: Partial<EdgeNode>) => void; locked: boolean }) {
+  const limit = (max: number) => Math.max(0.2, Math.round(max * 100) / 100);
+  return (
+    <Section title="Misure">
+      <p className="properties__note">
+        {node.convex ? 'Spigolo convesso' : 'Spigolo concavo'}, apertura {Math.round(node.angle * 10) / 10}°, lunghezza {Math.round(node.length * 100) / 100} mm.
+      </p>
+      {node.treatment === 'fillet' ? (
+        <SliderField
+          label="Raggio"
+          unit="mm"
+          min={0.1}
+          max={limit(maxFilletRadius(node))}
+          step={0.1}
+          hardMin={0.01}
+          hardMax={limit(maxFilletRadius(node))}
+          tooltip="Raggio del raccordo, in mm. Il massimo dipende dalla larghezza delle due superfici."
+          disabled={locked}
+          value={node.radius}
+          onCommit={(v) => patch({ radius: v })}
+        />
+      ) : (
+        <>
+          <SliderField
+            label="Distanza 1"
+            unit="mm"
+            min={0.1}
+            max={limit(node.reach)}
+            step={0.1}
+            hardMin={0.01}
+            hardMax={limit(node.reach)}
+            tooltip="Distanza dello smusso dallo spigolo lungo la prima superficie, in mm."
+            disabled={locked}
+            value={node.distance1}
+            onCommit={(v) => patch({ distance1: v })}
+          />
+          <SliderField
+            label="Distanza 2"
+            unit="mm"
+            min={0.1}
+            max={limit(node.reach)}
+            step={0.1}
+            hardMin={0.01}
+            hardMax={limit(node.reach)}
+            tooltip="Distanza dello smusso dallo spigolo lungo la seconda superficie, in mm."
+            disabled={locked}
+            value={node.distance2}
+            onCommit={(v) => patch({ distance2: v })}
+          />
+        </>
+      )}
+    </Section>
   );
 }
 

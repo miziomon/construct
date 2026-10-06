@@ -112,3 +112,26 @@ concavo, slider del raggio con anteprima dal vivo, evidenziazione delle facce so
 | **Totale** | **circa 8-9** |
 
 **Raccomandazione: procedere** con questo primo prodotto, in una versione dedicata.
+
+## Esito dell'implementazione (versione 0.8.0)
+
+Raccordo (tasto F) e Smusso (tasto S) sono nell'app, con il pannello delle opzioni come in Fusion 360.
+
+- **Dati:** un nodo `edge` (il taglierino) dentro un gruppo Differenza (spigolo convesso) o Unione (concavo) con il pezzo. Più
+  raccordi si annidano.
+- **Facce:** `faceID` di manifold non basta (si ripete tra forme sorgenti dopo una booleana: la L ha 8 facce piane e 11
+  chiavi). Le facce si ricavano nel thread principale con un riempimento di triangoli complanari adiacenti.
+- **Estremità oblique:** il taglierino si ritaglia con `trimByPlane` nel kernel e con `intersection()` e `multmatrix` nel codice.
+- **Codice OpenSCAD:** un comando per riga, senza `polyhedron` né `minkowski`. Il codice generato è stato reso con OpenSCAD
+  2025.11.30 (backend Manifold) e confrontato con il kernel:
+
+| Caso | OpenSCAD (mm³) | Kernel (mm³) | Scarto |
+|---|---|---|---|
+| Raccordo su un cubo (r = 3) | 7961,148 | 7961,145 | +0,003 |
+| Smusso su un cubo (d = 3) | 7940,001 | 7940,000 | +0,001 |
+| Raccordo concavo su una L | 20038,852 | 20038,855 | −0,003 |
+| Raccordo con estremità oblique | 7961,148 | 7961,145 | +0,003 |
+
+- **Limiti rimasti:** facce piane e spigoli rettilinei; angoli con tre raccordi, raggio variabile e catene di spigoli tangenti
+  non sono supportati; se il pezzo cambia dopo il raccordo, il taglierino non si ricalcola da solo (si modifica a mano
+  dalle proprietà).

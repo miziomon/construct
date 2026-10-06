@@ -2,14 +2,27 @@ import { useEffect } from 'react';
 import { useSceneStore } from '../scene/store';
 import { useUiStore } from '../ui/uiStore';
 import { dropSelectionToBed } from '../kernel/placement';
+import { useEdgeTool } from '../ui/EdgeTool/edgeToolStore';
 
 const isTyping = (t: EventTarget | null) => t instanceof HTMLElement && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
 
 /** Scorciatoie da tastiera globali. Sono ignorate mentre si scrive in un campo. */
+/** Avvia Raccordo o Smusso (la tastiera F e S). */
+const edgeStart = (kind: 'fillet' | 'chamfer') => useEdgeTool.getState().start(kind);
+
 export function useShortcuts(): void {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (isTyping(e.target)) return;
+      // Raccordo e Smusso: Esc annulla, Invio conferma, F e S chiudono lo strumento; il resto è ignorato
+      const edge = useEdgeTool.getState();
+      if (edge.tool) {
+        const k = e.key.toLowerCase();
+        if (e.key === 'Escape' || (!e.ctrlKey && !e.metaKey && ((k === 'f' && edge.tool === 'fillet') || (k === 's' && edge.tool === 'chamfer')))) edge.cancel();
+        else if (e.key === 'Enter') edge.commit();
+        else if (!e.ctrlKey && !e.metaKey && (k === 'f' || k === 's')) edge.start(k === 'f' ? 'fillet' : 'chamfer');
+        return;
+      }
       // Con una modale aperta le scorciatoie dell'editor (Canc, G, ...) non devono agire sulla scena:
       // restano solo quelle che chiudono la modale del codice (C e Ctrl+J)
       if (document.querySelector('dialog[open]')) {
@@ -43,6 +56,8 @@ export function useShortcuts(): void {
       else if (!mod && key === 'b') dropSelectionToBed();
       else if (!mod && key === 'p') useUiStore.getState().cycleBed();
       else if (!mod && key === 'u') s.unionSelected();
+      else if (!mod && key === 'f' && s.scene.rootIds.length) edgeStart('fillet');
+      else if (!mod && key === 's' && s.scene.rootIds.length) edgeStart('chamfer');
       else if (key === 'f2') {
         // Rinomina l'oggetto selezionato nell'elenco oggetti
         e.preventDefault();

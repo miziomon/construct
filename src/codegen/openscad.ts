@@ -1,6 +1,7 @@
-import type { GroupNode, MeshNode, PrimitiveNode, Scene, SceneNode, Shape2DNode, Vec3 } from '../scene/types';
+import type { EdgeNode, GroupNode, MeshNode, PrimitiveNode, Scene, SceneNode, Shape2DNode, Vec3 } from '../scene/types';
 import { composeTransform, round } from '../scene/math';
 import { CORNER_SPHERE_SEGMENTS, twistDivisions } from '../scene/defaults';
+import { edgeProfile, endMargin, endPlanesOf, halfSpaceMatrix, hasPerpendicularEnds } from '../scene/edgeProfile';
 import { stretchFactors } from '../scene/ellipse';
 import { maxPolyhedronRadius, polygonMaxRadius, polygonShrunkRadius, polyhedronVertices, roundedPolyhedronCenters } from '../scene/polyhedra';
 
@@ -121,12 +122,50 @@ function meshLines(p: MeshNode): string[] {
   return [...(p.scale === 1 ? [] : [`scale(${n(p.scale)})`]), `translate(${vec(p.origin.map((v) => -v))})`, `import("${file}");`];
 }
 
+/** Semispazio grande a sufficienza per ritagliare il taglierino (mm). */
+const HALF_SPACE_SIZE = 1000;
+
+/** Numero con più decimali, per le matrici dei piani di chiusura (un errore di 1e-4 sull'orientamento sposterebbe il piano). */
+const fine = (v: number) => String(round(v, 6));
+
+/**
+ * Taglierino di un raccordo o di uno smusso: sezione 2D estrusa lungo lo spigolo (Z locale). Con le estremità
+ * perpendicolari basta l'estrusione; con un piano di chiusura obliquo si estrude più lungo e si interseca con i
+ * semispazi (equivalente di trimByPlane del kernel).
+ */
+function edgeLines(p: EdgeNode): string[] {
+  const profile = edgeProfile(p);
+  const polygon = `polygon([${profile.polygon.map(vec).join(', ')}]);`;
+  const section = profile.circle
+    ? ['difference() {', `${IND}polygon([${profile.polygon.map(vec).join(', ')}]);`, `${IND}translate(${vec(profile.circle.center)})`, `${IND}circle(r = ${n(profile.circle.radius)}, $fn = ${profile.circle.segments});`, '}']
+    : [polygon];
+
+  if (hasPerpendicularEnds(p)) return [`linear_extrude(height = ${n(p.length)})`, ...section];
+
+  const margin = endMargin(p);
+  const half = HALF_SPACE_SIZE;
+  const spaces = endPlanesOf(p).flatMap((plane) => [
+    `multmatrix([${halfSpaceMatrix(plane).map((row) => `[${row.map(fine).join(', ')}]`).join(', ')}])`,
+    `translate([${-half}, ${-half}, ${-2 * half}])`,
+    `cube(${2 * half});`,
+  ]);
+  return [
+    'intersection() {',
+    `${IND}translate([0, 0, ${n(-margin)}])`,
+    `${IND}linear_extrude(height = ${n(p.length + 2 * margin)})`,
+    ...section.map((l) => `${IND}${l}`),
+    ...spaces.map((l) => `${IND}${l}`),
+    '}',
+  ];
+}
+
 /** Modificatori di posizione e colore di un nodo, uno per riga. Gli hole non hanno colore (verranno sottratti). */
 function transformLines(node: SceneNode): string[] {
   // OpenSCAD applica le trasformazioni da destra verso sinistra: translate esterno, rotate interno
   const lines = [`translate(${vec(node.position)})`];
   if (node.rotation.some((v) => v !== 0)) lines.push(`rotate(${vec(node.rotation)})`);
-  if (node.mode === 'solid') lines.push(`color(${rgb(node.color)})`);
+  // Il taglierino di un raccordo non si vede: non ha colore
+  if (node.mode === 'solid' && node.type !== 'edge') lines.push(`color(${rgb(node.color)})`);
   return lines;
 }
 
@@ -161,7 +200,7 @@ function nodeLines(scene: Scene, node: SceneNode, depth: number, inherited: Inhe
     out.push(...groupLines(scene, node, head, depth));
     return out;
   }
-  const body = node.type === 'primitive' ? primitiveLines(node) : node.type === 'shape2d' ? shape2dLines(node) : meshLines(node);
+  const body = node.type === 'primitive' ? primitiveLines(node) : node.type === 'shape2d' ? shape2dLines(node) : node.type === 'edge' ? edgeLines(node) : meshLines(node);
   out.push(...head, ...body.map((l) => `${pad}${l}`));
   return out;
 }

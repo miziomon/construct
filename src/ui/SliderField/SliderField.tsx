@@ -18,13 +18,15 @@ interface Props {
   hardMax?: number;
   unit?: string;
   disabled?: boolean;
+  /** Falso quando la cronologia di Annulla è già gestita da chi usa lo slider (anteprime di Raccordo e Smusso): niente pausa né ripresa. */
+  history?: boolean;
 }
 
 /**
  * Slider con campo numerico accanto. Trascinando lo slider la scena si aggiorna dal vivo,
  * ma tutto il trascinamento vale un solo passo di Annulla (Ctrl+Z).
  */
-export function SliderField({ label, value, onCommit, tooltip, min, max, step = 1, hardMin, hardMax, unit, disabled }: Props) {
+export function SliderField({ label, value, onCommit, tooltip, min, max, step = 1, hardMin, hardMax, unit, disabled, history: trackHistory = true }: Props) {
   // Valore prima del trascinamento e ultimo valore raggiunto (null = nessun trascinamento in corso)
   const drag = useRef<{ start: number; last: number } | null>(null);
 
@@ -59,6 +61,7 @@ export function SliderField({ label, value, onCommit, tooltip, min, max, step = 
         // Fuori range lo slider resta al limite più vicino
         value={Math.min(max, Math.max(min, value))}
         onPointerDown={() => {
+          if (!trackHistory) return;
           drag.current = { start: value, last: value };
           useSceneStore.temporal.getState().pause();
         }}

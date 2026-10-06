@@ -1,4 +1,4 @@
-import { Group, SquaresIntersect, SquaresSubtract, SquaresUnite } from 'lucide-react';
+import { Group, SquareRoundCorner, SquaresIntersect, SquaresSubtract, SquaresUnite, TriangleRight } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { GroupOp } from '../scene/types';
 
@@ -17,3 +17,6 @@ export const GROUP_NAMES: Record<GroupOp, string> = {
   difference: 'Differenza',
   intersection: 'Intersezione',
 };
+
+/** Icona di un raccordo e di uno smusso: si usa nei pulsanti della barra, nell'elenco oggetti e nella sidebar. */
+export const EDGE_ICONS: Record<'fillet' | 'chamfer', LucideIcon> = { fillet: SquareRoundCorner, chamfer: TriangleRight };

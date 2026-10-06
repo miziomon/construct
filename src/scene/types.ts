@@ -98,7 +98,40 @@ export type GroupNode = BaseNode & {
   children: string[];
 };
 
-export type SceneNode = PrimitiveNode | Shape2DNode | MeshNode | GroupNode;
+/** Piano di chiusura di un taglierino: si tiene la parte con normale·p ≤ offset, nel sistema locale del taglierino. */
+export interface EndPlane {
+  normal: Vec3;
+  offset: number;
+}
+
+/**
+ * Taglierino di un raccordo o di uno smusso: prisma che segue uno spigolo tra due facce piane. Nel suo sistema locale
+ * l'asse Z corre lungo lo spigolo (da 0 a `length`), l'asse X lungo la bisettrice verso l'interno dell'angolo tra le facce
+ * e l'apice del profilo sta nell'origine. Sta sempre in un gruppo con il pezzo: Differenza se lo spigolo è convesso
+ * (toglie materiale), Unione se è concavo (ne aggiunge).
+ */
+export type EdgeNode = BaseNode & {
+  type: 'edge';
+  treatment: 'fillet' | 'chamfer';
+  /** Spigolo convesso (il taglierino toglie) o concavo (aggiunge). */
+  convex: boolean;
+  /** Apertura tra le due facce in gradi: nel materiale se convesso, nell'aria se concavo. */
+  angle: number;
+  /** Lunghezza dello spigolo in mm. */
+  length: number;
+  /** Raggio del raccordo in mm. */
+  radius: number;
+  /** Smusso: distanza lungo la prima faccia in mm. */
+  distance1: number;
+  /** Smusso: distanza lungo la seconda faccia in mm. */
+  distance2: number;
+  /** Larghezza minima delle due facce, perpendicolare allo spigolo: limite massimo delle misure. */
+  reach: number;
+  /** Piani che chiudono le due estremità (null = perpendicolari allo spigolo, a Z = 0 e Z = length). */
+  ends: [EndPlane | null, EndPlane | null];
+};
+
+export type SceneNode = PrimitiveNode | Shape2DNode | MeshNode | GroupNode | EdgeNode;
 
 export interface Scene {
   nodes: Record<string, SceneNode>;

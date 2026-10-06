@@ -8,6 +8,9 @@ import { Bed } from './Bed';
 import { useViewportPalette } from './palette';
 import { SceneObject } from './SceneObject';
 import { SelectionActions } from '../ui/SelectionActions/SelectionActions';
+import { EdgeToolPanel } from '../ui/EdgeTool/EdgeToolPanel';
+import { useEdgeTool } from '../ui/EdgeTool/edgeToolStore';
+import { EdgeToolOverlay } from './EdgeToolOverlay';
 import './Viewport.scss';
 
 // Asse Z verso l'alto come negli slicer: va impostato prima della creazione di camera e controlli
@@ -38,19 +41,22 @@ export function Viewport() {
   }, [meshes]);
 
   // Gizmo solo fuori dalla modalità Seleziona, con un oggetto selezionato, alla radice e non bloccato
+  const edgeToolActive = useEdgeTool((s) => s.tool !== null);
   const gizmoId =
-    gizmoMode !== 'select' && selection.length === 1 && rootIds.includes(selection[0]) && !isLocked(scene, selection[0]) ? selection[0] : undefined;
+    !edgeToolActive && gizmoMode !== 'select' && selection.length === 1 && rootIds.includes(selection[0]) && !isLocked(scene, selection[0]) ? selection[0] : undefined;
 
   return (
     <div className="viewport">
       <SelectionActions />
+      <EdgeToolPanel />
       <Canvas
         // Il rendering parte solo quando serve (movimenti, modifiche): meno consumo di CPU/GPU
         frameloop="demand"
         camera={{ position: [210, -260, 190], fov: 38, near: 1, far: 6000 }}
         gl={{ antialias: true }}
         // Click nel vuoto: deseleziona
-        onPointerMissed={(e) => e.button === 0 && select([])}
+        // (con Raccordo o Smusso attivi un clic nel vuoto non deve toccare la selezione)
+        onPointerMissed={(e) => e.button === 0 && !edgeToolActive && select([])}
       >
         <color attach="background" args={[palette.background]} />
         {/* Luci semplici, senza mappe ambiente da scaricare: l'app resta utilizzabile offline */}
@@ -60,6 +66,7 @@ export function Viewport() {
 
         {import.meta.env.MODE === 'e2e' && <E2EBridge />}
         <Bed />
+        <EdgeToolOverlay />
         {[...meshesByRoot].map(([rootId, parts]) => (
           <SceneObject key={rootId} rootId={rootId} meshes={parts} selection={selection} locked={isLocked(scene, rootId)} showGizmo={rootId === gizmoId} />
         ))}

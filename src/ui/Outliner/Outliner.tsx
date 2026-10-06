@@ -3,7 +3,7 @@ import { ChevronDown, ChevronRight, CircleDashed, GripVertical, Lock, Package } 
 import { isLocked, useSceneStore } from '../../scene/store';
 import { useUiStore } from '../uiStore';
 import { PRIMITIVE_ICONS, SHAPE2D_ICONS } from '../ShapeLibrary/ShapeLibrary';
-import { GROUP_ICONS, GROUP_NAMES } from '../groupIcons';
+import { EDGE_ICONS, GROUP_ICONS, GROUP_NAMES } from '../groupIcons';
 import { dropTarget, zoneAt, type DropZone } from './dnd';
 import './Outliner.scss';
 
@@ -79,8 +79,17 @@ function Row({ id, depth, collapsed, toggle, hint, setHint }: RowProps) {
 
   const isGroup = node.type === 'group';
   const isOpen = isGroup && !collapsed.has(id);
-  const Icon = node.type === 'group' ? GROUP_ICONS[node.op] : node.type === 'mesh' ? Package : node.type === 'shape2d' ? SHAPE2D_ICONS[node.kind] : PRIMITIVE_ICONS[node.kind];
-  const kindLabel = node.type === 'group' ? GROUP_NAMES[node.op] : undefined;
+  const Icon =
+    node.type === 'group'
+      ? GROUP_ICONS[node.op]
+      : node.type === 'mesh'
+        ? Package
+        : node.type === 'edge'
+          ? EDGE_ICONS[node.treatment]
+          : node.type === 'shape2d'
+            ? SHAPE2D_ICONS[node.kind]
+            : PRIMITIVE_ICONS[node.kind];
+  const kindLabel = node.type === 'group' ? GROUP_NAMES[node.op] : node.type === 'edge' ? (node.treatment === 'fillet' ? 'Raccordo' : 'Smusso') : undefined;
   const dropHere = hint?.id === id ? hint.zone : null;
   const cls = [
     'outliner__row',

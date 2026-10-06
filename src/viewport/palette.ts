@@ -17,6 +17,9 @@ export interface ViewportPalette {
   selectionLocked: string;
   /** Colore delle lettere X, Y, Z nel cubo degli assi. */
   axisLabel: string;
+  /** Evidenziazione di Raccordo e Smusso: faccia sotto il puntatore e facce scelte. */
+  faceHover: string;
+  facePick: string;
 }
 
 export const PALETTES: Record<Theme, ViewportPalette> = {
@@ -31,6 +34,8 @@ export const PALETTES: Record<Theme, ViewportPalette> = {
     selection: '#1e2433',
     selectionLocked: '#a86400',
     axisLabel: '#ffffff',
+    faceHover: '#6f9bff',
+    facePick: '#2f5fc7',
   },
   dark: {
     background: '#14171c',
@@ -43,6 +48,8 @@ export const PALETTES: Record<Theme, ViewportPalette> = {
     selection: '#ffffff',
     selectionLocked: '#f0b429',
     axisLabel: '#14171c',
+    faceHover: '#7fb7ff',
+    facePick: '#ffb020',
   },
 };
 

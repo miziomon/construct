@@ -1,0 +1,170 @@
+@use '../../styles/abstracts' as *;
+
+// Mentre si scelgono le facce il puntatore sulla vista 3D è una croce
+body[data-edge-tool] canvas {
+  cursor: crosshair;
+}
+
+.edge-panel {
+  position: absolute;
+  top: $space-3;
+  right: $space-3;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: $space-3;
+  width: 320px;
+  padding: $space-3;
+  border: 1px solid color('border');
+  border-radius: $radius-lg;
+  background: color('panel');
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+
+  &__title {
+    display: flex;
+    align-items: center;
+    gap: $space-2;
+    margin: 0;
+    font-size: 14px;
+    font-weight: 700;
+    color: color('accent');
+  }
+
+  &__section {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-top: $space-3;
+    border-top: 1px solid color('border');
+  }
+
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: $space-2;
+    min-height: 28px;
+  }
+
+  &__label {
+    flex: none;
+    width: 76px;
+    font-size: 12px;
+    color: color('text-muted');
+  }
+
+  &__value {
+    font-size: 12px;
+  }
+
+  &__chip {
+    padding: 2px $space-2;
+    border: 1px solid color('border');
+    border-radius: $radius-sm;
+    font-size: 11px;
+    color: color('text-muted');
+
+    &--chosen {
+      border-color: color('accent');
+      background: color('accent-soft');
+      color: color('accent');
+      font-weight: 600;
+    }
+  }
+
+  &__hint,
+  &__info {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.4;
+    color: color('text-muted');
+  }
+
+  &__error {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.4;
+    color: color('danger');
+  }
+
+  &__segmented {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+    border: 1px solid color('border');
+    border-radius: $radius-sm;
+
+    button {
+      flex: 1;
+      padding: 4px 2px;
+      border: 0;
+      background: color('bg');
+      font-size: 11px;
+      @include focus-ring;
+
+      &.is-active {
+        background: color('accent-soft');
+        color: color('accent');
+        font-weight: 600;
+      }
+
+      & + button {
+        border-left: 1px solid color('border');
+      }
+    }
+  }
+
+  &__actions {
+    display: flex;
+    align-items: center;
+    gap: $space-2;
+    padding-top: $space-3;
+    border-top: 1px solid color('border');
+  }
+
+  &__spacer {
+    flex: 1;
+  }
+
+  &__link {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    font-size: 12px;
+    color: color('accent');
+    text-decoration: underline;
+    @include focus-ring;
+
+    &:disabled {
+      opacity: 0.4;
+      text-decoration: none;
+      cursor: default;
+    }
+  }
+
+  &__button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px $space-4;
+    border: 1px solid color('border');
+    border-radius: $radius-sm;
+    background: color('panel-raised');
+    @include focus-ring;
+
+    &:hover:not(:disabled) {
+      border-color: color('accent');
+    }
+
+    &:disabled {
+      opacity: 0.4;
+      cursor: default;
+    }
+
+    &--primary {
+      border-color: color('accent-strong');
+      background: color('accent-strong');
+      color: #fff;
+      font-weight: 600;
+    }
+  }
+}

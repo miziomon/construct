@@ -1,8 +1,9 @@
 import type { Manifold, ManifoldToplevel } from 'manifold-3d';
 import { CORNER_SPHERE_SEGMENTS, twistDivisions } from '../scene/defaults';
+import { edgeProfile, endMargin, endPlanesOf, hasPerpendicularEnds } from '../scene/edgeProfile';
 import { stretchFactors } from '../scene/ellipse';
 import { maxPolyhedronRadius, polygonMaxRadius, polygonShrunkRadius, polyhedronVertices, roundedPolyhedronCenters } from '../scene/polyhedra';
-import type { MeshNode, PrimitiveNode, Scene, SceneNode, Shape2DNode, Vec3 } from '../scene/types';
+import type { EdgeNode, MeshNode, PrimitiveNode, Scene, SceneNode, Shape2DNode, Vec3 } from '../scene/types';
 
 /** Risultato del calcolo per un oggetto (mesh in mm, Z verso l'alto). Un Raggruppa produce una mesh per ogni figlio. */
 export interface NodeMesh {
@@ -178,6 +179,41 @@ export class Evaluator {
     return base.scale([s, s, s]);
   }
 
+  /**
+   * Taglierino di un raccordo o di uno smusso: sezione 2D (triangolo, meno il cerchio per il raccordo) estrusa lungo Z
+   * da 0 alla lunghezza dello spigolo. Con le estremità oblique si estrude più a lungo e si ritaglia con i piani.
+   */
+  private edgeCutter(p: EdgeNode): Manifold {
+    const { Manifold, CrossSection } = this.wasm;
+    const profile = edgeProfile(p);
+    let section = new CrossSection([profile.polygon]);
+    if (profile.circle) {
+      const disc = CrossSection.circle(profile.circle.radius, profile.circle.segments).translate(profile.circle.center);
+      const cut = section.subtract(disc);
+      section.delete();
+      disc.delete();
+      section = cut;
+    }
+    const length = Math.max(EPS, p.length);
+    if (hasPerpendicularEnds(p)) {
+      const prism = Manifold.extrude(section, length);
+      section.delete();
+      return prism;
+    }
+    const margin = endMargin(p);
+    const long = Manifold.extrude(section, length + 2 * margin);
+    section.delete();
+    let prism = long.translate([0, 0, -margin]);
+    long.delete();
+    for (const plane of endPlanesOf(p)) {
+      // trimByPlane tiene il lato verso cui punta la normale: per tenere normale·p ≤ offset si inverte
+      const trimmed = prism.trimByPlane([-plane.normal[0], -plane.normal[1], -plane.normal[2]], -plane.offset);
+      prism.delete();
+      prism = trimmed;
+    }
+    return prism;
+  }
+
   /** Forma 2D estrusa lungo Z, centrata nell'origine. */
   private shape2d(p: Shape2DNode): Manifold {
     const { Manifold, CrossSection } = this.wasm;
@@ -237,6 +273,8 @@ export class Evaluator {
       local = this.shape2d(node);
     } else if (node.type === 'mesh') {
       local = this.meshNode(node);
+    } else if (node.type === 'edge') {
+      local = this.edgeCutter(node);
     } else {
       // Gruppo: solid combinati con union/intersection, poi si sottrae l'unione degli hole
       const kids = node.children.map((c) => scene.nodes[c]);
