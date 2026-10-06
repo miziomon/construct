@@ -2,11 +2,15 @@ import type { PrimitiveKind, PrimitiveNode, Shape2DKind, Shape2DNode } from './t
 
 /** Etichette italiane delle primitive, usate in libreria e outliner. */
 export const PRIMITIVE_LABELS: Record<PrimitiveKind, string> = {
-  box: 'Scatola',
+  box: 'Cubo',
   cylinder: 'Cilindro',
   cone: 'Cono',
   sphere: 'Sfera',
   torus: 'Toro',
+  octahedron: 'Ottaedro',
+  decahedron: 'Decaedro',
+  dodecahedron: 'Dodecaedro',
+  icosahedron: 'Icosaedro',
 };
 
 /** Numero di segmenti predefinito per le curve (TinkerCAD si ferma a 64, qui si arriva a 256). */
@@ -24,8 +28,7 @@ export const SEGMENT_PRESETS: { value: number; label: string; title: string }[] 
   { value: 5, label: '5', title: 'Pentagono' },
   { value: 6, label: '6', title: 'Esagono' },
   { value: 8, label: '8', title: 'Ottagono' },
-  { value: 16, label: '16', title: '16 lati' },
-  { value: 64, label: '64', title: 'Quasi liscio' },
+  { value: 12, label: '12', title: 'Dodecagono' },
 ];
 
 /** Segmenti delle sfere agli angoli di una scatola arrotondata. */
@@ -55,6 +58,11 @@ export function halfHeight(p: PrimitiveNode | Shape2DNode): number {
     case 'cone': return p.height / 2;
     case 'sphere': return p.radius;
     case 'torus': return p.minorRadius;
+    // I solidi dei dadi poggiano su una faccia: la metà della distanza tra facce opposte
+    case 'octahedron':
+    case 'decahedron':
+    case 'dodecahedron':
+    case 'icosahedron': return p.size / 2;
   }
 }
 
@@ -70,6 +78,10 @@ export function primitiveDefaults(kind: PrimitiveKind): DistributiveOmit<Primiti
     case 'cone': return { ...base, kind, radiusBottom: 10, radiusTop: 0, height: 20, segments: DEFAULT_SEGMENTS };
     case 'sphere': return { ...base, kind, radius: 10, segments: DEFAULT_SEGMENTS };
     case 'torus': return { ...base, kind, majorRadius: 12, minorRadius: 4, segments: DEFAULT_SEGMENTS };
+    case 'octahedron':
+    case 'decahedron':
+    case 'dodecahedron':
+    case 'icosahedron': return { ...base, kind, size: 20, cornerRadius: 0 };
   }
 }
 
@@ -85,7 +97,7 @@ export function shape2dDefaults(kind: Shape2DKind): DistributiveOmit<Shape2DNode
     scaleTop: 1,
   };
   switch (kind) {
-    case 'circle': return { ...base, kind, radius: 10, segments: DEFAULT_SEGMENTS };
+    case 'circle': return { ...base, kind, radius: 10, segments: DEFAULT_SEGMENTS, cornerRadius: 0 };
     case 'square': return { ...base, kind, width: 20, depth: 20, cornerRadius: 0 };
   }
 }

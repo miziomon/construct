@@ -1,0 +1,29 @@
+/** Spiegazioni dei controlli della sidebar destra: cosa sono e cosa fanno. Mostrate come tooltip. */
+export const TIPS = {
+  posX: 'Posizione X: sposta l\'oggetto a sinistra (valori negativi) o a destra (positivi) sul piatto, in mm. 0 è il centro del piatto.',
+  posY: 'Posizione Y: sposta l\'oggetto verso il fronte (valori negativi) o verso il retro (positivi) del piatto, in mm.',
+  posZ: 'Posizione Z: altezza del centro dell\'oggetto rispetto al piatto, in mm. Per appoggiarlo sul piatto usa il tasto B.',
+  rotX: 'Rotazione X: ruota l\'oggetto attorno all\'asse X (da sinistra a destra), in gradi. Si applica prima di Y e Z.',
+  rotY: 'Rotazione Y: ruota l\'oggetto attorno all\'asse Y (dal fronte al retro), in gradi.',
+  rotZ: 'Rotazione Z: fa girare l\'oggetto su se stesso, come sul piatto di un giradischi, in gradi.',
+
+  boxSizeX: 'Larghezza: dimensione del cubo lungo X, in mm.',
+  boxSizeY: 'Profondità: dimensione del cubo lungo Y, in mm.',
+  boxSizeZ: 'Altezza: dimensione del cubo lungo Z, in mm.',
+  rounding: 'Raccordo: raggio con cui si arrotondano spigoli e angoli, in mm. 0 lascia gli spigoli vivi. Il massimo dipende dalla forma.',
+  radius: 'Raggio: distanza dal centro al bordo della forma, in mm. Il diametro è il doppio.',
+  radiusBottom: 'Raggio inferiore: raggio della base del cono, in mm.',
+  radiusTop: 'Raggio superiore: raggio della cima del cono, in mm. A 0 diventa una punta.',
+  height: 'Altezza: quanto la forma è alta lungo Z, in mm.',
+  majorRadius: 'Raggio del toro: distanza dal centro del toro al centro del suo tubo, in mm.',
+  minorRadius: 'Raggio del tubo: spessore del tubo del toro, in mm.',
+  polySize: 'Dimensione: distanza tra due facce opposte, in mm. È la misura che si usa per i dadi.',
+
+  width: 'Larghezza: dimensione del profilo 2D lungo X, in mm.',
+  depth: 'Profondità: dimensione del profilo 2D lungo Y, in mm.',
+  extrudeHeight: 'Altezza dell\'estrusione: quanto il profilo 2D cresce verso l\'alto, in mm.',
+  twist: 'Torsione: di quanti gradi la cima dell\'estrusione ruota rispetto alla base, per ottenere forme a spirale.',
+  scaleTop: 'Scala cima: dimensione della cima rispetto alla base, in %. 100 dà un prisma, 0 una punta (cono o piramide).',
+  segments: 'Segmenti: quanti lati ha la curva. Pochi lati danno un poligono, molti lati una forma liscia ma più pesante da calcolare.',
+  sides: 'Lati: numero di lati del poligono. 3 è un triangolo, 6 un esagono, 12 un dodecagono.',
+} as const;

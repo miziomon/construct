@@ -4,7 +4,7 @@ import { sceneFromJson, sceneToJson } from '../scene/persistence';
 import { addAsset } from '../import/assets';
 import { restoreAssets } from '../import/restore';
 import { sceneToOpenScad } from '../codegen/openscad';
-import { notify } from './notify/notifyStore';
+import { confirmDialog, notify } from './notify/notifyStore';
 
 /** Avvia il download di un file generato in memoria. */
 export function download(data: BlobPart, filename: string, type: string): void {
@@ -53,4 +53,10 @@ export function openProject(): void {
     }
   };
   input.click();
+}
+
+/** Svuota la scena; se non è vuota chiede conferma (l'azione resta annullabile con Ctrl+Z). */
+export async function newProject(): Promise<void> {
+  const hasObjects = scene().rootIds.length > 0;
+  if (!hasObjects || (await confirmDialog('Svuotare la scena? Potrai annullare con Ctrl+Z.', 'Svuota'))) useSceneStore.getState().clear();
 }

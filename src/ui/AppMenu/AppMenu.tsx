@@ -1,23 +1,98 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { FileBox, FileCode, FileDown, Info, Menu, Sparkles, Upload } from 'lucide-react';
+import { FileBox, FileCode, FileDown, FilePlus, FolderOpen, Info, Keyboard, Menu, Save, Sparkles, Upload } from 'lucide-react';
 import { useSceneStore } from '../../scene/store';
-import { export3mf, exportScad, exportStl } from '../fileActions';
+import { export3mf, exportScad, exportStl, newProject, openProject, saveProject } from '../fileActions';
 import { pickAndImport } from '../../import/importFile';
 import { Modal } from '../Modal/Modal';
 import changelogSource from '../../../CHANGELOG.md?raw';
 import { parseChangelog } from './changelog';
 import './AppMenu.scss';
 
-type Panel = 'import' | 'export' | 'news' | 'about';
+type Panel = 'import' | 'export' | 'shortcuts' | 'news' | 'about';
 
-const ITEMS: { panel: Panel; label: string; icon: ReactNode }[] = [
-  { panel: 'import', label: 'Importa', icon: <Upload size={16} /> },
-  { panel: 'export', label: 'Esporta', icon: <FileDown size={16} /> },
-  { panel: 'news', label: 'Novità', icon: <Sparkles size={16} /> },
-  { panel: 'about', label: 'About', icon: <Info size={16} /> },
+/** Voce del menu: apre una modale (panel) oppure esegue subito un'azione. */
+type Item = { label: string; icon: ReactNode; panel: Panel; action?: undefined } | { label: string; icon: ReactNode; action: () => void; panel?: undefined };
+
+/** Gruppi di voci, separati da una linea. */
+const GROUPS: Item[][] = [
+  [
+    { label: 'Nuovo progetto', icon: <FilePlus size={16} />, action: () => void newProject() },
+    { label: 'Apri progetto…', icon: <FolderOpen size={16} />, action: openProject },
+    { label: 'Salva progetto', icon: <Save size={16} />, action: saveProject },
+  ],
+  [
+    { panel: 'import', label: 'Importa', icon: <Upload size={16} /> },
+    { panel: 'export', label: 'Esporta', icon: <FileDown size={16} /> },
+  ],
+  [
+    { panel: 'shortcuts', label: 'Scorciatoie da tastiera', icon: <Keyboard size={16} /> },
+    { panel: 'news', label: 'Novità', icon: <Sparkles size={16} /> },
+    { panel: 'about', label: 'About', icon: <Info size={16} /> },
+  ],
 ];
 
-const TITLES: Record<Panel, string> = { import: 'Importa', export: 'Esporta', news: 'Novità', about: 'About' };
+const TITLES: Record<Panel, string> = { import: 'Importa', export: 'Esporta', shortcuts: 'Scorciatoie da tastiera', news: 'Novità', about: 'About' };
+
+/** Scorciatoie da tastiera (le stesse di src/hooks/useShortcuts.ts), raggruppate per argomento. */
+const SHORTCUTS: { title: string; rows: [string, string][] }[] = [
+  {
+    title: 'Strumenti',
+    rows: [
+      ['Q', 'Seleziona'],
+      ['W', 'Sposta'],
+      ['E', 'Ruota'],
+      ['R', 'Ridimensiona con il mouse'],
+      ['T', 'Estrudi forme 2D con il mouse'],
+    ],
+  },
+  {
+    title: 'Oggetti',
+    rows: [
+      ['Ctrl+D', 'Duplica'],
+      ['Ctrl+G', 'Raggruppa'],
+      ['Ctrl+Maiusc+G', 'Separa il gruppo'],
+      ['H', 'Solido / Foro'],
+      ['L', 'Blocca / Sblocca'],
+      ['B', 'Appoggia sul piatto'],
+      ['Canc', 'Elimina'],
+      ['Frecce', 'Sposta di 1 mm (Maiusc: 10 mm; Ctrl+Su/Giù: asse Z)'],
+    ],
+  },
+  {
+    title: 'Generale',
+    rows: [
+      ['Ctrl+Z', 'Annulla'],
+      ['Ctrl+Y', 'Ripeti'],
+      ['Ctrl+J', 'Mostra o nasconde il codice OpenSCAD'],
+      ['Maiusc', 'Durante il trascinamento nella vista 3D: disattiva lo snap'],
+    ],
+  },
+];
+
+/** Ultima versione le cui Novità sono state viste: serve al badge "nuovo". */
+const SEEN_KEY = 'webcad:lastSeenVersion';
+
+/** True se dopo l'ultimo accesso c'è stato un aggiornamento (al primo avvio no). Il localStorage può non essere disponibile. */
+function hasUnseenNews(): boolean {
+  try {
+    const seen = localStorage.getItem(SEEN_KEY);
+    if (seen === null) {
+      localStorage.setItem(SEEN_KEY, __APP_VERSION__);
+      return false;
+    }
+    return seen !== __APP_VERSION__;
+  } catch {
+    return false;
+  }
+}
+
+function markNewsSeen(): void {
+  try {
+    localStorage.setItem(SEEN_KEY, __APP_VERSION__);
+  } catch {
+    // Senza localStorage il badge torna a ogni avvio: nessun danno
+  }
+}
 
 // Le versioni si leggono una volta sola: il changelog è incorporato nella build
 const releases = parseChangelog(changelogSource);
@@ -39,6 +114,7 @@ function Inline({ text }: { text: string }) {
 export function AppMenu() {
   const [open, setOpen] = useState(false);
   const [panel, setPanel] = useState<Panel | null>(null);
+  const [news, setNews] = useState(hasUnseenNews);
   const root = useRef<HTMLDivElement>(null);
   const hasObjects = useSceneStore((s) => s.scene.rootIds.length > 0);
 
@@ -77,24 +153,35 @@ export function AppMenu() {
         onClick={() => setOpen((o) => !o)}
       >
         <Menu size={18} />
+        {news && <span className="app-menu__dot" aria-label="Ci sono novità" />}
       </button>
 
       {open && (
         <div className="app-menu__list" role="menu">
-          {ITEMS.map((item) => (
-            <button
-              key={item.panel}
-              type="button"
-              role="menuitem"
-              className="app-menu__item"
-              onClick={() => {
-                setOpen(false);
-                setPanel(item.panel);
-              }}
-            >
-              {item.icon}
-              {item.label}
-            </button>
+          {GROUPS.map((group, g) => (
+            <div key={g} className="app-menu__group" role="none">
+              {group.map((item) => (
+                <button
+                  key={item.label}
+                  type="button"
+                  role="menuitem"
+                  className="app-menu__item"
+                  onClick={() => {
+                    setOpen(false);
+                    if (item.action) return item.action();
+                    if (item.panel === 'news') {
+                      markNewsSeen();
+                      setNews(false);
+                    }
+                    setPanel(item.panel);
+                  }}
+                >
+                  {item.icon}
+                  {item.label}
+                  {item.panel === 'news' && news && <span className="app-menu__new">nuovo</span>}
+                </button>
+              ))}
+            </div>
           ))}
         </div>
       )}
@@ -139,6 +226,24 @@ export function AppMenu() {
               </li>
             </ul>
           </>
+        )}
+
+        {panel === 'shortcuts' && (
+          <div className="app-menu__shortcuts">
+            {SHORTCUTS.map((group) => (
+              <section key={group.title}>
+                <h3>{group.title}</h3>
+                <dl>
+                  {group.rows.map(([keys, what]) => (
+                    <div key={keys}>
+                      <dt><kbd>{keys}</kbd></dt>
+                      <dd>{what}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </section>
+            ))}
+          </div>
         )}
 
         {panel === 'news' && (

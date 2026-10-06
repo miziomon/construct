@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { addShape, dragGizmoAlongX, openApp, openMenuItem, sceneState, settled } from './helpers';
+import { addShape, dragGizmoAlongX, dragGizmoAxis, openApp, openMenuItem, sceneState, settled } from './helpers';
 import { writeStl } from '../src/kernel/export/stl';
 
 test.beforeEach(async ({ page }) => {
@@ -7,14 +7,14 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('aggiunge una scatola: outliner, stato della mesh e volume', async ({ page }) => {
-  await addShape(page, 'Scatola');
+  await addShape(page, 'Cubo');
   await expect(page.locator('.outliner__row')).toHaveCount(1);
   await expect(page.locator('.status-bar')).toContainText('Mesh valida');
   await expect(page.locator('.status-bar')).toContainText('Volume 8.00 cm³');
 });
 
 test('trascinando la freccia X del gizmo la scatola si sposta e il kernel ricalcola', async ({ page }) => {
-  await addShape(page, 'Scatola');
+  await addShape(page, 'Cubo');
   const before = await sceneState(page);
   const id = before.rootIds[0];
   await dragGizmoAlongX(page, before.nodes[id].position);
@@ -32,7 +32,7 @@ test('trascinando la freccia X del gizmo la scatola si sposta e il kernel ricalc
 });
 
 test('un oggetto bloccato non mostra il gizmo e non si sposta con le frecce', async ({ page }) => {
-  await addShape(page, 'Scatola');
+  await addShape(page, 'Cubo');
   await page.keyboard.press('l');
   await expect(page.locator('.outliner__lock')).toHaveCount(1);
   const id = (await sceneState(page)).rootIds[0];
@@ -54,10 +54,10 @@ test('un oggetto bloccato non mostra il gizmo e non si sposta con le frecce', as
 });
 
 test('con due oggetti selezionati la barra propone la Differenza', async ({ page }) => {
-  await addShape(page, 'Scatola');
+  await addShape(page, 'Cubo');
   await addShape(page, 'Cilindro');
   // Seleziona prima la scatola, poi il cilindro: la scatola è la base
-  await page.locator('.outliner__row', { hasText: 'Scatola' }).click();
+  await page.locator('.outliner__row', { hasText: 'Cubo' }).click();
   await page.locator('.outliner__row', { hasText: 'Cilindro' }).click({ modifiers: ['Shift'] });
   await page.getByRole('button', { name: 'Differenza' }).first().click();
   await settled(page);
@@ -66,7 +66,7 @@ test('con due oggetti selezionati la barra propone la Differenza', async ({ page
   const group = scene.nodes[scene.rootIds[0]];
   expect(scene.rootIds).toHaveLength(1);
   expect(group.op).toBe('difference');
-  expect(scene.nodes[group.children[0]].name).toBe('Scatola');
+  expect(scene.nodes[group.children[0]].name).toBe('Cubo');
   // Il cilindro ha raggio 10 e altezza 20 come la scatola: sottrae circa 6,3 cm³ dagli 8 cm³ iniziali
   const volume = await page.evaluate(() => window.__webcad!.results.getState().meshes[0].volume);
   expect(volume).toBeGreaterThan(1500);
@@ -126,7 +126,7 @@ test('un file che non è un solido chiuso viene rifiutato con un messaggio', asy
 });
 
 test('Esporta STL scarica un file binario valido', async ({ page }) => {
-  await addShape(page, 'Scatola');
+  await addShape(page, 'Cubo');
   const download = page.waitForEvent('download');
   await openMenuItem(page, 'Esporta');
   await page.getByRole('dialog').getByRole('button', { name: 'STL' }).click();
@@ -144,7 +144,7 @@ test('versione visibile nel title e accanto al nome nell\'header', async ({ page
 });
 
 test('di default la modalità è Seleziona: nessun gizmo finché non si preme W', async ({ page }) => {
-  await addShape(page, 'Scatola');
+  await addShape(page, 'Cubo');
   const gizmos = () => page.evaluate(() => {
     let n = 0;
     window.__r3f!.scene.traverse((o) => { if ((o as unknown as { isTransformControls?: boolean }).isTransformControls) n++; });
@@ -169,4 +169,81 @@ test('il menu hamburger apre le modali Novità e About con la versione', async (
   await expect(page.getByTestId('about-version')).toHaveText(`v${version}`);
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toBeHidden();
+});
+
+test('libreria con Cubo e solidi dei dadi; i preset dei lati sono 3, 4, 5, 6, 8, 12', async ({ page }) => {
+  for (const label of ['Cubo', 'Ottaedro', 'Decaedro', 'Dodecaedro', 'Icosaedro']) {
+    await expect(page.locator(`button[title^="Aggiungi: ${label}"]`)).toHaveCount(1);
+  }
+  await addShape(page, 'Cilindro');
+  await expect(page.locator('.properties__chip')).toHaveText(['3', '4', '5', '6', '8', '12']);
+});
+
+test('icosaedro: mesh valida appoggiata sul piatto, il raccordo ne riduce il volume', async ({ page }) => {
+  await addShape(page, 'Icosaedro');
+  await expect(page.locator('.status-bar')).toContainText('Mesh valida');
+  const read = () => page.evaluate(() => window.__webcad!.results.getState().meshes[0]);
+  const sharp = await read();
+  expect(sharp.bbox.min[2]).toBeCloseTo(0, 3);
+  expect(sharp.bbox.max[2]).toBeCloseTo(20, 3);
+
+  const field = page.locator('.slider-field', { hasText: 'Raccordo' }).locator('.number-field__input');
+  await field.fill('3');
+  await field.press('Enter');
+  await settled(page);
+  expect((await read()).volume).toBeLessThan(sharp.volume);
+});
+
+test('trascinando uno slider la scena cambia dal vivo e Ctrl+Z lo annulla in un solo passo', async ({ page }) => {
+  await addShape(page, 'Cerchio');
+  const id = (await sceneState(page)).rootIds[0];
+  const range = page.locator('.slider-field', { hasText: 'Altezza' }).locator('input[type=range]');
+  const box = (await range.boundingBox())!;
+  await page.mouse.move(box.x + box.width * 0.2, box.y + box.height / 2);
+  await page.mouse.down();
+  for (let i = 1; i <= 8; i++) await page.mouse.move(box.x + box.width * (0.2 + i * 0.06), box.y + box.height / 2);
+  await page.mouse.up();
+  await settled(page);
+
+  const height = (await sceneState(page)).nodes[id].height;
+  expect(height).not.toBe(10);
+  await page.keyboard.press('Control+z');
+  expect((await sceneState(page)).nodes[id].height).toBe(10);
+});
+
+test('modalità Estrudi (T): trascinando la maniglia Z l\'altezza cresce e la base resta sul piatto', async ({ page }) => {
+  await addShape(page, 'Cerchio');
+  const id = (await sceneState(page)).rootIds[0];
+  const start = (await sceneState(page)).nodes[id];
+  await page.keyboard.press('t');
+  await page.waitForTimeout(100);
+  await dragGizmoAxis(page, start.position, 'Z', 60);
+
+  await expect.poll(async () => (await sceneState(page)).nodes[id].height).toBeGreaterThan(start.height);
+  const after = (await sceneState(page)).nodes[id];
+  // Il profilo non cambia e la base resta a z = 0
+  expect(after.radius).toBe(start.radius);
+  expect(after.position[2] - after.height / 2).toBeCloseTo(0, 3);
+});
+
+test('modalità Ridimensiona (R): trascinando la maniglia X il cubo si allarga', async ({ page }) => {
+  await addShape(page, 'Cubo');
+  const id = (await sceneState(page)).rootIds[0];
+  await page.keyboard.press('r');
+  await page.waitForTimeout(100);
+  await dragGizmoAxis(page, [0, 0, 10], 'X', 50);
+
+  await expect.poll(async () => (await sceneState(page)).nodes[id].size[0]).toBeGreaterThan(20);
+  const after = (await sceneState(page)).nodes[id];
+  expect(after.size[1]).toBe(20);
+  expect(after.position[2]).toBe(10);
+});
+
+test('il menu contiene Nuovo, Apri, Salva e le Scorciatoie', async ({ page }) => {
+  await page.getByRole('button', { name: 'Menu', exact: true }).click();
+  for (const name of ['Nuovo progetto', 'Apri progetto…', 'Salva progetto', 'Scorciatoie da tastiera']) {
+    await expect(page.getByRole('menuitem', { name })).toBeVisible();
+  }
+  await page.getByRole('menuitem', { name: 'Scorciatoie da tastiera' }).click();
+  await expect(page.getByRole('dialog')).toContainText('Ridimensiona');
 });

@@ -33,8 +33,9 @@ export function startKernelSync(): void {
       do {
         dirty = false;
         const result = await getKernel().evaluate(useSceneStore.getState().scene);
-        // Se nel frattempo la scena è cambiata, il risultato è già vecchio: si salta l'aggiornamento
-        if (!dirty) useResultStore.setState({ meshes: result.meshes, ms: result.ms, error: undefined });
+        // Anche se nel frattempo la scena è cambiata si pubblica il risultato: durante il trascinamento di uno
+        // slider l'anteprima si aggiorna dal vivo. Il giro successivo (se dirty) arriva subito dopo con l'ultima scena.
+        useResultStore.setState({ meshes: result.meshes, ms: result.ms, error: undefined });
       } while (dirty);
     } catch (err) {
       useResultStore.setState({ error: err instanceof Error ? err.message : String(err) });

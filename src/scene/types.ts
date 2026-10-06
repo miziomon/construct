@@ -19,10 +19,14 @@ interface BaseNode {
   locked?: boolean;
 }
 
-export type PrimitiveKind = 'box' | 'cylinder' | 'cone' | 'sphere' | 'torus';
+/** Solidi dei dadi: ottaedro (d8), decaedro (d10, trapezoedro pentagonale), dodecaedro (d12), icosaedro (d20). */
+export type PolyhedronKind = 'octahedron' | 'decahedron' | 'dodecahedron' | 'icosahedron';
+
+export type PrimitiveKind = 'box' | 'cylinder' | 'cone' | 'sphere' | 'torus' | PolyhedronKind;
 
 export type PrimitiveNode = BaseNode & { type: 'primitive' } & (
   | { kind: 'box'; size: Vec3; /** Raggio di arrotondamento di tutti gli spigoli in mm (0 o assente = spigoli vivi). */ cornerRadius?: number }
+  | { kind: PolyhedronKind; /** Distanza tra due facce opposte in mm (la misura dei dadi). */ size: number; /** Raggio di arrotondamento di spigoli e vertici in mm (0 = vivi). */ cornerRadius: number }
   | { kind: 'cylinder'; radius: number; height: number; segments: number }
   | { kind: 'cone'; radiusBottom: number; radiusTop: number; height: number; segments: number }
   | { kind: 'sphere'; radius: number; segments: number }
@@ -44,7 +48,14 @@ export type Shape2DNode = BaseNode & {
   /** Fattore di scala della cima (1 = prisma, 0 = cono). */
   scaleTop: number;
 } & (
-  | { kind: 'circle'; radius: number; /** Numero di lati: 3 triangolo, 6 esagono, 64 quasi liscio ($fn di OpenSCAD). */ segments: number }
+  | {
+      kind: 'circle';
+      radius: number;
+      /** Numero di lati: 3 triangolo, 6 esagono, 64 quasi liscio ($fn di OpenSCAD). */
+      segments: number;
+      /** Raggio di arrotondamento degli angoli del poligono in mm (0 o assente = angoli vivi). */
+      cornerRadius?: number;
+    }
   | { kind: 'square'; width: number; depth: number; /** Raggio di arrotondamento degli angoli in mm (0 = vivi). */ cornerRadius: number }
 );
 

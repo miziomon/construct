@@ -35,6 +35,8 @@ export function useShortcuts(): void {
       else if (!mod && key === 'q') s.setGizmoMode('select');
       else if (!mod && key === 'w') s.setGizmoMode('translate');
       else if (!mod && key === 'e') s.setGizmoMode('rotate');
+      else if (!mod && key === 'r') s.setGizmoMode('resize');
+      else if (!mod && key === 't') s.setGizmoMode('extrude');
       else if (key in arrows) { e.preventDefault(); s.nudgeSelected(arrows[key]); }
     };
     window.addEventListener('keydown', onKeyDown);

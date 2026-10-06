@@ -1,8 +1,12 @@
 import type { ReactNode } from 'react';
 import { isLocked, useSceneStore } from '../../scene/store';
 import { MAX_SEGMENTS, MIN_SEGMENTS, MIN_SPHERE_SEGMENTS, SEGMENT_PRESETS } from '../../scene/defaults';
+import { BED_SIZE } from '../../scene/types';
 import type { GroupNode, MeshNode, PrimitiveNode, SceneNode, Shape2DNode, Vec3 } from '../../scene/types';
 import { NumberField } from '../NumberField/NumberField';
+import { SliderField } from '../SliderField/SliderField';
+import { TIPS } from './tooltips';
+import { maxPolyhedronRadius, polygonMaxRadius } from '../../scene/polyhedra';
 import './PropertiesPanel.scss';
 
 const AXES = ['X', 'Y', 'Z'] as const;
@@ -98,13 +102,33 @@ export function PropertiesPanel() {
 
       <Section title={inGroup ? 'Posizione (relativa al gruppo)' : 'Posizione'}>
         {AXES.map((a, i) => (
-          <NumberField key={a} label={a} unit="mm" disabled={locked} value={node.position[i]} onCommit={(v) => setVec('position', i, v)} />
+          <SliderField
+            key={a}
+            label={a}
+            unit="mm"
+            min={i === 2 ? -50 : -BED_SIZE / 2}
+            max={i === 2 ? BED_SIZE : BED_SIZE / 2}
+            tooltip={[TIPS.posX, TIPS.posY, TIPS.posZ][i]}
+            disabled={locked}
+            value={node.position[i]}
+            onCommit={(v) => setVec('position', i, v)}
+          />
         ))}
       </Section>
 
       <Section title="Rotazione">
         {AXES.map((a, i) => (
-          <NumberField key={a} label={a} unit="°" step={15} disabled={locked} value={node.rotation[i]} onCommit={(v) => setVec('rotation', i, v)} />
+          <SliderField
+            key={a}
+            label={a}
+            unit="°"
+            min={-180}
+            max={180}
+            tooltip={[TIPS.rotX, TIPS.rotY, TIPS.rotZ][i]}
+            disabled={locked}
+            value={node.rotation[i]}
+            onCommit={(v) => setVec('rotation', i, v)}
+          />
         ))}
       </Section>
 
@@ -127,10 +151,23 @@ export function PropertiesPanel() {
   );
 }
 
+/** Slider delle misure in mm: da 0,5 mm fino al lato del piatto, con il campo numerico che accetta anche valori maggiori. */
+const dimSlider = { min: 0.5, max: BED_SIZE, step: 0.5, hardMin: 0.1, hardMax: 2000, unit: 'mm' } as const;
+
 function PrimitiveFields({ node, patch, locked }: { node: Extract<SceneNode, { type: 'primitive' }>; patch: (p: Partial<PrimitiveNode>) => void; locked: boolean }) {
-  // Dimensioni minime di 0,1 mm: sotto il kernel produrrebbe geometrie degeneri
-  const dim = (label: string, value: number, key: string, min = 0.1) => (
-    <NumberField key={key} label={label} unit="mm" min={min} max={2000} disabled={locked} value={value} onCommit={(v) => patch({ [key]: v } as Partial<PrimitiveNode>)} />
+  const dim = (label: string, value: number, key: string, tooltip: string, hardMin = 0.1, max: number = BED_SIZE / 2) => (
+    <SliderField
+      key={key}
+      label={label}
+      {...dimSlider}
+      min={Math.max(hardMin, 0)}
+      max={max}
+      hardMin={hardMin}
+      tooltip={tooltip}
+      disabled={locked}
+      value={value}
+      onCommit={(v) => patch({ [key]: v } as Partial<PrimitiveNode>)}
+    />
   );
   const segments = (value: number, sphere = false) => (
     <SegmentsControl
@@ -141,19 +178,35 @@ function PrimitiveFields({ node, patch, locked }: { node: Extract<SceneNode, { t
       onChange={(n) => patch({ segments: n } as Partial<PrimitiveNode>)}
     />
   );
-
+  const rounding = (value: number, max: number) => (
+    <SliderField
+      key="rounding"
+      label="Raccordo"
+      unit="mm"
+      min={0}
+      max={Math.max(0.5, max)}
+      step={0.5}
+      hardMin={0}
+      hardMax={Math.max(0, max)}
+      tooltip={TIPS.rounding}
+      disabled={locked}
+      value={value}
+      onCommit={(v) => patch({ cornerRadius: v } as Partial<PrimitiveNode>)}
+    />
+  );
 
   switch (node.kind) {
-    case 'box':
+    case 'box': {
+      const names = ['Larghezza', 'Profondità', 'Altezza'];
+      const tips = [TIPS.boxSizeX, TIPS.boxSizeY, TIPS.boxSizeZ];
       return (
         <Section title="Dimensioni">
           {AXES.map((a, i) => (
-            <NumberField
+            <SliderField
               key={a}
-              label={a}
-              unit="mm"
-              min={0.1}
-              max={2000}
+              label={names[i]}
+              {...dimSlider}
+              tooltip={tips[i]}
               disabled={locked}
               value={node.size[i]}
               onCommit={(v) => {
@@ -163,29 +216,44 @@ function PrimitiveFields({ node, patch, locked }: { node: Extract<SceneNode, { t
               }}
             />
           ))}
-          <NumberField
-            label="Rc"
-            unit="mm"
-            min={0}
-            max={Math.max(0, Math.min(...node.size) / 2 - 0.01)}
-            disabled={locked}
-            value={node.cornerRadius ?? 0}
-            onCommit={(v) => patch({ cornerRadius: v } as Partial<PrimitiveNode>)}
-          />
+          {rounding(node.cornerRadius ?? 0, Math.min(...node.size) / 2 - 0.01)}
         </Section>
       );
+    }
     case 'cylinder':
-      return <Section title="Dimensioni">{[dim('R', node.radius, 'radius'), dim('H', node.height, 'height'), segments(node.segments)]}</Section>;
+      return (
+        <Section title="Dimensioni">
+          {[dim('Raggio', node.radius, 'radius', TIPS.radius), dim('Altezza', node.height, 'height', TIPS.height, 0.1, BED_SIZE), segments(node.segments)]}
+        </Section>
+      );
     case 'cone':
       return (
         <Section title="Dimensioni">
-          {[dim('R↓', node.radiusBottom, 'radiusBottom', 0), dim('R↑', node.radiusTop, 'radiusTop', 0), dim('H', node.height, 'height'), segments(node.segments)]}
+          {[
+            dim('Raggio ↓', node.radiusBottom, 'radiusBottom', TIPS.radiusBottom, 0),
+            dim('Raggio ↑', node.radiusTop, 'radiusTop', TIPS.radiusTop, 0),
+            dim('Altezza', node.height, 'height', TIPS.height, 0.1, BED_SIZE),
+            segments(node.segments),
+          ]}
         </Section>
       );
     case 'sphere':
-      return <Section title="Dimensioni">{[dim('R', node.radius, 'radius'), segments(node.segments, true)]}</Section>;
+      return <Section title="Dimensioni">{[dim('Raggio', node.radius, 'radius', TIPS.radius), segments(node.segments, true)]}</Section>;
     case 'torus':
-      return <Section title="Dimensioni">{[dim('R', node.majorRadius, 'majorRadius'), dim('r', node.minorRadius, 'minorRadius'), segments(node.segments)]}</Section>;
+      return (
+        <Section title="Dimensioni">
+          {[dim('Raggio', node.majorRadius, 'majorRadius', TIPS.majorRadius), dim('Tubo', node.minorRadius, 'minorRadius', TIPS.minorRadius), segments(node.segments)]}
+        </Section>
+      );
+    case 'octahedron':
+    case 'decahedron':
+    case 'dodecahedron':
+    case 'icosahedron':
+      return (
+        <Section title="Dimensioni">
+          {[dim('Dimensione', node.size, 'size', TIPS.polySize, 0.1, BED_SIZE), rounding(node.cornerRadius, maxPolyhedronRadius(node.size))]}
+        </Section>
+      );
   }
 }
 
@@ -205,7 +273,7 @@ function SegmentsControl({ value, onChange, disabled, sphere = false }: Segments
   return (
     <>
       {!sphere && (
-        <div className="properties__row">
+        <div className="properties__row" title={TIPS.sides}>
           <span className="properties__label">Lati</span>
           <div className="properties__chips" role="group" aria-label="Numero di lati">
             {SEGMENT_PRESETS.map((p) => (
@@ -224,7 +292,7 @@ function SegmentsControl({ value, onChange, disabled, sphere = false }: Segments
           </div>
         </div>
       )}
-      <label className="properties__row">
+      <label className="properties__row" title={TIPS.segments}>
         <span className="properties__label">Segmenti</span>
         <input
           className="properties__range"
@@ -244,34 +312,43 @@ function SegmentsControl({ value, onChange, disabled, sphere = false }: Segments
 
 /** Campi di una forma 2D estrusa: profilo (cerchio o quadrato) più parametri di estrusione. */
 function Shape2DFields({ node, patch, locked }: { node: Shape2DNode; patch: (p: Partial<Shape2DNode>) => void; locked: boolean }) {
-  const field = (label: string, value: number, key: string, opts: { unit: string; min: number; max: number; step?: number }) => (
-    <NumberField key={key} label={label} unit={opts.unit} min={opts.min} max={opts.max} step={opts.step} disabled={locked} value={value} onCommit={(v) => patch({ [key]: v } as Partial<Shape2DNode>)} />
+  const slider = (label: string, value: number, key: string, tooltip: string, opts: { unit: string; min: number; max: number; step?: number; hardMin?: number; hardMax?: number }) => (
+    <SliderField key={key} label={label} tooltip={tooltip} disabled={locked} value={value} onCommit={(v) => patch({ [key]: v } as Partial<Shape2DNode>)} {...opts} />
   );
+  const length = { unit: 'mm', min: 0.5, max: BED_SIZE, step: 0.5, hardMin: 0.1, hardMax: 2000 };
+  // Raggio massimo di arrotondamento: poco meno dell'inraggio del poligono, o di metà lato minore del quadrato
+  const maxRounding = node.kind === 'circle' ? polygonMaxRadius(node.radius, node.segments) : Math.max(0, Math.min(node.width, node.depth) / 2 - 0.01);
+  const rounding = slider('Raccordo', node.cornerRadius ?? 0, 'cornerRadius', TIPS.rounding, {
+    unit: 'mm',
+    min: 0,
+    max: Math.max(0.5, maxRounding),
+    step: 0.5,
+    hardMin: 0,
+    hardMax: Math.max(0, maxRounding),
+  });
   return (
     <>
       <Section title="Profilo 2D">
-        {node.kind === 'circle' ? (
-          [
-            field('R', node.radius, 'radius', { unit: 'mm', min: 0.1, max: 2000 }),
-            <SegmentsControl key="segments" value={node.segments} disabled={locked} onChange={(n) => patch({ segments: n } as Partial<Shape2DNode>)} />,
-          ]
-        ) : (
-          [
-            field('X', node.width, 'width', { unit: 'mm', min: 0.1, max: 2000 }),
-            field('Y', node.depth, 'depth', { unit: 'mm', min: 0.1, max: 2000 }),
-            field('Rc', node.cornerRadius, 'cornerRadius', { unit: 'mm', min: 0, max: 1000 }),
-          ]
-        )}
+        {node.kind === 'circle'
+          ? [
+              slider('Raggio', node.radius, 'radius', TIPS.radius, { ...length, max: BED_SIZE / 2 }),
+              <SegmentsControl key="segments" value={node.segments} disabled={locked} onChange={(n) => patch({ segments: n } as Partial<Shape2DNode>)} />,
+              rounding,
+            ]
+          : [slider('Larghezza', node.width, 'width', TIPS.width, length), slider('Profondità', node.depth, 'depth', TIPS.depth, length), rounding]}
       </Section>
       <Section title="Estrusione">
-        {field('H', node.height, 'height', { unit: 'mm', min: 0.1, max: 2000 })}
-        {field('↻', node.twist, 'twist', { unit: '°', min: -3600, max: 3600, step: 15 })}
-        <NumberField
-          label="⇱"
+        {slider('Altezza', node.height, 'height', TIPS.extrudeHeight, length)}
+        {slider('Torsione', node.twist, 'twist', TIPS.twist, { unit: '°', min: -360, max: 360, step: 5, hardMin: -3600, hardMax: 3600 })}
+        <SliderField
+          label="Scala cima"
           unit="%"
           min={0}
-          max={500}
-          step={10}
+          max={300}
+          step={5}
+          hardMin={0}
+          hardMax={500}
+          tooltip={TIPS.scaleTop}
           disabled={locked}
           value={Math.round(node.scaleTop * 100)}
           onCommit={(v) => patch({ scaleTop: v / 100 })}

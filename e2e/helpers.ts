@@ -25,7 +25,7 @@ export async function settled(page: Page): Promise<void> {
 }
 
 export async function addShape(page: Page, label: string): Promise<void> {
-  // Il nome accessibile dei pulsanti è il testo ("Scatola"): la descrizione "Aggiungi: …" sta nel title
+  // Il nome accessibile dei pulsanti è il testo ("Cubo"): la descrizione "Aggiungi: …" sta nel title
   await page.locator(`button[title^="Aggiungi: ${label}"]`).click();
   await settled(page);
 }
@@ -63,20 +63,30 @@ export async function dragGizmoAlongX(page: Page, center: [number, number, numbe
   // All'avvio la modalità è Seleziona (nessun gizmo): si attiva Sposta come farebbe una persona
   await page.keyboard.press('w');
   await page.waitForTimeout(100);
+  await dragGizmoAxis(page, center, 'X', pixels);
+}
+
+/**
+ * Trascina la maniglia di un asse del gizmo attivo (qualunque modalità): cerca lungo la proiezione dell'asse
+ * il punto in cui il gizmo la riconosce, poi preme, trascina a piccoli passi e rilascia.
+ * Con `pixels` negativo si trascina nel verso opposto dell'asse.
+ */
+export async function dragGizmoAxis(page: Page, center: [number, number, number], axis: 'X' | 'Y' | 'Z', pixels = 90): Promise<void> {
+  const unit: [number, number, number] = axis === 'X' ? [1, 0, 0] : axis === 'Y' ? [0, 1, 0] : [0, 0, 1];
   const origin = await project(page, center);
-  const ahead = await project(page, [center[0] + 1, center[1], center[2]]);
-  // Direzione dell'asse X sullo schermo, normalizzata
+  const ahead = await project(page, [center[0] + unit[0], center[1] + unit[1], center[2] + unit[2]]);
+  // Direzione dell'asse sullo schermo, normalizzata
   const len = Math.hypot(ahead.x - origin.x, ahead.y - origin.y);
   const dir = { x: (ahead.x - origin.x) / len, y: (ahead.y - origin.y) / len };
 
-  // Cerca lungo l'asse il punto in cui il gizmo riconosce la maniglia X
+  // Cerca lungo l'asse il punto in cui il gizmo riconosce la maniglia
   let found: { x: number; y: number } | undefined;
-  for (let d = 10; d <= 120 && !found; d += 6) {
+  for (let d = 10; d <= 140 && !found; d += 6) {
     const pt = { x: origin.x + dir.x * d, y: origin.y + dir.y * d };
     await page.mouse.move(pt.x, pt.y);
-    if ((await hoveredAxis(page)) === 'X') found = pt;
+    if ((await hoveredAxis(page)) === axis) found = pt;
   }
-  expect(found, 'la maniglia X del gizmo deve essere raggiungibile con il puntatore').toBeDefined();
+  expect(found, `la maniglia ${axis} del gizmo deve essere raggiungibile con il puntatore`).toBeDefined();
 
   await page.mouse.down();
   const steps = 15;

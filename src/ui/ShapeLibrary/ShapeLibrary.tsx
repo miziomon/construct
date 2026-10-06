@@ -1,4 +1,4 @@
-import { Box, Circle, CircleDot, Cone, Cylinder, Donut, Square } from 'lucide-react';
+import { Box, Circle, CircleDot, Cone, Cylinder, Diamond, Donut, Gem, Hexagon, Pentagon, Square } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useSceneStore } from '../../scene/store';
 import { PRIMITIVE_LABELS, SHAPE2D_LABELS } from '../../scene/defaults';
@@ -12,6 +12,10 @@ export const PRIMITIVE_ICONS: Record<PrimitiveKind, LucideIcon> = {
   cone: Cone,
   sphere: Circle,
   torus: Donut,
+  octahedron: Diamond,
+  decahedron: Gem,
+  dodecahedron: Pentagon,
+  icosahedron: Hexagon,
 };
 
 /** Icona di ogni forma 2D estrudibile. */

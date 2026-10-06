@@ -1,10 +1,8 @@
-import { ArrowDownToLine, Code, Copy, Lock, Unlock, FilePlus, FolderOpen, Group, MousePointer2, Move3d, Redo2, Rotate3d, Save, Trash2, Ungroup, Undo2, CircleDashed } from 'lucide-react';
+import { ArrowDownToLine, Code, Copy, Lock, Unlock, Group, MousePointer2, Move3d, Redo2, Rotate3d, Scaling, ArrowUpFromLine, Trash2, Ungroup, Undo2, CircleDashed } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useStore } from 'zustand';
 import { useSceneStore } from '../../scene/store';
 import { useUiStore } from '../uiStore';
-import { openProject, saveProject } from '../fileActions';
-import { confirmDialog } from '../notify/notifyStore';
 import { dropSelectionToBed } from '../../kernel/placement';
 import { AppMenu } from '../AppMenu/AppMenu';
 import './Toolbar.scss';
@@ -29,11 +27,6 @@ function ToolbarButton({ title, onClick, children, active, disabled, label }: Bu
   );
 }
 
-/** Svuota la scena; se non è vuota chiede conferma (l'azione resta annullabile con Ctrl+Z). */
-async function newProject(hasObjects: boolean) {
-  if (!hasObjects || (await confirmDialog('Svuotare la scena? Potrai annullare con Ctrl+Z.', 'Svuota'))) useSceneStore.getState().clear();
-}
-
 const Divider = () => <span className="toolbar__divider" role="separator" />;
 
 export function Toolbar() {
@@ -44,7 +37,6 @@ export function Toolbar() {
 
   const hasSelection = s.selection.length > 0;
   const rootSelection = s.selection.filter((id) => s.scene.rootIds.includes(id));
-  const hasObjects = s.scene.rootIds.length > 0;
   const group = s.selection.length === 1 ? s.scene.nodes[s.selection[0]] : undefined;
   const allLocked = hasSelection && s.selection.every((id) => s.scene.nodes[id]?.locked);
   const allHoles = hasSelection && s.selection.every((id) => s.scene.nodes[id]?.mode === 'hole');
@@ -56,13 +48,6 @@ export function Toolbar() {
       </div>
 
       <div className="toolbar__group">
-        <ToolbarButton title="Nuovo progetto" onClick={() => void newProject(hasObjects)}><FilePlus size={18} /></ToolbarButton>
-        <ToolbarButton title="Apri progetto (JSON)" onClick={openProject}><FolderOpen size={18} /></ToolbarButton>
-        <ToolbarButton title="Salva progetto (JSON)" onClick={saveProject}><Save size={18} /></ToolbarButton>
-      </div>
-      <Divider />
-
-      <div className="toolbar__group">
         <ToolbarButton title="Annulla (Ctrl+Z)" disabled={!canUndo} onClick={() => useSceneStore.temporal.getState().undo()}><Undo2 size={18} /></ToolbarButton>
         <ToolbarButton title="Ripeti (Ctrl+Y)" disabled={!canRedo} onClick={() => useSceneStore.temporal.getState().redo()}><Redo2 size={18} /></ToolbarButton>
       </div>
@@ -72,6 +57,8 @@ export function Toolbar() {
         <ToolbarButton title="Seleziona (Q)" active={s.gizmoMode === 'select'} onClick={() => s.setGizmoMode('select')}><MousePointer2 size={18} /></ToolbarButton>
         <ToolbarButton title="Sposta (W)" active={s.gizmoMode === 'translate'} onClick={() => s.setGizmoMode('translate')}><Move3d size={18} /></ToolbarButton>
         <ToolbarButton title="Ruota (E)" active={s.gizmoMode === 'rotate'} onClick={() => s.setGizmoMode('rotate')}><Rotate3d size={18} /></ToolbarButton>
+        <ToolbarButton title="Ridimensiona con il mouse (R): trascina le maniglie, la base resta ferma" active={s.gizmoMode === 'resize'} onClick={() => s.setGizmoMode('resize')}><Scaling size={18} /></ToolbarButton>
+        <ToolbarButton title="Estrudi forme 2D con il mouse (T): trascina la maniglia verticale" active={s.gizmoMode === 'extrude'} onClick={() => s.setGizmoMode('extrude')}><ArrowUpFromLine size={18} /></ToolbarButton>
       </div>
       <Divider />
 

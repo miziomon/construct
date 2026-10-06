@@ -15,7 +15,7 @@ beforeAll(async () => {
 });
 
 const boxScene = (): Scene => ({
-  nodes: { a: { ...primitiveDefaults('box'), id: 'a', name: 'Scatola', position: [0, 0, 10] } as PrimitiveNode },
+  nodes: { a: { ...primitiveDefaults('box'), id: 'a', name: 'Cubo', position: [0, 0, 10] } as PrimitiveNode },
   rootIds: ['a'],
 });
 

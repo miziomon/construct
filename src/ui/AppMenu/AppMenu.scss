@@ -4,6 +4,7 @@
   position: relative;
 
   &__toggle {
+    position: relative;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -27,7 +28,7 @@
     z-index: 80;
     display: flex;
     flex-direction: column;
-    min-width: 160px;
+    min-width: 220px;
     padding: $space-1;
     border: 1px solid color('border');
     border-radius: $radius-md;
@@ -35,11 +36,83 @@
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
   }
 
+  // Pallino sull'hamburger e etichetta sulla voce Novità dopo un aggiornamento
+  &__dot {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: color('accent');
+  }
+
+  &__new {
+    margin-left: auto;
+    padding: 1px 6px;
+    border-radius: $radius-sm;
+    background: color('accent');
+    color: color('bg');
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  &__group + &__group {
+    margin-top: $space-1;
+    padding-top: $space-1;
+    border-top: 1px solid color('border');
+  }
+
+  &__shortcuts {
+    h3 {
+      margin: $space-4 0 $space-2;
+      font-size: 13px;
+      color: color('accent');
+    }
+
+    section:first-child h3 {
+      margin-top: 0;
+    }
+
+    dl {
+      display: flex;
+      flex-direction: column;
+      gap: $space-2;
+      margin: 0;
+    }
+
+    dl > div {
+      display: flex;
+      align-items: baseline;
+      gap: $space-3;
+    }
+
+    dt {
+      flex: none;
+      width: 130px;
+    }
+
+    dd {
+      margin: 0;
+    }
+
+    kbd {
+      padding: 1px 6px;
+      border: 1px solid color('border');
+      border-radius: $radius-sm;
+      background: color('bg');
+      font-family: $font-mono;
+      font-size: 11px;
+    }
+  }
+
   &__item {
     display: flex;
     align-items: center;
     gap: $space-3;
     padding: 8px $space-3;
+    width: 100%;
     border: 0;
     border-radius: $radius-sm;
     background: transparent;

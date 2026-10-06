@@ -4,7 +4,7 @@ import { primitiveDefaults, shape2dDefaults } from '../scene/defaults';
 import type { GroupNode, PrimitiveNode, Scene, Shape2DNode } from '../scene/types';
 
 const scene = (): Scene => {
-  const box = { ...primitiveDefaults('box'), id: 'b', name: 'Scatola', position: [0, 0, 10] } as PrimitiveNode;
+  const box = { ...primitiveDefaults('box'), id: 'b', name: 'Cubo', position: [0, 0, 10] } as PrimitiveNode;
   const hole = {
     ...primitiveDefaults('cylinder'), id: 'h', name: 'Foro', position: [0, 0, 10], mode: 'hole', radius: 5, height: 40,
   } as PrimitiveNode;
@@ -23,7 +23,7 @@ describe('sceneToOpenScad', () => {
       translate([5, 0, 0]) rotate([0, 0, 90]) color([0.302, 0.639, 1]) {
         difference() {
           union() {
-            // Scatola
+            // Cubo
             translate([0, 0, 10]) color([0.302, 0.639, 1]) cube([20, 20, 20], center = true);
           }
           // Foro (foro)
@@ -43,7 +43,7 @@ describe('sceneToOpenScad', () => {
     (sc.nodes.g as GroupNode).op = 'difference';
     const code = sceneToOpenScad(sc);
     expect(code).toContain('difference() {');
-    expect(code.indexOf('// Scatola')).toBeLessThan(code.indexOf('// Foro'));
+    expect(code.indexOf('// Cubo')).toBeLessThan(code.indexOf('// Foro'));
     expect(code).not.toContain('union()');
   });
 
@@ -56,7 +56,7 @@ describe('sceneToOpenScad', () => {
   });
 
   it('scatola arrotondata: hull() di otto sfere', () => {
-    const box = { ...primitiveDefaults('box'), id: 'b', name: 'Scatola', position: [0, 0, 10], size: [20, 20, 20], cornerRadius: 2 } as PrimitiveNode;
+    const box = { ...primitiveDefaults('box'), id: 'b', name: 'Cubo', position: [0, 0, 10], size: [20, 20, 20], cornerRadius: 2 } as PrimitiveNode;
     const code = sceneToOpenScad({ nodes: { b: box }, rootIds: ['b'] });
     expect(code).toContain('hull() for (x = [-8, 8], y = [-8, 8], z = [-8, 8]) translate([x, y, z]) sphere(r = 2, $fn = 24);');
   });

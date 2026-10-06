@@ -1,0 +1,35 @@
+@use '../../styles/abstracts' as *;
+
+.slider-field {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  min-height: 28px;
+
+  &__label {
+    flex: none;
+    width: 64px;
+    font-size: 12px;
+    color: color('text-muted');
+  }
+
+  &__range {
+    flex: 1;
+    min-width: 0;
+    accent-color: color('accent');
+
+    &:disabled {
+      opacity: 0.45;
+    }
+  }
+
+  // Campo numerico compatto: l'etichetta è già a sinistra dello slider
+  .number-field {
+    flex: none;
+    width: 82px;
+  }
+
+  .number-field__label {
+    display: none;
+  }
+}

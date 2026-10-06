@@ -1,5 +1,6 @@
 import type { Manifold, ManifoldToplevel } from 'manifold-3d';
 import { CORNER_SPHERE_SEGMENTS, twistDivisions } from '../scene/defaults';
+import { maxPolyhedronRadius, polygonMaxRadius, polygonShrunkRadius, polyhedronVertices, roundedPolyhedronCenters } from '../scene/polyhedra';
 import type { MeshNode, PrimitiveNode, Scene, SceneNode, Shape2DNode, Vec3 } from '../scene/types';
 
 /** Risultato del calcolo per un oggetto alla radice della scena (mesh in mm, Z verso l'alto). */
@@ -106,6 +107,19 @@ export class Evaluator {
         section.delete();
         return torus;
       }
+      case 'octahedron':
+      case 'decahedron':
+      case 'dodecahedron':
+      case 'icosahedron': {
+        const size = Math.max(EPS, p.size);
+        const r = Math.min(Math.max(0, p.cornerRadius), maxPolyhedronRadius(size));
+        if (r <= 0) return Manifold.hull(polyhedronVertices(p.kind, size));
+        // Solido arrotondato: involucro convesso di sfere sui vertici del solido ridotto (le facce restano a size/2)
+        const spheres = roundedPolyhedronCenters(p.kind, size, r).map((c) => Manifold.sphere(r, CORNER_SPHERE_SEGMENTS).translate(c));
+        const hull = Manifold.hull(spheres);
+        spheres.forEach((m) => m.delete());
+        return hull;
+      }
     }
   }
 
@@ -153,7 +167,16 @@ export class Evaluator {
     let section;
     if (p.kind === 'circle') {
       // Il primo vertice sta a +X, come circle($fn=n) di OpenSCAD
-      section = CrossSection.circle(Math.max(EPS, p.radius), p.segments);
+      const radius = Math.max(EPS, p.radius);
+      const rc = Math.min(Math.max(0, p.cornerRadius ?? 0), polygonMaxRadius(radius, p.segments));
+      if (rc > 0) {
+        // Poligono ridotto (stesso inraggio meno rc) e offset arrotondato: angoli arrotondati senza booleane 3D
+        const inner = CrossSection.circle(polygonShrunkRadius(radius, p.segments, rc), p.segments);
+        section = inner.offset(rc, 'Round', 2, CORNER_SEGMENTS);
+        inner.delete();
+      } else {
+        section = CrossSection.circle(radius, p.segments);
+      }
     } else {
       const w = Math.max(EPS, p.width);
       const d = Math.max(EPS, p.depth);

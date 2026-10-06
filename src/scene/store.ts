@@ -5,7 +5,7 @@ import type { GroupNode, GroupOp, MeshNode, PrimitiveKind, PrimitiveNode, Scene,
 import { DEFAULT_COLOR, PRIMITIVE_LABELS, SHAPE2D_LABELS, halfHeight, primitiveDefaults, shape2dDefaults } from './defaults';
 import { composeTransform, round } from './math';
 
-export type GizmoMode = 'select' | 'translate' | 'rotate';
+export type GizmoMode = 'select' | 'translate' | 'rotate' | 'resize' | 'extrude';
 
 interface SceneState {
   scene: Scene;
@@ -45,7 +45,7 @@ export const emptyScene = (): Scene => ({ nodes: {}, rootIds: [] });
 
 const newId = () => crypto.randomUUID().slice(0, 8);
 
-/** Nome progressivo unico per etichetta, es. "Scatola 2". */
+/** Nome progressivo unico per etichetta, es. "Cubo 2". */
 function uniqueName(scene: Scene, base: string): string {
   const used = new Set(Object.values(scene.nodes).map((n) => n.name));
   if (!used.has(base)) return base;

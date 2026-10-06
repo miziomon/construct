@@ -18,6 +18,22 @@ I messaggi di commit seguono i [Conventional Commits](https://www.conventionalco
 
 ## [Non rilasciato]
 
+## [0.4.0] - 2026-10-06
+
+### Aggiunto
+- Slider con tooltip per posizione, rotazione, dimensioni, profilo 2D ed estrusione nella sidebar destra, accanto al campo numerico. Trascinare uno slider aggiorna la scena dal vivo e vale un solo passo di Annulla.
+- Solidi dei dadi: Ottaedro (d8), Decaedro (d10), Dodecaedro (d12) e Icosaedro (d20). La misura è la distanza tra due facce opposte e il solido poggia su una faccia.
+- Raccordo degli spigoli e dei vertici per i solidi dei dadi e degli angoli per il Cerchio con N lati (anche nel codice OpenSCAD).
+- Modalità Ridimensiona (R) ed Estrudi (T) nella barra in alto: si trascinano le maniglie nella vista 3D e la base resta sul piatto. Estrudi agisce sulle sole forme 2D e cambia solo l'altezza.
+- Nel menu: Nuovo progetto, Apri progetto, Salva progetto e la finestra Scorciatoie da tastiera.
+- Badge "nuovo" sul menu e sulla voce Novità dopo un aggiornamento.
+
+### Modificato
+- La Scatola si chiama Cubo.
+- I preset dei lati sono 3, 4, 5, 6, 8 e 12 (tolti 16 e 64); lo slider Segmenti resta.
+- Nuovo, Apri e Salva progetto passano dalla barra in alto al menu.
+- Durante un calcolo del kernel i risultati intermedi si mostrano subito, per un'anteprima fluida.
+
 ## [0.3.0] - 2026-10-06
 
 ### Aggiunto

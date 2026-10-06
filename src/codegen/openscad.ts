@@ -1,6 +1,7 @@
 import type { GroupNode, MeshNode, PrimitiveNode, Scene, SceneNode, Shape2DNode } from '../scene/types';
 import { round } from '../scene/math';
 import { CORNER_SPHERE_SEGMENTS, twistDivisions } from '../scene/defaults';
+import { maxPolyhedronRadius, polygonMaxRadius, polygonShrunkRadius, polyhedronVertices, roundedPolyhedronCenters } from '../scene/polyhedra';
 
 const IND = '  ';
 const n = (v: number) => String(round(v, 4));
@@ -31,6 +32,17 @@ function primitiveCode(p: PrimitiveNode): string {
       return `sphere(r = ${n(p.radius)}, $fn = ${p.segments});`;
     case 'torus':
       return `rotate_extrude($fn = ${p.segments}) translate([${n(p.majorRadius)}, 0]) circle(r = ${n(p.minorRadius)}, $fn = ${p.segments});`;
+    case 'octahedron':
+    case 'decahedron':
+    case 'dodecahedron':
+    case 'icosahedron': {
+      const r = Math.min(Math.max(0, p.cornerRadius), maxPolyhedronRadius(p.size));
+      // Solido arrotondato: involucro convesso di sfere sui vertici del solido ridotto
+      if (r > 0) return `hull() for (p = [${roundedPolyhedronCenters(p.kind, p.size, r).map(vec).join(', ')}]) translate(p) sphere(r = ${n(r)}, $fn = ${CORNER_SPHERE_SEGMENTS});`;
+      // Solido a spigoli vivi: involucro convesso dei vertici (hull() usa solo i punti, le facce indicate sono segnaposto)
+      const points = polyhedronVertices(p.kind, p.size);
+      return `hull() polyhedron(points = [${points.map(vec).join(', ')}], faces = [[${points.map((_, i) => i).join(', ')}]]);`;
+    }
   }
 }
 
@@ -40,7 +52,11 @@ function primitiveCode(p: PrimitiveNode): string {
  */
 function shape2dCode(p: Shape2DNode): string {
   const extrude = `linear_extrude(height = ${n(p.height)}, center = true, twist = ${n(-p.twist)}, scale = ${n(p.scaleTop)}, slices = ${Math.max(1, twistDivisions(p.twist))})`;
-  if (p.kind === 'circle') return `${extrude} circle(r = ${n(p.radius)}, $fn = ${p.segments});`;
+  if (p.kind === 'circle') {
+    const rc = Math.min(Math.max(0, p.cornerRadius ?? 0), polygonMaxRadius(p.radius, p.segments));
+    if (rc > 0) return `${extrude} offset(r = ${n(rc)}, $fn = 32) circle(r = ${n(polygonShrunkRadius(p.radius, p.segments, rc))}, $fn = ${p.segments});`;
+    return `${extrude} circle(r = ${n(p.radius)}, $fn = ${p.segments});`;
+  }
   const r = Math.min(Math.max(0, p.cornerRadius), (Math.min(p.width, p.depth) - 0.01) / 2);
   if (r > 0) return `${extrude} offset(r = ${n(r)}, $fn = 32) square([${n(p.width - 2 * r)}, ${n(p.depth - 2 * r)}], center = true);`;
   return `${extrude} square([${n(p.width)}, ${n(p.depth)}], center = true);`;

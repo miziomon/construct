@@ -17,7 +17,7 @@ describe('store della scena', () => {
     expect(st().scene.nodes[id].position).toEqual([0, 0, 10]); // metà dell'altezza di 20 mm
     expect(st().selection).toEqual([id]);
     st().addPrimitive('box');
-    expect(Object.values(st().scene.nodes).map((x) => x.name)).toEqual(['Scatola', 'Scatola 2']);
+    expect(Object.values(st().scene.nodes).map((x) => x.name)).toEqual(['Cubo', 'Cubo 2']);
   });
 
   it('raggruppa mantenendo le posizioni nel mondo e separa ripristinandole', () => {

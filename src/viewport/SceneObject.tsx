@@ -5,6 +5,8 @@ import * as THREE from 'three';
 import type { NodeMesh } from '../kernel/evaluate';
 import { useSceneStore } from '../scene/store';
 import { round } from '../scene/math';
+import { halfHeight } from '../scene/defaults';
+import { applyScale } from '../scene/resize';
 import type { Vec3 } from '../scene/types';
 
 const SNAP_MOVE = 1; // mm
@@ -81,11 +83,28 @@ export function SceneObject({ mesh, selected, locked, showGizmo }: Props) {
     select([mesh.id], e.shiftKey);
   };
 
+  const scaling = gizmoMode === 'resize' || gizmoMode === 'extrude';
+  // Solo forme con misure proprie si ridimensionano (non gruppi né mesh); Estrudi solo le forme 2D
+  const resizable = (node.type === 'primitive' || node.type === 'shape2d') && (gizmoMode !== 'extrude' || node.type === 'shape2d');
+
+  /** Scala letta dal gizmo; in modalità Estrudi conta solo l'asse Z (il cubetto centrale non deve allargare il profilo). */
+  const currentScale = (p: THREE.Object3D): Vec3 => (gizmoMode === 'extrude' ? [1, 1, p.scale.z] : [p.scale.x, p.scale.y, p.scale.z]);
+
   /** Anteprima del trascinamento: matrice = corrente * inversa(iniziale). */
   const onChange = () => {
     const p = proxy;
     const w = wrapper.current;
     if (!p || !w) return;
+    if (scaling && (node.type === 'primitive' || node.type === 'shape2d')) {
+      // Scala attorno al centro della base (punto più basso, a -hz in locale): la base resta ferma
+      const [sx, sy, sz] = currentScale(p);
+      const base = new THREE.Matrix4().makeTranslation(0, 0, -halfHeight(node));
+      const local = base.clone().multiply(new THREE.Matrix4().makeScale(sx, sy, sz)).multiply(base.clone().invert());
+      const world = nodeMatrix(node.position, node.rotation);
+      w.matrix.copy(world).multiply(local).multiply(world.clone().invert());
+      w.matrixWorldNeedsUpdate = true;
+      return;
+    }
     p.updateMatrix();
     w.matrix.copy(p.matrix).multiply(startMatrix.current.clone().invert());
     w.matrixWorldNeedsUpdate = true;
@@ -95,6 +114,20 @@ export function SceneObject({ mesh, selected, locked, showGizmo }: Props) {
   const onCommit = () => {
     const p = proxy;
     if (!p) return;
+    if (scaling) {
+      if (node.type !== 'primitive' && node.type !== 'shape2d') return;
+      const scale = currentScale(p);
+      p.scale.set(1, 1, 1);
+      if (scale.every((v) => v === 1)) return;
+      // La scala diventa misure vere (Maiusc: passo fine di 0,01 mm invece di 0,5 mm)
+      const patch = applyScale(node, scale, shift ? 0.01 : 0.5);
+      // La base resta ferma: il centro si sposta lungo lo Z locale della differenza di mezza altezza
+      const dz = halfHeight({ ...node, ...patch } as typeof node) - halfHeight(node);
+      const shift3 = new THREE.Vector3(0, 0, dz).applyQuaternion(new THREE.Quaternion().setFromRotationMatrix(nodeMatrix(node.position, node.rotation)));
+      const position = node.position.map((v, i) => round(v + shift3.getComponent(i), 3)) as Vec3;
+      updateNode(mesh.id, { ...patch, position } as never);
+      return;
+    }
     const euler = new THREE.Euler().setFromQuaternion(p.quaternion, 'ZYX');
     updateNode(mesh.id, {
       position: p.position.toArray().map((v) => round(v, 3)) as Vec3,
@@ -127,10 +160,13 @@ export function SceneObject({ mesh, selected, locked, showGizmo }: Props) {
         position={node.position}
         rotation={new THREE.Euler(...(node.rotation.map(THREE.MathUtils.degToRad) as [number, number, number]), 'ZYX')}
       />
-      {showGizmo && proxy && gizmoMode !== 'select' && (
+      {showGizmo && proxy && gizmoMode !== 'select' && (!scaling || resizable) && (
         <TransformControls
           object={proxy}
-          mode={gizmoMode}
+          mode={scaling ? 'scale' : gizmoMode}
+          // In modalità Estrudi resta solo l'asse Z (l'altezza dell'estrusione)
+          showX={gizmoMode !== 'extrude'}
+          showY={gizmoMode !== 'extrude'}
           size={0.8}
           translationSnap={shift ? null : SNAP_MOVE}
           rotationSnap={shift ? null : SNAP_ROTATE}

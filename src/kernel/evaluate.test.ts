@@ -33,7 +33,7 @@ describe('Evaluator', () => {
   });
 
   it('sottrae un hole da un solid dentro un gruppo', () => {
-    // Scatola 20 mm con foro cilindrico passante r=5 (poligono a 64 lati)
+    // Cubo 20 mm con foro cilindrico passante r=5 (poligono a 64 lati)
     const box = prim('box', 'box', { size: [20, 20, 20] } as Partial<PrimitiveNode>);
     const hole = prim('hole', 'cylinder', { radius: 5, height: 40, mode: 'hole' } as Partial<PrimitiveNode>);
     const scene: Scene = { nodes: { box, hole, g: group('g', ['box', 'hole']) }, rootIds: ['g'] };
