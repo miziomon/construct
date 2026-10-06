@@ -1,4 +1,5 @@
-import { Canvas } from '@react-three/fiber';
+import { useEffect } from 'react';
+import { Canvas, useThree } from '@react-three/fiber';
 import { GizmoHelper, GizmoViewport, OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { isLocked, useSceneStore } from '../scene/store';
@@ -10,6 +11,15 @@ import './Viewport.scss';
 
 // Asse Z verso l'alto come negli slicer: va impostato prima della creazione di camera e controlli
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
+
+/** Solo nella build dei test end-to-end: espone camera e scena per calcolare dove cliccare. */
+function E2EBridge() {
+  const state = useThree();
+  useEffect(() => {
+    window.__r3f = state;
+  });
+  return null;
+}
 
 export function Viewport() {
   const meshes = useResultStore((s) => s.meshes);
@@ -38,6 +48,7 @@ export function Viewport() {
         <directionalLight position={[150, -200, 300]} intensity={1.6} />
         <directionalLight position={[-200, 150, 120]} intensity={0.5} />
 
+        {import.meta.env.MODE === 'e2e' && <E2EBridge />}
         <Bed />
         {meshes.map((m) => (
           <SceneObject key={m.id} mesh={m} selected={selection.includes(m.id)} locked={isLocked(scene, m.id)} showGizmo={m.id === gizmoId} />

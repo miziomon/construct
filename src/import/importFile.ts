@@ -10,15 +10,18 @@ import { ImportError, type ImportedMesh } from './types';
 /** Oltre questa soglia l'editor diventa troppo lento: il file viene rifiutato con un messaggio. */
 const MAX_TRIANGLES = 2_000_000;
 
-/** Spiegazione leggibile dei motivi di rifiuto del kernel. */
-function explain(status: string): string {
-  switch (status) {
-    case 'NotManifold':
-    case 'NotManifoldEdge':
+/**
+ * Spiegazione leggibile dei motivi di rifiuto del kernel. Il kernel scrive gli stati con spazi ("Not manifold")
+ * o in CamelCase: si normalizzano prima del confronto.
+ */
+export function explain(status: string): string {
+  switch (status.replace(/\s+/g, '').toLowerCase()) {
+    case 'notmanifold':
+    case 'notmanifoldedge':
       return 'non è un solido chiuso (la mesh ha buchi o spigoli condivisi da più di due facce)';
-    case 'NegativeVolume':
+    case 'negativevolume':
       return 'ha le facce rivolte verso l\'interno (volume negativo)';
-    case 'EmptyMesh':
+    case 'emptymesh':
       return 'non contiene geometria utilizzabile';
     default:
       return `la mesh non è valida (${status})`;

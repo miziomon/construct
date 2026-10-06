@@ -2,7 +2,7 @@ import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 // La versione dell'app arriva da package.json, unica fonte di verità
-import pkg from './package.json';
+import pkg from './package.json' with { type: 'json' };
 
 // Regex per riconoscere i moduli di node_modules su Windows e POSIX
 const nm = (pattern: string) => new RegExp(`[\\/]node_modules[\\/]${pattern}`);
