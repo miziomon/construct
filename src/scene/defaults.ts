@@ -28,6 +28,9 @@ export const SEGMENT_PRESETS: { value: number; label: string; title: string }[] 
   { value: 64, label: '64', title: 'Quasi liscio' },
 ];
 
+/** Segmenti delle sfere agli angoli di una scatola arrotondata. */
+export const CORNER_SPHERE_SEGMENTS = 24;
+
 export const SHAPE2D_LABELS: Record<Shape2DKind, string> = { circle: 'Cerchio', square: 'Quadrato' };
 
 /**
@@ -62,7 +65,7 @@ type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K>
 export function primitiveDefaults(kind: PrimitiveKind): DistributiveOmit<PrimitiveNode, 'id' | 'name' | 'position'> {
   const base = { type: 'primitive' as const, rotation: [0, 0, 0] as [number, number, number], mode: 'solid' as const, color: DEFAULT_COLOR };
   switch (kind) {
-    case 'box': return { ...base, kind, size: [20, 20, 20] };
+    case 'box': return { ...base, kind, size: [20, 20, 20], cornerRadius: 0 };
     case 'cylinder': return { ...base, kind, radius: 10, height: 20, segments: DEFAULT_SEGMENTS };
     case 'cone': return { ...base, kind, radiusBottom: 10, radiusTop: 0, height: 20, segments: DEFAULT_SEGMENTS };
     case 'sphere': return { ...base, kind, radius: 10, segments: DEFAULT_SEGMENTS };

@@ -1,5 +1,5 @@
 import type { Manifold, ManifoldToplevel } from 'manifold-3d';
-import { twistDivisions } from '../scene/defaults';
+import { CORNER_SPHERE_SEGMENTS, twistDivisions } from '../scene/defaults';
 import type { PrimitiveNode, Scene, SceneNode, Shape2DNode, Vec3 } from '../scene/types';
 
 /** Risultato del calcolo per un oggetto alla radice della scena (mesh in mm, Z verso l'alto). */
@@ -62,8 +62,18 @@ export class Evaluator {
   private primitive(p: PrimitiveNode): Manifold {
     const { Manifold, CrossSection } = this.wasm;
     switch (p.kind) {
-      case 'box':
-        return Manifold.cube(p.size.map((v) => Math.max(EPS, v)) as Vec3, true);
+      case 'box': {
+        const size = p.size.map((v) => Math.max(EPS, v)) as Vec3;
+        // Raggio limitato a metà del lato minore, lasciando un minimo di spigolo
+        const r = Math.min(Math.max(0, p.cornerRadius ?? 0), (Math.min(...size) - EPS) / 2);
+        if (r <= 0) return Manifold.cube(size, true);
+        // Scatola arrotondata esatta e veloce: involucro convesso di otto sfere agli angoli (circa 4 ms)
+        const [hx, hy, hz] = size.map((v) => v / 2 - r);
+        const corners = [-hx, hx].flatMap((x) => [-hy, hy].flatMap((y) => [-hz, hz].map((z) => Manifold.sphere(r, CORNER_SPHERE_SEGMENTS).translate([x, y, z]))));
+        const hull = Manifold.hull(corners);
+        corners.forEach((c) => c.delete());
+        return hull;
+      }
       case 'cylinder': {
         const r = Math.max(EPS, p.radius);
         return Manifold.cylinder(Math.max(EPS, p.height), r, r, p.segments, true);

@@ -1,6 +1,6 @@
 import type { GroupNode, PrimitiveNode, Scene, SceneNode, Shape2DNode } from '../scene/types';
 import { round } from '../scene/math';
-import { twistDivisions } from '../scene/defaults';
+import { CORNER_SPHERE_SEGMENTS, twistDivisions } from '../scene/defaults';
 
 const IND = '  ';
 const n = (v: number) => String(round(v, 4));
@@ -16,8 +16,13 @@ function rgb(hex: string): string {
 /** Istruzione OpenSCAD della sola primitiva, centrata nell'origine. */
 function primitiveCode(p: PrimitiveNode): string {
   switch (p.kind) {
-    case 'box':
-      return `cube(${vec(p.size)}, center = true);`;
+    case 'box': {
+      const r = Math.min(Math.max(0, p.cornerRadius ?? 0), (Math.min(...p.size) - 0.01) / 2);
+      if (r <= 0) return `cube(${vec(p.size)}, center = true);`;
+      // Scatola arrotondata: involucro convesso di otto sfere agli angoli
+      const [hx, hy, hz] = p.size.map((v) => v / 2 - r);
+      return `hull() for (x = [${n(-hx)}, ${n(hx)}], y = [${n(-hy)}, ${n(hy)}], z = [${n(-hz)}, ${n(hz)}]) translate([x, y, z]) sphere(r = ${n(r)}, $fn = ${CORNER_SPHERE_SEGMENTS});`;
+    }
     case 'cylinder':
       return `cylinder(h = ${n(p.height)}, r = ${n(p.radius)}, center = true, $fn = ${p.segments});`;
     case 'cone':

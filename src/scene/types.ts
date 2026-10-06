@@ -22,7 +22,7 @@ interface BaseNode {
 export type PrimitiveKind = 'box' | 'cylinder' | 'cone' | 'sphere' | 'torus';
 
 export type PrimitiveNode = BaseNode & { type: 'primitive' } & (
-  | { kind: 'box'; size: Vec3 }
+  | { kind: 'box'; size: Vec3; /** Raggio di arrotondamento di tutti gli spigoli in mm (0 o assente = spigoli vivi). */ cornerRadius?: number }
   | { kind: 'cylinder'; radius: number; height: number; segments: number }
   | { kind: 'cone'; radiusBottom: number; radiusTop: number; height: number; segments: number }
   | { kind: 'sphere'; radius: number; segments: number }

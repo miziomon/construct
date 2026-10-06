@@ -150,6 +150,15 @@ function PrimitiveFields({ node, patch, locked }: { node: Extract<SceneNode, { t
               }}
             />
           ))}
+          <NumberField
+            label="Rc"
+            unit="mm"
+            min={0}
+            max={Math.max(0, Math.min(...node.size) / 2 - 0.01)}
+            disabled={locked}
+            value={node.cornerRadius ?? 0}
+            onCommit={(v) => patch({ cornerRadius: v } as Partial<PrimitiveNode>)}
+          />
         </Section>
       );
     case 'cylinder':

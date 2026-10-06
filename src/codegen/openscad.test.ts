@@ -54,4 +54,10 @@ describe('sceneToOpenScad', () => {
     expect(code).toContain('linear_extrude(height = 10, center = true, twist = -90, scale = 0.5, slices = 45) circle(r = 10, $fn = 6);');
     expect(code).toContain('offset(r = 4, $fn = 32) square([22, 12], center = true);');
   });
+
+  it('scatola arrotondata: hull() di otto sfere', () => {
+    const box = { ...primitiveDefaults('box'), id: 'b', name: 'Scatola', position: [0, 0, 10], size: [20, 20, 20], cornerRadius: 2 } as PrimitiveNode;
+    const code = sceneToOpenScad({ nodes: { b: box }, rootIds: ['b'] });
+    expect(code).toContain('hull() for (x = [-8, 8], y = [-8, 8], z = [-8, 8]) translate([x, y, z]) sphere(r = 2, $fn = 24);');
+  });
 });

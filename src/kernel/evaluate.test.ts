@@ -164,4 +164,18 @@ describe('Evaluator', () => {
       expect(alongPlus).toBeGreaterThan(alongMinus + 5);
     });
   });
+
+  it('scatola arrotondata: volume del solido di Minkowski scatola + sfera e tempo di calcolo', () => {
+    const [a, r] = [20, 2];
+    const box = prim('a', 'box', { size: [a, a, a], cornerRadius: r } as Partial<PrimitiveNode>);
+    const { meshes, ms } = new Evaluator(wasm).evaluate({ nodes: { a: box }, rootIds: ['a'] });
+    const c = a - 2 * r;
+    const expected = c ** 3 + 2 * r * 3 * c ** 2 + Math.PI * r * r * 3 * c + (4 / 3) * Math.PI * r ** 3;
+    expect(meshes[0].status).toBe('NoError');
+    expect(meshes[0].volume / expected).toBeGreaterThan(0.99);
+    expect(meshes[0].volume / expected).toBeLessThan(1.001);
+    // Ingombro invariato: le facce restano piane alla distanza originale
+    expect(meshes[0].bbox.max[0]).toBeCloseTo(10, 3);
+    expect(ms).toBeLessThan(200);
+  });
 });
