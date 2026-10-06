@@ -1,4 +1,4 @@
-import { ArrowDownToLine, Code, Copy, Lock, Unlock, Download, FileBox, FilePlus, FolderOpen, Group, Move3d, Redo2, Rotate3d, Save, Trash2, Ungroup, Undo2, CircleDashed } from 'lucide-react';
+import { ArrowDownToLine, Code, Copy, Lock, Unlock, Upload, Download, FileBox, FilePlus, FolderOpen, Group, Move3d, Redo2, Rotate3d, Save, Trash2, Ungroup, Undo2, CircleDashed } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useStore } from 'zustand';
 import { useSceneStore } from '../../scene/store';
@@ -6,6 +6,7 @@ import { useUiStore } from '../uiStore';
 import { export3mf, exportStl, openProject, saveProject } from '../fileActions';
 import { confirmDialog } from '../notify/notifyStore';
 import { dropSelectionToBed } from '../../kernel/placement';
+import { pickAndImport } from '../../import/importFile';
 import './Toolbar.scss';
 
 interface ButtonProps {
@@ -85,6 +86,7 @@ export function Toolbar() {
 
       <div className="toolbar__group">
         <ToolbarButton title="Pannello codice OpenSCAD (Ctrl+J)" active={codeEnabled} onClick={toggleCode} label="Codice"><Code size={18} /></ToolbarButton>
+        <ToolbarButton title="Importa STL o 3MF (si può anche trascinare il file nella finestra)" onClick={pickAndImport} label="Importa"><Upload size={18} /></ToolbarButton>
         <ToolbarButton title="Esporta STL" disabled={!hasObjects} onClick={() => void exportStl()} label="STL"><Download size={18} /></ToolbarButton>
         <ToolbarButton title="Esporta 3MF (un oggetto per colore)" disabled={!hasObjects} onClick={() => void export3mf()} label="3MF"><FileBox size={18} /></ToolbarButton>
       </div>

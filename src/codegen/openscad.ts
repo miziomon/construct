@@ -1,4 +1,4 @@
-import type { GroupNode, PrimitiveNode, Scene, SceneNode, Shape2DNode } from '../scene/types';
+import type { GroupNode, MeshNode, PrimitiveNode, Scene, SceneNode, Shape2DNode } from '../scene/types';
 import { round } from '../scene/math';
 import { CORNER_SPHERE_SEGMENTS, twistDivisions } from '../scene/defaults';
 
@@ -46,6 +46,16 @@ function shape2dCode(p: Shape2DNode): string {
   return `${extrude} square([${n(p.width)}, ${n(p.depth)}], center = true);`;
 }
 
+/**
+ * Mesh importata. La geometria interna è ricentrata sull'ingombro: per ritrovare la posizione del file
+ * originale si sposta di -origine. Il file va tenuto accanto al codice (stesso nome).
+ */
+function meshCode(p: MeshNode): string {
+  const file = p.fileName.replace(/[\\"]/g, (c) => (c === '"' ? '' : '/'));
+  const scale = p.scale === 1 ? '' : `scale(${n(p.scale)}) `;
+  return `${scale}translate(${vec(p.origin.map((v) => -v))}) import("${file}");`;
+}
+
 /** Righe di codice di un nodo, con trasformazione e commento. Gli hole non hanno colore (verranno sottratti). */
 function nodeLines(scene: Scene, node: SceneNode, depth: number): string[] {
   const pad = IND.repeat(depth);
@@ -61,6 +71,10 @@ function nodeLines(scene: Scene, node: SceneNode, depth: number): string[] {
   }
   if (node.type === 'shape2d') {
     out.push(`${head} ${colored}${shape2dCode(node)}`);
+    return out;
+  }
+  if (node.type === 'mesh') {
+    out.push(`${head} ${colored}${meshCode(node)}`);
     return out;
   }
   out.push(...groupLines(scene, node, head, colored, depth));

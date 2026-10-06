@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { isLocked, useSceneStore } from '../../scene/store';
 import { MAX_SEGMENTS, MIN_SEGMENTS, MIN_SPHERE_SEGMENTS, SEGMENT_PRESETS } from '../../scene/defaults';
-import type { GroupNode, PrimitiveNode, SceneNode, Shape2DNode, Vec3 } from '../../scene/types';
+import type { GroupNode, MeshNode, PrimitiveNode, SceneNode, Shape2DNode, Vec3 } from '../../scene/types';
 import { NumberField } from '../NumberField/NumberField';
 import './PropertiesPanel.scss';
 
@@ -33,7 +33,7 @@ export function PropertiesPanel() {
   if (selection.length === 0) return <p className="properties__empty">Seleziona un oggetto per modificarne le proprietà.</p>;
   if (!node) return <p className="properties__empty">{selection.length} oggetti selezionati. Usa Ctrl+G per raggrupparli.</p>;
 
-  const patch = (p: Partial<PrimitiveNode> | Partial<Shape2DNode> | Partial<GroupNode>) => updateNode(node.id, p);
+  const patch = (p: Partial<PrimitiveNode> | Partial<Shape2DNode> | Partial<MeshNode> | Partial<GroupNode>) => updateNode(node.id, p);
   const setVec = (key: 'position' | 'rotation', i: number, v: number) => {
     const next = [...node[key]] as Vec3;
     next[i] = v;
@@ -109,6 +109,19 @@ export function PropertiesPanel() {
       </Section>
 
       {node.type === 'primitive' && <PrimitiveFields node={node} patch={patch} locked={locked} />}
+      {node.type === 'mesh' && (
+        <Section title="Mesh importata">
+          <div className="properties__row">
+            <span className="properties__label">File</span>
+            <span className="properties__value" title={node.fileName}>{node.fileName}</span>
+          </div>
+          <div className="properties__row">
+            <span className="properties__label">Triangoli</span>
+            <span className="properties__value">{node.triangles.toLocaleString('it-IT')}</span>
+          </div>
+          <NumberField label="⇱" unit="%" min={0.1} max={100000} step={10} disabled={locked} value={Math.round(node.scale * 10000) / 100} onCommit={(v) => patch({ scale: v / 100 })} />
+        </Section>
+      )}
       {node.type === 'shape2d' && <Shape2DFields node={node} patch={patch} locked={locked} />}
     </div>
   );

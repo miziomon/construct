@@ -1,6 +1,6 @@
 import type { Manifold, ManifoldToplevel } from 'manifold-3d';
 import { CORNER_SPHERE_SEGMENTS, twistDivisions } from '../scene/defaults';
-import type { PrimitiveNode, Scene, SceneNode, Shape2DNode, Vec3 } from '../scene/types';
+import type { MeshNode, PrimitiveNode, Scene, SceneNode, Shape2DNode, Vec3 } from '../scene/types';
 
 /** Risultato del calcolo per un oggetto alla radice della scena (mesh in mm, Z verso l'alto). */
 export interface NodeMesh {
@@ -18,6 +18,15 @@ export interface NodeMesh {
   /** "NoError" se la mesh è valida e manifold. */
   status: string;
   empty: boolean;
+}
+
+/** Esito della registrazione di una mesh importata. */
+export interface AssetCheck {
+  ok: boolean;
+  /** "NoError" oppure il motivo del rifiuto, già leggibile. */
+  status: string;
+  triangles: number;
+  volume: number;
 }
 
 export interface EvalResult {
@@ -39,6 +48,8 @@ const CORNER_SEGMENTS = 32;
  */
 export class Evaluator {
   private cache = new Map<string, Manifold>();
+  /** Mesh importate: restano per tutta la sessione, non fanno parte della cache a scansione. */
+  private assets = new Map<string, Manifold>();
   /** Chiavi toccate nella valutazione corrente, per liberare le altre a fine giro. */
   private touched = new Set<string>();
 
@@ -98,6 +109,44 @@ export class Evaluator {
     }
   }
 
+  /**
+   * Registra una mesh importata. Fonde i vertici coincidenti (l'STL non li condivide) e accetta
+   * solo solidi chiusi e manifold con volume positivo, gli unici su cui le booleane sono affidabili.
+   */
+  registerAsset(id: string, positions: Float32Array, indices: Uint32Array): AssetCheck {
+    const { Mesh, Manifold } = this.wasm;
+    const reject = (status: string): AssetCheck => ({ ok: false, status, triangles: indices.length / 3, volume: 0 });
+    let solid: Manifold | undefined;
+    try {
+      const mesh = new Mesh({ numProp: 3, vertProperties: positions, triVerts: indices });
+      mesh.merge();
+      solid = new Manifold(mesh);
+    } catch (err) {
+      return reject(err instanceof Error ? err.message : String(err));
+    }
+    const status = solid.status();
+    if (status !== 'NoError' || solid.isEmpty()) {
+      solid.delete();
+      return reject(status !== 'NoError' ? status : 'EmptyMesh');
+    }
+    // Una mesh con le facce rivolte verso l'interno ha volume negativo
+    if (solid.volume() <= 0) {
+      solid.delete();
+      return reject('NegativeVolume');
+    }
+    this.assets.get(id)?.delete();
+    this.assets.set(id, solid);
+    return { ok: true, status: 'NoError', triangles: solid.numTri(), volume: solid.volume() };
+  }
+
+  /** Mesh importata nelle sue dimensioni, già scalata e centrata sull'origine dell'asset. */
+  private meshNode(p: MeshNode): Manifold {
+    const base = this.assets.get(p.assetId);
+    if (!base) throw new Error(`Mesh importata non disponibile (${p.fileName}): reimporta il file.`);
+    const s = Math.max(0.001, p.scale);
+    return base.scale([s, s, s]);
+  }
+
   /** Forma 2D estrusa lungo Z, centrata nell'origine. */
   private shape2d(p: Shape2DNode): Manifold {
     const { Manifold, CrossSection } = this.wasm;
@@ -139,6 +188,8 @@ export class Evaluator {
       local = this.primitive(node);
     } else if (node.type === 'shape2d') {
       local = this.shape2d(node);
+    } else if (node.type === 'mesh') {
+      local = this.meshNode(node);
     } else {
       // Gruppo: solid combinati con union/intersection, poi si sottrae l'unione degli hole
       const kids = node.children.map((c) => scene.nodes[c]);
@@ -202,6 +253,8 @@ export class Evaluator {
   dispose(): void {
     for (const h of this.cache.values()) h.delete();
     this.cache.clear();
+    for (const h of this.assets.values()) h.delete();
+    this.assets.clear();
   }
 }
 

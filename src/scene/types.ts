@@ -48,6 +48,19 @@ export type Shape2DNode = BaseNode & {
   | { kind: 'square'; width: number; depth: number; /** Raggio di arrotondamento degli angoli in mm (0 = vivi). */ cornerRadius: number }
 );
 
+/** Mesh importata da un file STL o 3MF. La geometria sta in un asset (vedi src/import/assets.ts). */
+export type MeshNode = BaseNode & {
+  type: 'mesh';
+  assetId: string;
+  /** Nome del file di origine, per il codice OpenSCAD e per l'interfaccia. */
+  fileName: string;
+  /** Centro dell'ingombro nel file originale: la geometria dell'asset è stata ricentrata in questo punto. */
+  origin: Vec3;
+  /** Fattore di scala uniforme (1 = dimensioni del file). */
+  scale: number;
+  triangles: number;
+};
+
 export type GroupOp = 'union' | 'intersection' | 'difference';
 
 export type GroupNode = BaseNode & {
@@ -60,7 +73,7 @@ export type GroupNode = BaseNode & {
   children: string[];
 };
 
-export type SceneNode = PrimitiveNode | Shape2DNode | GroupNode;
+export type SceneNode = PrimitiveNode | Shape2DNode | MeshNode | GroupNode;
 
 export interface Scene {
   nodes: Record<string, SceneNode>;

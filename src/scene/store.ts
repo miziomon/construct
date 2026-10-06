@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import { temporal } from 'zundo';
-import type { GroupNode, GroupOp, PrimitiveKind, PrimitiveNode, Scene, SceneNode, Shape2DKind, Shape2DNode, Vec3 } from './types';
+import type { GroupNode, GroupOp, MeshNode, PrimitiveKind, PrimitiveNode, Scene, SceneNode, Shape2DKind, Shape2DNode, Vec3 } from './types';
 import { DEFAULT_COLOR, PRIMITIVE_LABELS, SHAPE2D_LABELS, halfHeight, primitiveDefaults, shape2dDefaults } from './defaults';
 import { composeTransform, round } from './math';
 
@@ -15,8 +15,10 @@ interface SceneState {
 
   addPrimitive: (kind: PrimitiveKind) => void;
   addShape2D: (kind: Shape2DKind) => void;
+  /** Aggiunge una mesh importata, appoggiata sul piatto e centrata in XY. */
+  addMesh: (input: { assetId: string; name: string; fileName: string; color?: string; origin: Vec3; size: Vec3; triangles: number }) => string;
   /** Aggiorna campi di un nodo (patch parziale, validata dal chiamante). */
-  updateNode: (id: string, patch: Partial<PrimitiveNode> | Partial<Shape2DNode> | Partial<GroupNode>) => void;
+  updateNode: (id: string, patch: Partial<PrimitiveNode> | Partial<Shape2DNode> | Partial<MeshNode> | Partial<GroupNode>) => void;
   select: (ids: string[], additive?: boolean) => void;
   removeSelected: () => void;
   duplicateSelected: () => void;
@@ -118,6 +120,31 @@ export const useSceneStore = create<SceneState>()(
           s.scene.rootIds.push(id);
           s.selection = [id];
         }),
+
+      addMesh: (input) => {
+        const id = newId();
+        set((s) => {
+          const node: MeshNode = {
+            type: 'mesh',
+            id,
+            name: uniqueName(s.scene, input.name),
+            fileName: input.fileName,
+            assetId: input.assetId,
+            origin: input.origin,
+            triangles: input.triangles,
+            scale: 1,
+            // La geometria è ricentrata sull'origine: la base tocca il piatto con Z = metà altezza
+            position: [0, 0, input.size[2] / 2],
+            rotation: [0, 0, 0],
+            mode: 'solid',
+            color: input.color ?? DEFAULT_COLOR,
+          };
+          s.scene.nodes[id] = node;
+          s.scene.rootIds.push(id);
+          s.selection = [id];
+        });
+        return id;
+      },
 
       updateNode: (id, patch) =>
         set((s) => {

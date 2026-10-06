@@ -2,7 +2,7 @@
 import * as Comlink from 'comlink';
 import Module from 'manifold-3d';
 import wasmUrl from 'manifold-3d/manifold.wasm?url';
-import { Evaluator, toMesh, type EvalResult } from './evaluate';
+import { Evaluator, toMesh, type AssetCheck, type EvalResult } from './evaluate';
 import { writeStl } from './export/stl';
 import { write3mf } from './export/threemf';
 import type { Scene } from '../scene/types';
@@ -16,6 +16,11 @@ const getEvaluator = () =>
   }));
 
 const api = {
+  /** Valida e registra una mesh importata (i buffer vengono copiati: il thread principale conserva gli originali). */
+  async registerAsset(id: string, positions: Float32Array, indices: Uint32Array): Promise<AssetCheck> {
+    return (await getEvaluator()).registerAsset(id, positions, indices);
+  },
+
   /** Calcola le mesh di tutti gli oggetti alla radice. I buffer tornano al thread principale senza copia. */
   async evaluate(scene: Scene): Promise<EvalResult> {
     const ev = await getEvaluator();

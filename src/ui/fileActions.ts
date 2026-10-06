@@ -1,6 +1,8 @@
 import { getKernel } from '../kernel/client';
 import { useSceneStore } from '../scene/store';
 import { sceneFromJson, sceneToJson } from '../scene/persistence';
+import { addAsset } from '../import/assets';
+import { restoreAssets } from '../import/restore';
 import { sceneToOpenScad } from '../codegen/openscad';
 import { notify } from './notify/notifyStore';
 
@@ -42,7 +44,10 @@ export function openProject(): void {
     const file = input.files?.[0];
     if (!file) return;
     try {
-      useSceneStore.getState().loadScene(sceneFromJson(await file.text()));
+      const { scene, assets } = sceneFromJson(await file.text());
+      // Le mesh del progetto entrano nell'archivio locale, poi si registrano nel kernel
+      for (const asset of assets) await addAsset(asset.positions, asset.indices);
+      useSceneStore.getState().loadScene(await restoreAssets(scene));
     } catch (err) {
       notify.error(err instanceof Error ? err.message : 'Impossibile aprire il file.');
     }
