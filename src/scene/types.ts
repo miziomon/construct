@@ -29,6 +29,25 @@ export type PrimitiveNode = BaseNode & { type: 'primitive' } & (
   | { kind: 'torus'; majorRadius: number; minorRadius: number; segments: number }
 );
 
+export type Shape2DKind = 'circle' | 'square';
+
+/**
+ * Forma 2D estrusa (come linear_extrude di OpenSCAD): il profilo sta sul piano XY e si estrude
+ * lungo Z per `height` mm, con torsione e scala della cima opzionali.
+ */
+export type Shape2DNode = BaseNode & {
+  type: 'shape2d';
+  /** Altezza dell'estrusione in mm. */
+  height: number;
+  /** Torsione della cima rispetto alla base, in gradi. */
+  twist: number;
+  /** Fattore di scala della cima (1 = prisma, 0 = cono). */
+  scaleTop: number;
+} & (
+  | { kind: 'circle'; radius: number; /** Numero di lati: 3 triangolo, 6 esagono, 64 quasi liscio ($fn di OpenSCAD). */ segments: number }
+  | { kind: 'square'; width: number; depth: number; /** Raggio di arrotondamento degli angoli in mm (0 = vivi). */ cornerRadius: number }
+);
+
 export type GroupOp = 'union' | 'intersection' | 'difference';
 
 export type GroupNode = BaseNode & {
@@ -41,7 +60,7 @@ export type GroupNode = BaseNode & {
   children: string[];
 };
 
-export type SceneNode = PrimitiveNode | GroupNode;
+export type SceneNode = PrimitiveNode | Shape2DNode | GroupNode;
 
 export interface Scene {
   nodes: Record<string, SceneNode>;

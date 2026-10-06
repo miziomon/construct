@@ -98,6 +98,39 @@
     color: color('text-muted');
   }
 
+  &__chips {
+    display: flex;
+    flex: 1;
+    flex-wrap: wrap;
+    gap: $space-1;
+  }
+
+  &__chip {
+    min-width: 28px;
+    padding: 3px 6px;
+    border: 1px solid color('border');
+    border-radius: $radius-sm;
+    background: color('bg');
+    font-family: $font-mono;
+    font-size: 11px;
+    @include focus-ring;
+
+    &:hover:not(:disabled) {
+      border-color: color('accent');
+    }
+
+    &:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    &--active {
+      border-color: color('accent');
+      background: color('accent-soft');
+      color: color('accent');
+    }
+  }
+
   &__range {
     flex: 1;
     min-width: 0;

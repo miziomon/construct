@@ -1,5 +1,6 @@
 import type { Manifold, ManifoldToplevel } from 'manifold-3d';
-import type { PrimitiveNode, Scene, SceneNode, Vec3 } from '../scene/types';
+import { twistDivisions } from '../scene/defaults';
+import type { PrimitiveNode, Scene, SceneNode, Shape2DNode, Vec3 } from '../scene/types';
 
 /** Risultato del calcolo per un oggetto alla radice della scena (mesh in mm, Z verso l'alto). */
 export interface NodeMesh {
@@ -27,6 +28,9 @@ export interface EvalResult {
 
 /** Raggio/dimensione minima accettata dal kernel: evita geometrie degeneri. */
 const EPS = 0.01;
+/** Segmenti per giro intero degli angoli arrotondati dei quadrati 2D (8 per ogni angolo retto). */
+const CORNER_SEGMENTS = 32;
+
 
 /**
  * Valuta la scena con manifold-3d. Mantiene una cache dei Manifold per sottoalbero:
@@ -49,7 +53,8 @@ export class Evaluator {
       });
       return `G(${node.op},${node.position},${node.rotation})[${kids.join('|')}]`;
     }
-    const { id: _id, name: _name, color: _color, mode: _mode, type: _type, ...geometry } = node;
+    const { id: _id, name: _name, color: _color, mode: _mode, locked: _locked, ...geometry } = node;
+    // Il tipo resta nella chiave: primitive e forme 2D hanno campi diversi
     return `P${JSON.stringify(geometry)}`;
   }
 
@@ -83,6 +88,35 @@ export class Evaluator {
     }
   }
 
+  /** Forma 2D estrusa lungo Z, centrata nell'origine. */
+  private shape2d(p: Shape2DNode): Manifold {
+    const { Manifold, CrossSection } = this.wasm;
+    let section;
+    if (p.kind === 'circle') {
+      // Il primo vertice sta a +X, come circle($fn=n) di OpenSCAD
+      section = CrossSection.circle(Math.max(EPS, p.radius), p.segments);
+    } else {
+      const w = Math.max(EPS, p.width);
+      const d = Math.max(EPS, p.depth);
+      // Il raggio non può superare metà del lato minore
+      const r = Math.min(Math.max(0, p.cornerRadius), (Math.min(w, d) - EPS) / 2);
+      if (r > 0) {
+        // Quadrato ridotto di r per lato, poi offset arrotondato: angoli esatti senza booleane 3D
+        const inner = CrossSection.square([w - 2 * r, d - 2 * r], true);
+        section = inner.offset(r, 'Round', 2, CORNER_SEGMENTS);
+        inner.delete();
+      } else {
+        section = CrossSection.square([w, d], true);
+      }
+    }
+    const divisions = twistDivisions(p.twist);
+    // La scala va passata come vettore [x, y]: con un numero singolo manifold 3.5 produce un prisma dimezzato
+    const scale = Math.max(0, p.scaleTop);
+    const solid = Manifold.extrude(section, Math.max(EPS, p.height), divisions, p.twist, [scale, scale], true);
+    section.delete();
+    return solid;
+  }
+
   /** Restituisce il Manifold del nodo (già trasformato nello spazio del genitore). Di proprietà della cache. */
   private build(scene: Scene, node: SceneNode): Manifold {
     const key = this.key(scene, node);
@@ -93,6 +127,8 @@ export class Evaluator {
     let local: Manifold;
     if (node.type === 'primitive') {
       local = this.primitive(node);
+    } else if (node.type === 'shape2d') {
+      local = this.shape2d(node);
     } else {
       // Gruppo: solid combinati con union/intersection, poi si sottrae l'unione degli hole
       const kids = node.children.map((c) => scene.nodes[c]);

@@ -1,5 +1,6 @@
-import type { GroupNode, PrimitiveNode, Scene, SceneNode } from '../scene/types';
+import type { GroupNode, PrimitiveNode, Scene, SceneNode, Shape2DNode } from '../scene/types';
 import { round } from '../scene/math';
+import { twistDivisions } from '../scene/defaults';
 
 const IND = '  ';
 const n = (v: number) => String(round(v, 4));
@@ -28,6 +29,18 @@ function primitiveCode(p: PrimitiveNode): string {
   }
 }
 
+/**
+ * Forma 2D estrusa. In OpenSCAD la torsione positiva ruota in senso orario (regola della mano sinistra),
+ * in manifold in senso antiorario: il segno si inverte per ottenere lo stesso solido.
+ */
+function shape2dCode(p: Shape2DNode): string {
+  const extrude = `linear_extrude(height = ${n(p.height)}, center = true, twist = ${n(-p.twist)}, scale = ${n(p.scaleTop)}, slices = ${Math.max(1, twistDivisions(p.twist))})`;
+  if (p.kind === 'circle') return `${extrude} circle(r = ${n(p.radius)}, $fn = ${p.segments});`;
+  const r = Math.min(Math.max(0, p.cornerRadius), (Math.min(p.width, p.depth) - 0.01) / 2);
+  if (r > 0) return `${extrude} offset(r = ${n(r)}, $fn = 32) square([${n(p.width - 2 * r)}, ${n(p.depth - 2 * r)}], center = true);`;
+  return `${extrude} square([${n(p.width)}, ${n(p.depth)}], center = true);`;
+}
+
 /** Righe di codice di un nodo, con trasformazione e commento. Gli hole non hanno colore (verranno sottratti). */
 function nodeLines(scene: Scene, node: SceneNode, depth: number): string[] {
   const pad = IND.repeat(depth);
@@ -39,6 +52,10 @@ function nodeLines(scene: Scene, node: SceneNode, depth: number): string[] {
 
   if (node.type === 'primitive') {
     out.push(`${head} ${colored}${primitiveCode(node)}`);
+    return out;
+  }
+  if (node.type === 'shape2d') {
+    out.push(`${head} ${colored}${shape2dCode(node)}`);
     return out;
   }
   out.push(...groupLines(scene, node, head, colored, depth));

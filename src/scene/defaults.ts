@@ -1,4 +1,4 @@
-import type { PrimitiveKind, PrimitiveNode } from './types';
+import type { PrimitiveKind, PrimitiveNode, Shape2DKind, Shape2DNode } from './types';
 
 /** Etichette italiane delle primitive, usate in libreria e outliner. */
 export const PRIMITIVE_LABELS: Record<PrimitiveKind, string> = {
@@ -12,12 +12,40 @@ export const PRIMITIVE_LABELS: Record<PrimitiveKind, string> = {
 /** Numero di segmenti predefinito per le curve (TinkerCAD si ferma a 64, qui si arriva a 256). */
 export const DEFAULT_SEGMENTS = 64;
 export const MAX_SEGMENTS = 256;
-export const MIN_SEGMENTS = 8;
+/** Minimo dei lati per cerchio, cilindro, cono e toro: 3 = triangolo (come $fn=3 in OpenSCAD). */
+export const MIN_SEGMENTS = 3;
+/** La sfera di manifold è una sfera geodetica: i segmenti sono sempre multipli di 4. */
+export const MIN_SPHERE_SEGMENTS = 8;
+
+/** Scorciatoie per il numero di lati, con il nome del poligono regolare corrispondente. */
+export const SEGMENT_PRESETS: { value: number; label: string; title: string }[] = [
+  { value: 3, label: '3', title: 'Triangolo' },
+  { value: 4, label: '4', title: 'Quadrato' },
+  { value: 5, label: '5', title: 'Pentagono' },
+  { value: 6, label: '6', title: 'Esagono' },
+  { value: 8, label: '8', title: 'Ottagono' },
+  { value: 16, label: '16', title: '16 lati' },
+  { value: 64, label: '64', title: 'Quasi liscio' },
+];
+
+export const SHAPE2D_LABELS: Record<Shape2DKind, string> = { circle: 'Cerchio', square: 'Quadrato' };
+
+/**
+ * Divisioni verticali di un'estrusione con torsione: una ogni 2° di rotazione.
+ * Con passi più larghi la superficie si deforma (a 5° un profilo sottile 10:1 gonfia il volume del 13%).
+ */
+export function twistDivisions(twist: number): number {
+  return twist === 0 ? 0 : Math.min(360, Math.ceil(Math.abs(twist) / 2));
+}
+
+/** Altezza iniziale dell'estrusione delle forme 2D (mm). */
+export const DEFAULT_EXTRUDE_HEIGHT = 10;
 
 export const DEFAULT_COLOR = '#4da3ff';
 
-/** Altezza (mm) del punto più basso della primitiva rispetto al suo centro. */
-export function halfHeight(p: PrimitiveNode): number {
+/** Altezza (mm) del punto più basso della forma rispetto al suo centro. */
+export function halfHeight(p: PrimitiveNode | Shape2DNode): number {
+  if (p.type === 'shape2d') return p.height / 2;
   switch (p.kind) {
     case 'box': return p.size[2] / 2;
     case 'cylinder':
@@ -39,5 +67,22 @@ export function primitiveDefaults(kind: PrimitiveKind): DistributiveOmit<Primiti
     case 'cone': return { ...base, kind, radiusBottom: 10, radiusTop: 0, height: 20, segments: DEFAULT_SEGMENTS };
     case 'sphere': return { ...base, kind, radius: 10, segments: DEFAULT_SEGMENTS };
     case 'torus': return { ...base, kind, majorRadius: 12, minorRadius: 4, segments: DEFAULT_SEGMENTS };
+  }
+}
+
+/** Parametri iniziali di una forma 2D estrusa (senza id, nome e posizione). */
+export function shape2dDefaults(kind: Shape2DKind): DistributiveOmit<Shape2DNode, 'id' | 'name' | 'position'> {
+  const base = {
+    type: 'shape2d' as const,
+    rotation: [0, 0, 0] as [number, number, number],
+    mode: 'solid' as const,
+    color: DEFAULT_COLOR,
+    height: DEFAULT_EXTRUDE_HEIGHT,
+    twist: 0,
+    scaleTop: 1,
+  };
+  switch (kind) {
+    case 'circle': return { ...base, kind, radius: 10, segments: DEFAULT_SEGMENTS };
+    case 'square': return { ...base, kind, width: 20, depth: 20, cornerRadius: 0 };
   }
 }

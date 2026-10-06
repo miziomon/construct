@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { sceneToOpenScad } from './openscad';
-import { primitiveDefaults } from '../scene/defaults';
-import type { GroupNode, PrimitiveNode, Scene } from '../scene/types';
+import { primitiveDefaults, shape2dDefaults } from '../scene/defaults';
+import type { GroupNode, PrimitiveNode, Scene, Shape2DNode } from '../scene/types';
 
 const scene = (): Scene => {
   const box = { ...primitiveDefaults('box'), id: 'b', name: 'Scatola', position: [0, 0, 10] } as PrimitiveNode;
@@ -45,5 +45,13 @@ describe('sceneToOpenScad', () => {
     expect(code).toContain('difference() {');
     expect(code.indexOf('// Scatola')).toBeLessThan(code.indexOf('// Foro'));
     expect(code).not.toContain('union()');
+  });
+
+  it('forme 2D estruse: linear_extrude con $fn, torsione invertita e angoli con offset', () => {
+    const hex = { ...shape2dDefaults('circle'), id: 'h', name: 'Esagono', position: [0, 0, 5], radius: 10, segments: 6, twist: 90, scaleTop: 0.5 } as Shape2DNode;
+    const sq = { ...shape2dDefaults('square'), id: 's', name: 'Piastra', position: [0, 0, 5], width: 30, depth: 20, cornerRadius: 4 } as Shape2DNode;
+    const code = sceneToOpenScad({ nodes: { h: hex, s: sq }, rootIds: ['h', 's'] });
+    expect(code).toContain('linear_extrude(height = 10, center = true, twist = -90, scale = 0.5, slices = 45) circle(r = 10, $fn = 6);');
+    expect(code).toContain('offset(r = 4, $fn = 32) square([22, 12], center = true);');
   });
 });

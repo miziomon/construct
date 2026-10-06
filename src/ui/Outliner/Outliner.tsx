@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronRight, CircleDashed, Group, Lock } from 'lucide-react';
 import { isLocked, useSceneStore } from '../../scene/store';
-import { PRIMITIVE_ICONS } from '../ShapeLibrary/ShapeLibrary';
+import { PRIMITIVE_ICONS, SHAPE2D_ICONS } from '../ShapeLibrary/ShapeLibrary';
 import './Outliner.scss';
 
 interface RowProps {
@@ -21,7 +21,7 @@ function Row({ id, depth, collapsed, toggle }: RowProps) {
 
   const isGroup = node.type === 'group';
   const isOpen = isGroup && !collapsed.has(id);
-  const Icon = node.type === 'group' ? Group : PRIMITIVE_ICONS[node.kind];
+  const Icon = node.type === 'group' ? Group : node.type === 'shape2d' ? SHAPE2D_ICONS[node.kind] : PRIMITIVE_ICONS[node.kind];
   const cls = ['outliner__row', selected && 'outliner__row--selected', node.mode === 'hole' && 'outliner__row--hole'].filter(Boolean).join(' ');
 
   return (

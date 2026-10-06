@@ -2,8 +2,8 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import Module from 'manifold-3d';
 import type { ManifoldToplevel } from 'manifold-3d';
 import { Evaluator } from './evaluate';
-import type { GroupNode, PrimitiveNode, Scene } from '../scene/types';
-import { primitiveDefaults } from '../scene/defaults';
+import type { GroupNode, PrimitiveNode, Scene, Shape2DNode } from '../scene/types';
+import { primitiveDefaults, shape2dDefaults } from '../scene/defaults';
 
 let wasm: ManifoldToplevel;
 
@@ -14,6 +14,9 @@ beforeAll(async () => {
 
 const prim = (id: string, kind: Parameters<typeof primitiveDefaults>[0], patch: Partial<PrimitiveNode> = {}): PrimitiveNode =>
   ({ ...primitiveDefaults(kind), id, name: id, position: [0, 0, 0], ...patch }) as PrimitiveNode;
+
+const shape = (id: string, kind: Parameters<typeof shape2dDefaults>[0], patch: Partial<Shape2DNode> = {}): Shape2DNode =>
+  ({ ...shape2dDefaults(kind), id, name: id, position: [0, 0, 0], ...patch }) as Shape2DNode;
 
 const group = (id: string, children: string[], patch: Partial<GroupNode> = {}): GroupNode => ({
   id, name: id, type: 'group', op: 'union', children, position: [0, 0, 0], rotation: [0, 0, 0], mode: 'solid', color: '#fff', ...patch,
@@ -111,5 +114,54 @@ describe('Evaluator', () => {
     // Scambiando la base resta solo la parte di B che non si sovrappone: nulla, perché B sta dentro A
     const swapped: Scene = { nodes: { a, b, g: group('g', ['b', 'a'], { op: 'difference' }) }, rootIds: ['g'] };
     expect(new Evaluator(wasm).evaluate(swapped).meshes[0].empty).toBe(true);
+  });
+
+  describe('forme 2D estruse', () => {
+    const volumeOf = (node: Shape2DNode) => new Evaluator(wasm).evaluate({ nodes: { a: node }, rootIds: ['a'] }).meshes[0];
+
+    it('il cerchio con 6 lati è un esagono regolare ($fn = 6)', () => {
+      const m = volumeOf(shape('a', 'circle', { radius: 10, segments: 6, height: 5 } as Partial<Shape2DNode>));
+      expect(m.status).toBe('NoError');
+      expect(m.volume).toBeCloseTo(((3 * Math.sqrt(3)) / 2) * 100 * 5, 1);
+      // Il primo vertice sta a +X: l'ingombro in X è il diametro, in Y è l'apotema per due
+      expect(m.bbox.max[0]).toBeCloseTo(10, 3);
+      expect(m.bbox.max[1]).toBeCloseTo(10 * Math.sin(Math.PI / 3), 3);
+    });
+
+    it('con 3 lati è un triangolo equilatero', () => {
+      const m = volumeOf(shape('a', 'circle', { radius: 10, segments: 3, height: 4 } as Partial<Shape2DNode>));
+      expect(m.volume).toBeCloseTo(((3 * Math.sqrt(3)) / 4) * 100 * 4, 1);
+      expect(m.indices.length / 3).toBe(8); // 2 triangoli di base + 6 di fianco
+    });
+
+    it('il quadrato con angoli arrotondati perde l area dei quattro angoli', () => {
+      const m = volumeOf(shape('a', 'square', { width: 30, depth: 20, cornerRadius: 4, height: 10 } as Partial<Shape2DNode>));
+      const area = 30 * 20 - (4 - Math.PI) * 16;
+      expect(m.volume / 10).toBeCloseTo(area, 0);
+      expect(m.bbox.max[0]).toBeCloseTo(15, 3);
+    });
+
+    it('la scala della cima a 0 produce un cono (un terzo del prisma)', () => {
+      const prism = volumeOf(shape('a', 'circle', { radius: 10, segments: 32, height: 9 } as Partial<Shape2DNode>));
+      const cone = volumeOf(shape('a', 'circle', { radius: 10, segments: 32, height: 9, scaleTop: 0 } as Partial<Shape2DNode>));
+      expect(cone.volume).toBeCloseTo(prism.volume / 3, 0);
+    });
+
+    it('la torsione conserva il volume e ruota la cima in senso antiorario per valori positivi', () => {
+      const flat = volumeOf(shape('a', 'square', { width: 20, depth: 2, height: 10 } as Partial<Shape2DNode>));
+      const twisted = volumeOf(shape('a', 'square', { width: 20, depth: 2, height: 10, twist: 45 } as Partial<Shape2DNode>));
+      expect(twisted.status).toBe('NoError');
+      // Profilo sottile 10:1, il caso peggiore: con passi di 2° l'errore resta sotto il 6% (a 5° era del 13%)
+      expect(Math.abs(twisted.volume / flat.volume - 1)).toBeLessThan(0.06);
+      // Vertici della faccia superiore (z = +5): con rotazione antioraria di 45° l'asse lungo punta verso (1, 1)
+      let alongPlus = -Infinity;
+      let alongMinus = -Infinity;
+      for (let i = 0; i < twisted.positions.length; i += 3) {
+        if (Math.abs(twisted.positions[i + 2] - 5) > 1e-3) continue;
+        alongPlus = Math.max(alongPlus, twisted.positions[i] + twisted.positions[i + 1]);
+        alongMinus = Math.max(alongMinus, twisted.positions[i] - twisted.positions[i + 1]);
+      }
+      expect(alongPlus).toBeGreaterThan(alongMinus + 5);
+    });
   });
 });

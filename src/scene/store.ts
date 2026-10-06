@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import { temporal } from 'zundo';
-import type { GroupNode, GroupOp, PrimitiveKind, PrimitiveNode, Scene, SceneNode, Vec3 } from './types';
-import { DEFAULT_COLOR, PRIMITIVE_LABELS, halfHeight, primitiveDefaults } from './defaults';
+import type { GroupNode, GroupOp, PrimitiveKind, PrimitiveNode, Scene, SceneNode, Shape2DKind, Shape2DNode, Vec3 } from './types';
+import { DEFAULT_COLOR, PRIMITIVE_LABELS, SHAPE2D_LABELS, halfHeight, primitiveDefaults, shape2dDefaults } from './defaults';
 import { composeTransform, round } from './math';
 
 export type GizmoMode = 'translate' | 'rotate';
@@ -14,8 +14,9 @@ interface SceneState {
   gizmoMode: GizmoMode;
 
   addPrimitive: (kind: PrimitiveKind) => void;
+  addShape2D: (kind: Shape2DKind) => void;
   /** Aggiorna campi di un nodo (patch parziale, validata dal chiamante). */
-  updateNode: (id: string, patch: Partial<PrimitiveNode> | Partial<GroupNode>) => void;
+  updateNode: (id: string, patch: Partial<PrimitiveNode> | Partial<Shape2DNode> | Partial<GroupNode>) => void;
   select: (ids: string[], additive?: boolean) => void;
   removeSelected: () => void;
   duplicateSelected: () => void;
@@ -96,6 +97,22 @@ export const useSceneStore = create<SceneState>()(
             position: [0, 0, 0] as Vec3,
           } as PrimitiveNode;
           // Appoggia la forma sul piatto: il punto più basso a Z = 0
+          node.position = [0, 0, halfHeight(node)];
+          s.scene.nodes[id] = node;
+          s.scene.rootIds.push(id);
+          s.selection = [id];
+        }),
+
+      addShape2D: (kind) =>
+        set((s) => {
+          const id = newId();
+          const node = {
+            ...shape2dDefaults(kind),
+            id,
+            name: uniqueName(s.scene, SHAPE2D_LABELS[kind]),
+            position: [0, 0, 0] as Vec3,
+          } as Shape2DNode;
+          // L'estrusione è centrata: la base tocca il piatto con Z = altezza / 2
           node.position = [0, 0, halfHeight(node)];
           s.scene.nodes[id] = node;
           s.scene.rootIds.push(id);
