@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { strToU8, zipSync } from 'fflate';
 import { parse3mf } from './threemf';
 import { write3mf } from '../kernel/export/threemf';
-import { ImportError } from './types';
+import { ImportError, type ImportedMesh } from './types';
 
 const positions = new Float32Array([0, 0, 0, 10, 0, 0, 0, 10, 0, 0, 0, 10]);
 const indices = new Uint32Array([0, 2, 1, 0, 1, 3, 1, 2, 3, 0, 3, 2]);
@@ -62,5 +62,60 @@ describe('parse3mf', () => {
       `<model ${NS}><resources><object id="1" type="model"><mesh><vertices><vertex x="0" y="0" z="0"/></vertices>` +
       '<triangles><triangle v1="0" v2="5" v3="9"/></triangles></mesh></object></resources><build><item objectid="1"/></build></model>';
     expect(() => parse3mf(pack(bad), 'x')).toThrow(/indici/);
+  });
+});
+
+describe('parse3mf: estensione di produzione (Bambu Studio)', () => {
+  const NS_P = `${NS} xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06"`;
+
+  /** Pacchetto con le mesh in 3D/Objects/object_1.model e solo riferimenti p:path nel modello principale. */
+  function bambu(extra: Record<string, Uint8Array> = {}, itemTransform = '1 0 0 0 1 0 0 0 1 100 50 5'): ArrayBuffer {
+    const sub = `<model unit="millimeter" ${NS_P}><resources><object id="1" type="model">${TETRA}</object><object id="2" type="model">${TETRA}</object></resources></model>`;
+    const main =
+      `<model unit="millimeter" ${NS_P}><resources><object id="3" type="model"><components>` +
+      '<component p:path="/3D/Objects/object_1.model" objectid="1" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>' +
+      '<component p:path="/3D/Objects/object_1.model" objectid="2" transform="1 0 0 0 1 0 0 0 1 20 0 0"/>' +
+      `</components></object></resources><build><item objectid="3" transform="${itemTransform}"/></build></model>`;
+    return zipSync({ '3D/3dmodel.model': strToU8(main), '3D/Objects/object_1.model': strToU8(sub), ...extra }).buffer as ArrayBuffer;
+  }
+
+  it('segue p:path e produce una mesh per componente, con le trasformazioni composte', () => {
+    const meshes = parse3mf(bambu(), 'dado');
+    expect(meshes).toHaveLength(2);
+    expect(meshes.map((m) => m.indices.length / 3)).toEqual([4, 4]);
+    // Il primo componente è il tetraedro traslato dalla sola voce di build, il secondo anche di 20 mm in X
+    const minX = (m: ImportedMesh) => Math.min(...Array.from(m.positions).filter((_, i) => i % 3 === 0));
+    expect(minX(meshes[0])).toBeCloseTo(100, 3);
+    expect(minX(meshes[1])).toBeCloseTo(120, 3);
+  });
+
+  it('nomi e colori vengono dalle impostazioni di Bambu Studio', () => {
+    const settings =
+      '<config><object id="3"><metadata key="name" value="Dado zodiacale"/><metadata key="extruder" value="1"/>' +
+      '<part id="1"><metadata key="name" value="Dado"/><metadata key="extruder" value="1"/></part>' +
+      '<part id="2"><metadata key="name" value="Simboli"/><metadata key="extruder" value="2"/></part></object></config>';
+    const project = JSON.stringify({ filament_colour: ['#EDE6D6', '#A31621'] });
+    const meshes = parse3mf(bambu({ 'Metadata/model_settings.config': strToU8(settings), 'Metadata/project_settings.config': strToU8(project) }), 'dado');
+    expect(meshes.map((m) => m.name)).toEqual(['Dado', 'Simboli']);
+    expect(meshes.map((m) => m.color)).toEqual(['#ede6d6', '#a31621']);
+  });
+
+  it('senza impostazioni i nomi sono quelli dell oggetto e un numero, senza colore', () => {
+    const meshes = parse3mf(bambu(), 'dado');
+    expect(meshes.map((m) => m.name)).toEqual(['dado 3 1', 'dado 3 2']);
+    expect(meshes.every((m) => m.color === undefined)).toBe(true);
+  });
+
+  it('impostazioni illeggibili non bloccano l import', () => {
+    const meshes = parse3mf(bambu({ 'Metadata/model_settings.config': strToU8('<config><object'), 'Metadata/project_settings.config': strToU8('{non json') }), 'dado');
+    expect(meshes).toHaveLength(2);
+  });
+
+  it('un riferimento a un file mancante dà l errore di geometria assente, non un arresto', () => {
+    const main =
+      `<model unit="millimeter" ${NS_P}><resources><object id="3" type="model"><components>` +
+      '<component p:path="/3D/Objects/non_c_e.model" objectid="1"/></components></object></resources>' +
+      '<build><item objectid="3"/></build></model>';
+    expect(() => parse3mf(pack(main), 'x')).toThrow(/non contiene geometria/);
   });
 });

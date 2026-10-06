@@ -18,6 +18,21 @@ I messaggi di commit seguono i [Conventional Commits](https://www.conventionalco
 
 ## [Non rilasciato]
 
+## [0.6.0] - 2026-10-06
+
+### Aggiunto
+- Raggi per asse: Raggio Y per cerchio, cilindro e cono, Raggio Y e Raggio Z per la sfera. Le forme possono essere ovali (ellissi ed ellissoidi) con slider nel pannello, tooltip e maniglie di Ridimensiona indipendenti per asse. Il codice OpenSCAD usa `scale()`.
+- Import dei file 3MF di Bambu Studio (e Orca Slicer): le mesh stanno in file separati dentro il pacchetto e prima il file veniva rifiutato. Ogni parte diventa una mesh con il suo nome, e il colore del filamento se indicato.
+- Scorciatoie C (codice), D (tema) e M (menu), con i tasti nei tooltip di tutti i pulsanti della barra in alto.
+
+### Modificato
+- Il codice OpenSCAD va a capo dopo ogni comando (un modificatore per riga, elenchi lunghi su più righe). Vale anche per il file `.scad` scaricato.
+- Ridimensiona (R) non arrotonda più gli assi che non cambiano.
+- Con una modale aperta restano attive solo le scorciatoie che chiudono il codice (C e Ctrl+J).
+
+### Corretto
+- Il piatto nascosto (tasto P) restava disegnato finché non si orbitava la vista: la scena non veniva ridisegnata. Ora il piatto cambia aspetto subito, e un test confronta le immagini mostrate.
+
 ## [0.5.0] - 2026-10-06
 
 ### Aggiunto

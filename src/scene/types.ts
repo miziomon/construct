@@ -27,9 +27,17 @@ export type PrimitiveKind = 'box' | 'cylinder' | 'cone' | 'sphere' | 'torus' | P
 export type PrimitiveNode = BaseNode & { type: 'primitive' } & (
   | { kind: 'box'; size: Vec3; /** Raggio di arrotondamento di tutti gli spigoli in mm (0 o assente = spigoli vivi). */ cornerRadius?: number }
   | { kind: PolyhedronKind; /** Distanza tra due facce opposte in mm (la misura dei dadi). */ size: number; /** Raggio di arrotondamento di spigoli e vertici in mm (0 = vivi). */ cornerRadius: number }
-  | { kind: 'cylinder'; radius: number; height: number; segments: number }
-  | { kind: 'cone'; radiusBottom: number; radiusTop: number; height: number; segments: number }
-  | { kind: 'sphere'; radius: number; segments: number }
+  | { kind: 'cylinder'; radius: number; /** Raggio lungo Y in mm (assente = uguale a `radius`: cilindro tondo). */ radiusY?: number; height: number; segments: number }
+  | {
+      kind: 'cone';
+      radiusBottom: number;
+      radiusTop: number;
+      /** Raggio lungo Y dell'estremità più larga in mm; l'altra mantiene lo stesso rapporto Y/X (assente = cono tondo). */
+      radiusY?: number;
+      height: number;
+      segments: number;
+    }
+  | { kind: 'sphere'; radius: number; /** Raggi lungo Y e Z in mm (assenti = uguali a `radius`: sfera tonda). */ radiusY?: number; radiusZ?: number; segments: number }
   | { kind: 'torus'; majorRadius: number; minorRadius: number; segments: number }
 );
 
@@ -55,6 +63,8 @@ export type Shape2DNode = BaseNode & {
       segments: number;
       /** Raggio di arrotondamento degli angoli del poligono in mm (0 o assente = angoli vivi). */
       cornerRadius?: number;
+      /** Raggio lungo Y in mm (assente = uguale a `radius`: cerchio o poligono regolare). */
+      radiusY?: number;
     }
   | { kind: 'square'; width: number; depth: number; /** Raggio di arrotondamento degli angoli in mm (0 = vivi). */ cornerRadius: number }
 );

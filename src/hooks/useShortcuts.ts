@@ -10,8 +10,12 @@ export function useShortcuts(): void {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (isTyping(e.target)) return;
-      // Con una modale aperta le scorciatoie dell'editor (Canc, G, ...) non devono agire sulla scena: resta solo Ctrl+J per chiudere il codice
-      if (document.querySelector('dialog[open]') && !((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'j')) return;
+      // Con una modale aperta le scorciatoie dell'editor (Canc, G, ...) non devono agire sulla scena:
+      // restano solo quelle che chiudono la modale del codice (C e Ctrl+J)
+      if (document.querySelector('dialog[open]')) {
+        const closesCode = useUiStore.getState().codeOpen && ((e.ctrlKey || e.metaKey) ? e.key.toLowerCase() === 'j' : e.key.toLowerCase() === 'c');
+        if (!closesCode) return;
+      }
       const s = useSceneStore.getState();
       const temporal = useSceneStore.temporal.getState();
       const mod = e.ctrlKey || e.metaKey;
@@ -29,6 +33,9 @@ export function useShortcuts(): void {
       else if (mod && key === 'y') { e.preventDefault(); temporal.redo(); }
       else if (mod && key === 'd') { e.preventDefault(); s.duplicateSelected(); }
       else if (mod && key === 'g') { e.preventDefault(); if (e.shiftKey) s.ungroupSelected(); else s.groupSelected(); }
+      else if (!mod && key === 'c') useUiStore.getState().toggleCode();
+      else if (!mod && key === 'd') useUiStore.getState().toggleTheme();
+      else if (!mod && key === 'm') useUiStore.getState().toggleMenu();
       else if (mod && key === 'j') { e.preventDefault(); useUiStore.getState().toggleCode(); }
       else if (key === 'delete' || key === 'backspace') { e.preventDefault(); s.removeSelected(); }
       else if (!mod && key === 'h') s.toggleHoleSelected();

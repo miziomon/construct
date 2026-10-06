@@ -11,9 +11,13 @@ const NEXT_BED: Record<BedMode, BedMode> = { full: 'grid', grid: 'none', none: '
 interface UiState {
   /** Modale con il codice OpenSCAD aperta (non si salva: all'avvio è chiusa). */
   codeOpen: boolean;
+  /** Menu a tendina dell'header aperto (non si salva). */
+  menuOpen: boolean;
   theme: Theme;
   bedMode: BedMode;
   toggleCode: () => void;
+  setMenuOpen: (open: boolean) => void;
+  toggleMenu: () => void;
   setCodeOpen: (open: boolean) => void;
   toggleTheme: () => void;
   cycleBed: () => void;
@@ -24,9 +28,12 @@ export const useUiStore = create<UiState>()(
   persist(
     (set, get) => ({
       codeOpen: false,
+      menuOpen: false,
       theme: 'light',
       bedMode: 'full',
       toggleCode: () => set({ codeOpen: !get().codeOpen }),
+      setMenuOpen: (menuOpen) => set({ menuOpen }),
+      toggleMenu: () => set({ menuOpen: !get().menuOpen }),
       setCodeOpen: (codeOpen) => set({ codeOpen }),
       toggleTheme: () => set({ theme: get().theme === 'light' ? 'dark' : 'light' }),
       cycleBed: () => set({ bedMode: NEXT_BED[get().bedMode] }),

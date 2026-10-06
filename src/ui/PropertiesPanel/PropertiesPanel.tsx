@@ -169,6 +169,21 @@ function PrimitiveFields({ node, patch, locked }: { node: Extract<SceneNode, { t
       onCommit={(v) => patch({ [key]: v } as Partial<PrimitiveNode>)}
     />
   );
+  /** Raggio opzionale lungo Y o Z: se torna uguale a quello X la forma è di nuovo tonda e il campo si toglie. */
+  const axisRadius = (label: string, value: number, base: number, key: 'radiusY' | 'radiusZ', tooltip: string) => (
+    <SliderField
+      key={key}
+      label={label}
+      {...dimSlider}
+      min={0.5}
+      max={BED_SIZE / 2}
+      hardMin={0.1}
+      tooltip={tooltip}
+      disabled={locked}
+      value={value}
+      onCommit={(v) => patch({ [key]: Math.abs(v - base) < 1e-9 ? undefined : v } as Partial<PrimitiveNode>)}
+    />
+  );
   const segments = (value: number, sphere = false) => (
     <SegmentsControl
       key="segments"
@@ -223,13 +238,19 @@ function PrimitiveFields({ node, patch, locked }: { node: Extract<SceneNode, { t
     case 'cylinder':
       return (
         <Section title="Dimensioni">
-          {[dim('Raggio', node.radius, 'radius', TIPS.radius), dim('Altezza', node.height, 'height', TIPS.height, 0.1, BED_SIZE), segments(node.segments)]}
+          {[
+            dim('Raggio X', node.radius, 'radius', TIPS.radiusX),
+            axisRadius('Raggio Y', node.radiusY ?? node.radius, node.radius, 'radiusY', TIPS.radiusY),
+            dim('Altezza', node.height, 'height', TIPS.height, 0.1, BED_SIZE),
+            segments(node.segments),
+          ]}
         </Section>
       );
     case 'cone':
       return (
         <Section title="Dimensioni">
           {[
+            axisRadius('Raggio Y', node.radiusY ?? Math.max(node.radiusBottom, node.radiusTop), Math.max(node.radiusBottom, node.radiusTop), 'radiusY', TIPS.radiusYCone),
             dim('Raggio ↓', node.radiusBottom, 'radiusBottom', TIPS.radiusBottom, 0),
             dim('Raggio ↑', node.radiusTop, 'radiusTop', TIPS.radiusTop, 0),
             dim('Altezza', node.height, 'height', TIPS.height, 0.1, BED_SIZE),
@@ -238,7 +259,12 @@ function PrimitiveFields({ node, patch, locked }: { node: Extract<SceneNode, { t
         </Section>
       );
     case 'sphere':
-      return <Section title="Dimensioni">{[dim('Raggio', node.radius, 'radius', TIPS.radius), segments(node.segments, true)]}</Section>;
+      return <Section title="Dimensioni">{[
+            dim('Raggio X', node.radius, 'radius', TIPS.radiusX),
+            axisRadius('Raggio Y', node.radiusY ?? node.radius, node.radius, 'radiusY', TIPS.radiusY),
+            axisRadius('Raggio Z', node.radiusZ ?? node.radius, node.radius, 'radiusZ', TIPS.radiusZ),
+            segments(node.segments, true),
+          ]}</Section>;
     case 'torus':
       return (
         <Section title="Dimensioni">
@@ -331,7 +357,21 @@ function Shape2DFields({ node, patch, locked }: { node: Shape2DNode; patch: (p: 
       <Section title="Profilo 2D">
         {node.kind === 'circle'
           ? [
-              slider('Raggio', node.radius, 'radius', TIPS.radius, { ...length, max: BED_SIZE / 2 }),
+              slider('Raggio X', node.radius, 'radius', TIPS.radiusX, { ...length, max: BED_SIZE / 2 }),
+              <SliderField
+                key="radiusY"
+                label="Raggio Y"
+                unit="mm"
+                min={0.5}
+                max={BED_SIZE / 2}
+                step={0.5}
+                hardMin={0.1}
+                hardMax={2000}
+                tooltip={TIPS.radiusY}
+                disabled={locked}
+                value={node.radiusY ?? node.radius}
+                onCommit={(v) => patch({ radiusY: Math.abs(v - node.radius) < 1e-9 ? undefined : v } as Partial<Shape2DNode>)}
+              />,
               <SegmentsControl key="segments" value={node.segments} disabled={locked} onChange={(n) => patch({ segments: n } as Partial<Shape2DNode>)} />,
               rounding,
             ]

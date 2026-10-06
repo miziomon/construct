@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { FileBox, FileCode, FileDown, FilePlus, FolderOpen, Info, Keyboard, Menu, Save, Sparkles, Upload } from 'lucide-react';
 import { useSceneStore } from '../../scene/store';
+import { useUiStore } from '../uiStore';
 import { export3mf, exportScad, exportStl, newProject, openProject, saveProject } from '../fileActions';
 import { pickAndImport } from '../../import/importFile';
 import { Modal } from '../Modal/Modal';
@@ -54,7 +55,7 @@ const SHORTCUTS: { title: string; rows: [string, string][] }[] = [
       ['H', 'Solido / Foro'],
       ['L', 'Blocca / Sblocca'],
       ['B', 'Appoggia sul piatto'],
-      ['Canc', 'Elimina'],
+      ['Canc o Backspace', 'Elimina'],
       ['Frecce', 'Sposta di 1 mm (Maiusc: 10 mm; Ctrl+Su/Giù: asse Z)'],
     ],
   },
@@ -62,8 +63,10 @@ const SHORTCUTS: { title: string; rows: [string, string][] }[] = [
     title: 'Generale',
     rows: [
       ['Ctrl+Z', 'Annulla'],
-      ['Ctrl+Y', 'Ripeti'],
-      ['Ctrl+J', 'Apre o chiude il codice OpenSCAD'],
+      ['Ctrl+Y o Ctrl+Maiusc+Z', 'Ripeti'],
+      ['C o Ctrl+J', 'Apre o chiude il codice OpenSCAD'],
+      ['D', 'Tema chiaro o scuro'],
+      ['M', 'Apre il menu'],
       ['P', 'Piatto: visibile, senza base, nascosto'],
       ['Maiusc', 'Durante il trascinamento nella vista 3D: disattiva lo snap'],
     ],
@@ -113,7 +116,8 @@ function Inline({ text }: { text: string }) {
 
 /** Menu hamburger dell'header: ogni voce apre una modale. */
 export function AppMenu() {
-  const [open, setOpen] = useState(false);
+  const open = useUiStore((s) => s.menuOpen);
+  const setOpen = useUiStore((s) => s.setMenuOpen);
   const [panel, setPanel] = useState<Panel | null>(null);
   const [news, setNews] = useState(hasUnseenNews);
   const root = useRef<HTMLDivElement>(null);
@@ -147,11 +151,11 @@ export function AppMenu() {
       <button
         type="button"
         className="app-menu__toggle"
-        title="Menu"
+        title="Menu (M)"
         aria-label="Menu"
         aria-haspopup="menu"
         aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => setOpen(!open)}
       >
         <Menu size={18} />
         {news && <span className="app-menu__dot" aria-label="Ci sono novità" />}

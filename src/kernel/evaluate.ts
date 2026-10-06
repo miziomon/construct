@@ -1,5 +1,6 @@
 import type { Manifold, ManifoldToplevel } from 'manifold-3d';
 import { CORNER_SPHERE_SEGMENTS, twistDivisions } from '../scene/defaults';
+import { stretchFactors } from '../scene/ellipse';
 import { maxPolyhedronRadius, polygonMaxRadius, polygonShrunkRadius, polyhedronVertices, roundedPolyhedronCenters } from '../scene/polyhedra';
 import type { MeshNode, PrimitiveNode, Scene, SceneNode, Shape2DNode, Vec3 } from '../scene/types';
 
@@ -70,6 +71,18 @@ export class Evaluator {
     return `P${JSON.stringify(geometry)}`;
   }
 
+  /**
+   * Rende ellittica una forma costruita con il raggio X: scala Y e Z dei fattori di `stretchFactors`
+   * (cilindri, coni e sfere non proporzionali). Libera la forma originale.
+   */
+  private stretch(m: Manifold, p: PrimitiveNode): Manifold {
+    const f = stretchFactors(p);
+    if (!f) return m;
+    const scaled = m.scale(f);
+    m.delete();
+    return scaled;
+  }
+
   /** Costruisce la primitiva centrata nell'origine, senza trasformazioni. */
   private primitive(p: PrimitiveNode): Manifold {
     const { Manifold, CrossSection } = this.wasm;
@@ -88,18 +101,18 @@ export class Evaluator {
       }
       case 'cylinder': {
         const r = Math.max(EPS, p.radius);
-        return Manifold.cylinder(Math.max(EPS, p.height), r, r, p.segments, true);
+        return this.stretch(Manifold.cylinder(Math.max(EPS, p.height), r, r, p.segments, true), p);
       }
       case 'cone': {
         const h = Math.max(EPS, p.height);
         const rb = Math.max(0, p.radiusBottom);
         const rt = Math.max(0, p.radiusTop);
         // manifold richiede il raggio inferiore positivo: se è nullo si costruisce capovolto
-        if (rb === 0 && rt > 0) return Manifold.cylinder(h, rt, 0, p.segments, true).rotate([180, 0, 0]);
-        return Manifold.cylinder(h, Math.max(EPS, rb), rt, p.segments, true);
+        if (rb === 0 && rt > 0) return this.stretch(Manifold.cylinder(h, rt, 0, p.segments, true).rotate([180, 0, 0]), p);
+        return this.stretch(Manifold.cylinder(h, Math.max(EPS, rb), rt, p.segments, true), p);
       }
       case 'sphere':
-        return Manifold.sphere(Math.max(EPS, p.radius), p.segments);
+        return this.stretch(Manifold.sphere(Math.max(EPS, p.radius), p.segments), p);
       case 'torus': {
         // Cerchio di sezione spostato dall'asse e ruotato attorno a Z
         const section = CrossSection.circle(Math.max(EPS, p.minorRadius), p.segments).translate([p.majorRadius, 0]);
@@ -190,6 +203,13 @@ export class Evaluator {
       } else {
         section = CrossSection.square([w, d], true);
       }
+    }
+    // Cerchio non proporzionale: l'ellisse si ottiene scalando il profilo (anche già arrotondato)
+    const f = stretchFactors(p);
+    if (f) {
+      const stretched = section.scale([f[0], f[1]]);
+      section.delete();
+      section = stretched;
     }
     const divisions = twistDivisions(p.twist);
     // La scala va passata come vettore [x, y]: con un numero singolo manifold 3.5 produce un prisma dimezzato

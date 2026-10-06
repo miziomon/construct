@@ -1,11 +1,15 @@
 import type { GroupNode, MeshNode, PrimitiveNode, Scene, SceneNode, Shape2DNode } from '../scene/types';
 import { round } from '../scene/math';
 import { CORNER_SPHERE_SEGMENTS, twistDivisions } from '../scene/defaults';
+import { stretchFactors } from '../scene/ellipse';
 import { maxPolyhedronRadius, polygonMaxRadius, polygonShrunkRadius, polyhedronVertices, roundedPolyhedronCenters } from '../scene/polyhedra';
 
 const IND = '  ';
 const n = (v: number) => String(round(v, 4));
 const vec = (v: readonly number[]) => `[${v.map(n).join(', ')}]`;
+
+/** Vettori per riga negli elenchi lunghi (points, centri delle sfere). */
+const VECTORS_PER_LINE = 3;
 
 /** Colore "#rrggbb" in vettore RGB 0..1 per color() di OpenSCAD. */
 function rgb(hex: string): string {
@@ -14,34 +18,77 @@ function rgb(hex: string): string {
   return vec([1, 2, 3].map((i) => parseInt(m[i], 16) / 255).map((v) => round(v, 3)));
 }
 
-/** Istruzione OpenSCAD della sola primitiva, centrata nell'origine. */
-function primitiveCode(p: PrimitiveNode): string {
+/** Elenco di vettori su più righe (tre per riga), rientrato di due livelli rispetto al comando che lo contiene. */
+function vectorRows(vectors: readonly number[][], indent: string): string[] {
+  const rows: string[] = [];
+  for (let i = 0; i < vectors.length; i += VECTORS_PER_LINE) {
+    const last = i + VECTORS_PER_LINE >= vectors.length;
+    rows.push(`${indent}${vectors.slice(i, i + VECTORS_PER_LINE).map(vec).join(', ')}${last ? '' : ','}`);
+  }
+  return rows;
+}
+
+/** Riga `scale(...)` per le forme non proporzionali (ellissi ed ellissoidi), se serve. */
+function stretchLine(p: PrimitiveNode | Shape2DNode): string[] {
+  const f = stretchFactors(p);
+  if (!f) return [];
+  // Le forme 2D hanno solo gli assi X e Y
+  return [`scale(${vec(p.type === 'shape2d' ? f.slice(0, 2) : f)})`];
+}
+
+/**
+ * Comandi OpenSCAD della sola primitiva, centrata nell'origine: un comando per riga, dal modificatore più esterno
+ * al primitivo (che chiude con ";"). Le righe che continuano un comando hanno un rientro in più.
+ */
+function primitiveLines(p: PrimitiveNode): string[] {
   switch (p.kind) {
     case 'box': {
       const r = Math.min(Math.max(0, p.cornerRadius ?? 0), (Math.min(...p.size) - 0.01) / 2);
-      if (r <= 0) return `cube(${vec(p.size)}, center = true);`;
+      if (r <= 0) return [`cube(${vec(p.size)}, center = true);`];
       // Scatola arrotondata: involucro convesso di otto sfere agli angoli
       const [hx, hy, hz] = p.size.map((v) => v / 2 - r);
-      return `hull() for (x = [${n(-hx)}, ${n(hx)}], y = [${n(-hy)}, ${n(hy)}], z = [${n(-hz)}, ${n(hz)}]) translate([x, y, z]) sphere(r = ${n(r)}, $fn = ${CORNER_SPHERE_SEGMENTS});`;
+      return [
+        'hull()',
+        `for (x = [${n(-hx)}, ${n(hx)}], y = [${n(-hy)}, ${n(hy)}], z = [${n(-hz)}, ${n(hz)}])`,
+        'translate([x, y, z])',
+        `sphere(r = ${n(r)}, $fn = ${CORNER_SPHERE_SEGMENTS});`,
+      ];
     }
     case 'cylinder':
-      return `cylinder(h = ${n(p.height)}, r = ${n(p.radius)}, center = true, $fn = ${p.segments});`;
+      return [...stretchLine(p), `cylinder(h = ${n(p.height)}, r = ${n(p.radius)}, center = true, $fn = ${p.segments});`];
     case 'cone':
-      return `cylinder(h = ${n(p.height)}, r1 = ${n(p.radiusBottom)}, r2 = ${n(p.radiusTop)}, center = true, $fn = ${p.segments});`;
+      return [...stretchLine(p), `cylinder(h = ${n(p.height)}, r1 = ${n(p.radiusBottom)}, r2 = ${n(p.radiusTop)}, center = true, $fn = ${p.segments});`];
     case 'sphere':
-      return `sphere(r = ${n(p.radius)}, $fn = ${p.segments});`;
+      return [...stretchLine(p), `sphere(r = ${n(p.radius)}, $fn = ${p.segments});`];
     case 'torus':
-      return `rotate_extrude($fn = ${p.segments}) translate([${n(p.majorRadius)}, 0]) circle(r = ${n(p.minorRadius)}, $fn = ${p.segments});`;
+      return [`rotate_extrude($fn = ${p.segments})`, `translate([${n(p.majorRadius)}, 0])`, `circle(r = ${n(p.minorRadius)}, $fn = ${p.segments});`];
     case 'octahedron':
     case 'decahedron':
     case 'dodecahedron':
     case 'icosahedron': {
       const r = Math.min(Math.max(0, p.cornerRadius), maxPolyhedronRadius(p.size));
       // Solido arrotondato: involucro convesso di sfere sui vertici del solido ridotto
-      if (r > 0) return `hull() for (p = [${roundedPolyhedronCenters(p.kind, p.size, r).map(vec).join(', ')}]) translate(p) sphere(r = ${n(r)}, $fn = ${CORNER_SPHERE_SEGMENTS});`;
+      if (r > 0) {
+        return [
+          'hull()',
+          'for (p = [',
+          ...vectorRows(roundedPolyhedronCenters(p.kind, p.size, r), IND),
+          '])',
+          'translate(p)',
+          `sphere(r = ${n(r)}, $fn = ${CORNER_SPHERE_SEGMENTS});`,
+        ];
+      }
       // Solido a spigoli vivi: involucro convesso dei vertici (hull() usa solo i punti, le facce indicate sono segnaposto)
       const points = polyhedronVertices(p.kind, p.size);
-      return `hull() polyhedron(points = [${points.map(vec).join(', ')}], faces = [[${points.map((_, i) => i).join(', ')}]]);`;
+      return [
+        'hull()',
+        'polyhedron(',
+        `${IND}points = [`,
+        ...vectorRows(points, IND + IND),
+        `${IND}],`,
+        `${IND}faces = [[${points.map((_, i) => i).join(', ')}]]`,
+        ');',
+      ];
     }
   }
 }
@@ -50,68 +97,71 @@ function primitiveCode(p: PrimitiveNode): string {
  * Forma 2D estrusa. In OpenSCAD la torsione positiva ruota in senso orario (regola della mano sinistra),
  * in manifold in senso antiorario: il segno si inverte per ottenere lo stesso solido.
  */
-function shape2dCode(p: Shape2DNode): string {
+function shape2dLines(p: Shape2DNode): string[] {
   const extrude = `linear_extrude(height = ${n(p.height)}, center = true, twist = ${n(-p.twist)}, scale = ${n(p.scaleTop)}, slices = ${Math.max(1, twistDivisions(p.twist))})`;
   if (p.kind === 'circle') {
     const rc = Math.min(Math.max(0, p.cornerRadius ?? 0), polygonMaxRadius(p.radius, p.segments));
-    if (rc > 0) return `${extrude} offset(r = ${n(rc)}, $fn = 32) circle(r = ${n(polygonShrunkRadius(p.radius, p.segments, rc))}, $fn = ${p.segments});`;
-    return `${extrude} circle(r = ${n(p.radius)}, $fn = ${p.segments});`;
+    // L'ellisse si ottiene scalando il profilo già arrotondato
+    if (rc > 0) {
+      return [extrude, ...stretchLine(p), `offset(r = ${n(rc)}, $fn = 32)`, `circle(r = ${n(polygonShrunkRadius(p.radius, p.segments, rc))}, $fn = ${p.segments});`];
+    }
+    return [extrude, ...stretchLine(p), `circle(r = ${n(p.radius)}, $fn = ${p.segments});`];
   }
   const r = Math.min(Math.max(0, p.cornerRadius), (Math.min(p.width, p.depth) - 0.01) / 2);
-  if (r > 0) return `${extrude} offset(r = ${n(r)}, $fn = 32) square([${n(p.width - 2 * r)}, ${n(p.depth - 2 * r)}], center = true);`;
-  return `${extrude} square([${n(p.width)}, ${n(p.depth)}], center = true);`;
+  if (r > 0) return [extrude, `offset(r = ${n(r)}, $fn = 32)`, `square([${n(p.width - 2 * r)}, ${n(p.depth - 2 * r)}], center = true);`];
+  return [extrude, `square([${n(p.width)}, ${n(p.depth)}], center = true);`];
 }
 
 /**
  * Mesh importata. La geometria interna è ricentrata sull'ingombro: per ritrovare la posizione del file
  * originale si sposta di -origine. Il file va tenuto accanto al codice (stesso nome).
  */
-function meshCode(p: MeshNode): string {
+function meshLines(p: MeshNode): string[] {
   const file = p.fileName.replace(/[\\"]/g, (c) => (c === '"' ? '' : '/'));
-  const scale = p.scale === 1 ? '' : `scale(${n(p.scale)}) `;
-  return `${scale}translate(${vec(p.origin.map((v) => -v))}) import("${file}");`;
+  return [...(p.scale === 1 ? [] : [`scale(${n(p.scale)})`]), `translate(${vec(p.origin.map((v) => -v))})`, `import("${file}");`];
 }
 
-/** Righe di codice di un nodo, con trasformazione e commento. Gli hole non hanno colore (verranno sottratti). */
+/** Modificatori di posizione e colore di un nodo, uno per riga. Gli hole non hanno colore (verranno sottratti). */
+function transformLines(node: SceneNode): string[] {
+  // OpenSCAD applica le trasformazioni da destra verso sinistra: translate esterno, rotate interno
+  const lines = [`translate(${vec(node.position)})`];
+  if (node.rotation.some((v) => v !== 0)) lines.push(`rotate(${vec(node.rotation)})`);
+  if (node.mode === 'solid') lines.push(`color(${rgb(node.color)})`);
+  return lines;
+}
+
+/** Righe di codice di un nodo: commento, modificatori e comandi, ognuno su una riga. */
 function nodeLines(scene: Scene, node: SceneNode, depth: number): string[] {
   const pad = IND.repeat(depth);
   const out: string[] = [`${pad}// ${node.name}${node.mode === 'hole' ? ' (foro)' : ''}`];
-  const hasRot = node.rotation.some((v) => v !== 0);
-  // OpenSCAD applica le trasformazioni da destra verso sinistra: translate esterno, rotate interno
-  const head = `${pad}translate(${vec(node.position)})${hasRot ? ` rotate(${vec(node.rotation)})` : ''}`;
-  const colored = node.mode === 'solid' ? `color(${rgb(node.color)}) ` : '';
+  const head = transformLines(node).map((l) => `${pad}${l}`);
 
-  if (node.type === 'primitive') {
-    out.push(`${head} ${colored}${primitiveCode(node)}`);
+  if (node.type === 'group') {
+    out.push(...groupLines(scene, node, head, depth));
     return out;
   }
-  if (node.type === 'shape2d') {
-    out.push(`${head} ${colored}${shape2dCode(node)}`);
-    return out;
-  }
-  if (node.type === 'mesh') {
-    out.push(`${head} ${colored}${meshCode(node)}`);
-    return out;
-  }
-  out.push(...groupLines(scene, node, head, colored, depth));
+  const body = node.type === 'primitive' ? primitiveLines(node) : node.type === 'shape2d' ? shape2dLines(node) : meshLines(node);
+  out.push(...head, ...body.map((l) => `${pad}${l}`));
   return out;
 }
 
-function groupLines(scene: Scene, g: GroupNode, head: string, colored: string, depth: number): string[] {
+function groupLines(scene: Scene, g: GroupNode, head: string[], depth: number): string[] {
   const pad = IND.repeat(depth);
   const kids = g.children.map((c) => scene.nodes[c]);
   const solids = kids.filter((k) => k.mode === 'solid');
   const holes = kids.filter((k) => k.mode === 'hole');
   const body = (list: SceneNode[], d: number) => list.flatMap((k) => nodeLines(scene, k, d));
+  // L'ultima riga dei modificatori apre il blocco
+  const open = [...head.slice(0, -1), `${head[head.length - 1]} {`];
 
   // Differenza: il primo figlio meno gli altri, indipendentemente dal modo solid/hole
   if (g.op === 'difference') {
-    return [`${head} ${colored}{`, `${pad}${IND}difference() {`, ...body(kids, depth + 2), `${pad}${IND}}`, `${pad}}`];
+    return [...open, `${pad}${IND}difference() {`, ...body(kids, depth + 2), `${pad}${IND}}`, `${pad}}`];
   }
 
   // Blocco dei solid combinati; se ci sono hole, difference(solids, holes)
   const combine = g.op === 'union' ? 'union' : 'intersection';
-  const lines: string[] = [`${head} ${colored}{`];
+  const lines: string[] = [...open];
   if (holes.length) {
     lines.push(`${pad}${IND}difference() {`);
     lines.push(`${pad}${IND}${IND}${combine}() {`, ...body(solids, depth + 3), `${pad}${IND}${IND}}`);

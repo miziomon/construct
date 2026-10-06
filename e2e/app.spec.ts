@@ -198,6 +198,8 @@ test('trascinando uno slider la scena cambia dal vivo e Ctrl+Z lo annulla in un 
   await addShape(page, 'Cerchio');
   const id = (await sceneState(page)).rootIds[0];
   const range = page.locator('.slider-field', { hasText: 'Altezza' }).locator('input[type=range]');
+  // Il pannello è più alto della finestra: lo slider va portato in vista prima di trascinarlo con il mouse
+  await range.scrollIntoViewIfNeeded();
   const box = (await range.boundingBox())!;
   await page.mouse.move(box.x + box.width * 0.2, box.y + box.height / 2);
   await page.mouse.down();
@@ -297,16 +299,100 @@ test('tema chiaro di default, interruttore per lo scuro che resta dopo il ricari
   expect(await theme()).toBe('light');
 });
 
-test('il tasto P cicla il piatto: completo, senza base, nascosto', async ({ page }) => {
-  const parts = () => page.evaluate(() => ['bed-plate', 'bed-grid', 'bed-border'].map((n) => !!window.__r3f!.scene.getObjectByName(n)));
+test('il tasto P cicla il piatto e ogni stato cambia davvero quello che è disegnato', async ({ page }) => {
+  // Visibile = l'oggetto e tutti i suoi antenati hanno visible = true
+  const parts = () =>
+    page.evaluate(() =>
+      ['bed-plate', 'bed-grid', 'bed-border'].map((name) => {
+        type Node = { visible: boolean; parent: Node | null };
+        const found = window.__r3f!.scene.getObjectByName(name) as unknown as Node | undefined;
+        for (let obj = found ?? null; obj; obj = obj.parent) if (!obj.visible) return false;
+        return !!found;
+      }),
+    );
+  // Immagine mostrata dal browser (non un rendering forzato): un canvas rimasto sull'ultimo frame darebbe due immagini uguali
+  const frame = async () => {
+    await page.waitForTimeout(400);
+    return page.locator('canvas').screenshot();
+  };
+
   expect(await parts()).toEqual([true, true, true]);
+  const full = await frame();
   await page.keyboard.press('p');
   await expect.poll(parts).toEqual([false, true, true]);
+  const noPlate = await frame();
   await page.keyboard.press('p');
   await expect.poll(parts).toEqual([false, false, false]);
+  const hidden = await frame();
+  expect(noPlate.equals(full)).toBe(false);
+  expect(hidden.equals(noPlate)).toBe(false);
+  expect(hidden.equals(full)).toBe(false);
+
   await page.keyboard.press('p');
   await expect.poll(parts).toEqual([true, true, true]);
   // Anche il pulsante in toolbar fa avanzare lo stato
   await page.getByRole('button', { name: /^Piatto:/ }).click();
   await expect.poll(parts).toEqual([false, true, true]);
+});
+
+test('ogni pulsante della toolbar ha la scorciatoia nel tooltip', async ({ page }) => {
+  await addShape(page, 'Cubo');
+  const titles = await page.locator('header.toolbar button').evaluateAll((buttons) => buttons.map((b) => b.getAttribute('title') ?? ''));
+  expect(titles.length).toBeGreaterThan(15);
+  for (const title of titles) expect(title, `tooltip senza scorciatoia: "${title}"`).toMatch(/\([^)]*(Ctrl|Maiusc|Canc|\b[A-Z]\b)[^)]*\)/);
+});
+
+test('i tasti C, D e M aprono il codice, cambiano tema e aprono il menu', async ({ page }) => {
+  await page.keyboard.press('c');
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await page.keyboard.press('c');
+  await expect(page.getByRole('dialog')).toBeHidden();
+
+  await page.keyboard.press('d');
+  expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe('dark');
+  await page.keyboard.press('d');
+  expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe('light');
+
+  await page.keyboard.press('m');
+  await expect(page.getByRole('menuitem', { name: 'Importa' })).toBeVisible();
+  await page.keyboard.press('m');
+  await expect(page.getByRole('menuitem', { name: 'Importa' })).toBeHidden();
+});
+
+test('il codice va a capo dopo ogni comando', async ({ page }) => {
+  await addShape(page, 'Icosaedro');
+  await page.keyboard.press('c');
+  await expect(page.locator('.code-view__line').first()).toBeVisible();
+  const lines = await page.locator('.code-view__text').allTextContents();
+  expect(lines).toContain('translate([0, 0, 10])');
+  expect(lines).toContain('hull()');
+  expect(Math.max(...lines.map((l) => l.length))).toBeLessThanOrEqual(100);
+});
+
+test('cilindro non proporzionale: lo slider Raggio Y cambia l\'ingombro in Y e non in X', async ({ page }) => {
+  await addShape(page, 'Cilindro');
+  const id = (await sceneState(page)).rootIds[0];
+  const field = page.locator('.slider-field', { hasText: 'Raggio Y' }).locator('.number-field__input');
+  await field.fill('4');
+  await field.press('Enter');
+  await settled(page);
+  expect((await sceneState(page)).nodes[id].radiusY).toBe(4);
+  const bbox = await page.evaluate(() => window.__webcad!.results.getState().meshes[0].bbox);
+  expect(bbox.max[0] - bbox.min[0]).toBeCloseTo(20, 3);
+  expect(bbox.max[1] - bbox.min[1]).toBeCloseTo(8, 3);
+  // Riportando Raggio Y a quello X la forma torna tonda e il campo opzionale sparisce
+  await field.fill('10');
+  await field.press('Enter');
+  await settled(page);
+  expect((await sceneState(page)).nodes[id].radiusY).toBeUndefined();
+});
+
+test('sfera: Raggio Z la rende un ellissoide che resta appoggiato al piatto', async ({ page }) => {
+  await addShape(page, 'Sfera');
+  const field = page.locator('.slider-field', { hasText: 'Raggio Z' }).locator('.number-field__input');
+  await field.fill('20');
+  await field.press('Enter');
+  await settled(page);
+  const bbox = await page.evaluate(() => window.__webcad!.results.getState().meshes[0].bbox);
+  expect(bbox.max[2] - bbox.min[2]).toBeCloseTo(40, 3);
 });

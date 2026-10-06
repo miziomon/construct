@@ -29,7 +29,7 @@ function ToolbarButton({ title, onClick, children, active, disabled, label }: Bu
 }
 
 /** Nomi degli stati del piatto, per il tooltip del pulsante (stesso ciclo di cycleBed). */
-const BED_LABELS: Record<BedMode, string> = { full: 'visibile', grid: 'senza base (solo griglia)', none: 'nascosto' };
+const BED_LABELS: Record<BedMode, string> = { full: 'visibile', grid: 'senza base, griglia e bordo visibili', none: 'nascosto' };
 const NEXT_BED: Record<BedMode, BedMode> = { full: 'grid', grid: 'none', none: 'full' };
 
 const Divider = () => <span className="toolbar__divider" role="separator" />;
@@ -54,7 +54,7 @@ export function Toolbar() {
 
       <div className="toolbar__group">
         <ToolbarButton title="Annulla (Ctrl+Z)" disabled={!canUndo} onClick={() => useSceneStore.temporal.getState().undo()}><Undo2 size={18} /></ToolbarButton>
-        <ToolbarButton title="Ripeti (Ctrl+Y)" disabled={!canRedo} onClick={() => useSceneStore.temporal.getState().redo()}><Redo2 size={18} /></ToolbarButton>
+        <ToolbarButton title="Ripeti (Ctrl+Y o Ctrl+Maiusc+Z)" disabled={!canRedo} onClick={() => useSceneStore.temporal.getState().redo()}><Redo2 size={18} /></ToolbarButton>
       </div>
       <Divider />
 
@@ -62,8 +62,8 @@ export function Toolbar() {
         <ToolbarButton title="Seleziona (Q)" active={s.gizmoMode === 'select'} onClick={() => s.setGizmoMode('select')}><MousePointer2 size={18} /></ToolbarButton>
         <ToolbarButton title="Sposta (W)" active={s.gizmoMode === 'translate'} onClick={() => s.setGizmoMode('translate')}><Move3d size={18} /></ToolbarButton>
         <ToolbarButton title="Ruota (E)" active={s.gizmoMode === 'rotate'} onClick={() => s.setGizmoMode('rotate')}><Rotate3d size={18} /></ToolbarButton>
-        <ToolbarButton title="Ridimensiona con il mouse (R): trascina le maniglie, la base resta ferma" active={s.gizmoMode === 'resize'} onClick={() => s.setGizmoMode('resize')}><Scaling size={18} /></ToolbarButton>
-        <ToolbarButton title="Estrudi forme 2D con il mouse (T): trascina la maniglia verticale" active={s.gizmoMode === 'extrude'} onClick={() => s.setGizmoMode('extrude')}><ArrowUpFromLine size={18} /></ToolbarButton>
+        <ToolbarButton title="Ridimensiona con il mouse (R)" active={s.gizmoMode === 'resize'} onClick={() => s.setGizmoMode('resize')}><Scaling size={18} /></ToolbarButton>
+        <ToolbarButton title="Estrudi forme 2D con il mouse (T)" active={s.gizmoMode === 'extrude'} onClick={() => s.setGizmoMode('extrude')}><ArrowUpFromLine size={18} /></ToolbarButton>
       </div>
       <Divider />
 
@@ -74,15 +74,15 @@ export function Toolbar() {
         <ToolbarButton title={allLocked ? 'Sblocca (L)' : 'Blocca (L)'} active={allLocked} disabled={!hasSelection} onClick={s.toggleLockSelected}>{allLocked ? <Lock size={18} /> : <Unlock size={18} />}</ToolbarButton>
         <ToolbarButton title="Appoggia sul piatto (B)" disabled={rootSelection.length === 0} onClick={dropSelectionToBed}><ArrowDownToLine size={18} /></ToolbarButton>
         <ToolbarButton title="Duplica (Ctrl+D)" disabled={rootSelection.length === 0} onClick={s.duplicateSelected}><Copy size={18} /></ToolbarButton>
-        <ToolbarButton title="Elimina (Canc)" disabled={!hasSelection} onClick={s.removeSelected}><Trash2 size={18} /></ToolbarButton>
+        <ToolbarButton title="Elimina (Canc o Backspace)" disabled={!hasSelection} onClick={s.removeSelected}><Trash2 size={18} /></ToolbarButton>
       </div>
 
       <div className="toolbar__spacer" />
 
       <div className="toolbar__group">
-        <ToolbarButton title={`Piatto: ${BED_LABELS[bedMode]}. Clic o tasto P per passare a: ${BED_LABELS[NEXT_BED[bedMode]]}`} active={bedMode !== 'full'} onClick={cycleBed}><Grid3x3 size={18} /></ToolbarButton>
-        <ToolbarButton title={theme === 'light' ? 'Passa al tema scuro' : 'Passa al tema chiaro'} onClick={toggleTheme}>{theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}</ToolbarButton>
-        <ToolbarButton title="Codice OpenSCAD (Ctrl+J)" active={codeOpen} onClick={toggleCode}><Code size={18} /></ToolbarButton>
+        <ToolbarButton title={`Piatto: ${BED_LABELS[bedMode]}, prossimo: ${BED_LABELS[NEXT_BED[bedMode]]} (P)`} active={bedMode !== 'full'} onClick={cycleBed}><Grid3x3 size={18} /></ToolbarButton>
+        <ToolbarButton title={theme === 'light' ? 'Passa al tema scuro (D)' : 'Passa al tema chiaro (D)'} onClick={toggleTheme}>{theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}</ToolbarButton>
+        <ToolbarButton title="Codice OpenSCAD (C o Ctrl+J)" active={codeOpen} onClick={toggleCode}><Code size={18} /></ToolbarButton>
         <AppMenu />
       </div>
     </header>

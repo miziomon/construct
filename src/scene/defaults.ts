@@ -56,7 +56,7 @@ export function halfHeight(p: PrimitiveNode | Shape2DNode): number {
     case 'box': return p.size[2] / 2;
     case 'cylinder':
     case 'cone': return p.height / 2;
-    case 'sphere': return p.radius;
+    case 'sphere': return p.radiusZ ?? p.radius;
     case 'torus': return p.minorRadius;
     // I solidi dei dadi poggiano su una faccia: la metà della distanza tra facce opposte
     case 'octahedron':
