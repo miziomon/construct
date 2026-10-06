@@ -5,7 +5,7 @@ import type { GroupNode, GroupOp, MeshNode, PrimitiveKind, PrimitiveNode, Scene,
 import { DEFAULT_COLOR, PRIMITIVE_LABELS, SHAPE2D_LABELS, halfHeight, primitiveDefaults, shape2dDefaults } from './defaults';
 import { composeTransform, round } from './math';
 
-export type GizmoMode = 'translate' | 'rotate';
+export type GizmoMode = 'select' | 'translate' | 'rotate';
 
 interface SceneState {
   scene: Scene;
@@ -87,7 +87,7 @@ export const useSceneStore = create<SceneState>()(
     immer((set, get) => ({
       scene: emptyScene(),
       selection: [],
-      gizmoMode: 'translate',
+      gizmoMode: 'select',
 
       addPrimitive: (kind) =>
         set((s) => {

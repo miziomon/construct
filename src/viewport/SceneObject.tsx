@@ -127,7 +127,7 @@ export function SceneObject({ mesh, selected, locked, showGizmo }: Props) {
         position={node.position}
         rotation={new THREE.Euler(...(node.rotation.map(THREE.MathUtils.degToRad) as [number, number, number]), 'ZYX')}
       />
-      {showGizmo && proxy && (
+      {showGizmo && proxy && gizmoMode !== 'select' && (
         <TransformControls
           object={proxy}
           mode={gizmoMode}

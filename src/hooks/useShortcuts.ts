@@ -32,6 +32,7 @@ export function useShortcuts(): void {
       else if (!mod && key === 'h') s.toggleHoleSelected();
       else if (!mod && key === 'l') s.toggleLockSelected();
       else if (!mod && key === 'b') dropSelectionToBed();
+      else if (!mod && key === 'q') s.setGizmoMode('select');
       else if (!mod && key === 'w') s.setGizmoMode('translate');
       else if (!mod && key === 'e') s.setGizmoMode('rotate');
       else if (key in arrows) { e.preventDefault(); s.nudgeSelected(arrows[key]); }

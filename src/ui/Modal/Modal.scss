@@ -1,0 +1,93 @@
+@use '../../styles/abstracts' as *;
+
+.modal {
+  width: min(520px, calc(100vw - #{$space-5 * 2}));
+  max-height: 80vh;
+  padding: 0;
+  border: 1px solid color('border');
+  border-radius: $radius-lg;
+  background: color('panel');
+  color: color('text');
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
+
+  &[open] {
+    display: flex;
+    flex-direction: column;
+  }
+
+  &::backdrop {
+    background: rgba(0, 0, 0, 0.55);
+  }
+
+  &__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: $space-4 $space-5;
+    border-bottom: 1px solid color('border');
+  }
+
+  &__title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 700;
+  }
+
+  &__close {
+    display: inline-flex;
+    padding: 4px;
+    border: 0;
+    border-radius: $radius-sm;
+    background: transparent;
+    color: color('text-muted');
+    @include focus-ring;
+
+    &:hover {
+      color: color('text');
+    }
+  }
+
+  &__body {
+    padding: $space-5;
+    overflow-y: auto;
+    line-height: 1.5;
+
+    p {
+      margin: 0 0 $space-4;
+    }
+  }
+
+  // Pulsanti riusabili nei contenuti delle modali
+  &__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: $space-2;
+  }
+
+  &__button {
+    display: inline-flex;
+    align-items: center;
+    gap: $space-2;
+    padding: 6px $space-4;
+    border: 1px solid color('border');
+    border-radius: $radius-sm;
+    background: color('panel-raised');
+    @include focus-ring;
+
+    &:hover:not(:disabled) {
+      border-color: color('accent');
+    }
+
+    &:disabled {
+      opacity: 0.35;
+      cursor: default;
+    }
+
+    &--primary {
+      border-color: color('accent-strong');
+      background: color('accent-strong');
+      color: #fff;
+      font-weight: 600;
+    }
+  }
+}

@@ -1,12 +1,12 @@
-import { ArrowDownToLine, Code, Copy, Lock, Unlock, Upload, Download, FileBox, FilePlus, FolderOpen, Group, Move3d, Redo2, Rotate3d, Save, Trash2, Ungroup, Undo2, CircleDashed } from 'lucide-react';
+import { ArrowDownToLine, Code, Copy, Lock, Unlock, FilePlus, FolderOpen, Group, MousePointer2, Move3d, Redo2, Rotate3d, Save, Trash2, Ungroup, Undo2, CircleDashed } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useStore } from 'zustand';
 import { useSceneStore } from '../../scene/store';
 import { useUiStore } from '../uiStore';
-import { export3mf, exportStl, openProject, saveProject } from '../fileActions';
+import { openProject, saveProject } from '../fileActions';
 import { confirmDialog } from '../notify/notifyStore';
 import { dropSelectionToBed } from '../../kernel/placement';
-import { pickAndImport } from '../../import/importFile';
+import { AppMenu } from '../AppMenu/AppMenu';
 import './Toolbar.scss';
 
 interface ButtonProps {
@@ -51,7 +51,9 @@ export function Toolbar() {
 
   return (
     <header className="toolbar">
-      <div className="toolbar__brand">WebCAD</div>
+      <div className="toolbar__brand">
+        WebCAD <span className="toolbar__version">v{__APP_VERSION__}</span>
+      </div>
 
       <div className="toolbar__group">
         <ToolbarButton title="Nuovo progetto" onClick={() => void newProject(hasObjects)}><FilePlus size={18} /></ToolbarButton>
@@ -67,6 +69,7 @@ export function Toolbar() {
       <Divider />
 
       <div className="toolbar__group">
+        <ToolbarButton title="Seleziona (Q)" active={s.gizmoMode === 'select'} onClick={() => s.setGizmoMode('select')}><MousePointer2 size={18} /></ToolbarButton>
         <ToolbarButton title="Sposta (W)" active={s.gizmoMode === 'translate'} onClick={() => s.setGizmoMode('translate')}><Move3d size={18} /></ToolbarButton>
         <ToolbarButton title="Ruota (E)" active={s.gizmoMode === 'rotate'} onClick={() => s.setGizmoMode('rotate')}><Rotate3d size={18} /></ToolbarButton>
       </div>
@@ -86,9 +89,7 @@ export function Toolbar() {
 
       <div className="toolbar__group">
         <ToolbarButton title="Pannello codice OpenSCAD (Ctrl+J)" active={codeEnabled} onClick={toggleCode} label="Codice"><Code size={18} /></ToolbarButton>
-        <ToolbarButton title="Importa STL o 3MF (si può anche trascinare il file nella finestra)" onClick={pickAndImport} label="Importa"><Upload size={18} /></ToolbarButton>
-        <ToolbarButton title="Esporta STL" disabled={!hasObjects} onClick={() => void exportStl()} label="STL"><Download size={18} /></ToolbarButton>
-        <ToolbarButton title="Esporta 3MF (un oggetto per colore)" disabled={!hasObjects} onClick={() => void export3mf()} label="3MF"><FileBox size={18} /></ToolbarButton>
+        <AppMenu />
       </div>
     </header>
   );

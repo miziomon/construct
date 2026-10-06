@@ -18,6 +18,19 @@ I messaggi di commit seguono i [Conventional Commits](https://www.conventionalco
 
 ## [Non rilasciato]
 
+## [0.3.0] - 2026-10-06
+
+### Aggiunto
+- Menu hamburger nell'header con le voci Importa, Esporta, Novità e About, ognuna in una finestra modale. Esporta offre STL, 3MF e codice OpenSCAD; Novità mostra questo changelog.
+- Numero di versione nel titolo della pagina e accanto al nome nell'header.
+- Modalità Seleziona (tasto Q): selezionare un oggetto non mostra più il gizmo.
+- Controllo degli aggiornamenti anche quando la scheda torna visibile.
+
+### Modificato
+- La modalità iniziale è Seleziona: il gizmo di spostamento compare solo premendo W (o il pulsante Sposta).
+- Quando è disponibile una nuova versione compare una finestra bloccante con "Aggiorna ora" e "Salva progetto", al posto del banner con "Più tardi".
+- I pulsanti Importa, STL e 3MF a destra dell'header passano nel menu hamburger.
+
 ## [0.2.0] - 2026-10-06
 
 ### Aggiunto

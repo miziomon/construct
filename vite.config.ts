@@ -11,6 +11,11 @@ export default defineConfig({
   define: { __APP_VERSION__: JSON.stringify(pkg.version) },
   plugins: [
     react(),
+    {
+      // Il "define" non agisce sull'HTML: il segnaposto nel <title> si sostituisce qui
+      name: 'html-app-version',
+      transformIndexHtml: (html: string) => html.replace('%APP_VERSION%', pkg.version),
+    },
     VitePWA({
       // "prompt": il service worker nuovo resta in attesa finché l'utente non conferma
       registerType: 'prompt',

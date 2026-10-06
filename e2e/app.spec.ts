@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { addShape, dragGizmoAlongX, openApp, sceneState, settled } from './helpers';
+import { addShape, dragGizmoAlongX, openApp, openMenuItem, sceneState, settled } from './helpers';
 import { writeStl } from '../src/kernel/export/stl';
 
 test.beforeEach(async ({ page }) => {
@@ -92,7 +92,8 @@ function cubeStl(): Buffer {
 
 test('importa un STL: nodo mesh centrato sul piatto, che sopravvive al ricaricamento', async ({ page }) => {
   const chooser = page.waitForEvent('filechooser');
-  await page.getByRole('button', { name: /Importa STL o 3MF/ }).click();
+  await openMenuItem(page, 'Importa');
+  await page.getByRole('button', { name: /Scegli file STL o 3MF/ }).click();
   await (await chooser).setFiles({ name: 'cubo.stl', mimeType: 'model/stl', buffer: cubeStl() });
   await expect(page.locator('.toast--info')).toContainText('Mesh importata');
   await settled(page);
@@ -117,7 +118,8 @@ test('un file che non è un solido chiuso viene rifiutato con un messaggio', asy
   const p = new Float32Array([0, 0, 0, 10, 0, 0, 0, 10, 0]);
   const stl = Buffer.from(writeStl(p, new Uint32Array([0, 1, 2])));
   const chooser = page.waitForEvent('filechooser');
-  await page.getByRole('button', { name: /Importa STL o 3MF/ }).click();
+  await openMenuItem(page, 'Importa');
+  await page.getByRole('button', { name: /Scegli file STL o 3MF/ }).click();
   await (await chooser).setFiles({ name: 'aperto.stl', mimeType: 'model/stl', buffer: stl });
   await expect(page.locator('.toast--error')).toContainText('non è un solido chiuso');
   expect((await sceneState(page)).rootIds).toHaveLength(0);
@@ -126,10 +128,45 @@ test('un file che non è un solido chiuso viene rifiutato con un messaggio', asy
 test('Esporta STL scarica un file binario valido', async ({ page }) => {
   await addShape(page, 'Scatola');
   const download = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Esporta STL' }).click();
+  await openMenuItem(page, 'Esporta');
+  await page.getByRole('dialog').getByRole('button', { name: 'STL' }).click();
   const file = await download;
   expect(file.suggestedFilename()).toBe('webcad.stl');
   const path = await file.path();
   const { statSync } = await import('node:fs');
   expect(statSync(path).size).toBe(84 + 50 * 12);
+});
+
+test('versione visibile nel title e accanto al nome nell\'header', async ({ page }) => {
+  const { version } = JSON.parse((await import('node:fs')).readFileSync('package.json', 'utf8'));
+  await expect(page).toHaveTitle(`WebCAD v${version}`);
+  await expect(page.locator('.toolbar__brand')).toContainText(`v${version}`);
+});
+
+test('di default la modalità è Seleziona: nessun gizmo finché non si preme W', async ({ page }) => {
+  await addShape(page, 'Scatola');
+  const gizmos = () => page.evaluate(() => {
+    let n = 0;
+    window.__r3f!.scene.traverse((o) => { if ((o as unknown as { isTransformControls?: boolean }).isTransformControls) n++; });
+    return n;
+  });
+  expect(await gizmos()).toBe(0);
+  await expect(page.getByRole('button', { name: 'Seleziona (Q)' })).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('w');
+  await expect.poll(gizmos).toBe(1);
+  await page.keyboard.press('q');
+  await expect.poll(gizmos).toBe(0);
+});
+
+test('il menu hamburger apre le modali Novità e About con la versione', async ({ page }) => {
+  const { version } = JSON.parse((await import('node:fs')).readFileSync('package.json', 'utf8'));
+  await openMenuItem(page, 'Novità');
+  await expect(page.getByRole('dialog')).toContainText(`v${version}`);
+  await page.getByRole('button', { name: 'Chiudi' }).click();
+  await expect(page.getByRole('dialog')).toBeHidden();
+
+  await openMenuItem(page, 'About');
+  await expect(page.getByTestId('about-version')).toHaveText(`v${version}`);
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toBeHidden();
 });

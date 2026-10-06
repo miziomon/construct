@@ -27,9 +27,11 @@ export function Viewport() {
   const select = useSceneStore((s) => s.select);
   const rootIds = useSceneStore((s) => s.scene.rootIds);
   const scene = useSceneStore((s) => s.scene);
+  const gizmoMode = useSceneStore((s) => s.gizmoMode);
 
-  // Gizmo solo con un oggetto selezionato, alla radice e non bloccato
-  const gizmoId = selection.length === 1 && rootIds.includes(selection[0]) && !isLocked(scene, selection[0]) ? selection[0] : undefined;
+  // Gizmo solo fuori dalla modalità Seleziona, con un oggetto selezionato, alla radice e non bloccato
+  const gizmoId =
+    gizmoMode !== 'select' && selection.length === 1 && rootIds.includes(selection[0]) && !isLocked(scene, selection[0]) ? selection[0] : undefined;
 
   return (
     <div className="viewport">

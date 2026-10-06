@@ -60,6 +60,9 @@ export function hoveredAxis(page: Page) {
  * (il gizmo attiva l'asse solo con un movimento di hover), poi si preme, si trascina a piccoli passi e si rilascia.
  */
 export async function dragGizmoAlongX(page: Page, center: [number, number, number], pixels = 90): Promise<void> {
+  // All'avvio la modalità è Seleziona (nessun gizmo): si attiva Sposta come farebbe una persona
+  await page.keyboard.press('w');
+  await page.waitForTimeout(100);
   const origin = await project(page, center);
   const ahead = await project(page, [center[0] + 1, center[1], center[2]]);
   // Direzione dell'asse X sullo schermo, normalizzata
@@ -81,4 +84,10 @@ export async function dragGizmoAlongX(page: Page, center: [number, number, numbe
     await page.mouse.move(found!.x + (dir.x * pixels * i) / steps, found!.y + (dir.y * pixels * i) / steps);
   }
   await page.mouse.up();
+}
+
+/** Apre il menu hamburger e sceglie una voce (si apre la relativa modale). */
+export async function openMenuItem(page: Page, name: string): Promise<void> {
+  await page.getByRole('button', { name: 'Menu', exact: true }).click();
+  await page.getByRole('menuitem', { name }).click();
 }
