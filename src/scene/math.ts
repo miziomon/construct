@@ -44,6 +44,22 @@ export function composeTransform(parent: { position: Vec3; rotation: Vec3 }, chi
   };
 }
 
+/** Matrice trasposta (per le rotazioni coincide con l'inversa). */
+const transpose = (m: Mat3): Mat3 => [0, 1, 2].map((i) => [m[0][i], m[1][i], m[2][i]]) as Mat3;
+
+/**
+ * Inverso di composeTransform: trasformazione nel sistema del genitore di un oggetto che nel mondo
+ * (o nel sistema esterno al genitore) ha la trasformazione `world`. local = inverso(parent) * world.
+ */
+export function toLocalTransform(parent: { position: Vec3; rotation: Vec3 }, world: { position: Vec3; rotation: Vec3 }) {
+  const inv = transpose(eulerToMatrix(parent.rotation));
+  const delta: Vec3 = [world.position[0] - parent.position[0], world.position[1] - parent.position[1], world.position[2] - parent.position[2]];
+  return {
+    position: apply(inv, delta),
+    rotation: matrixToEuler(mul(inv, eulerToMatrix(world.rotation))),
+  };
+}
+
 /** Arrotonda a n decimali eliminando il rumore numerico (es. 1e-15) senza produrre -0. */
 export function round(n: number, decimals = 4): number {
   const f = 10 ** decimals;

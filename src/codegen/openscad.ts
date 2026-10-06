@@ -1,5 +1,5 @@
-import type { GroupNode, MeshNode, PrimitiveNode, Scene, SceneNode, Shape2DNode } from '../scene/types';
-import { round } from '../scene/math';
+import type { GroupNode, MeshNode, PrimitiveNode, Scene, SceneNode, Shape2DNode, Vec3 } from '../scene/types';
+import { composeTransform, round } from '../scene/math';
 import { CORNER_SPHERE_SEGMENTS, twistDivisions } from '../scene/defaults';
 import { stretchFactors } from '../scene/ellipse';
 import { maxPolyhedronRadius, polygonMaxRadius, polygonShrunkRadius, polyhedronVertices, roundedPolyhedronCenters } from '../scene/polyhedra';
@@ -130,11 +130,32 @@ function transformLines(node: SceneNode): string[] {
   return lines;
 }
 
-/** Righe di codice di un nodo: commento, modificatori e comandi, ognuno su una riga. */
-function nodeLines(scene: Scene, node: SceneNode, depth: number): string[] {
+/** Trasformazione già accumulata dai Raggruppa antenati (identità fuori da ogni Raggruppa). */
+interface Inherited {
+  position: Vec3;
+  rotation: Vec3;
+}
+const NO_TRANSFORM: Inherited = { position: [0, 0, 0], rotation: [0, 0, 0] };
+
+/**
+ * Righe di codice di un nodo: commento, modificatori e comandi, ognuno su una riga.
+ * Un Raggruppa non produce codice proprio: ogni figlio esce come oggetto a sé, con la trasformazione dei gruppi
+ * antenati composta con la propria (`inherited`) e il proprio colore. Dentro una booleana (`free` falso) un
+ * Raggruppa è invece una semplice unione dei figli.
+ */
+function nodeLines(scene: Scene, node: SceneNode, depth: number, inherited: Inherited = NO_TRANSFORM, free = true): string[] {
   const pad = IND.repeat(depth);
+
+  if (free && node.type === 'group' && node.op === 'group') {
+    const here = composeTransform(inherited, node);
+    return [`${pad}// ${node.name} (gruppo: oggetti separati)`, ...node.children.flatMap((c) => nodeLines(scene, scene.nodes[c], depth, here, true))];
+  }
+
   const out: string[] = [`${pad}// ${node.name}${node.mode === 'hole' ? ' (foro)' : ''}`];
-  const head = transformLines(node).map((l) => `${pad}${l}`);
+  // La trasformazione effettiva è quella dei Raggruppa antenati composta con la propria
+  // (senza gruppi antenati si usa la trasformazione del nodo così com'è, senza ricalcolare gli angoli)
+  const placed = inherited === NO_TRANSFORM ? node : composeTransform(inherited, node);
+  const head = transformLines({ ...node, position: placed.position.map((v) => round(v)) as Vec3, rotation: placed.rotation.map((v) => round(v)) as Vec3 }).map((l) => `${pad}${l}`);
 
   if (node.type === 'group') {
     out.push(...groupLines(scene, node, head, depth));
@@ -148,9 +169,11 @@ function nodeLines(scene: Scene, node: SceneNode, depth: number): string[] {
 function groupLines(scene: Scene, g: GroupNode, head: string[], depth: number): string[] {
   const pad = IND.repeat(depth);
   const kids = g.children.map((c) => scene.nodes[c]);
-  const solids = kids.filter((k) => k.mode === 'solid');
-  const holes = kids.filter((k) => k.mode === 'hole');
-  const body = (list: SceneNode[], d: number) => list.flatMap((k) => nodeLines(scene, k, d));
+  // Un Raggruppa dentro una booleana è una unione di tutti i figli e non ha fori
+  const asUnion = g.op === 'group';
+  const solids = kids.filter((k) => asUnion || k.mode === 'solid');
+  const holes = asUnion ? [] : kids.filter((k) => k.mode === 'hole');
+  const body = (list: SceneNode[], d: number) => list.flatMap((k) => nodeLines(scene, k, d, NO_TRANSFORM, false));
   // L'ultima riga dei modificatori apre il blocco
   const open = [...head.slice(0, -1), `${head[head.length - 1]} {`];
 
@@ -160,7 +183,7 @@ function groupLines(scene: Scene, g: GroupNode, head: string[], depth: number): 
   }
 
   // Blocco dei solid combinati; se ci sono hole, difference(solids, holes)
-  const combine = g.op === 'union' ? 'union' : 'intersection';
+  const combine = g.op === 'intersection' ? 'intersection' : 'union';
   const lines: string[] = [...open];
   if (holes.length) {
     lines.push(`${pad}${IND}difference() {`);

@@ -50,8 +50,11 @@ const SHORTCUTS: { title: string; rows: [string, string][] }[] = [
     title: 'Oggetti',
     rows: [
       ['Ctrl+D', 'Duplica'],
-      ['Ctrl+G', 'Raggruppa'],
-      ['Ctrl+Maiusc+G', 'Separa il gruppo'],
+      ['Ctrl+G', 'Raggruppa (gli oggetti restano separati)'],
+      ['U', 'Unisci in un solo solido (unione booleana)'],
+      ['F2', 'Rinomina l\'oggetto selezionato'],
+      ['Alt+clic', 'Seleziona il singolo oggetto di un gruppo'],
+      ['Ctrl+Maiusc+G', 'Separa il gruppo o l\'unione'],
       ['H', 'Solido / Foro'],
       ['L', 'Blocca / Sblocca'],
       ['B', 'Appoggia sul piatto'],

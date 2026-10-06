@@ -1,4 +1,4 @@
-import { ArrowDownToLine, Code, Copy, Lock, Unlock, Group, MousePointer2, Move3d, Redo2, Rotate3d, Grid3x3, Moon, Sun, Scaling, ArrowUpFromLine, Trash2, Ungroup, Undo2, CircleDashed } from 'lucide-react';
+import { ArrowDownToLine, Code, Copy, Lock, Unlock, Group, MousePointer2, Move3d, Redo2, Rotate3d, SquaresUnite, Grid3x3, Moon, Sun, Scaling, ArrowUpFromLine, Trash2, Ungroup, Undo2, CircleDashed } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useStore } from 'zustand';
 import { useSceneStore } from '../../scene/store';
@@ -68,8 +68,9 @@ export function Toolbar() {
       <Divider />
 
       <div className="toolbar__group">
-        <ToolbarButton title="Raggruppa (Ctrl+G)" disabled={rootSelection.length < 2} onClick={s.groupSelected}><Group size={18} /></ToolbarButton>
-        <ToolbarButton title="Separa gruppo (Ctrl+Maiusc+G)" disabled={group?.type !== 'group' || !s.scene.rootIds.includes(group.id)} onClick={s.ungroupSelected}><Ungroup size={18} /></ToolbarButton>
+        <ToolbarButton title="Raggruppa: gli oggetti restano separati e si muovono insieme (Ctrl+G)" disabled={rootSelection.length < 2} onClick={s.groupSelected}><Group size={18} /></ToolbarButton>
+        <ToolbarButton title="Unisci in un solo solido, unione booleana (U)" disabled={rootSelection.length < 2} onClick={s.unionSelected}><SquaresUnite size={18} /></ToolbarButton>
+        <ToolbarButton title="Separa il gruppo o l'unione (Ctrl+Maiusc+G)" disabled={group?.type !== 'group' || !s.scene.rootIds.includes(group.id)} onClick={s.ungroupSelected}><Ungroup size={18} /></ToolbarButton>
         <ToolbarButton title="Solido / Foro (H)" active={allHoles} disabled={!hasSelection} onClick={s.toggleHoleSelected}><CircleDashed size={18} /></ToolbarButton>
         <ToolbarButton title={allLocked ? 'Sblocca (L)' : 'Blocca (L)'} active={allLocked} disabled={!hasSelection} onClick={s.toggleLockSelected}>{allLocked ? <Lock size={18} /> : <Unlock size={18} />}</ToolbarButton>
         <ToolbarButton title="Appoggia sul piatto (B)" disabled={rootSelection.length === 0} onClick={dropSelectionToBed}><ArrowDownToLine size={18} /></ToolbarButton>

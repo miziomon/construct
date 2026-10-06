@@ -92,4 +92,61 @@ describe('sceneToOpenScad', () => {
     // Con i due raggi uguali il codice resta quello di prima
     expect(code.match(/scale\(/g)).toHaveLength(2);
   });
+
+  describe('Raggruppa', () => {
+    const box = (id: string, position: [number, number, number], color: string) =>
+      ({ ...primitiveDefaults('box'), id, name: id, position, color }) as PrimitiveNode;
+    const group = (id: string, op: GroupNode['op'], children: string[], extra: Partial<GroupNode> = {}): GroupNode => ({
+      id, name: id, type: 'group', op, children, position: [0, 0, 0], rotation: [0, 0, 0], mode: 'solid', color: '#ffffff', ...extra,
+    });
+
+    it('non produce union() né graffe: ogni figlio è un oggetto a sé, con la trasformazione del gruppo composta e il proprio colore', () => {
+      const nodes = {
+        a: box('a', [-20, 0, 0], '#ff0000'),
+        b: box('b', [20, 0, 0], '#00ff00'),
+        g: group('g', 'group', ['a', 'b'], { position: [100, 0, 0], rotation: [0, 0, 90] }),
+      };
+      const code = sceneToOpenScad({ nodes, rootIds: ['g'] });
+      expect(code).not.toContain('union()');
+      expect(code).not.toContain('{');
+      // a: (-20, 0, 0) ruotato di 90° attorno a Z va in (0, -20, 0), poi + (100, 0, 0)
+      expect(code).toContain('// a\ntranslate([100, -20, 0])\nrotate([0, 0, 90])\ncolor([1, 0, 0])\ncube([20, 20, 20], center = true);');
+      expect(code).toContain('// b\ntranslate([100, 20, 0])\nrotate([0, 0, 90])\ncolor([0, 1, 0])\ncube([20, 20, 20], center = true);');
+    });
+
+    it('più livelli: le trasformazioni di Raggruppa annidati si compongono', () => {
+      const nodes = {
+        a: box('a', [5, 0, 0], '#ff0000'),
+        inner: group('inner', 'group', ['a'], { position: [10, 0, 0] }),
+        outer: group('outer', 'group', ['inner'], { position: [0, 50, 0] }),
+      };
+      expect(sceneToOpenScad({ nodes, rootIds: ['outer'] })).toContain('// a\ntranslate([15, 50, 0])');
+    });
+
+    it('dentro una Unione il Raggruppa vale come union() dei suoi figli', () => {
+      const nodes = {
+        a: box('a', [0, 0, 0], '#ff0000'),
+        b: box('b', [30, 0, 0], '#00ff00'),
+        g: group('g', 'group', ['a', 'b']),
+        u: group('u', 'union', ['g']),
+      };
+      const code = sceneToOpenScad({ nodes, rootIds: ['u'] });
+      // Il gruppo interno diventa un union() con i due figli
+      expect(code.match(/union\(\) \{/g)).toHaveLength(2);
+    });
+
+    it('una booleana dentro un Raggruppa resta un blocco unico con la trasformazione del gruppo', () => {
+      const nodes = {
+        a: box('a', [0, 0, 0], '#ff0000'),
+        b: box('b', [30, 0, 0], '#00ff00'),
+        u: group('u', 'union', ['a', 'b']),
+        side: box('side', [100, 0, 0], '#0000ff'),
+        g: group('g', 'group', ['u', 'side'], { position: [0, 10, 0] }),
+      };
+      const code = sceneToOpenScad({ nodes, rootIds: ['g'] });
+      expect(code).toContain('// u\ntranslate([0, 10, 0])');
+      expect(code.match(/union\(\) \{/g)).toHaveLength(1);
+      expect(code).toContain('// side\ntranslate([100, 10, 0])');
+    });
+  });
 });

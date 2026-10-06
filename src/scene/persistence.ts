@@ -8,7 +8,7 @@ import { notify } from '../ui/notify/notifyStore';
 const KEY = 'webcad:scene';
 const FORMAT = 'webcad-scene';
 /** Versione 2: il progetto include le mesh importate. Le versioni 1 (senza mesh) si leggono ancora. */
-const VERSION = 2;
+const VERSION = 3;
 
 /** Controllo minimo di forma: evita di caricare file che non sono scene WebCAD. */
 function isScene(value: unknown): value is Scene {

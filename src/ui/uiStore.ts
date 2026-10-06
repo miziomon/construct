@@ -13,11 +13,14 @@ interface UiState {
   codeOpen: boolean;
   /** Menu a tendina dell'header aperto (non si salva). */
   menuOpen: boolean;
+  /** Nodo il cui nome si sta modificando nell'elenco oggetti (non si salva). */
+  renamingId: string | null;
   theme: Theme;
   bedMode: BedMode;
   toggleCode: () => void;
   setMenuOpen: (open: boolean) => void;
   toggleMenu: () => void;
+  setRenamingId: (id: string | null) => void;
   setCodeOpen: (open: boolean) => void;
   toggleTheme: () => void;
   cycleBed: () => void;
@@ -29,11 +32,13 @@ export const useUiStore = create<UiState>()(
     (set, get) => ({
       codeOpen: false,
       menuOpen: false,
+      renamingId: null,
       theme: 'light',
       bedMode: 'full',
       toggleCode: () => set({ codeOpen: !get().codeOpen }),
       setMenuOpen: (menuOpen) => set({ menuOpen }),
       toggleMenu: () => set({ menuOpen: !get().menuOpen }),
+      setRenamingId: (renamingId) => set({ renamingId }),
       setCodeOpen: (codeOpen) => set({ codeOpen }),
       toggleTheme: () => set({ theme: get().theme === 'light' ? 'dark' : 'light' }),
       cycleBed: () => set({ bedMode: NEXT_BED[get().bedMode] }),

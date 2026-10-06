@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
-import { isLocked, useSceneStore } from '../../scene/store';
+import { isAppGroup, isLocked, parentOf, useSceneStore } from '../../scene/store';
+import { GROUP_ICONS, GROUP_NAMES } from '../groupIcons';
 import { MAX_SEGMENTS, MIN_SEGMENTS, MIN_SPHERE_SEGMENTS, SEGMENT_PRESETS } from '../../scene/defaults';
 import { BED_SIZE } from '../../scene/types';
 import type { GroupNode, MeshNode, PrimitiveNode, SceneNode, Shape2DNode, Vec3 } from '../../scene/types';
@@ -11,10 +12,13 @@ import './PropertiesPanel.scss';
 
 const AXES = ['X', 'Y', 'Z'] as const;
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+function Section({ title, icon, children }: { title: string; icon?: ReactNode; children: ReactNode }) {
   return (
     <section className="properties__section">
-      <h3 className="properties__section-title">{title}</h3>
+      <h3 className="properties__section-title">
+        {icon}
+        {title}
+      </h3>
       <div className="properties__fields">{children}</div>
     </section>
   );
@@ -31,11 +35,13 @@ export function PropertiesPanel() {
     const n = s.selection.length === 1 ? s.scene.nodes[s.selection[0]] : undefined;
     return n?.type === 'group' && n.op === 'difference' ? s.scene.nodes[n.children[0]]?.name : undefined;
   });
+  // Figlio diretto di un Raggruppa: lì i fori non hanno effetto, quindi resta sempre un solido
+  const inAppGroup = useSceneStore((s) => s.selection.length === 1 && isAppGroup(s.scene.nodes[parentOf(s.scene, s.selection[0]) ?? '']));
   // Bloccato lui o un gruppo che lo contiene
   const locked = useSceneStore((s) => s.selection.length === 1 && isLocked(s.scene, s.selection[0]));
 
   if (selection.length === 0) return <p className="properties__empty">Seleziona un oggetto per modificarne le proprietà.</p>;
-  if (!node) return <p className="properties__empty">{selection.length} oggetti selezionati. Usa Ctrl+G per raggrupparli.</p>;
+  if (!node) return <p className="properties__empty">{selection.length} oggetti selezionati. Ctrl+G li raggruppa (restano separati), U li unisce in un solo solido.</p>;
 
   const patch = (p: Partial<PrimitiveNode> | Partial<Shape2DNode> | Partial<MeshNode> | Partial<GroupNode>) => updateNode(node.id, p);
   const setVec = (key: 'position' | 'rotation', i: number, v: number) => {
@@ -46,7 +52,10 @@ export function PropertiesPanel() {
 
   return (
     <div className="properties">
-      <Section title="Oggetto">
+      <Section
+        title={node.type === 'group' ? GROUP_NAMES[node.op] : 'Oggetto'}
+        icon={node.type === 'group' ? (() => { const Icon = GROUP_ICONS[node.op]; return <Icon size={14} className="properties__section-icon" aria-hidden="true" />; })() : undefined}
+      >
         <label className="properties__row">
           <span className="properties__label">Nome</span>
           <input className="properties__text" value={node.name} onChange={(e) => patch({ name: e.target.value })} />
@@ -69,7 +78,8 @@ export function PropertiesPanel() {
                 type="button"
                 className={`properties__segment${node.mode === mode ? ' properties__segment--active' : ''}${mode === 'hole' ? ' properties__segment--hole' : ''}`}
                 aria-pressed={node.mode === mode}
-                disabled={locked}
+                disabled={locked || (inAppGroup && mode === 'hole')}
+                title={inAppGroup && mode === 'hole' ? 'I fori hanno effetto solo dentro Unione, Differenza o Intersezione' : undefined}
                 onClick={() => patch({ mode })}
               >
                 {mode === 'solid' ? 'Solido' : 'Foro'}
@@ -77,7 +87,8 @@ export function PropertiesPanel() {
             ))}
           </div>
         </div>
-        {node.type === 'group' && (
+        {isAppGroup(node) && <p className="properties__note">Gli oggetti restano separati (colori e codice propri) e si muovono insieme. Per fonderli in un solo solido usa Unisci (U).</p>}
+        {node.type === 'group' && node.op !== 'group' && (
           <div className="properties__row">
             <span className="properties__label">Operazione</span>
             <div className="properties__segmented" role="group" aria-label="Operazione del gruppo">

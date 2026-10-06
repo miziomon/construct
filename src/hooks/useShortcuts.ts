@@ -42,6 +42,12 @@ export function useShortcuts(): void {
       else if (!mod && key === 'l') s.toggleLockSelected();
       else if (!mod && key === 'b') dropSelectionToBed();
       else if (!mod && key === 'p') useUiStore.getState().cycleBed();
+      else if (!mod && key === 'u') s.unionSelected();
+      else if (key === 'f2') {
+        // Rinomina l'oggetto selezionato nell'elenco oggetti
+        e.preventDefault();
+        if (s.selection.length === 1) useUiStore.getState().setRenamingId(s.selection[0]);
+      }
       else if (!mod && key === 'q') s.setGizmoMode('select');
       else if (!mod && key === 'w') s.setGizmoMode('translate');
       else if (!mod && key === 'e') s.setGizmoMode('rotate');

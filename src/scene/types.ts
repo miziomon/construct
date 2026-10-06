@@ -82,7 +82,11 @@ export type MeshNode = BaseNode & {
   triangles: number;
 };
 
-export type GroupOp = 'union' | 'intersection' | 'difference';
+/**
+ * 'group' è il Raggruppa: concetto solo dell'app, gli oggetti restano separati (colori e codice propri) e si muovono insieme.
+ * Le altre sono operazioni booleane vere, anche nel codice OpenSCAD.
+ */
+export type GroupOp = 'group' | 'union' | 'intersection' | 'difference';
 
 export type GroupNode = BaseNode & {
   type: 'group';

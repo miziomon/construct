@@ -4,9 +4,13 @@ import { stretchFactors } from '../scene/ellipse';
 import { maxPolyhedronRadius, polygonMaxRadius, polygonShrunkRadius, polyhedronVertices, roundedPolyhedronCenters } from '../scene/polyhedra';
 import type { MeshNode, PrimitiveNode, Scene, SceneNode, Shape2DNode, Vec3 } from '../scene/types';
 
-/** Risultato del calcolo per un oggetto alla radice della scena (mesh in mm, Z verso l'alto). */
+/** Risultato del calcolo per un oggetto (mesh in mm, Z verso l'alto). Un Raggruppa produce una mesh per ogni figlio. */
 export interface NodeMesh {
   id: string;
+  /** Oggetto alla radice che contiene questo nodo (è il nodo stesso se sta alla radice). */
+  rootId: string;
+  /** Id degli antenati dalla radice al nodo, nodo incluso: serve a selezione e contorni. */
+  path: string[];
   color: string;
   /** Un hole alla radice non sottrae nulla: si mostra traslucido e non si esporta. */
   isHole: boolean;
@@ -246,9 +250,11 @@ export class Evaluator {
         this.cache.set(key, placed);
         return placed;
       }
-      const solids = kids.filter((k) => k.mode === 'solid').map((k) => this.build(scene, k));
-      const holes = kids.filter((k) => k.mode === 'hole').map((k) => this.build(scene, k));
-      const base = node.op === 'union' ? Manifold.union(solids) : solids.length ? Manifold.intersection(solids) : Manifold.union([]);
+      // Il Raggruppa (op 'group') dentro una booleana equivale a una unione di tutti i figli: non ha fori
+      const isGroup = node.op === 'group';
+      const solids = kids.filter((k) => isGroup || k.mode === 'solid').map((k) => this.build(scene, k));
+      const holes = isGroup ? [] : kids.filter((k) => k.mode === 'hole').map((k) => this.build(scene, k));
+      const base = node.op === 'union' || isGroup ? Manifold.union(solids) : solids.length ? Manifold.intersection(solids) : Manifold.union([]);
       local = holes.length ? Manifold.difference([base, ...holes]) : base;
       // Se nessuna sottrazione è avvenuta, base è già il risultato: niente da liberare
       if (local !== base) base.delete();
@@ -260,6 +266,29 @@ export class Evaluator {
     return placed;
   }
 
+  /**
+   * Visita i nodi che producono una mesh a partire da `node`: un Raggruppa non fonde i figli, quindi si scende
+   * fino a ogni figlio, che viene portato nel sistema esterno con le trasformazioni di tutti i gruppi antenati
+   * (dal più interno al più esterno). Booleane e forme singole sono una sola mesh. La mesh passata alla callback
+   * va solo letta: se è una copia temporanea viene liberata subito dopo.
+   */
+  private visit(scene: Scene, node: SceneNode, ancestors: SceneNode[], visitor: (node: SceneNode, m: Manifold, path: string[]) => void): void {
+    if (node.type === 'group' && node.op === 'group') {
+      for (const c of node.children) this.visit(scene, scene.nodes[c], [...ancestors, node], visitor);
+      return;
+    }
+    let m = this.build(scene, node);
+    let temporary = false;
+    for (let i = ancestors.length - 1; i >= 0; i--) {
+      const next = m.rotate(ancestors[i].rotation).translate(ancestors[i].position);
+      if (temporary) m.delete();
+      m = next;
+      temporary = true;
+    }
+    visitor(node, m, [...ancestors.map((a) => a.id), node.id]);
+    if (temporary) m.delete();
+  }
+
   /** Valuta tutti gli oggetti alla radice e libera dalla cache i nodi non più presenti. */
   evaluate(scene: Scene): EvalResult {
     const t0 = performance.now();
@@ -267,9 +296,8 @@ export class Evaluator {
     const meshes: NodeMesh[] = [];
 
     for (const id of scene.rootIds) {
-      const node = scene.nodes[id];
-      const m = this.build(scene, node);
-      meshes.push(toMesh(node, m));
+      // I figli di un Raggruppa sono sempre solidi: un foro ha senso solo come differenza tra oggetti
+      this.visit(scene, scene.nodes[id], [], (node, m, path) => meshes.push(toMesh(node, m, id, path)));
     }
 
     // Mark and sweep: libera la memoria WASM dei sottoalberi non più usati
@@ -282,14 +310,19 @@ export class Evaluator {
     return { meshes, ms: performance.now() - t0 };
   }
 
-  /** Unione di tutti i solid alla radice (per export STL). L'handle restituito va liberato dal chiamante. */
+  /** Unione di tutti i solid (per export STL), compresi i figli dei Raggruppa. L'handle restituito va liberato dal chiamante. */
   unionOfSolids(scene: Scene): Manifold {
     this.touched.clear();
-    const parts = scene.rootIds
-      .map((id) => scene.nodes[id])
-      .filter((n) => n.mode === 'solid')
-      .map((n) => this.build(scene, n));
-    return this.wasm.Manifold.union(parts);
+    const parts: Manifold[] = [];
+    for (const id of scene.rootIds) {
+      const root = scene.nodes[id];
+      if (root.mode !== 'solid') continue;
+      // La callback riceve una mesh che può essere temporanea: se ne tiene una copia leggera (condivide i dati)
+      this.visit(scene, root, [], (_node, m) => parts.push(m.translate([0, 0, 0])));
+    }
+    const union = this.wasm.Manifold.union(parts);
+    for (const p of parts) p.delete();
+    return union;
   }
 
   /** Libera tutta la cache. */
@@ -302,7 +335,7 @@ export class Evaluator {
 }
 
 /** Converte un Manifold in buffer pronti per three.js, esportatori e misure. */
-export function toMesh(node: SceneNode, m: Manifold): NodeMesh {
+export function toMesh(node: SceneNode, m: Manifold, rootId: string = node.id, path: string[] = [node.id]): NodeMesh {
   const mesh = m.getMesh();
   const stride = mesh.numProp;
   // Le prime tre proprietà sono xyz: se ne esistono altre le scartiamo
@@ -319,8 +352,11 @@ export function toMesh(node: SceneNode, m: Manifold): NodeMesh {
   const box = empty ? { min: [0, 0, 0] as Vec3, max: [0, 0, 0] as Vec3 } : m.boundingBox();
   return {
     id: node.id,
+    rootId,
+    path,
     color: node.color,
-    isHole: node.mode === 'hole',
+    // Solo un foro alla radice si mostra come tale: dentro un Raggruppa tutto è solido
+    isHole: node.mode === 'hole' && path.length === 1,
     positions,
     indices: mesh.triVerts.slice(),
     volume: empty ? 0 : m.volume(),

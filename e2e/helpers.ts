@@ -20,7 +20,8 @@ export async function settled(page: Page): Promise<void> {
     const w = window.__webcad!;
     const roots = w.store.getState().scene.rootIds.length;
     const { meshes, busy } = w.results.getState();
-    return !busy && meshes.length === roots;
+    // Un Raggruppa ha una mesh per figlio: si contano le radici distinte, non le mesh
+    return !busy && new Set(meshes.map((m) => m.rootId)).size === roots;
   });
 }
 
@@ -100,4 +101,14 @@ export async function dragGizmoAxis(page: Page, center: [number, number, number]
 export async function openMenuItem(page: Page, name: string): Promise<void> {
   await page.getByRole('button', { name: 'Menu', exact: true }).click();
   await page.getByRole('menuitem', { name }).click();
+}
+
+/** Apre la modale del codice, ne restituisce il testo (una riga per elemento) e la richiude. */
+export async function readCode(page: Page): Promise<string> {
+  await page.keyboard.press('c');
+  await expect(page.locator('.code-view__line').first()).toBeVisible();
+  const code = (await page.locator('.code-view__text').allTextContents()).join('\n');
+  await page.keyboard.press('c');
+  await expect(page.getByRole('dialog')).toBeHidden();
+  return code;
 }

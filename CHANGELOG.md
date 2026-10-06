@@ -18,6 +18,24 @@ I messaggi di commit seguono i [Conventional Commits](https://www.conventionalco
 
 ## [Non rilasciato]
 
+## [0.7.0] - 2026-10-06
+
+### Aggiunto
+- **Unisci** (pulsante e tasto U): unione booleana vera, con `union()` nel codice OpenSCAD e una sola mesh nell'export. Ha un'icona a parte da Raggruppa.
+- Trascinamento nell'elenco degli oggetti: si riordinano, si mettono dentro un gruppo (anche a più livelli) e si portano fuori. La posizione nel mondo non cambia e un solo Annulla riporta tutto com'era.
+- Rinomina dall'elenco con doppio clic o F2 (Invio conferma, Esc annulla).
+- Il tipo del gruppo è visibile: icona e nome nell'elenco, e titolo "Differenza", "Unione", "Intersezione" o "Gruppo" nella sidebar di destra.
+- Alt+clic sulla vista 3D seleziona il singolo oggetto di un gruppo.
+- `docs/valutazione-raccordi.md`: valutazione della fattibilità dei raccordi tra due superfici (stile Fusion 360), con uno spike nei test.
+
+### Modificato
+- **Raggruppa** non fonde più gli oggetti: restano separati, con il colore originale, e per OpenSCAD e per l'export (3MF) sono oggetti distinti. Il gruppo serve a muoverli insieme. Un clic su un oggetto raggruppato seleziona il gruppo.
+- Un foro messo in un Raggruppa diventa un solido: i fori hanno effetto solo dentro Unione, Differenza e Intersezione.
+- Le scorciatoie F2 e U sono nell'elenco delle scorciatoie.
+
+### Nota
+- I gruppi salvati con le versioni precedenti restano unioni: erano già operazioni booleane.
+
 ## [0.6.0] - 2026-10-06
 
 ### Aggiunto

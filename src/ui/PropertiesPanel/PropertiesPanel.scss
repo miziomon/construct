@@ -17,7 +17,22 @@
   }
 
   &__section-title {
+    display: flex;
+    align-items: center;
+    gap: $space-2;
     @include section-title;
+  }
+
+  &__section-icon {
+    flex: none;
+    color: color('accent');
+  }
+
+  &__note {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.4;
+    color: color('text-muted');
   }
 
   &__fields {

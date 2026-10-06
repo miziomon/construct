@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
 import { GizmoHelper, GizmoViewport, OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
@@ -30,6 +30,12 @@ export function Viewport() {
   const scene = useSceneStore((s) => s.scene);
   const gizmoMode = useSceneStore((s) => s.gizmoMode);
   const palette = useViewportPalette();
+  // Le mesh si raggruppano per oggetto alla radice: un Raggruppa ha una mesh per figlio, ma un solo gizmo
+  const meshesByRoot = useMemo(() => {
+    const map = new Map<string, typeof meshes>();
+    for (const m of meshes) map.set(m.rootId, [...(map.get(m.rootId) ?? []), m]);
+    return map;
+  }, [meshes]);
 
   // Gizmo solo fuori dalla modalità Seleziona, con un oggetto selezionato, alla radice e non bloccato
   const gizmoId =
@@ -54,8 +60,8 @@ export function Viewport() {
 
         {import.meta.env.MODE === 'e2e' && <E2EBridge />}
         <Bed />
-        {meshes.map((m) => (
-          <SceneObject key={m.id} mesh={m} selected={selection.includes(m.id)} locked={isLocked(scene, m.id)} showGizmo={m.id === gizmoId} />
+        {[...meshesByRoot].map(([rootId, parts]) => (
+          <SceneObject key={rootId} rootId={rootId} meshes={parts} selection={selection} locked={isLocked(scene, rootId)} showGizmo={rootId === gizmoId} />
         ))}
 
         <OrbitControls makeDefault target={[0, 0, 20]} enableDamping={false} maxDistance={2500} />

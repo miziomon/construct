@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { addShape, dragGizmoAlongX, dragGizmoAxis, openApp, openMenuItem, sceneState, settled } from './helpers';
+import { addShape, dragGizmoAlongX, dragGizmoAxis, openApp, openMenuItem, project, readCode, sceneState, settled } from './helpers';
 import { writeStl } from '../src/kernel/export/stl';
 
 test.beforeEach(async ({ page }) => {
@@ -395,4 +395,146 @@ test('sfera: Raggio Z la rende un ellissoide che resta appoggiato al piatto', as
   await settled(page);
   const bbox = await page.evaluate(() => window.__webcad!.results.getState().meshes[0].bbox);
   expect(bbox.max[2] - bbox.min[2]).toBeCloseTo(40, 3);
+});
+
+/** Seleziona due oggetti dall'elenco (il primo con un clic, il secondo con Maiusc). */
+async function selectTwo(page: import('@playwright/test').Page, first: string, second: string) {
+  await page.locator('.outliner__row', { hasText: first }).click();
+  await page.locator('.outliner__row', { hasText: second }).click({ modifiers: ['Shift'] });
+}
+
+test('Raggruppa tiene separati gli oggetti (colori e codice propri) e li muove insieme', async ({ page }) => {
+  await addShape(page, 'Cubo');
+  await addShape(page, 'Sfera');
+  await selectTwo(page, 'Cubo', 'Sfera');
+  await page.getByRole('button', { name: /^Raggruppa/ }).click();
+  await settled(page);
+
+  const scene = await sceneState(page);
+  expect(scene.rootIds).toHaveLength(1);
+  expect(scene.nodes[scene.rootIds[0]].op).toBe('group');
+  // Due mesh distinte, con colori diversi, che appartengono alla stessa radice
+  const meshes = await page.evaluate(() => window.__webcad!.results.getState().meshes.map((m) => ({ rootId: m.rootId, color: m.color, x: (m.bbox.min[0] + m.bbox.max[0]) / 2 })));
+  expect(meshes).toHaveLength(2);
+  expect(new Set(meshes.map((m) => m.color)).size).toBe(2);
+  expect(new Set(meshes.map((m) => m.rootId)).size).toBe(1);
+
+  // Il codice non ha union() e ha un blocco per oggetto
+  const code = await readCode(page);
+  expect(code).not.toContain('union()');
+  expect(code).toContain('cube(');
+  expect(code).toContain('sphere(');
+
+  // Spostando il gruppo si muovono entrambe le mesh
+  await page.keyboard.press('Shift+ArrowRight');
+  await settled(page);
+  const moved = await page.evaluate(() => window.__webcad!.results.getState().meshes.map((m) => (m.bbox.min[0] + m.bbox.max[0]) / 2));
+  moved.forEach((x, i) => expect(x).toBeCloseTo(meshes[i].x + 10, 3));
+});
+
+test('Unisci produce una sola mesh e union() nel codice', async ({ page }) => {
+  await addShape(page, 'Cubo');
+  await addShape(page, 'Sfera');
+  await selectTwo(page, 'Cubo', 'Sfera');
+  await page.keyboard.press('u');
+  await settled(page);
+
+  const scene = await sceneState(page);
+  expect(scene.rootIds).toHaveLength(1);
+  expect(scene.nodes[scene.rootIds[0]].op).toBe('union');
+  expect(await page.evaluate(() => window.__webcad!.results.getState().meshes.length)).toBe(1);
+  expect(await readCode(page)).toContain('union() {');
+});
+
+test('il titolo della sidebar di destra dice il tipo del gruppo: Differenza, Unione, Gruppo', async ({ page }) => {
+  await addShape(page, 'Cubo');
+  await addShape(page, 'Cilindro');
+  await selectTwo(page, 'Cubo', 'Cilindro');
+  await page.getByRole('button', { name: 'Differenza' }).first().click();
+  await settled(page);
+  await expect(page.locator('.properties__section-title').first()).toHaveText('Differenza');
+  // L'elenco ha l'icona con lo stesso tipo come tooltip
+  await expect(page.locator('.outliner__icon-wrap[title="Differenza"]')).toHaveCount(1);
+});
+
+test('rinomina dall\'elenco con doppio clic e con F2; Esc annulla', async ({ page }) => {
+  await addShape(page, 'Cubo');
+  const id = (await sceneState(page)).rootIds[0];
+  const row = page.locator('.outliner__row', { hasText: 'Cubo' });
+
+  await row.dblclick();
+  const input = page.getByRole('textbox', { name: 'Nome dell\'oggetto' });
+  await input.fill('Mio cubo');
+  await input.press('Enter');
+  expect((await sceneState(page)).nodes[id].name).toBe('Mio cubo');
+  // Un solo passo di Annulla per tutta la rinomina
+  await page.locator('.outliner__row', { hasText: 'Mio cubo' }).click();
+  await page.keyboard.press('Control+z');
+  expect((await sceneState(page)).nodes[id].name).toBe('Cubo');
+
+  await page.locator('.outliner__row', { hasText: 'Cubo' }).click();
+  await page.keyboard.press('F2');
+  await page.getByRole('textbox', { name: 'Nome dell\'oggetto' }).fill('Scartato');
+  await page.keyboard.press('Escape');
+  expect((await sceneState(page)).nodes[id].name).toBe('Cubo');
+  await expect(page.getByRole('textbox', { name: 'Nome dell\'oggetto' })).toHaveCount(0);
+});
+
+test('trascinando nell\'elenco si mette un oggetto dentro un gruppo, lo si porta fuori e si riordina', async ({ page }) => {
+  await addShape(page, 'Cubo');
+  await addShape(page, 'Sfera');
+  await addShape(page, 'Cono');
+  await selectTwo(page, 'Cubo', 'Sfera');
+  await page.getByRole('button', { name: /^Raggruppa/ }).click();
+  await settled(page);
+
+  const groupRow = page.locator('.outliner__row', { hasText: 'Gruppo' });
+  const rowOf = (name: string) => page.locator('.outliner__row', { hasText: name });
+  const childrenOfGroup = async () => {
+    const scene = await sceneState(page);
+    const g = scene.nodes[scene.rootIds.find((id: string) => scene.nodes[id].type === 'group')!];
+    return g.children.map((c: string) => scene.nodes[c].name);
+  };
+  expect(await childrenOfGroup()).toEqual(['Cubo', 'Sfera']);
+
+  // Il cono va dentro il gruppo (zona centrale della riga del gruppo)
+  await rowOf('Cono').dragTo(groupRow, { targetPosition: { x: 80, y: 14 } });
+  expect(await childrenOfGroup()).toEqual(['Cubo', 'Sfera', 'Cono']);
+
+  // Un figlio esce dal gruppo: rilasciato sulla metà alta della riga del gruppo finisce alla radice, prima di lui
+  await rowOf('Sfera').dragTo(groupRow, { targetPosition: { x: 80, y: 3 } });
+  expect(await childrenOfGroup()).toEqual(['Cubo', 'Cono']);
+  const roots = async () => (await sceneState(page)).rootIds.map((id: string) => id);
+  expect(await roots()).toHaveLength(2);
+
+  // Un solo Ctrl+Z annulla lo spostamento
+  await page.locator('canvas').click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press('Control+z');
+  expect(await childrenOfGroup()).toEqual(['Cubo', 'Sfera', 'Cono']);
+});
+
+test('un clic su un oggetto raggruppato seleziona il gruppo, Alt+clic il singolo oggetto', async ({ page }) => {
+  await addShape(page, 'Cubo');
+  await addShape(page, 'Sfera');
+  const [sphereId, cubeId] = (await sceneState(page)).rootIds; // l'ultimo creato sta in cima
+  // Sfalsa la sfera per poter cliccare i due oggetti separatamente
+  await page.evaluate(([id]) => window.__webcad!.store.getState().updateNode(id as string, { position: [60, 0, 10] }), [sphereId]);
+  await selectTwo(page, 'Cubo', 'Sfera');
+  await page.getByRole('button', { name: /^Raggruppa/ }).click();
+  await settled(page);
+  const scene = await sceneState(page);
+  const gid = scene.rootIds[0];
+  const cubeWorld = await page.evaluate(([id]) => {
+    const m = window.__webcad!.results.getState().meshes.find((x) => x.id === id)!;
+    return [(m.bbox.min[0] + m.bbox.max[0]) / 2, (m.bbox.min[1] + m.bbox.max[1]) / 2, (m.bbox.min[2] + m.bbox.max[2]) / 2] as [number, number, number];
+  }, [cubeId]);
+  const at = await project(page, cubeWorld);
+
+  await page.locator('canvas').click({ position: { x: 5, y: 5 } }); // deseleziona
+  await page.mouse.click(at.x, at.y);
+  expect(await page.evaluate(() => window.__webcad!.store.getState().selection)).toEqual([gid]);
+  await page.keyboard.down('Alt');
+  await page.mouse.click(at.x, at.y);
+  await page.keyboard.up('Alt');
+  expect(await page.evaluate(() => window.__webcad!.store.getState().selection)).toEqual([cubeId]);
 });
