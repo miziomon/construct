@@ -342,7 +342,7 @@ Include tutto il POC più:
 
 ## Dati da verificare
 
-- Dimensione esatta del WASM di manifold-3d 3.5.x (stimata circa 1 MB dalle versioni 2.x).
+- ~~Dimensione esatta del WASM di manifold-3d 3.5.x~~: verificata, 541 KB (208 KB compressi con gzip).
 - Assenza di export 3MF in TinkerCAD (nessuna evidenza trovata, non confermata).
 - Nome del writer 3MF usato da ManifoldCAD (probabile `@jscadui/3mf-export`, citato a memoria).
 - Supporto Memory64 su Safari (fonte singola e dubbia).

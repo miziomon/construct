@@ -18,6 +18,26 @@ I messaggi di commit seguono i [Conventional Commits](https://www.conventionalco
 
 ## [Non rilasciato]
 
+## [0.2.0] - 2026-10-06
+
+### Aggiunto
+- Import di file STL (binario e ASCII) e 3MF (unità, componenti, trasformazioni e colori), con pulsante Importa e trascinamento nella finestra. Le mesh devono essere solidi chiusi: gli altri file vengono rifiutati con un messaggio che spiega il motivo.
+- Blocco degli oggetti (tasto L): un oggetto bloccato non si sposta, ruota, elimina, raggruppa né cambia nelle misure. Resta selezionabile e modificabile nel nome e nel colore.
+- Barra flottante con due o più oggetti selezionati: Unione, Differenza (primo selezionato meno gli altri, con "Scambia base") e Intersezione.
+- Forme 2D estrudibili (cerchio e quadrato) con altezza, torsione e scala della cima.
+- Numero di lati configurabile per cerchio, cilindro, cono e toro (da 3 a 256, come `$fn` di OpenSCAD) con preset: 3 triangolo, 4 quadrato, 5 pentagono, 6 esagono, 8 ottagono.
+- Raggio di arrotondamento degli spigoli della scatola e degli angoli del quadrato 2D.
+- Pulsante e tasto B per appoggiare gli oggetti selezionati sul piatto.
+- Notifiche e finestra di conferma integrate nell'interfaccia, al posto di `alert` e `confirm`.
+- Test end-to-end con Playwright (`npm run test:e2e`), compreso il trascinamento reale del gizmo.
+- Numero di versione nella barra di stato e `CHANGELOG.md`.
+- Valutazione degli smussi con benchmark in `docs/valutazione-smussi.md`.
+
+### Modificato
+- Il progetto JSON passa alla versione 2 e include le mesh importate; i file della versione 1 si aprono ancora.
+- Il numero minimo di lati scende da 8 a 3 (la sfera resta a multipli di 4).
+- Il codice OpenSCAD generato comprende `linear_extrude`, `offset`, `hull` e `import` per le nuove forme.
+
 ## [0.1.0] - 2026-10-05
 
 Primo POC.
