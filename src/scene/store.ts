@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import { temporal } from 'zundo';
 import type { GroupNode, GroupOp, MeshNode, PrimitiveKind, PrimitiveNode, Scene, SceneNode, Shape2DKind, Shape2DNode, Vec3 } from './types';
+import { randomColor } from './color';
 import { DEFAULT_COLOR, PRIMITIVE_LABELS, SHAPE2D_LABELS, halfHeight, primitiveDefaults, shape2dDefaults } from './defaults';
 import { composeTransform, round } from './math';
 
@@ -100,8 +101,10 @@ export const useSceneStore = create<SceneState>()(
           } as PrimitiveNode;
           // Appoggia la forma sul piatto: il punto più basso a Z = 0
           node.position = [0, 0, halfHeight(node)];
+          // Ogni forma nuova ha un colore diverso e compare in cima all'elenco degli oggetti
+          node.color = randomColor();
           s.scene.nodes[id] = node;
-          s.scene.rootIds.push(id);
+          s.scene.rootIds.unshift(id);
           s.selection = [id];
         }),
 
@@ -116,8 +119,9 @@ export const useSceneStore = create<SceneState>()(
           } as Shape2DNode;
           // L'estrusione è centrata: la base tocca il piatto con Z = altezza / 2
           node.position = [0, 0, halfHeight(node)];
+          node.color = randomColor();
           s.scene.nodes[id] = node;
-          s.scene.rootIds.push(id);
+          s.scene.rootIds.unshift(id);
           s.selection = [id];
         }),
 
@@ -137,10 +141,11 @@ export const useSceneStore = create<SceneState>()(
             position: [0, 0, input.size[2] / 2],
             rotation: [0, 0, 0],
             mode: 'solid',
-            color: input.color ?? DEFAULT_COLOR,
+            // Le mesh senza colore proprio (STL) ricevono un colore casuale come le altre forme
+            color: input.color ?? randomColor(),
           };
           s.scene.nodes[id] = node;
-          s.scene.rootIds.push(id);
+          s.scene.rootIds.unshift(id);
           s.selection = [id];
         });
         return id;
@@ -193,9 +198,10 @@ export const useSceneStore = create<SceneState>()(
             const c = s.scene.nodes[cid];
             // Sfalsa la copia di 10 mm in X e Y per renderla visibile
             c.position = [c.position[0] + 10, c.position[1] + 10, c.position[2]];
-            s.scene.rootIds.push(cid);
             copies.push(cid);
           }
+          // Le copie stanno in cima, nello stesso ordine degli originali
+          s.scene.rootIds.unshift(...copies);
           if (copies.length) s.selection = copies;
         }),
 

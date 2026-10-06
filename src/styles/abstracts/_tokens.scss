@@ -1,21 +1,56 @@
 // Token di design: unica fonte di verità per colori, spazi, raggi e tipografia.
 // I colori sono esposti anche come custom property CSS (vedi base/_base.scss) e si usano con color(nome).
 
-$colors: (
-  'bg': #14171c,
-  'panel': #1b2027,
-  'panel-raised': #232a33,
-  'border': #2d3540,
-  'text': #e6e9ee,
-  'text-muted': #8b95a3,
-  'accent': #4da3ff,
-  'accent-strong': #2f86e6,
-  'accent-soft': rgba(77, 163, 255, 0.16),
-  'danger': #ff5d5d,
-  'hole': #ff4d4d,
-  'ok': #46c47a,
-  'warn': #f0b429,
+@use 'sass:map';
+
+// Un set di colori per tema. Il tema chiaro ha tinte pastello con testi scuri (contrasto verificato da styles/contrast.test.ts).
+$themes: (
+  'light': (
+    'bg': #e9eff6,
+    'panel': #f8f9fc,
+    'panel-raised': #ffffff,
+    'border': #cdd5e3,
+    'text': #1e2433,
+    'text-muted': #4f5b73,
+    'accent': #2f5fc7,
+    'accent-strong': #3563d1,
+    'accent-soft': rgba(79, 124, 230, 0.16),
+    'danger': #c23b3b,
+    'hole': #d64545,
+    'ok': #23794a,
+    'warn': #9a5b00,
+    'code-bg': #f1f4fa,
+    'syn-comment': #5d6b82,
+    'syn-keyword': #8a3fb5,
+    'syn-function': #1d5fc4,
+    'syn-number': #a64b08,
+    'syn-param': #0f7b6c,
+  ),
+  'dark': (
+    'bg': #14171c,
+    'panel': #1b2027,
+    'panel-raised': #232a33,
+    'border': #2d3540,
+    'text': #e6e9ee,
+    'text-muted': #8b95a3,
+    'accent': #4da3ff,
+    'accent-strong': #2a73d0,
+    'accent-soft': rgba(77, 163, 255, 0.16),
+    'danger': #ff5d5d,
+    'hole': #ff4d4d,
+    'ok': #46c47a,
+    'warn': #f0b429,
+    'code-bg': #10141a,
+    'syn-comment': #7d8aa0,
+    'syn-keyword': #c792ea,
+    'syn-function': #82aaff,
+    'syn-number': #f78c6c,
+    'syn-param': #4ec9b0,
+  ),
 );
+
+// Elenco dei nomi validi (uguale in tutti i temi): serve alla funzione color()
+$colors: map.get($themes, 'light');
 
 $space-1: 4px;
 $space-2: 8px;

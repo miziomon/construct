@@ -9,10 +9,12 @@ interface Props {
   children: ReactNode;
   /** Se false Esc, la X e il click sullo sfondo non chiudono la finestra (es. aggiornamento obbligatorio). */
   dismissable?: boolean;
+  /** "large": 80% della larghezza e dell'altezza della finestra (es. codice OpenSCAD). */
+  size?: 'default' | 'large';
 }
 
 /** Finestra modale su <dialog> nativo: gestisce da sola focus, Esc e blocco dello sfondo. */
-export function Modal({ open, title, onClose, children, dismissable = true }: Props) {
+export function Modal({ open, title, onClose, children, dismissable = true, size = 'default' }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
 
   // Apre e chiude il dialog nativo in base alla prop "open"
@@ -26,7 +28,7 @@ export function Modal({ open, title, onClose, children, dismissable = true }: Pr
   return (
     <dialog
       ref={dialog}
-      className="modal"
+      className={`modal${size === 'large' ? ' modal--large' : ''}`}
       aria-labelledby="modal-title"
       // Esc: chiude solo se consentito
       onCancel={(e) => {

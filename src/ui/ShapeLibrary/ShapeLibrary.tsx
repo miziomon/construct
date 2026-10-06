@@ -1,5 +1,6 @@
-import { Box, Circle, CircleDot, Cone, Cylinder, Diamond, Donut, Gem, Hexagon, Pentagon, Square } from 'lucide-react';
+import { Box, Circle, CircleDot, Cone, Cylinder, Diamond, Donut, Hexagon, Pentagon, Square } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { Decagon } from '../icons/Decagon';
 import { useSceneStore } from '../../scene/store';
 import { PRIMITIVE_LABELS, SHAPE2D_LABELS } from '../../scene/defaults';
 import type { PrimitiveKind, Shape2DKind } from '../../scene/types';
@@ -13,7 +14,7 @@ export const PRIMITIVE_ICONS: Record<PrimitiveKind, LucideIcon> = {
   sphere: Circle,
   torus: Donut,
   octahedron: Diamond,
-  decahedron: Gem,
+  decahedron: Decagon,
   dodecahedron: Pentagon,
   icosahedron: Hexagon,
 };

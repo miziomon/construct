@@ -8,29 +8,13 @@
   border-left: 1px solid color('border');
   background: color('panel');
 
-  &__tabs {
-    display: flex;
+  &__title {
+    margin: 0;
+    padding: $space-3;
     border-bottom: 1px solid color('border');
-  }
-
-  &__tab {
-    flex: 1;
-    padding: $space-3 $space-2;
-    border: 0;
-    border-bottom: 2px solid transparent;
-    background: transparent;
+    font-size: 13px;
     font-weight: 600;
-    color: color('text-muted');
-    @include focus-ring;
-
-    &:hover {
-      color: color('text');
-    }
-
-    &--active {
-      border-bottom-color: color('accent');
-      color: color('accent');
-    }
+    color: color('accent');
   }
 
   &__body {
@@ -38,11 +22,5 @@
     min-height: 0;
     overflow-y: auto;
     @include thin-scrollbar;
-  }
-
-  &__loading {
-    margin: 0;
-    padding: $space-4 $space-3;
-    color: color('text-muted');
   }
 }

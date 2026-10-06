@@ -18,6 +18,23 @@ I messaggi di commit seguono i [Conventional Commits](https://www.conventionalco
 
 ## [Non rilasciato]
 
+## [0.5.0] - 2026-10-06
+
+### Aggiunto
+- Tema chiaro con tinte pastello, predefinito, e interruttore sole/luna nella barra in alto (la scelta resta salvata). Il tema scuro resta disponibile. Il contrasto dei colori è verificato da un test.
+- Il codice OpenSCAD si apre in una modale all'80% della finestra, con numeri di riga, indentazione e colori per funzioni, parole chiave, numeri, parametri e commenti.
+- Pulsante e tasto P per il piatto di stampa: visibile, senza la base piena (restano griglia e bordo), nascosto.
+
+### Modificato
+- Le nuove forme compaiono in cima all'elenco degli oggetti e ricevono un colore casuale diverso dalla forma precedente.
+- Il pulsante del codice mostra solo l'icona. Ctrl+J apre e chiude la modale.
+- L'icona del Decaedro è un poligono a 10 lati.
+- Con una modale aperta le scorciatoie da tastiera non agiscono più sulla scena (prima Canc cancellava la selezione).
+- Il colore del pulsante primario e dell'avviso del tema scuro è leggermente più scuro, per il contrasto.
+
+### Rimosso
+- La scheda Codice della sidebar destra.
+
 ## [0.4.0] - 2026-10-06
 
 ### Aggiunto

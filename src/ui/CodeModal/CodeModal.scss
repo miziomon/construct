@@ -1,0 +1,99 @@
+@use '../../styles/abstracts' as *;
+
+.code-view {
+  display: flex;
+  flex-direction: column;
+  gap: $space-3;
+  height: 100%;
+  min-height: 0;
+
+  &__actions {
+    display: flex;
+    align-items: center;
+    gap: $space-2;
+  }
+
+  &__info {
+    margin-left: auto;
+    font-size: 12px;
+    color: color('text-muted');
+  }
+
+  &__scroller {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    border: 1px solid color('border');
+    border-radius: $radius-md;
+    background: color('code-bg');
+    @include thin-scrollbar;
+    @include focus-ring;
+  }
+
+  &__code {
+    margin: 0;
+    padding: $space-3 0;
+    font-family: $font-mono;
+    font-size: 13px;
+    line-height: 1.6;
+    // Il testo si può selezionare e copiare
+    user-select: text;
+  }
+
+  &__line {
+    display: flex;
+    // Le righe non vanno a capo: l'indentazione resta leggibile, si scorre in orizzontale
+    min-width: max-content;
+
+    &:hover {
+      background: color('accent-soft');
+    }
+  }
+
+  // Numeri di riga: colonna fissa a sinistra, non selezionabile
+  &__number {
+    position: sticky;
+    left: 0;
+    flex: none;
+    width: 3.5em;
+    padding-right: $space-3;
+    background: color('code-bg');
+    color: color('syn-comment');
+    text-align: right;
+    user-select: none;
+  }
+
+  &__text {
+    padding-left: $space-3;
+    white-space: pre;
+    color: color('text');
+  }
+
+  &__tok {
+    &--comment {
+      color: color('syn-comment');
+      font-style: italic;
+    }
+
+    &--keyword {
+      color: color('syn-keyword');
+    }
+
+    &--function {
+      color: color('syn-function');
+      font-weight: 600;
+    }
+
+    &--number {
+      color: color('syn-number');
+    }
+
+    &--param {
+      color: color('syn-param');
+    }
+
+    &--punct {
+      color: color('text-muted');
+    }
+  }
+}

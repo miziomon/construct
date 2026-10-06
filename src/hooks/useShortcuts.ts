@@ -10,6 +10,8 @@ export function useShortcuts(): void {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (isTyping(e.target)) return;
+      // Con una modale aperta le scorciatoie dell'editor (Canc, G, ...) non devono agire sulla scena: resta solo Ctrl+J per chiudere il codice
+      if (document.querySelector('dialog[open]') && !((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'j')) return;
       const s = useSceneStore.getState();
       const temporal = useSceneStore.temporal.getState();
       const mod = e.ctrlKey || e.metaKey;
@@ -32,6 +34,7 @@ export function useShortcuts(): void {
       else if (!mod && key === 'h') s.toggleHoleSelected();
       else if (!mod && key === 'l') s.toggleLockSelected();
       else if (!mod && key === 'b') dropSelectionToBed();
+      else if (!mod && key === 'p') useUiStore.getState().cycleBed();
       else if (!mod && key === 'q') s.setGizmoMode('select');
       else if (!mod && key === 'w') s.setGizmoMode('translate');
       else if (!mod && key === 'e') s.setGizmoMode('rotate');

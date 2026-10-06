@@ -247,3 +247,66 @@ test('il menu contiene Nuovo, Apri, Salva e le Scorciatoie', async ({ page }) =>
   await page.getByRole('menuitem', { name: 'Scorciatoie da tastiera' }).click();
   await expect(page.getByRole('dialog')).toContainText('Ridimensiona');
 });
+
+test('le nuove forme stanno in cima all\'elenco e hanno colori diversi', async ({ page }) => {
+  await addShape(page, 'Cubo');
+  await addShape(page, 'Sfera');
+  await addShape(page, 'Cono');
+  await expect(page.locator('.outliner__row').first()).toContainText('Cono');
+  await expect(page.locator('.outliner__row').last()).toContainText('Cubo');
+  const scene = await sceneState(page);
+  const colors = scene.rootIds.map((id: string) => scene.nodes[id].color);
+  expect(new Set(colors).size).toBe(3);
+});
+
+test('il pulsante Codice ha solo l\'icona e apre una modale all\'80% con il codice colorato', async ({ page }) => {
+  await addShape(page, 'Cubo');
+  const button = page.getByRole('button', { name: /Codice OpenSCAD/ });
+  await expect(button).toHaveText('');
+  await expect(page.getByRole('tab', { name: 'Codice' })).toHaveCount(0);
+
+  await button.click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  const box = (await dialog.boundingBox())!;
+  const view = page.viewportSize()!;
+  expect(box.width / view.width).toBeGreaterThan(0.77);
+  expect(box.width / view.width).toBeLessThan(0.83);
+  expect(box.height / view.height).toBeGreaterThan(0.77);
+  expect(box.height / view.height).toBeLessThan(0.83);
+  // Numeri di riga e segmenti colorati per funzioni e commenti
+  await expect(dialog.locator('.code-view__number').first()).toHaveText('1');
+  await expect(dialog.locator('.code-view__tok--function', { hasText: 'cube' })).toHaveCount(1);
+  await expect(dialog.locator('.code-view__tok--comment').first()).toBeVisible();
+
+  // Con la modale aperta Canc non cancella la scena; Ctrl+J la chiude
+  await page.keyboard.press('Delete');
+  expect((await sceneState(page)).rootIds).toHaveLength(1);
+  await page.keyboard.press('Control+j');
+  await expect(dialog).toBeHidden();
+});
+
+test('tema chiaro di default, interruttore per lo scuro che resta dopo il ricaricamento', async ({ page }) => {
+  const theme = () => page.evaluate(() => document.documentElement.dataset.theme);
+  expect(await theme()).toBe('light');
+  await page.getByRole('button', { name: 'Passa al tema scuro' }).click();
+  expect(await theme()).toBe('dark');
+  await page.reload();
+  expect(await theme()).toBe('dark');
+  await page.getByRole('button', { name: 'Passa al tema chiaro' }).click();
+  expect(await theme()).toBe('light');
+});
+
+test('il tasto P cicla il piatto: completo, senza base, nascosto', async ({ page }) => {
+  const parts = () => page.evaluate(() => ['bed-plate', 'bed-grid', 'bed-border'].map((n) => !!window.__r3f!.scene.getObjectByName(n)));
+  expect(await parts()).toEqual([true, true, true]);
+  await page.keyboard.press('p');
+  await expect.poll(parts).toEqual([false, true, true]);
+  await page.keyboard.press('p');
+  await expect.poll(parts).toEqual([false, false, false]);
+  await page.keyboard.press('p');
+  await expect.poll(parts).toEqual([true, true, true]);
+  // Anche il pulsante in toolbar fa avanzare lo stato
+  await page.getByRole('button', { name: /^Piatto:/ }).click();
+  await expect.poll(parts).toEqual([false, true, true]);
+});

@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { isLocked, useSceneStore } from '../scene/store';
 import { useResultStore } from '../kernel/useKernel';
 import { Bed } from './Bed';
+import { useViewportPalette } from './palette';
 import { SceneObject } from './SceneObject';
 import { SelectionActions } from '../ui/SelectionActions/SelectionActions';
 import './Viewport.scss';
@@ -28,6 +29,7 @@ export function Viewport() {
   const rootIds = useSceneStore((s) => s.scene.rootIds);
   const scene = useSceneStore((s) => s.scene);
   const gizmoMode = useSceneStore((s) => s.gizmoMode);
+  const palette = useViewportPalette();
 
   // Gizmo solo fuori dalla modalità Seleziona, con un oggetto selezionato, alla radice e non bloccato
   const gizmoId =
@@ -44,9 +46,9 @@ export function Viewport() {
         // Click nel vuoto: deseleziona
         onPointerMissed={(e) => e.button === 0 && select([])}
       >
-        <color attach="background" args={['#14171c']} />
+        <color attach="background" args={[palette.background]} />
         {/* Luci semplici, senza mappe ambiente da scaricare: l'app resta utilizzabile offline */}
-        <hemisphereLight args={['#ffffff', '#3a4350', 0.9]} />
+        <hemisphereLight args={[palette.skyLight, palette.groundLight, 0.9]} />
         <directionalLight position={[150, -200, 300]} intensity={1.6} />
         <directionalLight position={[-200, 150, 120]} intensity={0.5} />
 
@@ -58,7 +60,7 @@ export function Viewport() {
 
         <OrbitControls makeDefault target={[0, 0, 20]} enableDamping={false} maxDistance={2500} />
         <GizmoHelper alignment="bottom-right" margin={[72, 72]}>
-          <GizmoViewport axisColors={['#ff5d5d', '#46c47a', '#4da3ff']} labelColor="#14171c" />
+          <GizmoViewport axisColors={['#ff5d5d', '#46c47a', '#4da3ff']} labelColor={palette.axisLabel} />
         </GizmoHelper>
       </Canvas>
     </div>

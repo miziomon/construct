@@ -25,8 +25,8 @@ export default defineConfig({
         short_name: 'WebCAD',
         description: 'Modellazione 3D rapida per la stampa 3D',
         lang: 'it',
-        theme_color: '#14171c',
-        background_color: '#14171c',
+        theme_color: '#e9eff6',
+        background_color: '#e9eff6',
         display: 'standalone',
         icons: [
           { src: 'pwa-192.png', sizes: '192x192', type: 'image/png' },

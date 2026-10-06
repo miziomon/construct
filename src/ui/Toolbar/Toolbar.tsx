@@ -1,8 +1,9 @@
-import { ArrowDownToLine, Code, Copy, Lock, Unlock, Group, MousePointer2, Move3d, Redo2, Rotate3d, Scaling, ArrowUpFromLine, Trash2, Ungroup, Undo2, CircleDashed } from 'lucide-react';
+import { ArrowDownToLine, Code, Copy, Lock, Unlock, Group, MousePointer2, Move3d, Redo2, Rotate3d, Grid3x3, Moon, Sun, Scaling, ArrowUpFromLine, Trash2, Ungroup, Undo2, CircleDashed } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useStore } from 'zustand';
 import { useSceneStore } from '../../scene/store';
 import { useUiStore } from '../uiStore';
+import type { BedMode } from '../uiStore';
 import { dropSelectionToBed } from '../../kernel/placement';
 import { AppMenu } from '../AppMenu/AppMenu';
 import './Toolbar.scss';
@@ -27,13 +28,17 @@ function ToolbarButton({ title, onClick, children, active, disabled, label }: Bu
   );
 }
 
+/** Nomi degli stati del piatto, per il tooltip del pulsante (stesso ciclo di cycleBed). */
+const BED_LABELS: Record<BedMode, string> = { full: 'visibile', grid: 'senza base (solo griglia)', none: 'nascosto' };
+const NEXT_BED: Record<BedMode, BedMode> = { full: 'grid', grid: 'none', none: 'full' };
+
 const Divider = () => <span className="toolbar__divider" role="separator" />;
 
 export function Toolbar() {
   const s = useSceneStore();
   const canUndo = useStore(useSceneStore.temporal, (t) => t.pastStates.length > 0);
   const canRedo = useStore(useSceneStore.temporal, (t) => t.futureStates.length > 0);
-  const { codeEnabled, toggleCode } = useUiStore();
+  const { codeOpen, toggleCode, theme, toggleTheme, bedMode, cycleBed } = useUiStore();
 
   const hasSelection = s.selection.length > 0;
   const rootSelection = s.selection.filter((id) => s.scene.rootIds.includes(id));
@@ -75,7 +80,9 @@ export function Toolbar() {
       <div className="toolbar__spacer" />
 
       <div className="toolbar__group">
-        <ToolbarButton title="Pannello codice OpenSCAD (Ctrl+J)" active={codeEnabled} onClick={toggleCode} label="Codice"><Code size={18} /></ToolbarButton>
+        <ToolbarButton title={`Piatto: ${BED_LABELS[bedMode]}. Clic o tasto P per passare a: ${BED_LABELS[NEXT_BED[bedMode]]}`} active={bedMode !== 'full'} onClick={cycleBed}><Grid3x3 size={18} /></ToolbarButton>
+        <ToolbarButton title={theme === 'light' ? 'Passa al tema scuro' : 'Passa al tema chiaro'} onClick={toggleTheme}>{theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}</ToolbarButton>
+        <ToolbarButton title="Codice OpenSCAD (Ctrl+J)" active={codeOpen} onClick={toggleCode}><Code size={18} /></ToolbarButton>
         <AppMenu />
       </div>
     </header>

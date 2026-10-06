@@ -4,6 +4,7 @@ import type { ThreeEvent } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { NodeMesh } from '../kernel/evaluate';
 import { useSceneStore } from '../scene/store';
+import { useViewportPalette } from './palette';
 import { round } from '../scene/math';
 import { halfHeight } from '../scene/defaults';
 import { applyScale } from '../scene/resize';
@@ -35,6 +36,7 @@ function nodeMatrix(position: Vec3, rotation: Vec3): THREE.Matrix4 {
 export function SceneObject({ mesh, selected, locked, showGizmo }: Props) {
   const node = useSceneStore((s) => s.scene.nodes[mesh.id]);
   const gizmoMode = useSceneStore((s) => s.gizmoMode);
+  const palette = useViewportPalette();
   const select = useSceneStore((s) => s.select);
   const updateNode = useSceneStore((s) => s.updateNode);
 
@@ -150,7 +152,7 @@ export function SceneObject({ mesh, selected, locked, showGizmo }: Props) {
             opacity={mesh.isHole ? 0.45 : 1}
             depthWrite={!mesh.isHole}
           />
-          {selected && <Edges threshold={20} color={locked ? '#f0b429' : '#ffffff'} />}
+          {selected && <Edges threshold={20} color={locked ? palette.selectionLocked : palette.selection} />}
         </mesh>
       </group>
 
