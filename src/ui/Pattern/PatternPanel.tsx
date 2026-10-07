@@ -1,6 +1,8 @@
+import { useEffect, useRef } from 'react';
 import { Check, X } from 'lucide-react';
+import { useResultStore } from '../../kernel/useKernel';
 import { GROUP_ICONS } from '../groupIcons';
-import { usePatternTool } from './patternToolStore';
+import { SLOW_PREVIEW_MS, usePatternTool } from './patternToolStore';
 import { PatternFields } from './PatternFields';
 // Stesso aspetto del pannello di Raccordo, Smusso, Guscio e Serie
 import '../EdgeTool/EdgeToolPanel.scss';
@@ -11,7 +13,16 @@ import '../EdgeTool/EdgeToolPanel.scss';
  * campi nel pannello delle proprietà.
  */
 export function PatternPanel() {
-  const { active, params, error, groupId, picking, cancel, commit, setParams, setPicking } = usePatternTool();
+  const { active, params, error, groupId, picking, simplified, cancel, commit, setParams, setPicking, setSimplified } = usePatternTool();
+  const ms = useResultStore((s) => s.ms);
+  // Se l'utente ha deciso lui sull'anteprima semplificata, non la si cambia più da sola
+  const decided = useRef(false);
+  useEffect(() => {
+    if (active && !decided.current && !simplified && ms > SLOW_PREVIEW_MS) setSimplified(true);
+  }, [active, ms, simplified, setSimplified]);
+  useEffect(() => {
+    if (!active) decided.current = false;
+  }, [active]);
   if (!active || !params) return null;
 
   return (
@@ -22,7 +33,14 @@ export function PatternPanel() {
       </h2>
 
       <div className="edge-panel__section">
-        <PatternFields params={params} onChange={setParams} history={false} picking={picking} onPickFace={() => setPicking(!picking)} />
+        <PatternFields params={params} onChange={setParams} history={false} picking={picking}
+          onPickFace={() => setPicking(!picking)}
+          simplified={simplified}
+          onSimplified={(value) => {
+            decided.current = true;
+            setSimplified(value);
+          }}
+        />
         <p className="edge-panel__hint">Il pattern è un solo gruppo "Pattern": dopo l'OK si modificano seme e parametri, non le singole celle.</p>
         {error && (
           <p className="edge-panel__error" role="alert">

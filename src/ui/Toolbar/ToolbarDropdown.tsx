@@ -2,11 +2,15 @@ import { useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { useUiStore } from '../uiStore';
 import type { ToolbarMenu } from '../uiStore';
+import { ToolTip } from './ToolTip';
+import { TOOLBAR_HELP } from './toolbarHelp';
+import type { HelpKey } from './toolbarHelp';
 
 interface Props {
   /** Identificatore della tendina: lo stato aperto/chiuso sta nello store, così si apre anche con la scorciatoia. */
   id: ToolbarMenu;
-  title: string;
+  /** Voce di aiuto: nome accessibile e tooltip dettagliato. */
+  help: HelpKey;
   /** Scorciatoia da tastiera, mostrata in piccolo sopra l'icona. */
   shortcut?: string;
   /** Icona del pulsante. */
@@ -17,7 +21,7 @@ interface Props {
 }
 
 /** Pulsante della toolbar che apre una piccola tendina; si chiude con un clic fuori o con Esc. */
-export function ToolbarDropdown({ id, title, shortcut, icon, disabled, children }: Props) {
+export function ToolbarDropdown({ id, help, shortcut, icon, disabled, children }: Props) {
   const open = useUiStore((s) => s.toolbarMenu === id);
   const setToolbarMenu = useUiStore((s) => s.setToolbarMenu);
   const setOpen = (value: boolean) => setToolbarMenu(value ? id : null);
@@ -49,19 +53,23 @@ export function ToolbarDropdown({ id, title, shortcut, icon, disabled, children 
 
   return (
     <div className="toolbar__dropdown" ref={ref}>
-      <button
-        type="button"
-        className={`toolbar__button${isOpen ? ' toolbar__button--active' : ''}`}
-        title={title}
-        aria-label={title}
-        aria-haspopup="true"
-        aria-expanded={isOpen}
-        disabled={disabled}
-        onClick={() => setOpen(!open)}
-      >
-        {shortcut && <span className="toolbar__shortcut" aria-hidden="true">{shortcut}</span>}
-        {icon}
-      </button>
+      <ToolTip help={help} keys={shortcut}>
+        {(describedBy) => (
+          <button
+            type="button"
+            className={`toolbar__button${isOpen ? ' toolbar__button--active' : ''}`}
+            aria-label={TOOLBAR_HELP[help].name}
+            aria-describedby={describedBy}
+            aria-haspopup="true"
+            aria-expanded={isOpen}
+            disabled={disabled}
+            onClick={() => setOpen(!open)}
+          >
+            {shortcut && <span className="toolbar__shortcut" aria-hidden="true">{shortcut}</span>}
+            {icon}
+          </button>
+        )}
+      </ToolTip>
       {isOpen && (
         <div className="toolbar__dropdown-panel" role="menu">
           {children(() => setOpen(false))}

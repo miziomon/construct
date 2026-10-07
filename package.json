@@ -1,7 +1,14 @@
 {
   "name": "webcad",
   "private": true,
-  "version": "0.20.0",
+  "version": "0.21.0",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/miziomon/webcad.git"
+  },
+  "homepage": "https://github.com/miziomon/webcad#readme",
+  "author": "Maurizio Pelizzone <maurizio@mavida.com>",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -37,6 +44,7 @@
     "@vitejs/plugin-react": "^6.1.2",
     "happy-dom": "^20.14.5",
     "sass-embedded": "^1.105.1",
+    "sharp": "^0.35.5",
     "typescript": "^7.0.2",
     "vite": "^8.3.2",
     "vite-plugin-pwa": "^2.0.0",

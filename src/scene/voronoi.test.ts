@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { latticeEdges, cellVolume, randomPoints3d, voronoiCell3d } from './lattice';
 import { mulberry32, polygonCentroid, randomPoints, randomVoronoi, relax, voronoiCells } from './voronoi';
 import type { Rect, Vec2 } from './voronoi';
 
@@ -64,30 +63,5 @@ describe('Voronoi 2D', () => {
     expect(randomVoronoi(30, rect, 10, 40)).not.toEqual(a);
     expect(randomVoronoi(30, rect, 9, 90)).not.toEqual(a);
     expect(a).toHaveLength(30);
-  });
-});
-
-describe('Voronoi 3D e reticolo', () => {
-  const box = { min: [0, 0, 0] as [number, number, number], max: [40, 30, 20] as [number, number, number] };
-
-  it('le celle riempiono il parallelepipedo (la somma dei volumi è il suo volume)', () => {
-    const points = randomPoints3d(12, box, 4, 0);
-    let total = 0;
-    for (let i = 0; i < points.length; i++) {
-      const faces = voronoiCell3d(points, i, box);
-      expect(faces.length).toBeGreaterThanOrEqual(4);
-      total += cellVolume(faces, points[i]);
-    }
-    expect(total).toBeCloseTo(40 * 30 * 20, 0);
-  });
-
-  it('gli spigoli sono senza ripetizioni, dentro il parallelepipedo e riproducibili', () => {
-    const edges = latticeEdges(10, box, 8, 30);
-    expect(edges.length).toBeGreaterThan(10);
-    const keys = edges.map(([a, b]) => [a, b].map((p) => p.map((v) => Math.round(v * 1e4)).join(',')).sort().join('|'));
-    expect(new Set(keys).size).toBe(keys.length);
-    for (const [a, b] of edges) for (const p of [a, b]) p.forEach((v, i) => { expect(v).toBeGreaterThanOrEqual(box.min[i] - 1e-6); expect(v).toBeLessThanOrEqual(box.max[i] + 1e-6); });
-    expect(latticeEdges(10, box, 8, 30)).toEqual(edges);
-    expect(latticeEdges(10, box, 9, 30)).not.toEqual(edges);
   });
 });

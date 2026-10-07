@@ -79,17 +79,36 @@ describe('Pattern nel kernel', () => {
   it('da una faccia laterale (x+) la direzione del taglio cambia', () => {
     const bounds = { min: [-40, -30, -2.5] as Vec3, max: [40, 30, 2.5] as Vec3 };
     const top = run(scene({ cells: 12, margin: 3 }));
-    const side = run(scene({ cells: 12, margin: 1, face: faceFromBounds(bounds, 'x+') }));
+    const side = run(scene({ cells: 12, margin: 1, faces: [faceFromBounds(bounds, 'x+')] }));
     expect(side.status).toBe('NoError');
     expect(side.volume).toBeLessThan(FULL);
     expect(side.volume).not.toBeCloseTo(top.volume, 0);
   });
 
-  it('reticolo 3D: resta meno di un quinto del cubo e il pezzo è valido', () => {
-    const m = run(scene({ kind: 'lattice', latticeCells: 10, strut: 3 }, [30, 30, 30]));
-    expect(m.status).toBe('NoError');
-    expect(m.volume).toBeGreaterThan(0);
-    expect(m.volume).toBeLessThan(27000 * 0.5);
+  it('rombi e triangoli forano il pannello', () => {
+    const diamonds = run(scene({ kind: 'diamond', size: 12, wall: 2, rounding: 0 }));
+    const triangles = run(scene({ kind: 'triangle', size: 14, wall: 2, rounding: 0 }));
+    for (const m of [diamonds, triangles]) {
+      expect(m.status).toBe('NoError');
+      expect(m.volume).toBeLessThan(FULL * 0.85);
+      expect(m.volume).toBeGreaterThan(FULL * 0.2);
+    }
+  });
+
+  it('più facce: forare da due lati toglie più materiale che da uno solo', () => {
+    const bounds = { min: [-40, -30, -2.5] as Vec3, max: [40, 30, 2.5] as Vec3 };
+    const one = run(scene({ kind: 'hexagon', size: 10, margin: 1, depth: 2 }));
+    const two = run(scene({ kind: 'hexagon', size: 10, margin: 1, depth: 2, faces: [faceFromBounds(bounds, 'z+'), faceFromBounds(bounds, 'z-')] }));
+    expect(two.status).toBe('NoError');
+    expect(two.volume).toBeLessThan(one.volume);
+    expect(two.volume).toBeGreaterThan(0);
+  });
+
+  it('anteprima semplificata: volume simile a quello a qualità piena', () => {
+    const full = run(scene({ cells: 25, rounding: 2 }));
+    const simple = run(scene({ cells: 25, rounding: 2, preview: true }));
+    expect(simple.status).toBe('NoError');
+    expect(Math.abs(simple.volume - full.volume) / full.volume).toBeLessThan(0.05);
   });
 
   it('un margine che occupa tutto il pezzo lo lascia invariato', () => {
@@ -122,11 +141,13 @@ describe('Pattern nel codice OpenSCAD', () => {
     expect(hex).toContain('offset(delta = -0.8) polygon(c);');
   });
 
-  it('reticolo: puntoni tra sfere intersecati con il pezzo', () => {
-    const code = sceneToOpenScad(scene({ kind: 'lattice', latticeCells: 8, strut: 3 }, [30, 30, 30]));
-    expect(code).toContain('edges = [');
-    expect(code).toContain('for (e = edges) hull() {');
-    expect(code).toContain('sphere(d = 3, $fn = 8)');
+  it('più facce: un elenco di celle e un taglio per faccia', () => {
+    const bounds = { min: [-40, -30, -2.5] as Vec3, max: [40, 30, 2.5] as Vec3 };
+    const code = sceneToOpenScad(scene({ kind: 'diamond', size: 20, faces: [faceFromBounds(bounds, 'z+'), faceFromBounds(bounds, 'x+')] }));
+    expect(code).toContain('cells_1 = [');
+    expect(code).toContain('cells_2 = [');
+    expect(code).toContain('for (c = cells_2)');
     expect(code.split('{').length).toBe(code.split('}').length);
+    expect(code).not.toContain('preview');
   });
 });

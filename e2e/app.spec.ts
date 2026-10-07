@@ -151,7 +151,7 @@ test('di default la modalità è Seleziona: nessun gizmo finché non si preme W'
     return n;
   });
   expect(await gizmos()).toBe(0);
-  await expect(page.getByRole('button', { name: 'Seleziona (Q)' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: 'Seleziona', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await page.keyboard.press('w');
   await expect.poll(gizmos).toBe(1);
   await page.keyboard.press('q');
@@ -291,11 +291,11 @@ test('il pulsante Codice ha solo l\'icona e apre una modale all\'80% con il codi
 test('tema chiaro di default, interruttore per lo scuro che resta dopo il ricaricamento', async ({ page }) => {
   const theme = () => page.evaluate(() => document.documentElement.dataset.theme);
   expect(await theme()).toBe('light');
-  await page.getByRole('button', { name: 'Passa al tema scuro' }).click();
+  await page.getByRole('button', { name: 'Tema', exact: true }).click();
   expect(await theme()).toBe('dark');
   await page.reload();
   expect(await theme()).toBe('dark');
-  await page.getByRole('button', { name: 'Passa al tema chiaro' }).click();
+  await page.getByRole('button', { name: 'Tema', exact: true }).click();
   expect(await theme()).toBe('light');
 });
 
@@ -331,15 +331,25 @@ test('il tasto P cicla il piatto e ogni stato cambia davvero quello che è diseg
   await page.keyboard.press('p');
   await expect.poll(parts).toEqual([true, true, true]);
   // Anche il pulsante in toolbar fa avanzare lo stato
-  await page.getByRole('button', { name: /^Piatto:/ }).click();
+  await page.getByRole('button', { name: 'Piatto', exact: true }).click();
   await expect.poll(parts).toEqual([false, true, true]);
 });
 
-test('ogni pulsante della toolbar ha la scorciatoia nel tooltip', async ({ page }) => {
+test('ogni pulsante della toolbar ha il tooltip dettagliato con la scorciatoia', async ({ page }) => {
   await addShape(page, 'Cubo');
-  const titles = await page.locator('header.toolbar button').evaluateAll((buttons) => buttons.map((b) => b.getAttribute('title') ?? ''));
-  expect(titles.length).toBeGreaterThan(15);
-  for (const title of titles) expect(title, `tooltip senza scorciatoia: "${title}"`).toMatch(/\([^)]*(Ctrl|Maiusc|Canc|\b[A-Z]\b)[^)]*\)/);
+  const buttons = page.locator('header.toolbar .tooltip-host button');
+  const count = await buttons.count();
+  expect(count).toBeGreaterThan(25);
+  for (let i = 0; i < count; i++) {
+    const button = buttons.nth(i);
+    const name = await button.getAttribute('aria-label');
+    // Anche i pulsanti disabilitati spiegano cosa fanno
+    await button.hover({ force: true });
+    const tip = page.getByRole('tooltip');
+    await expect(tip, `tooltip mancante: "${name}"`).toBeVisible();
+    await expect(tip.locator('.tooltip__title')).toContainText(name!);
+    await expect(tip.locator('kbd'), `scorciatoia mancante nel tooltip di "${name}"`).toHaveCount(1);
+  }
 });
 
 test('i tasti C, D e M aprono il codice, cambiano tema e aprono il menu', async ({ page }) => {
@@ -613,7 +623,7 @@ test('Raccordo: Esc e Annulla non lasciano tracce nella scena', async ({ page })
   expect(JSON.stringify(await sceneState(page))).toBe(before);
   expect(await firstVolume(page)).toBeCloseTo(8000, 3);
 
-  await page.getByRole('button', { name: /^Smusso:/ }).click();
+  await page.getByRole('button', { name: 'Smusso', exact: true }).click();
   await pickTopAndFront(page);
   await page.getByRole('region', { name: 'Smusso' }).getByRole('button', { name: 'Annulla' }).click();
   await settled(page);
@@ -697,7 +707,7 @@ test('doppio clic su un oggetto: lo seleziona e passa a Sposta, il clic singolo 
   await page.mouse.dblclick(top.x, top.y);
   expect(await selection()).toEqual([id]);
   expect(await mode()).toBe('translate');
-  await expect(page.getByRole('button', { name: 'Sposta (W)' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: 'Sposta', exact: true })).toHaveAttribute('aria-pressed', 'true');
 });
 
 test('Guscio: anteprima dal vivo, Invio conferma in un solo passo di Annulla', async ({ page }) => {
@@ -1039,7 +1049,7 @@ test('Smusso angolare: togliendo ultimo vertice si torna al pezzo intero', async
 
 test('Nuovo: primo pulsante della toolbar, chiede conferma e tutto resta annullabile', async ({ page }) => {
   const buttons = page.locator('header.toolbar button');
-  await expect(buttons.first()).toHaveAttribute('title', /Nuovo progetto/);
+  await expect(buttons.first()).toHaveAttribute('aria-label', 'Nuovo progetto');
   // Con la scena vuota non chiede nulla
   await page.keyboard.press('n');
   await expect(page.getByRole('dialog')).toBeHidden();
@@ -1863,7 +1873,7 @@ test('Serie: Esc annulla senza lasciare tracce, e il pulsante è spento senza un
 
   // Nessuna selezione: il pulsante è disabilitato e il tasto non apre nulla
   await page.evaluate(() => window.__webcad!.store.getState().select([]));
-  await expect(page.locator('header.toolbar button[title^="Serie"]')).toBeDisabled();
+  await expect(page.locator('header.toolbar button[aria-label^="Serie"]')).toBeDisabled();
   await page.keyboard.press('o');
   await expect(page.getByRole('region', { name: 'Serie' })).toHaveCount(0);
 });
@@ -1949,12 +1959,12 @@ test('Pattern: Esc annulla senza lasciare tracce, e il pulsante è spento senza 
   expect((await sceneState(page)).nodes).toEqual(before.nodes);
 
   await page.evaluate(() => window.__webcad!.store.getState().select([]));
-  await expect(page.locator('header.toolbar button[title^="Pattern"]')).toBeDisabled();
+  await expect(page.locator('header.toolbar button[aria-label^="Pattern"]')).toBeDisabled();
   await page.keyboard.press('z');
   await expect(page.getByRole('region', { name: 'Pattern' })).toHaveCount(0);
 });
 
-test('Pattern: seme, tipo, profondità e reticolo si modificano dalle proprietà del gruppo', async ({ page }) => {
+test('Pattern: seme, tipo, profondità, rombi, triangoli e facce si modificano dalle proprietà del gruppo', async ({ page }) => {
   await addShape(page, 'Cubo');
   await page.keyboard.press('z');
   await page.getByRole('region', { name: 'Pattern' }).getByRole('button', { name: 'OK' }).click();
@@ -1991,15 +2001,100 @@ test('Pattern: seme, tipo, profondità e reticolo si modificano dalle proprietà
   await expect(page.locator('.status-bar')).toContainText('Mesh valida');
   expect(await readCode(page)).toContain('for (z = [-4,');
 
-  // Reticolo 3D: resta una struttura dentro il cubo
-  await page.getByRole('button', { name: 'Reticolo 3D', exact: true }).click();
+  // Rombi e Triangoli: griglie regolari con la stessa riduzione per la parete
+  await page.getByRole('button', { name: 'Rombi', exact: true }).click();
   await settled(page);
-  expect((await pattern()).kind).toBe('lattice');
-  expect(await volume()).toBeLessThan(4000);
-  expect(await readCode(page)).toContain('for (e = edges) hull()');
+  expect((await pattern()).kind).toBe('diamond');
+  await page.getByRole('button', { name: 'Triangoli', exact: true }).click();
+  await settled(page);
+  expect((await pattern()).kind).toBe('triangle');
+  await expect(page.locator('.status-bar')).toContainText('Mesh valida');
+
+  // Una seconda faccia (+X) si attiva dai pulsanti dei lati: due elenchi di celle nel codice
+  await page.getByRole('group', { name: 'Facce' }).getByRole('button', { name: '+X', exact: true }).click();
+  await settled(page);
+  expect((await pattern()).faces).toHaveLength(2);
+  expect(await readCode(page)).toContain('cells_2 = [');
 });
 
-test('Pattern: la scorciatoia Z compare nel tooltip del pulsante e nel menu', async ({ page }) => {
+test('Tooltip dettagliati: il pulsante Pattern mostra cosa fa, come si applica, la scorciatoia e un\'immagine', async ({ page }) => {
   await addShape(page, 'Cubo');
-  await expect(page.locator('header.toolbar button[title^="Pattern"]')).toHaveAttribute('title', /\(Z\)/);
+  await page.locator('header.toolbar button[aria-label^="Pattern"]').hover();
+  const tip = page.getByRole('tooltip');
+  await expect(tip).toBeVisible();
+  await expect(tip).toContainText('Fora l\'oggetto');
+  await expect(tip).toContainText('Scegli facce');
+  await expect(tip.locator('kbd')).toHaveText('Z');
+  await expect(tip.locator('img')).toHaveAttribute('src', /help\/pattern\.webp$/);
+  // Esc lo chiude e non lascia traccia
+  await page.keyboard.press('Escape');
+  await expect(tip).toHaveCount(0);
+
+  // Anche un pulsante disabilitato spiega cosa fa (senza selezione Unisci non è disponibile)
+  await page.locator('header.toolbar button[aria-label^="Unisci"]').hover({ force: true });
+  await expect(page.getByRole('tooltip')).toContainText('unione booleana');
+
+  // Il pulsante a stato cambia testo: il piatto dice come è ora e qual è il prossimo
+  await page.locator('header.toolbar button[aria-label^="Piatto"]').hover();
+  await expect(page.getByRole('tooltip')).toContainText('Prossimo:');
+});
+
+test('Pattern: Scegli facce aggiunge e toglie facce con il clic e mostra il pezzo intero durante la scelta', async ({ page }) => {
+  await addShape(page, 'Cubo');
+  await page.keyboard.press('z');
+  const panel = page.getByRole('region', { name: 'Pattern' });
+  await settled(page);
+  const volume = () => page.evaluate(() => window.__webcad!.results.getState().meshes[0].volume);
+  await expect.poll(volume).toBeLessThan(7500);
+
+  // Durante la scelta la vista mostra il cubo intero (si cliccano le facce del pezzo, non le pareti delle celle)
+  await panel.getByRole('button', { name: 'Scegli facce' }).click();
+  await settled(page);
+  await expect.poll(volume).toBeCloseTo(8000, 0);
+  await expect(panel).toContainText('Clicca le facce');
+
+  // Un clic sulla faccia anteriore l'aggiunge (due facce), un secondo clic la toglie
+  const front = await project(page, [0, -10, 10]);
+  await page.mouse.move(front.x, front.y);
+  await page.mouse.click(front.x, front.y);
+  await expect(panel).toContainText('2 facce');
+  // Il lato anteriore è uno dei sei lati dell'ingombro: il suo pulsante si accende
+  await expect(panel.getByRole('group', { name: 'Facce' }).getByRole('button', { name: '-Y', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await page.mouse.click(front.x, front.y);
+  await expect(panel).toContainText('1 faccia');
+
+  // Si sceglie di nuovo e si chiude la scelta con il pulsante: l'anteprima torna con il pattern su due facce
+  await page.mouse.click(front.x, front.y);
+  await panel.getByRole('button', { name: 'Fine scelta' }).click();
+  await settled(page);
+  await expect.poll(volume).toBeLessThan(7500);
+  await panel.getByRole('button', { name: 'OK' }).click();
+  await settled(page);
+  const scene = await sceneState(page);
+  expect(scene.nodes[scene.rootIds[0]].pattern.faces).toHaveLength(2);
+  expect(scene.nodes[scene.rootIds[0]].pattern.preview).toBeUndefined();
+  expect(await readCode(page)).toContain('cells_2 = [');
+});
+
+test('Pattern: avviso se i calcoli sono pesanti e anteprima semplificata, che non resta nel risultato', async ({ page }) => {
+  await addShape(page, 'Cubo');
+  await page.keyboard.press('z');
+  const panel = page.getByRole('region', { name: 'Pattern' });
+  await settled(page);
+  await expect(panel.getByRole('alert')).toHaveCount(0);
+
+  // Molte celle: l'avviso preventivo compare subito
+  const cells = panel.locator('.slider-field').filter({ has: page.getByText('Celle', { exact: true }) }).locator('.number-field__input');
+  await cells.fill('400');
+  await cells.press('Enter');
+  await expect(panel.getByRole('alert')).toContainText(/Molte celle|Calcolo lento/);
+
+  // L'anteprima semplificata si attiva a mano e il risultato dopo OK non la contiene
+  await panel.getByLabel('Anteprima semplificata').check();
+  await settled(page);
+  await panel.getByRole('button', { name: 'OK' }).click();
+  await settled(page);
+  const scene = await sceneState(page);
+  expect(scene.nodes[scene.rootIds[0]].pattern.cells).toBe(400);
+  expect(scene.nodes[scene.rootIds[0]].pattern.preview).toBeUndefined();
 });

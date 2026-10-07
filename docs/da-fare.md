@@ -27,7 +27,7 @@ OpenSCAD, timeline con Annulla.
 | 6 | Disegno di profili con linee e curve | Fusion (Sketch), Tinkercad (Scribble) | Oggi i profili vengono solo da forme o SVG: è la funzione strategica più grande | Da fare |
 | 7 | Deformazioni Twist, Bend e Taper su qualunque solido; elica (passo) per la rotazione | Blender (Simple Deform, Screw) | Molle, viti, forme organiche | Da fare |
 | 8 | Parametri e formule; controlli di stampabilità (pareti sottili, sbalzi) | Fusion (Parameters), OpenSCAD (variabili) | Modelli riutilizzabili e meno stampe fallite | Da fare |
-| 9 | Applica pattern (Voronoi casuale, poi esagoni e cerchi) con parametri modificabili | OpenSCAD (con librerie), Fusion (Emboss e Pattern), Blender (Voronoi texture) | Alleggerire e decorare pannelli, coperchi e lampade | **Fatta** in 0.20.0 (fasi 1, 2 e 3 dello studio `docs/studio-pattern-voronoi.md`): strumento Pattern (tasto Z) con Voronoi con seme, esagoni, cerchi, reticolo 3D, tasche da uno o due lati e scelta della faccia |
+| 9 | Applica pattern (Voronoi casuale, poi esagoni e cerchi) con parametri modificabili | OpenSCAD (con librerie), Fusion (Emboss e Pattern), Blender (Voronoi texture) | Alleggerire e decorare pannelli, coperchi e lampade | **Fatta** in 0.20.0 e 0.21.0 (studio `docs/studio-pattern-voronoi.md`): strumento Pattern (tasto Z) con Voronoi con seme, esagoni, cerchi, rombi e triangoli, tasche da uno o due lati, scelta di più facce con il clic e anteprima semplificata. Il reticolo 3D è stato tolto |
 
 ## Studio di fattibilità: Serie di copie (punto 1, realizzata in 0.19.0)
 

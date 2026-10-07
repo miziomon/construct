@@ -7,14 +7,12 @@ import type { PatternFace, PatternParams, Vec3 } from './types';
 
 /**
  * Applica pattern: calcoli puri condivisi da kernel, generatore OpenSCAD, pannello e test. Un pattern è un disegno 2D di
- * celle (Voronoi casuale con seme, esagoni o cerchi) calcolato nel riferimento di una faccia del pezzo e tagliato verso
- * l'interno; il reticolo è invece un Voronoi 3D di puntoni (src/scene/lattice.ts).
+ * celle (Voronoi casuale con seme, esagoni, cerchi, rombi o triangoli) calcolato nel riferimento di una faccia del pezzo e
+ * tagliato verso l'interno; con più facce ognuna ha il suo disegno.
  */
 
-/** Celle massime per il Voronoi 2D e per esagoni e cerchi (oltre il disegno non serve e il calcolo rallenta). */
+/** Celle massime per il Voronoi 2D e per le griglie (oltre il disegno non serve e il calcolo rallenta). */
 export const PATTERN_MAX_CELLS = 500;
-/** Celle massime del reticolo 3D: ogni spigolo diventa un solido. */
-export const LATTICE_MAX_CELLS = 40;
 
 /** Direzione di una faccia dell'ingombro: asse e verso della normale uscente. */
 export type FaceDirection = 'z+' | 'z-' | 'x+' | 'x-' | 'y+' | 'y-';
@@ -61,8 +59,8 @@ export function faceFrame(face: PatternFace): FaceFrame {
 }
 
 /** Rettangolo (nel riferimento della faccia) che contiene tutto l'ingombro del pezzo: dove si generano le celle. */
-export function frameRect(p: PatternParams): Rect {
-  const frame = faceFrame(p.face);
+export function frameRect(p: PatternParams, face: PatternFace = p.faces[0]): Rect {
+  const frame = faceFrame(face);
   const corners = [0, 1].flatMap((a) => [0, 1].flatMap((b) => [0, 1].map((c) => [p.bounds[a ? 'max' : 'min'][0], p.bounds[b ? 'max' : 'min'][1], p.bounds[c ? 'max' : 'min'][2]] as Vec3)));
   // Si usa la stessa rotazione (con i soli angoli arrotondati) del kernel, così le celle coprono la stessa area
   const turned = corners.map((c) => apply(frame.matrix, [c[0] - frame.origin[0], c[1] - frame.origin[1], c[2] - frame.origin[2]]));
@@ -73,8 +71,8 @@ export function frameRect(p: PatternParams): Rect {
 }
 
 /** Lunghezza del prisma di un taglio passante: molto più del pezzo, per bucarlo comunque lo si orienti. */
-export function cutReach(p: PatternParams): number {
-  return 2 * (Math.hypot(p.bounds.max[0] - p.bounds.min[0], p.bounds.max[1] - p.bounds.min[1], p.bounds.max[2] - p.bounds.min[2]) + p.face.thickness) + 20;
+export function cutReach(p: PatternParams, face: PatternFace = p.faces[0]): number {
+  return 2 * (Math.hypot(p.bounds.max[0] - p.bounds.min[0], p.bounds.max[1] - p.bounds.min[1], p.bounds.max[2] - p.bounds.min[2]) + face.thickness) + 20;
 }
 
 /** Parametri di partenza per un pezzo con questo ingombro: Voronoi di celle da circa 15 mm, passante, dal lato di +Z. */
@@ -96,27 +94,45 @@ export function defaultPatternParams(bounds: Bounds, seed: number): PatternParam
     rounding: 1,
     // Cornice piena: circa un decimo del lato minore, tra 2 e 6 mm
     margin: Math.min(6, Math.max(2, round(smallest / 10, 1))),
-    face,
+    faces: [face],
     depth: 0,
     sides: 'one',
-    latticeCells: 16,
-    strut: 2.4,
     bounds: { min: [...bounds.min], max: [...bounds.max] },
   };
 }
 
-/** Parametri entro i limiti: conteggi interi e massimi, misure positive, normale unitaria. */
+/** Faccia con normale unitaria e spessore positivo. */
+function normalizeFace(f: PatternFace): PatternFace {
+  const n = f.normal;
+  const length = Math.hypot(n[0], n[1], n[2]);
+  const normal: Vec3 = length > 1e-9 ? [n[0] / length, n[1] / length, n[2] / length] : [0, 0, 1];
+  return { origin: f.origin, normal, thickness: Math.max(0.1, Number.isFinite(f.thickness) ? f.thickness : 1) };
+}
+
+/** Due facce coincidono se hanno la stessa normale e lo stesso piano. */
+export function sameFace(a: PatternFace, b: PatternFace): boolean {
+  const na = normalizeFace(a).normal;
+  const nb = normalizeFace(b).normal;
+  const offset = (f: PatternFace, n: Vec3) => f.origin[0] * n[0] + f.origin[1] * n[1] + f.origin[2] * n[2];
+  return [0, 1, 2].every((i) => Math.abs(na[i] - nb[i]) < 1e-3) && Math.abs(offset(a, na) - offset(b, nb)) < 1e-2;
+}
+
+/**
+ * Parametri entro i limiti: conteggi interi e massimi, misure positive, facce con normale unitaria (senza doppioni).
+ * Converte anche i progetti della 0.20.0: la `face` unica diventa `faces` e il reticolo 3D (tolto) diventa Voronoi.
+ */
 export function normalizePattern(p: PatternParams): PatternParams {
   const num = (v: number, fallback: number) => (Number.isFinite(v) ? v : fallback);
   const int = (v: number, min: number, max: number) => Math.min(max, Math.max(min, Math.round(num(v, min))));
-  const n = p.face.normal;
-  const length = Math.hypot(n[0], n[1], n[2]);
-  const normal: Vec3 = length > 1e-9 ? [n[0] / length, n[1] / length, n[2] / length] : [0, 0, 1];
+  const { face: legacy, ...rest } = p;
+  const given = p.faces?.length ? p.faces : legacy ? [legacy] : [faceFromBounds(p.bounds, 'z+')];
+  const faces = given.map(normalizeFace).filter((f, i, all) => all.findIndex((o) => sameFace(o, f)) === i);
+  const kind = (['voronoi', 'hexagon', 'circle', 'diamond', 'triangle'] as string[]).includes(p.kind) ? p.kind : 'voronoi';
   return {
-    ...p,
+    ...rest,
+    kind,
     seed: int(p.seed, 0, 2 ** 31),
     cells: int(p.cells, 3, PATTERN_MAX_CELLS),
-    latticeCells: int(p.latticeCells, 4, LATTICE_MAX_CELLS),
     regularity: Math.min(100, Math.max(0, num(p.regularity, 0))),
     size: Math.max(2, num(p.size, 12)),
     angle: num(p.angle, 0),
@@ -124,18 +140,18 @@ export function normalizePattern(p: PatternParams): PatternParams {
     rounding: Math.max(0, num(p.rounding, 0)),
     margin: Math.max(0, num(p.margin, 0)),
     depth: Math.max(0, num(p.depth, 0)),
-    strut: Math.max(0.2, num(p.strut, 2.4)),
-    face: { origin: p.face.origin, normal, thickness: Math.max(0.1, num(p.face.thickness, 1)) },
+    faces,
   };
 }
 
-/** Numero massimo di celle a griglia (esagoni e cerchi): il passo si allarga se servirebbero di più. */
+/** Numero massimo di celle a griglia: il passo si allarga se servirebbero di più. */
 const MAX_GRID_CELLS = 1500;
 
 /**
- * Celle di esagoni o cerchi: centri in una griglia esagonale con il passo dato, ruotata di `angle` attorno al centro del
- * rettangolo, tenendo solo le celle che toccano il rettangolo. L'esagono ha lo spigolo piatto a distanza `pitch / 2` dal
- * centro (esagoni adiacenti si toccano); il cerchio ha raggio `pitch / 2` (cerchi adiacenti si toccano).
+ * Celle di una griglia (esagoni, cerchi, rombi o triangoli) con il passo dato, ruotata di `angle` attorno al centro del
+ * rettangolo, tenendo solo le celle che toccano il rettangolo. Le celle adiacenti si toccano: l'esagono ha lo spigolo
+ * piatto a `pitch / 2` dal centro, il cerchio ha raggio `pitch / 2`, il rombo ha le diagonali lunghe `pitch`, il triangolo
+ * equilatero ha il lato lungo `pitch` (punta su e punta giù alternati).
  */
 function gridCells(p: PatternParams, rect: Rect): Vec2[][] {
   const width = rect.maxX - rect.minX;
@@ -143,39 +159,55 @@ function gridCells(p: PatternParams, rect: Rect): Vec2[][] {
   const cx = (rect.minX + rect.maxX) / 2;
   const cy = (rect.minY + rect.maxY) / 2;
   const half = Math.hypot(width, height) / 2;
-  // Passo minimo perché le celle non superino MAX_GRID_CELLS
-  const pitch = Math.max(p.size, Math.sqrt((width * height * Math.sqrt(3) / 2) / MAX_GRID_CELLS));
+  // Area di una cella in unità di pitch², per non superare MAX_GRID_CELLS
+  const unitArea = p.kind === 'hexagon' ? Math.sqrt(3) / 2 : p.kind === 'circle' ? Math.sqrt(3) / 2 : p.kind === 'diamond' ? 0.5 : Math.sqrt(3) / 4;
+  const pitch = Math.max(p.size, Math.sqrt((width * height * unitArea) / MAX_GRID_CELLS));
+  const rad = (p.angle * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  const circle: Vec2[] = Array.from({ length: 32 }, (_, k) => [(pitch / 2) * Math.cos((k * 2 * Math.PI) / 32), (pitch / 2) * Math.sin((k * 2 * Math.PI) / 32)]);
   const radius = pitch / Math.sqrt(3);
-  const rowStep = (pitch * Math.sqrt(3)) / 2;
-  const cos = Math.cos((p.angle * Math.PI) / 180);
-  const sin = Math.sin((p.angle * Math.PI) / 180);
-  const shape: Vec2[] =
-    p.kind === 'hexagon'
-      ? Array.from({ length: 6 }, (_, k) => [radius * Math.cos(Math.PI / 6 + (k * Math.PI) / 3), radius * Math.sin(Math.PI / 6 + (k * Math.PI) / 3)] as Vec2)
-      : Array.from({ length: 32 }, (_, k) => [(pitch / 2) * Math.cos((k * 2 * Math.PI) / 32), (pitch / 2) * Math.sin((k * 2 * Math.PI) / 32)] as Vec2);
+  const hexagon: Vec2[] = Array.from({ length: 6 }, (_, k) => [radius * Math.cos(Math.PI / 6 + (k * Math.PI) / 3), radius * Math.sin(Math.PI / 6 + (k * Math.PI) / 3)]);
+  const diamond: Vec2[] = [[pitch / 2, 0], [0, pitch / 2], [-pitch / 2, 0], [0, -pitch / 2]];
+  // Triangolo con la base su y = 0 e la punta in alto; quello capovolto ha la base in alto
+  const h = (pitch * Math.sqrt(3)) / 2;
+  const up: Vec2[] = [[-pitch / 2, 0], [pitch / 2, 0], [0, h]];
+  const down: Vec2[] = [[-pitch / 2, h], [0, 0], [pitch / 2, h]];
+
+  /** Cella di una riga e di una colonna: posizione del centro (prima della rotazione) e poligono relativo. */
+  const cellAt = (row: number, col: number): { x: number; y: number; shape: Vec2[] } => {
+    if (p.kind === 'diamond') return { x: (col + (Math.abs(row) % 2) / 2) * pitch, y: (row * pitch) / 2, shape: diamond };
+    if (p.kind === 'triangle') {
+      const pointsUp = Math.abs(col + row) % 2 === 0;
+      return { x: (col * pitch) / 2, y: row * h, shape: pointsUp ? up : down };
+    }
+    // Esagoni e cerchi: griglia esagonale, file sfalsate di mezzo passo
+    return { x: (col + (Math.abs(row) % 2) / 2) * pitch, y: (row * pitch * Math.sqrt(3)) / 2, shape: p.kind === 'hexagon' ? hexagon : circle };
+  };
+  const rowStep = p.kind === 'diamond' ? pitch / 2 : p.kind === 'triangle' ? h : (pitch * Math.sqrt(3)) / 2;
+  const colStep = p.kind === 'triangle' ? pitch / 2 : pitch;
   const cells: Vec2[][] = [];
   const rows = Math.ceil(half / rowStep) + 1;
-  const cols = Math.ceil(half / pitch) + 1;
+  const cols = Math.ceil(half / colStep) + 1;
   for (let row = -rows; row <= rows; row++) {
     for (let col = -cols; col <= cols; col++) {
-      const gx = (col + (Math.abs(row) % 2) / 2) * pitch;
-      const gy = row * rowStep;
-      const center: Vec2 = [cx + gx * cos - gy * sin, cy + gx * sin + gy * cos];
-      // Si tengono le celle il cui centro dista meno del raggio della cella dal rettangolo
+      const { x, y, shape } = cellAt(row, col);
+      const center: Vec2 = [cx + x * cos - y * sin, cy + x * sin + y * cos];
+      // Si tengono le celle il cui centro dista meno del passo dal rettangolo
       const dx = Math.max(rect.minX - center[0], 0, center[0] - rect.maxX);
       const dy = Math.max(rect.minY - center[1], 0, center[1] - rect.maxY);
       if (Math.hypot(dx, dy) > pitch) continue;
       // La cella ruota con la griglia
-      cells.push(shape.map(([x, y]) => [round(center[0] + x * cos - y * sin, 4), round(center[1] + x * sin + y * cos, 4)] as Vec2));
+      cells.push(shape.map(([sx, sy]) => [round(center[0] + sx * cos - sy * sin, 4), round(center[1] + sx * sin + sy * cos, 4)] as Vec2));
     }
   }
   return cells;
 }
 
-/** Le celle del pattern (poligoni nel riferimento della faccia, prima della riduzione per la parete). */
-export function patternCells(params: PatternParams, rect: Rect): Vec2[][] {
+/** Le celle del pattern per la faccia `faceIndex` (poligoni nel riferimento della faccia, prima della riduzione per la parete). */
+export function patternCells(params: PatternParams, rect: Rect, faceIndex = 0): Vec2[][] {
   const p = normalizePattern(params);
-  if (p.kind === 'voronoi') return randomVoronoi(p.cells, rect, p.seed, p.regularity).map((cell) => cell.map(([x, y]) => [round(x, 4), round(y, 4)] as Vec2));
-  if (p.kind === 'hexagon' || p.kind === 'circle') return gridCells(p, rect);
-  return [];
+  // Ogni faccia ha il suo disegno: il seme cambia con l'indice (la prima faccia usa il seme così com'è)
+  if (p.kind === 'voronoi') return randomVoronoi(p.cells, rect, p.seed + faceIndex, p.regularity).map((cell) => cell.map(([x, y]) => [round(x, 4), round(y, 4)] as Vec2));
+  return gridCells(p, rect);
 }

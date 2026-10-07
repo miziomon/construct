@@ -1,0 +1,64 @@
+@use '../../styles/abstracts' as *;
+
+// Contenitore del pulsante: riceve il passaggio del mouse anche quando il pulsante è disabilitato
+.tooltip-host {
+  display: inline-flex;
+
+  button:disabled {
+    pointer-events: none;
+  }
+}
+
+.tooltip {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid color('border');
+  border-radius: $radius-md;
+  background: color('panel');
+  color: color('text');
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
+  font-size: 12px;
+  line-height: 1.45;
+  pointer-events: none;
+
+  &__title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: $space-2;
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  &__keys {
+    padding: 1px 6px;
+    border: 1px solid color('border');
+    border-radius: $radius-sm;
+    background: color('panel-raised');
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    color: color('text-muted');
+  }
+
+  &__text--how {
+    color: color('text-muted');
+  }
+
+  &__text--extra {
+    font-style: italic;
+  }
+
+  &__image {
+    display: block;
+    width: 100%;
+    height: auto;
+    border: 1px solid color('border');
+    border-radius: $radius-sm;
+    background: color('bg');
+  }
+}

@@ -7,7 +7,7 @@ import { isCutter, wrapInGroup } from './treatment';
 import type { PatternParams, Scene, Vec3 } from './types';
 
 /** Etichetta del gruppo, in italiano, per tipo di pattern. */
-const KIND_NAMES: Record<PatternParams['kind'], string> = { voronoi: 'Voronoi', hexagon: 'Esagoni', circle: 'Cerchi', lattice: 'Reticolo' };
+const KIND_NAMES: Record<PatternParams['kind'], string> = { voronoi: 'Voronoi', hexagon: 'Esagoni', circle: 'Cerchi', diamond: 'Rombi', triangle: 'Triangoli' };
 
 /**
  * Applica un Pattern alla scena: l'oggetto viene sostituito da un gruppo `pattern` che lo contiene come unico figlio
@@ -25,7 +25,8 @@ export function applyPattern(
   if (isCutter(target)) return { ok: false, error: 'Un raccordo o uno smusso non si può forare.' };
 
   const groupId = newId();
-  const normalized = normalizePattern(params);
+  // L'anteprima semplificata vale solo durante lo strumento: nel gruppo definitivo non c'è
+  const { preview, ...normalized } = normalizePattern(params);
   const next = produce(scene, (draft) => {
     wrapInGroup(draft, targetId, {
       id: groupId,
@@ -34,7 +35,7 @@ export function applyPattern(
       color: target.color,
       op: 'pattern',
       children: [targetId],
-      pattern: normalized,
+      pattern: { ...normalized, ...(preview ? { preview } : {}) },
     });
   });
   return { ok: true, scene: next, groupId };
@@ -48,4 +49,11 @@ export function worldToLocal(world: Transform, v: Vec3, isPoint: boolean): Vec3 
   const d: Vec3 = isPoint ? [v[0] - world.position[0], v[1] - world.position[1], v[2] - world.position[2]] : v;
   const local = apply(transpose(eulerToMatrix(world.rotation)), d);
   return local.map((x, axis) => (world.mirror?.[axis] ? -x : x)) as Vec3;
+}
+
+/** Inverso di `worldToLocal`: dal sistema del gruppo al mondo (`mondo = R · D · v + posizione` per un punto). */
+export function localToWorld(world: Transform, v: Vec3, isPoint: boolean): Vec3 {
+  const mirrored = v.map((x, axis) => (world.mirror?.[axis] ? -x : x)) as Vec3;
+  const rotated = apply(eulerToMatrix(world.rotation), mirrored);
+  return isPoint ? (rotated.map((x, i) => x + world.position[i]) as Vec3) : rotated;
 }

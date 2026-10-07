@@ -18,6 +18,21 @@ I messaggi di commit seguono i [Conventional Commits](https://www.conventionalco
 
 ## [Non rilasciato]
 
+## [0.21.0] - 2026-10-07
+
+### Aggiunto
+- **Pattern su più facce**: i sei pulsanti dei lati (+Z, -Z, +X, -X, +Y, -Y) sono interruttori, e "Scegli facce" permette di cliccare sul pezzo le facce piane da forare (un secondo clic le toglie, Esc o "Fine scelta" chiude la scelta). Ogni faccia ha il proprio disegno (il seme cresce di uno per faccia) e nel codice OpenSCAD ha il proprio elenco `cells_N`. Durante la scelta la vista mostra il pezzo intero, con le facce già scelte evidenziate.
+- **Rombi e Triangoli** (passo e rotazione): due nuove griglie regolari, accanto a Voronoi, Esagoni e Cerchi.
+- **Avviso di calcolo lento** nel Pattern: compare quando il calcolo supera 700 ms o quando celle per facce superano 300. L'**anteprima semplificata** (angoli arrotondati con meno segmenti) si attiva da sola se il calcolo è lento e si cambia con la casella; dopo l'OK il risultato è sempre a qualità piena e il parametro non viene salvato.
+- **Tooltip dettagliati** per tutti i pulsanti della barra: nome e scorciatoia, cosa fa, come si applica e, per i comandi più complessi (Raccordo, Smusso, Smusso angolare, Guscio, Unisci, Inviluppo, Serie, Pattern, Misura, Appoggia su una faccia, Operandi in trasparenza), un'immagine di esempio. Compaiono dopo un breve ritardo al passaggio del mouse o con il focus da tastiera, anche sui pulsanti disabilitati, e Esc li chiude. Le immagini sono in `public/help` e si rigenerano con `DOC_IMAGES=1 npx playwright test e2e/docs-images.spec.ts`.
+- Repository pubblico con `README.md` e licenza MIT.
+
+### Rimosso
+- **Reticolo 3D** del Pattern (troppo lento per un risultato poco utile). I progetti salvati con un reticolo si aprono come Voronoi; quelli con la faccia unica della 0.20.0 si convertono da soli nelle nuove `faces`.
+
+### Modificato
+- I pulsanti della barra non hanno più l'attributo `title` nativo: il nome accessibile resta l'`aria-label` e la descrizione è nel nuovo tooltip.
+
 ## [0.20.0] - 2026-10-07
 
 ### Aggiunto

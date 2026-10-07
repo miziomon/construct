@@ -6,6 +6,9 @@ import { useUiStore } from '../uiStore';
 import type { BedMode } from '../uiStore';
 import { combineToBed, dropSelectionToBed } from '../../kernel/placement';
 import { ToolbarDropdown } from './ToolbarDropdown';
+import { ToolTip } from './ToolTip';
+import { TOOLBAR_HELP } from './toolbarHelp';
+import type { HelpKey } from './toolbarHelp';
 import { PlacementMenu } from './PlacementMenu';
 import { useMeasure } from '../Measure/measureStore';
 import { toggleMeasure } from '../Measure/toggleMeasure';
@@ -23,7 +26,8 @@ import { canShell, toggleShell, useShellTool } from '../Shell/shellToolStore';
 import './Toolbar.scss';
 
 interface ButtonProps {
-  title: string;
+  /** Voce di aiuto: dà il nome accessibile e il tooltip dettagliato (cosa fa, come si applica, immagine). */
+  help: HelpKey;
   onClick: () => void;
   children: ReactNode;
   active?: boolean;
@@ -31,17 +35,30 @@ interface ButtonProps {
   label?: string;
   /** Scorciatoia da tastiera, mostrata in piccolo sopra l'icona. */
   shortcut?: string;
+  /** Testo in più nel tooltip, per i pulsanti il cui stato cambia. */
+  extra?: string;
 }
 
-/** Pulsante a icona con etichetta opzionale; "title" è anche il testo accessibile. */
-function ToolbarButton({ title, onClick, children, active, disabled, label, shortcut }: ButtonProps) {
+/** Scorciatoia come si legge nel tooltip: "^Z" diventa "Ctrl+Z". */
+export function shortcutText(shortcut?: string): string | undefined {
+  if (!shortcut) return undefined;
+  if (shortcut === 'Del') return 'Canc';
+  return shortcut.replace('⇧', 'Maiusc+').replace('^', 'Ctrl+');
+}
+
+/** Pulsante a icona con etichetta opzionale; il nome accessibile è quello della voce di aiuto. */
+function ToolbarButton({ help, onClick, children, active, disabled, label, shortcut, extra }: ButtonProps) {
   const cls = ['toolbar__button', active && 'toolbar__button--active', label && 'toolbar__button--labeled'].filter(Boolean).join(' ');
   return (
-    <button type="button" className={cls} title={title} aria-label={title} aria-pressed={active} disabled={disabled} onClick={onClick}>
-      {shortcut && <span className="toolbar__shortcut" aria-hidden="true">{shortcut}</span>}
-      {children}
-      {label && <span className="toolbar__button-label">{label}</span>}
-    </button>
+    <ToolTip help={help} keys={shortcutText(shortcut)} extra={extra}>
+      {(describedBy) => (
+        <button type="button" className={cls} aria-label={TOOLBAR_HELP[help].name} aria-describedby={describedBy} aria-pressed={active} disabled={disabled} onClick={onClick}>
+          {shortcut && <span className="toolbar__shortcut" aria-hidden="true">{shortcut}</span>}
+          {children}
+          {label && <span className="toolbar__button-label">{label}</span>}
+        </button>
+      )}
+    </ToolTip>
   );
 }
 
@@ -88,58 +105,58 @@ export function Toolbar() {
       </div>
 
       <div className="toolbar__group">
-        <ToolbarButton title="Nuovo progetto: svuota la scena (N)" shortcut="N" onClick={() => void newProject()}><FilePlus size={18} /></ToolbarButton>
+        <ToolbarButton help="new" shortcut="N" onClick={() => void newProject()}><FilePlus size={18} /></ToolbarButton>
       </div>
       <Divider />
 
       <div className="toolbar__group">
-        <ToolbarButton title="Annulla (Ctrl+Z)" shortcut="^Z" disabled={!canUndo} onClick={() => useSceneStore.temporal.getState().undo()}><Undo2 size={18} /></ToolbarButton>
-        <ToolbarButton title="Ripeti (Ctrl+Y o Ctrl+Maiusc+Z)" shortcut="^Y" disabled={!canRedo} onClick={() => useSceneStore.temporal.getState().redo()}><Redo2 size={18} /></ToolbarButton>
+        <ToolbarButton help="undo" shortcut="^Z" disabled={!canUndo} onClick={() => useSceneStore.temporal.getState().undo()}><Undo2 size={18} /></ToolbarButton>
+        <ToolbarButton help="redo" shortcut="^Y" disabled={!canRedo} onClick={() => useSceneStore.temporal.getState().redo()}><Redo2 size={18} /></ToolbarButton>
       </div>
       <Divider />
 
       <div className="toolbar__group">
-        <ToolbarButton title="Seleziona (Q)" shortcut="Q" active={s.gizmoMode === 'select'} onClick={() => s.setGizmoMode('select')}><MousePointer2 size={18} /></ToolbarButton>
-        <ToolbarButton title="Sposta (W)" shortcut="W" active={s.gizmoMode === 'translate'} onClick={() => s.setGizmoMode('translate')}><Move3d size={18} /></ToolbarButton>
-        <ToolbarButton title="Ruota (E)" shortcut="E" active={s.gizmoMode === 'rotate'} onClick={() => s.setGizmoMode('rotate')}><Rotate3d size={18} /></ToolbarButton>
-        <ToolbarButton title="Ridimensiona con il mouse (R)" shortcut="R" active={s.gizmoMode === 'resize'} onClick={() => s.setGizmoMode('resize')}><Scaling size={18} /></ToolbarButton>
-        <ToolbarButton title="Estrudi forme 2D con il mouse (T)" shortcut="T" active={s.gizmoMode === 'extrude'} onClick={() => s.setGizmoMode('extrude')}><ArrowUpFromLine size={18} /></ToolbarButton>
+        <ToolbarButton help="select" shortcut="Q" active={s.gizmoMode === 'select'} onClick={() => s.setGizmoMode('select')}><MousePointer2 size={18} /></ToolbarButton>
+        <ToolbarButton help="translate" shortcut="W" active={s.gizmoMode === 'translate'} onClick={() => s.setGizmoMode('translate')}><Move3d size={18} /></ToolbarButton>
+        <ToolbarButton help="rotate" shortcut="E" active={s.gizmoMode === 'rotate'} onClick={() => s.setGizmoMode('rotate')}><Rotate3d size={18} /></ToolbarButton>
+        <ToolbarButton help="resize" shortcut="R" active={s.gizmoMode === 'resize'} onClick={() => s.setGizmoMode('resize')}><Scaling size={18} /></ToolbarButton>
+        <ToolbarButton help="extrude" shortcut="T" active={s.gizmoMode === 'extrude'} onClick={() => s.setGizmoMode('extrude')}><ArrowUpFromLine size={18} /></ToolbarButton>
       </div>
       <Divider />
 
       <div className="toolbar__group">
-        <ToolbarButton title="Raggruppa: gli oggetti restano separati e si muovono insieme (Ctrl+G)" shortcut="^G" disabled={rootSelection.length < 2} onClick={() => combineToBed('group')}><Group size={18} /></ToolbarButton>
-        <ToolbarButton title="Unisci in un solo solido, unione booleana (U)" shortcut="U" disabled={rootSelection.length < 2} onClick={() => combineToBed('union')}><SquaresUnite size={18} /></ToolbarButton>
-        <ToolbarButton title="Inviluppo convesso: la forma più piccola e senza concavità che contiene gli oggetti (J)" shortcut="J" disabled={rootSelection.length < 2} onClick={() => combineToBed('hull')}><GROUP_ICONS.hull size={18} /></ToolbarButton>
-        <ToolbarButton title="Separa il gruppo o l'unione (Ctrl+Maiusc+G)" shortcut="⇧^G" disabled={group?.type !== 'group' || !s.scene.rootIds.includes(group.id)} onClick={s.ungroupSelected}><Ungroup size={18} /></ToolbarButton>
-        <ToolbarButton title="Solido / Foro (H)" shortcut="H" active={allHoles} disabled={!hasSelection} onClick={s.toggleHoleSelected}><CircleDashed size={18} /></ToolbarButton>
-        <ToolbarButton title={allLocked ? 'Sblocca (L)' : 'Blocca (L)'} shortcut="L" active={allLocked} disabled={!hasSelection} onClick={s.toggleLockSelected}>{allLocked ? <Lock size={18} /> : <Unlock size={18} />}</ToolbarButton>
-        <ToolbarButton title="Raccordo: arrotonda lo spigolo tra due superfici (F)" shortcut="F" active={edgeTool === 'fillet'} disabled={!hasObjects} onClick={() => toggleEdgeTool('fillet')}><EDGE_ICONS.fillet size={18} /></ToolbarButton>
-        <ToolbarButton title="Smusso: taglia lo spigolo tra due superfici (S)" shortcut="S" active={edgeTool === 'chamfer'} disabled={!hasObjects} onClick={() => toggleEdgeTool('chamfer')}><EDGE_ICONS.chamfer size={18} /></ToolbarButton>
-        <ToolbarButton title="Smusso angolare: taglia o arrotonda un angolo scegliendo il vertice (A)" shortcut="A" active={edgeTool === 'corner'} disabled={!hasObjects} onClick={() => toggleEdgeTool('corner')}><CORNER_ICONS.chamfer size={18} /></ToolbarButton>
-        <ToolbarButton title="Guscio: svuota il solido selezionato con spessore laterale e inferiore (G)" shortcut="G" active={shellActive} disabled={!shellActive && !canShell(s.scene, s.selection)} onClick={toggleShell}><GROUP_ICONS.shell size={18} /></ToolbarButton>
-        <ToolbarDropdown id="align" shortcut="K" title="Allinea: sceglie asse e lato su cui allineare gli oggetti selezionati (K)" icon={<AlignHorizontalJustifyStart size={18} />} disabled={unlockedRoots.length < 2}>
+        <ToolbarButton help="group" shortcut="^G" disabled={rootSelection.length < 2} onClick={() => combineToBed('group')}><Group size={18} /></ToolbarButton>
+        <ToolbarButton help="union" shortcut="U" disabled={rootSelection.length < 2} onClick={() => combineToBed('union')}><SquaresUnite size={18} /></ToolbarButton>
+        <ToolbarButton help="hull" shortcut="J" disabled={rootSelection.length < 2} onClick={() => combineToBed('hull')}><GROUP_ICONS.hull size={18} /></ToolbarButton>
+        <ToolbarButton help="ungroup" shortcut="⇧^G" disabled={group?.type !== 'group' || !s.scene.rootIds.includes(group.id)} onClick={s.ungroupSelected}><Ungroup size={18} /></ToolbarButton>
+        <ToolbarButton help="hole" shortcut="H" active={allHoles} disabled={!hasSelection} onClick={s.toggleHoleSelected}><CircleDashed size={18} /></ToolbarButton>
+        <ToolbarButton help={allLocked ? 'unlock' : 'lock'} shortcut="L" active={allLocked} disabled={!hasSelection} onClick={s.toggleLockSelected}>{allLocked ? <Lock size={18} /> : <Unlock size={18} />}</ToolbarButton>
+        <ToolbarButton help="fillet" shortcut="F" active={edgeTool === 'fillet'} disabled={!hasObjects} onClick={() => toggleEdgeTool('fillet')}><EDGE_ICONS.fillet size={18} /></ToolbarButton>
+        <ToolbarButton help="chamfer" shortcut="S" active={edgeTool === 'chamfer'} disabled={!hasObjects} onClick={() => toggleEdgeTool('chamfer')}><EDGE_ICONS.chamfer size={18} /></ToolbarButton>
+        <ToolbarButton help="corner" shortcut="A" active={edgeTool === 'corner'} disabled={!hasObjects} onClick={() => toggleEdgeTool('corner')}><CORNER_ICONS.chamfer size={18} /></ToolbarButton>
+        <ToolbarButton help="shell" shortcut="G" active={shellActive} disabled={!shellActive && !canShell(s.scene, s.selection)} onClick={toggleShell}><GROUP_ICONS.shell size={18} /></ToolbarButton>
+        <ToolbarDropdown id="align" shortcut="K" help="align" icon={<AlignHorizontalJustifyStart size={18} />} disabled={unlockedRoots.length < 2}>
           {(close) => <PlacementMenu kind="align" close={close} />}
         </ToolbarDropdown>
-        <ToolbarDropdown id="mirror" shortcut="Y" title="Specchia: sceglie l'asse e il lato dell'ingombro da cui passa il piano di specchio (Y)" icon={<FlipHorizontal2 size={18} />} disabled={unlockedRoots.length < 1}>
+        <ToolbarDropdown id="mirror" shortcut="Y" help="mirror" icon={<FlipHorizontal2 size={18} />} disabled={unlockedRoots.length < 1}>
           {(close) => <PlacementMenu kind="mirror" close={close} />}
         </ToolbarDropdown>
-        <ToolbarButton title="Misura: scegli un punto di partenza e uno di arrivo per leggere la distanza in mm, con aggancio a vertici e spigoli (I)" shortcut="I" active={measureActive} disabled={!hasObjects} onClick={toggleMeasure}><Ruler size={18} /></ToolbarButton>
-        <ToolbarButton title="Serie: ripete l'oggetto selezionato in fila, in griglia o in cerchio; il risultato è un gruppo Ripetizione di cui si modificano i parametri (O)" shortcut="O" active={arrayActive} disabled={!arrayActive && !canArray(s.scene, s.selection)} onClick={toggleArray}><GROUP_ICONS.array size={18} /></ToolbarButton>
-        <ToolbarButton title="Pattern: fora l'oggetto selezionato con un disegno Voronoi casuale, esagoni o cerchi, oppure lo trasforma in un reticolo 3D; il risultato è un gruppo Pattern di cui si modificano seme e parametri (Z)" shortcut="Z" active={patternActive} disabled={!patternActive && !canPattern(s.scene, s.selection)} onClick={togglePattern}><GROUP_ICONS.pattern size={18} /></ToolbarButton>
-        <ToolbarButton title="Appoggia su una faccia: clicca la faccia che deve poggiare sul piatto e l'oggetto si ruota e si appoggia (V)" shortcut="V" active={layFlatActive} disabled={!hasObjects} onClick={toggleLayFlat}><SquareArrowDown size={18} /></ToolbarButton>
-        <ToolbarButton title="Appoggia sul piatto (B)" shortcut="B" disabled={rootSelection.length === 0} onClick={dropSelectionToBed}><ArrowDownToLine size={18} /></ToolbarButton>
-        <ToolbarButton title="Duplica (Ctrl+D)" shortcut="^D" disabled={rootSelection.length === 0} onClick={s.duplicateSelected}><Copy size={18} /></ToolbarButton>
-        <ToolbarButton title="Elimina (Canc o Backspace)" shortcut="Del" disabled={!hasSelection} onClick={s.removeSelected}><Trash2 size={18} /></ToolbarButton>
+        <ToolbarButton help="measure" shortcut="I" active={measureActive} disabled={!hasObjects} onClick={toggleMeasure}><Ruler size={18} /></ToolbarButton>
+        <ToolbarButton help="array" shortcut="O" active={arrayActive} disabled={!arrayActive && !canArray(s.scene, s.selection)} onClick={toggleArray}><GROUP_ICONS.array size={18} /></ToolbarButton>
+        <ToolbarButton help="pattern" shortcut="Z" active={patternActive} disabled={!patternActive && !canPattern(s.scene, s.selection)} onClick={togglePattern}><GROUP_ICONS.pattern size={18} /></ToolbarButton>
+        <ToolbarButton help="layflat" shortcut="V" active={layFlatActive} disabled={!hasObjects} onClick={toggleLayFlat}><SquareArrowDown size={18} /></ToolbarButton>
+        <ToolbarButton help="drop" shortcut="B" disabled={rootSelection.length === 0} onClick={dropSelectionToBed}><ArrowDownToLine size={18} /></ToolbarButton>
+        <ToolbarButton help="duplicate" shortcut="^D" disabled={rootSelection.length === 0} onClick={s.duplicateSelected}><Copy size={18} /></ToolbarButton>
+        <ToolbarButton help="delete" shortcut="Del" disabled={!hasSelection} onClick={s.removeSelected}><Trash2 size={18} /></ToolbarButton>
       </div>
 
       <div className="toolbar__spacer" />
 
       <div className="toolbar__group">
-        <ToolbarButton title="Operandi delle booleane in trasparenza, come # di OpenSCAD: mostra ciò che viene sottratto o intersecato (X)" shortcut="X" active={ghostOps} onClick={toggleGhostOps}><Hash size={18} /></ToolbarButton>
-        <ToolbarButton title={`Piatto: ${BED_LABELS[bedMode]}, prossimo: ${BED_LABELS[NEXT_BED[bedMode]]} (P)`} shortcut="P" active={bedMode !== 'full'} onClick={cycleBed}><Grid3x3 size={18} /></ToolbarButton>
-        <ToolbarButton title={theme === 'light' ? 'Passa al tema scuro (D)' : 'Passa al tema chiaro (D)'} shortcut="D" onClick={toggleTheme}>{theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}</ToolbarButton>
-        <ToolbarButton title="Codice OpenSCAD (C o Ctrl+J)" shortcut="C" active={codeOpen} onClick={toggleCode}><Code size={18} /></ToolbarButton>
+        <ToolbarButton help="ghost" shortcut="X" active={ghostOps} onClick={toggleGhostOps}><Hash size={18} /></ToolbarButton>
+        <ToolbarButton help="bed" extra={`Ora: ${BED_LABELS[bedMode]}. Prossimo: ${BED_LABELS[NEXT_BED[bedMode]]}.`} shortcut="P" active={bedMode !== 'full'} onClick={cycleBed}><Grid3x3 size={18} /></ToolbarButton>
+        <ToolbarButton help="theme" extra={theme === 'light' ? 'Ora: tema chiaro.' : 'Ora: tema scuro.'} shortcut="D" onClick={toggleTheme}>{theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}</ToolbarButton>
+        <ToolbarButton help="code" shortcut="C" active={codeOpen} onClick={toggleCode}><Code size={18} /></ToolbarButton>
         <AppMenu />
       </div>
     </header>

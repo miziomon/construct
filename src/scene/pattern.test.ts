@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { apply, eulerToMatrix } from './math';
-import { worldToLocal } from './patternTool';
-import { FACE_DIRECTIONS, defaultPatternParams, faceFrame, faceFromBounds, frameRect, normalizePattern, patternCells, PATTERN_MAX_CELLS, thicknessAlong } from './pattern';
+import { localToWorld, worldToLocal } from './patternTool';
+import { FACE_DIRECTIONS, defaultPatternParams, faceFrame, faceFromBounds, frameRect, normalizePattern, patternCells, PATTERN_MAX_CELLS, sameFace, thicknessAlong } from './pattern';
 import { PATTERN_ALGORITHM } from './voronoi';
 import type { PatternParams, Vec3 } from './types';
 
@@ -39,7 +39,7 @@ describe('facce e riferimento', () => {
     expect(rect.maxX - rect.minX).toBeGreaterThanOrEqual(80);
     expect(rect.maxY - rect.minY).toBeGreaterThanOrEqual(60);
     // Una faccia laterale ha un rettangolo diverso (60 × 5 al posto di 80 × 60)
-    const side = frameRect(params({ face: faceFromBounds(bounds, 'x+') }));
+    const side = frameRect(params({ faces: [faceFromBounds(bounds, 'x+')] }));
     expect(Math.min(side.maxX - side.minX, side.maxY - side.minY)).toBeLessThan(10);
   });
 });
@@ -55,16 +55,15 @@ describe('parametri', () => {
   });
 
   it('normalizePattern porta tutto dentro i limiti', () => {
-    const n = normalizePattern(params({ cells: 99999, latticeCells: 1000, regularity: 400, size: 0, wall: -3, rounding: -1, margin: -5, depth: -2, strut: 0, seed: -4, face: { origin: [0, 0, 0], normal: [0, 0, 0], thickness: -1 } }));
+    const n = normalizePattern(params({ cells: 99999, regularity: 400, size: 0, wall: -3, rounding: -1, margin: -5, depth: -2, seed: -4, faces: [{ origin: [0, 0, 0], normal: [0, 0, 0], thickness: -1 }] }));
     expect(n.cells).toBe(PATTERN_MAX_CELLS);
-    expect(n.latticeCells).toBe(40);
     expect(n.regularity).toBe(100);
     expect(n.size).toBeGreaterThanOrEqual(2);
     expect(n.wall).toBeGreaterThan(0);
     expect([n.rounding, n.margin, n.depth, n.seed]).toEqual([0, 0, 0, 0]);
-    expect(n.strut).toBeGreaterThan(0);
-    expect(n.face.normal).toEqual([0, 0, 1]);
-    expect(n.face.thickness).toBeGreaterThan(0);
+    expect(n.faces).toHaveLength(1);
+    expect(n.faces[0].normal).toEqual([0, 0, 1]);
+    expect(n.faces[0].thickness).toBeGreaterThan(0);
   });
 });
 
@@ -105,8 +104,46 @@ describe('celle del pattern', () => {
     expect(a).toHaveLength(25);
     expect(patternCells(p, rect)).toEqual(a);
     expect(patternCells({ ...p, seed: 6 }, rect)).not.toEqual(a);
-    // Il reticolo non ha celle 2D
-    expect(patternCells(params({ kind: 'lattice' }), rect)).toEqual([]);
+    // Ogni faccia ha il suo disegno: l'indice cambia il seme
+    expect(patternCells(p, rect, 1)).not.toEqual(a);
+  });
+});
+
+describe('rombi, triangoli e più facce', () => {
+  const rect = { minX: 0, minY: 0, maxX: 100, maxY: 60 };
+  const area = (poly: [number, number][]) => Math.abs(poly.reduce((sum, a, i) => { const b = poly[(i + 1) % poly.length]; return sum + (a[0] * b[1] - b[0] * a[1]); }, 0) / 2);
+
+  it('rombi: quattro lati, area mezzo passo al quadrato, e coprono il rettangolo', () => {
+    const cells = patternCells(params({ kind: 'diamond', size: 10 }), rect);
+    expect(cells.every((c) => c.length === 4)).toBe(true);
+    expect(area(cells[0])).toBeCloseTo(50, 3);
+    // Con celle che si toccano, la somma delle aree di quelle che toccano il rettangolo lo copre almeno tutto
+    expect(cells.reduce((s, c) => s + area(c), 0)).toBeGreaterThanOrEqual(100 * 60);
+  });
+
+  it('triangoli: equilateri con lato uguale al passo, punta su e punta giù alternati', () => {
+    const cells = patternCells(params({ kind: 'triangle', size: 12 }), rect);
+    expect(cells.every((c) => c.length === 3)).toBe(true);
+    expect(area(cells[0])).toBeCloseTo((Math.sqrt(3) / 4) * 144, 2);
+    expect(cells.reduce((s, c) => s + area(c), 0)).toBeGreaterThanOrEqual(100 * 60);
+    // Rotazione di 30 gradi: altre posizioni
+    expect(patternCells(params({ kind: 'triangle', size: 12, angle: 30 }), rect)).not.toEqual(cells);
+  });
+
+  it('normalizePattern converte i progetti della 0.20.0: face diventa faces e il reticolo diventa Voronoi', () => {
+    const old = { ...params(), kind: 'lattice', face: faceFromBounds(bounds, 'x+') } as unknown as PatternParams;
+    delete (old as { faces?: unknown }).faces;
+    const n = normalizePattern(old);
+    expect(n.kind).toBe('voronoi');
+    expect(n.faces).toEqual([faceFromBounds(bounds, 'x+')]);
+    expect(n.face).toBeUndefined();
+  });
+
+  it('le facce uguali non si ripetono e sameFace confronta normale e piano', () => {
+    const top = faceFromBounds(bounds, 'z+');
+    expect(normalizePattern(params({ faces: [top, { ...top }, faceFromBounds(bounds, 'z-')] })).faces).toHaveLength(2);
+    expect(sameFace(top, faceFromBounds(bounds, 'z-'))).toBe(false);
+    expect(sameFace(top, { ...top, origin: [5, -3, 2.5] })).toBe(true);
   });
 });
 
@@ -120,5 +157,8 @@ describe('dal mondo al gruppo', () => {
     near(worldToLocal(world, rotated.map((v, i) => v + world.position[i]) as Vec3, true), local);
     // Una direzione non risente della traslazione
     near(worldToLocal(world, rotated, false), local);
+    // E il percorso inverso
+    near(localToWorld(world, local, true), rotated.map((v, i) => v + world.position[i]));
+    near(localToWorld(world, local, false), rotated);
   });
 });

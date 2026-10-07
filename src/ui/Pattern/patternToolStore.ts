@@ -2,21 +2,25 @@ import { create } from 'zustand';
 import type { NodeMesh } from '../../kernel/evaluate';
 import { useResultStore } from '../../kernel/useKernel';
 import { faceMap } from '../../scene/edgeTool';
-import { defaultPatternParams, thicknessAlong } from '../../scene/pattern';
+import { defaultPatternParams, normalizePattern, sameFace, thicknessAlong } from '../../scene/pattern';
 import { applyPattern, worldToLocal } from '../../scene/patternTool';
 import { localBounds } from '../../scene/shell';
 import { isLocked, labelled, useSceneStore, worldTransform } from '../../scene/store';
 import { isCutter } from '../../scene/treatment';
-import type { PatternParams, Scene, Vec3 } from '../../scene/types';
+import type { PatternFace, PatternParams, Scene, Vec3 } from '../../scene/types';
 
-/** Faccia sotto il puntatore mentre si sceglie la faccia da cui applicare il pattern. */
+/** Faccia sotto il puntatore mentre si scelgono le facce da cui applicare il pattern. */
 export interface PatternHover {
   mesh: NodeMesh;
   face: number;
 }
 
+/** Oltre questa durata del calcolo (ms) l'anteprima è lenta e si avvisa; con le celle × facce sopra la stima si avvisa prima. */
+export const SLOW_PREVIEW_MS = 700;
+export const SLOW_PREVIEW_CELLS = 300;
+
 /**
- * Strumento Pattern: applica un disegno (Voronoi casuale, esagoni, cerchi) o un reticolo 3D all'oggetto selezionato.
+ * Strumento Pattern: applica un disegno (Voronoi casuale, esagoni, cerchi, rombi, triangoli) all'oggetto selezionato.
  * Stesso schema di Guscio e Serie: con il pannello aperto la cronologia è in pausa e l'anteprima vive nella scena (il
  * gruppo vero); OK registra un solo passo di Annulla.
  */
@@ -30,21 +34,24 @@ interface PatternToolState {
   base: Scene | null;
   /** Gruppo Pattern creato dall'anteprima. */
   groupId: string | null;
-  /** Scelta della faccia con il clic sull'oggetto in corso, e faccia sotto il puntatore. */
+  /** Scelta delle facce con i clic sull'oggetto in corso (la vista mostra il pezzo intero), e faccia sotto il puntatore. */
   picking: boolean;
   hover: PatternHover | null;
+  /** Anteprima con meno segmenti: più veloce, e identica nel risultato definitivo. */
+  simplified: boolean;
 
   start: () => void;
   cancel: () => void;
   commit: () => void;
   setParams: (patch: Partial<PatternParams>) => void;
   setPicking: (picking: boolean) => void;
+  setSimplified: (simplified: boolean) => void;
   setHover: (hover: PatternHover | null) => void;
-  /** Usa la faccia piana cliccata (della mesh in anteprima) come faccia di partenza del pattern. */
+  /** Aggiunge la faccia piana cliccata alle facce del pattern, o la toglie se c'è già (resta sempre almeno una faccia). */
   pickFace: (mesh: NodeMesh, face: number) => void;
 }
 
-const INITIAL = { active: false, targetId: null, params: null, error: null, base: null, groupId: null, picking: false, hover: null };
+const INITIAL = { active: false, targetId: null, params: null, error: null, base: null, groupId: null, picking: false, hover: null, simplified: false };
 
 const sceneStore = useSceneStore;
 
@@ -60,11 +67,16 @@ export function localBoundsOf(scene: Scene, id: string): { min: Vec3; max: Vec3 
   return meshes.length ? localBounds(meshes, worldTransform(scene, id)) : null;
 }
 
+/** Stima del lavoro: celle del Voronoi (o 60 per le griglie, in media) per il numero di facce. */
+export function estimatedCells(p: PatternParams): number {
+  return (p.kind === 'voronoi' ? p.cells : 60) * p.faces.length;
+}
+
 export const usePatternTool = create<PatternToolState>()((set, get) => {
-  /** Ricrea l'anteprima sulla scena di partenza, con i parametri correnti. */
+  /** Ricrea l'anteprima sulla scena di partenza, con i parametri correnti (non durante la scelta delle facce). */
   const rebuild = () => {
-    const { targetId, params } = get();
-    if (!targetId || !params) return;
+    const { targetId, params, picking, simplified } = get();
+    if (!targetId || !params || picking) return;
     let base = get().base;
     if (!base) {
       // Prima anteprima: si ricorda la scena di partenza e si mette in pausa la cronologia
@@ -72,7 +84,7 @@ export const usePatternTool = create<PatternToolState>()((set, get) => {
       sceneStore.temporal.getState().pause();
       set({ base });
     }
-    const result = applyPattern(base, targetId, params);
+    const result = applyPattern(base, targetId, { ...params, preview: simplified });
     if (!result.ok) {
       sceneStore.setState({ scene: base });
       set({ error: result.error, groupId: null });
@@ -115,24 +127,41 @@ export const usePatternTool = create<PatternToolState>()((set, get) => {
     },
 
     commit: () => {
-      const { groupId, base } = get();
-      if (!groupId || !base) return get().cancel();
+      const { groupId, base, params, targetId, picking } = get();
+      if (!groupId || !base || !params || !targetId || picking) return get().cancel();
+      // Il risultato definitivo è sempre a qualità piena, anche se l'anteprima era semplificata
+      const final = applyPattern(base, targetId, { ...params, preview: false });
+      if (!final.ok) return get().cancel();
       // La cronologia è in pausa dall'anteprima: si torna alla scena di partenza e si applica il risultato in un solo passo
-      const after = sceneStore.getState().scene;
       sceneStore.setState({ scene: base });
       sceneStore.temporal.getState().resume();
-      labelled('Pattern', () => sceneStore.setState({ scene: after, selection: [groupId] }));
+      labelled('Pattern', () => sceneStore.setState({ scene: final.scene, selection: [final.groupId] }));
       set({ ...INITIAL });
     },
 
     setParams: (patch) => {
       const { params } = get();
       if (!params) return;
-      set({ params: { ...params, ...patch } });
+      set({ params: normalizePattern({ ...params, ...patch }) });
       rebuild();
     },
 
-    setPicking: (picking) => set({ picking, hover: null }),
+    setPicking: (picking) => {
+      const { targetId, base } = get();
+      if (!get().active || !targetId || !base) return;
+      set({ picking, hover: null });
+      if (picking) {
+        // Durante la scelta la vista mostra il pezzo intero: si cliccano le sue facce, non le pareti delle celle
+        sceneStore.setState({ scene: base, selection: [targetId] });
+      } else {
+        rebuild();
+      }
+    },
+
+    setSimplified: (simplified) => {
+      set({ simplified });
+      rebuild();
+    },
 
     setHover: (hover) => {
       const current = get().hover;
@@ -142,18 +171,19 @@ export const usePatternTool = create<PatternToolState>()((set, get) => {
     },
 
     pickFace: (mesh, face) => {
-      const { groupId, params } = get();
+      const { params, targetId, base } = get();
       const info = faceMap(mesh).faces[face];
-      if (!groupId || !params || !info || !mesh.path.includes(groupId)) return;
-      const world = worldTransform(sceneStore.getState().scene, groupId);
+      if (!params || !info || !targetId || !base || !mesh.path.includes(targetId)) return;
+      const world = worldTransform(base, targetId);
       // Normale e un punto del piano, dal mondo al sistema del gruppo
       const normal = worldToLocal(world, info.normal, false);
       const point = worldToLocal(world, info.normal.map((c) => c * info.offset) as Vec3, true);
       const round = (v: number) => Math.round(v * 1e4) / 1e4 + 0;
-      set({ picking: false, hover: null });
-      get().setParams({
-        face: { origin: point.map(round) as Vec3, normal: normal.map(round) as Vec3, thickness: round(thicknessAlong(params.bounds, normal)) },
-      });
+      const picked: PatternFace = { origin: point.map(round) as Vec3, normal: normal.map(round) as Vec3, thickness: round(thicknessAlong(params.bounds, normal)) };
+      // Già scelta: si toglie (ma ne resta sempre una); altrimenti si aggiunge
+      const others = params.faces.filter((f) => !sameFace(f, picked));
+      const faces = others.length < params.faces.length ? (others.length ? others : params.faces) : [...params.faces, picked];
+      set({ params: normalizePattern({ ...params, faces }) });
     },
   };
 });

@@ -9,7 +9,6 @@ import { edgeProfile, endMargin, endOvershoot, endPlanesOf, halfSpaceMatrix, has
 import { resolveEnds } from '../scene/edgeEnds';
 import { stretchFactors } from '../scene/ellipse';
 import { circularStep, linearStep, normalizeArray } from '../scene/arrayPattern';
-import { latticeEdges } from '../scene/lattice';
 import { cutReach, faceFrame, frameRect, normalizePattern, patternCells } from '../scene/pattern';
 import { isRotational, revolveParams, shapeContours, svgContours } from '../scene/shapes2d';
 import { fontInfo, fontsUsed, scadFontName } from '../scene/fontCatalog';
@@ -392,74 +391,62 @@ function arrayLines(params: ArrayParams, child: (depth: number) => string[], dep
 /**
  * Codice di un Pattern: le celle già calcolate dal generatore (prima della riduzione) in `cells`, poi le stesse operazioni
  * del kernel fatte da OpenSCAD (parete e arrotondamento con `offset`, regione con `projection`, margine con `offset`).
- * Il taglio si costruisce nel riferimento della faccia e si riporta nel riferimento del pezzo. `child(depth)` dà le righe
+ * Il taglio di ogni faccia si costruisce nel suo riferimento e si riporta nel riferimento del pezzo. `child(depth)` dà le righe
  * del pezzo a quel rientro.
  */
 function patternLines(params: PatternParams, child: (depth: number) => string[], depth: number): string[] {
   const p = normalizePattern(params);
   const pad = IND.repeat(depth);
   const at = (d: number, text: string) => `${IND.repeat(d)}${text}`;
-
-  // RETICOLO: puntoni tra due sfere lungo gli spigoli del Voronoi 3D, ritagliati sul pezzo
-  if (p.kind === 'lattice') {
-    const edges = latticeEdges(p.latticeCells, p.bounds, p.seed, p.regularity);
-    if (edges.length === 0) return child(depth);
-    return [
-      `${pad}// Reticolo Voronoi 3D: ${edges.length} puntoni da ${n(p.strut)} mm (seme ${p.seed})`,
-      `${pad}edges = [`,
-      ...edges.map(([a, b], i) => `${pad}${IND}[${vec(a)}, ${vec(b)}]${i < edges.length - 1 ? ',' : ''}`),
-      `${pad}];`,
-      `${pad}intersection() {`,
-      ...child(depth + 1),
-      `${pad}${IND}for (e = edges) hull() {`,
-      `${pad}${IND}${IND}translate(e[0]) sphere(d = ${n(p.strut)}, $fn = 8);`,
-      `${pad}${IND}${IND}translate(e[1]) sphere(d = ${n(p.strut)}, $fn = 8);`,
-      `${pad}${IND}}`,
-      `${pad}}`,
-    ];
-  }
-
-  const frame = faceFrame(p.face);
-  const cells = patternCells(p, frameRect(p));
   const through = p.depth <= 0;
-  const out: string[] = [
-    `${pad}// Pattern ${p.kind}, seme ${p.seed}: ${cells.length} celle (poligoni nel riferimento della faccia)`,
-    `${pad}cells = [`,
-    ...cells.map((c, i) => `${pad}${IND}[${c.map((pt) => vec(pt)).join(', ')}]${i < cells.length - 1 ? ',' : ''}`),
-    `${pad}];`,
-    `${pad}difference() {`,
-    ...child(depth + 1),
-  ];
+  const out: string[] = [];
 
-  // Il taglio: dal riferimento della faccia a quello del pezzo
-  let d = depth + 1;
-  out.push(at(d, `translate(${vec(frame.origin)}) rotate(${vec(frame.inverseEuler)}) {`));
-  d++;
-  if (through) {
-    out.push(at(d, `linear_extrude(height = ${n(2 * cutReach(p))}, center = true)`));
-  } else if (p.sides === 'both') {
-    // Dalla faccia e dalla faccia opposta (a `thickness` sotto): stessa profondità
-    out.push(at(d, `for (z = [${n(-p.depth)}, ${n(-p.face.thickness - 1)}]) translate([0, 0, z]) linear_extrude(height = ${n(p.depth + 1)})`));
-  } else {
-    out.push(at(d, `translate([0, 0, ${n(-p.depth)}]) linear_extrude(height = ${n(p.depth + 1)})`));
-  }
-  d++;
+  // Le celle di ogni faccia, già calcolate dal generatore (con più facce un elenco per faccia)
+  const names = p.faces.map((_, i) => (p.faces.length > 1 ? `cells_${i + 1}` : 'cells'));
+  p.faces.forEach((face, i) => {
+    const cells = patternCells(p, frameRect(p, face), i);
+    out.push(
+      `${pad}// Pattern ${p.kind}, seme ${p.seed + i}: ${cells.length} celle (poligoni nel riferimento della faccia ${i + 1})`,
+      `${pad}${names[i]} = [`,
+      ...cells.map((c, k) => `${pad}${IND}[${c.map((pt) => vec(pt)).join(', ')}]${k < cells.length - 1 ? ',' : ''}`),
+      `${pad}];`,
+    );
+  });
+  out.push(`${pad}difference() {`, ...child(depth + 1));
 
-  // Disegno 2D: Fori = celle dentro la regione, Solchi = regione meno le celle
-  const shrink = n(p.wall / 2 + p.rounding);
-  const cellShape = `for (c = cells) ${p.rounding > 0 ? `offset(r = ${n(p.rounding)}, $fn = 32) ` : ''}offset(delta = -${shrink}) polygon(c);`;
-  const regionHead = `${p.margin > 0 ? `offset(delta = -${n(p.margin)}) ` : ''}${through ? 'projection()' : 'projection(cut = true) translate([0, 0, 0.01])'}`;
-  const region = [
-    at(d + 1, `${regionHead} rotate(${vec(frame.euler)}) translate(${vec(frame.origin.map((v) => -v))}) {`),
-    ...child(d + 2),
-    at(d + 1, '}'),
-  ];
-  if (p.mode === 'holes') {
-    out.push(at(d - 1, 'intersection() {'), at(d, cellShape), ...region, at(d - 1, '}'));
-  } else {
-    out.push(at(d - 1, 'difference() {'), ...region, at(d, cellShape), at(d - 1, '}'));
-  }
-  out.push(at(d - 2, '}'), `${pad}}`);
+  // Un taglio per faccia: dal riferimento della faccia a quello del pezzo
+  p.faces.forEach((face, i) => {
+    const frame = faceFrame(face);
+    let d = depth + 1;
+    out.push(at(d, `translate(${vec(frame.origin)}) rotate(${vec(frame.inverseEuler)}) {`));
+    d++;
+    if (through) {
+      out.push(at(d, `linear_extrude(height = ${n(2 * cutReach(p, face))}, center = true)`));
+    } else if (p.sides === 'both') {
+      // Dalla faccia e dalla faccia opposta (a `thickness` sotto): stessa profondità
+      out.push(at(d, `for (z = [${n(-p.depth)}, ${n(-face.thickness - 1)}]) translate([0, 0, z]) linear_extrude(height = ${n(p.depth + 1)})`));
+    } else {
+      out.push(at(d, `translate([0, 0, ${n(-p.depth)}]) linear_extrude(height = ${n(p.depth + 1)})`));
+    }
+    d++;
+
+    // Disegno 2D: Fori = celle dentro la regione, Solchi = regione meno le celle
+    const shrink = n(p.wall / 2 + p.rounding);
+    const cellShape = `for (c = ${names[i]}) ${p.rounding > 0 ? `offset(r = ${n(p.rounding)}, $fn = 32) ` : ''}offset(delta = -${shrink}) polygon(c);`;
+    const regionHead = `${p.margin > 0 ? `offset(delta = -${n(p.margin)}) ` : ''}${through ? 'projection()' : 'projection(cut = true) translate([0, 0, 0.01])'}`;
+    const region = [
+      at(d + 1, `${regionHead} rotate(${vec(frame.euler)}) translate(${vec(frame.origin.map((v) => -v))}) {`),
+      ...child(d + 2),
+      at(d + 1, '}'),
+    ];
+    if (p.mode === 'holes') {
+      out.push(at(d - 1, 'intersection() {'), at(d, cellShape), ...region, at(d - 1, '}'));
+    } else {
+      out.push(at(d - 1, 'difference() {'), ...region, at(d, cellShape), at(d - 1, '}'));
+    }
+    out.push(at(d - 2, '}'));
+  });
+  out.push(`${pad}}`);
   return out;
 }
 

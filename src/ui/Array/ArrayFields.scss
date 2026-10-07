@@ -80,6 +80,10 @@
     }
   }
 
+  &__warning {
+    color: color('danger');
+  }
+
   &__check {
     cursor: pointer;
   }

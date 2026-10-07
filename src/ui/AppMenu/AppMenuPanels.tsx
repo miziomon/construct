@@ -34,7 +34,7 @@ const SHORTCUTS: { title: string; rows: [string, string][] }[] = [
       ['Doppio clic', 'Seleziona l\'oggetto e passa a Sposta'],
       ['Ctrl+G', 'Raggruppa (gli oggetti restano separati)'],
       ['U', 'Unisci in un solo solido (unione booleana)'],
-      ['Z', 'Pattern: fora l\'oggetto con celle Voronoi casuali (seme), esagoni o cerchi, o crea un reticolo 3D; Invio conferma, Esc annulla; il risultato è un gruppo Pattern modificabile'],
+      ['Z', 'Pattern: fora l\'oggetto con celle Voronoi casuali (seme), esagoni, cerchi, rombi o triangoli, da una o più facce; Invio conferma, Esc annulla; il risultato è un gruppo Pattern modificabile'],
       ['O', 'Serie: ripete l\'oggetto in fila, in griglia o in cerchio (Invio conferma, Esc annulla); il risultato è un gruppo Ripetizione modificabile'],
       ['J', 'Inviluppo convesso: la forma più piccola e senza concavità che contiene gli oggetti selezionati'],
       ['F2', 'Rinomina l\'oggetto selezionato'],

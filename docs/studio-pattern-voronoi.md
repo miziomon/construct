@@ -16,7 +16,7 @@ e i parametri si modificano dal vivo.
 | a. Fori o tasche lungo un asse | Celle di Voronoi (ridotte di metà spessore) tagliate nel pezzo in direzione X, Y o Z: restano le pareti | Basso: operazioni 2D e una sola differenza 3D | **Proposta** (fase 1) |
 | b. Solchi | Si scavano solo le linee tra le celle: restano le celle in rilievo | Basso (stessa pipeline) | **Proposta** (modo del gruppo) |
 | c. Sulla faccia scelta | Il disegno parte dal piano di una faccia e dal suo contorno (sistema di riferimento della faccia) | Medio: serve il contorno della faccia | Fase 3 |
-| d. Reticolo 3D | Voronoi volumetrico: ogni lato diventa un cilindro dentro il solido, per alleggerire | Alto: le celle crescono col cubo del volume, migliaia di cilindri e di unioni | Solo con poche decine di celle, fase 3 |
+| d. Reticolo 3D (provato in 0.20.0 e tolto in 0.21.0) | Voronoi volumetrico: ogni lato diventa un cilindro dentro il solido, per alleggerire | Alto: le celle crescono col cubo del volume, migliaia di cilindri e di unioni | Solo con poche decine di celle, fase 3 |
 | e. Su superfici curve | Il pattern segue la superficie di un cilindro o di una sfera | Alto: richiede una parametrizzazione UV | Fuori ambito |
 
 ## Perché è fattibile

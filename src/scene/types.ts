@@ -197,25 +197,25 @@ export interface PatternFace {
 }
 
 /**
- * Parametri di "Applica pattern": un disegno (Voronoi casuale, esagoni, cerchi) tagliato nel pezzo a partire da una faccia,
- * oppure un reticolo Voronoi 3D dentro il pezzo. Tutto si ricava da qui (vedi src/scene/pattern.ts), quindi il gruppo
+ * Parametri di "Applica pattern": un disegno (Voronoi casuale, esagoni, cerchi, rombi, triangoli) tagliato nel pezzo a
+ * partire da una o più facce. Tutto si ricava da qui (vedi src/scene/pattern.ts), quindi il gruppo
  * resta modificabile e il codice OpenSCAD contiene le stesse celle del kernel.
  */
 export interface PatternParams {
   /** Versione dell'algoritmo casuale (src/scene/voronoi.ts): se cambia, i vecchi progetti cambierebbero disegno. */
   algorithm: number;
-  kind: 'voronoi' | 'hexagon' | 'circle' | 'lattice';
+  kind: 'voronoi' | 'hexagon' | 'circle' | 'diamond' | 'triangle';
   /** Fori: si tolgono le celle (restano le pareti); Solchi: si tolgono le pareti (restano le celle in rilievo). */
   mode: 'holes' | 'grooves';
   /** Seme del generatore casuale. */
   seed: number;
   /** Voronoi: numero di celle. */
   cells: number;
-  /** Voronoi e reticolo: 0 = casuale puro, 100 = celle uniformi. */
+  /** Voronoi: 0 = casuale puro, 100 = celle uniformi. */
   regularity: number;
-  /** Esagoni e cerchi: passo tra i centri, in mm. */
+  /** Esagoni, cerchi, rombi e triangoli: passo tra i centri, in mm. */
   size: number;
-  /** Esagoni e cerchi: rotazione della griglia, in gradi. */
+  /** Esagoni, cerchi, rombi e triangoli: rotazione della griglia, in gradi. */
   angle: number;
   /** Spessore della parete tra due celle, in mm. */
   wall: number;
@@ -223,14 +223,16 @@ export interface PatternParams {
   rounding: number;
   /** Cornice piena che resta attorno al disegno, in mm. */
   margin: number;
-  face: PatternFace;
+  /** Facce da cui parte il taglio (almeno una); ogni faccia ha il proprio disegno (seme + indice). */
+  faces: PatternFace[];
+  /** Solo nei progetti della 0.20.0: la faccia unica di allora (si converte in `faces`, vedi normalizePattern). */
+  face?: PatternFace;
   /** Profondità del taglio dalla faccia, in mm (0 = passante). */
   depth: number;
   /** Da una faccia sola o anche dalla faccia opposta (stessa profondità). */
   sides: 'one' | 'both';
-  /** Reticolo: numero di celle (poche decine) e diametro dei puntoni, in mm. */
-  latticeCells: number;
-  strut: number;
+  /** Solo durante lo strumento: anteprima con meno segmenti (più veloce). Non si salva e non cambia il codice. */
+  preview?: boolean;
   /** Ingombro del pezzo nel sistema del gruppo al momento dell'applicazione: dove si generano le celle. */
   bounds: { min: Vec3; max: Vec3 };
 }
