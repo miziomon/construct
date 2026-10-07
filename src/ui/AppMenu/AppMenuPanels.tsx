@@ -19,7 +19,7 @@ const SHORTCUTS: { title: string; rows: [string, string][] }[] = [
       ['Q', 'Seleziona'],
       ['W', 'Sposta'],
       ['E', 'Ruota'],
-      ['R', 'Ridimensiona con il mouse'],
+      ['R', 'Ridimensiona con il mouse (anche un gruppo di qualsiasi tipo, con scala per asse)'],
       ['T', 'Estrudi forme 2D con il mouse'],
     ],
   },
@@ -178,7 +178,7 @@ export default function AppMenuPanels({ panel, run }: { panel: Panel; run: (acti
       {panel === 'about' && (
           <>
             <p><strong>WebCAD</strong> <span data-testid="about-version">v{__APP_VERSION__}</span></p>
-            <p>Modellazione 3D da primitive con operazioni booleane, pensata per chi stampa in 3D. Piatto di stampa 256 × 256 mm, export STL e 3MF.</p>
+            <p>Modellazione 3D da primitive con operazioni booleane, pensata per chi stampa in 3D. Piatto di stampa modificabile dalla barra di stato (256 × 256 mm di default), export STL e 3MF.</p>
             <p>Costruito con React, three.js e manifold-3d. Sviluppato da MAVIDA.</p>
           </>
         )}

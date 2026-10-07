@@ -42,11 +42,16 @@ export function apply(m: Mat3, v: Vec3): Vec3 {
  */
 export type Mirror = [boolean, boolean, boolean];
 
-/** Trasformazione di un nodo: posizione, rotazione ed eventuale specchio. */
+/**
+ * Trasformazione di un nodo: posizione, rotazione ed eventuale specchio. `groupScale` esiste solo sui gruppi ridimensionati
+ * (vedi groupScale.ts): kernel e codice OpenSCAD la applicano per prima, ma non partecipa alla composizione delle
+ * trasformazioni (composeTransform e toLocalTransform la ignorano).
+ */
 export interface Transform {
   position: Vec3;
   rotation: Vec3;
   mirror?: Mirror;
+  groupScale?: Vec3;
 }
 
 /** Diagonale di D: -1 sugli assi specchiati, 1 sugli altri. */

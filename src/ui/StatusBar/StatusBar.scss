@@ -11,6 +11,23 @@
   font-size: 12px;
   color: color('text-muted');
 
+  &__bed {
+    padding: 2px 6px;
+    border: 1px solid transparent;
+    border-radius: $radius-sm;
+    background: transparent;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+    @include focus-ring;
+
+    &:hover {
+      border-color: color('border');
+      background: color('panel-raised');
+      color: color('text');
+    }
+  }
+
   &__spacer {
     flex: 1;
   }

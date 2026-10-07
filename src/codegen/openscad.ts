@@ -8,6 +8,7 @@ import { CORNER_SPHERE_SEGMENTS, twistDivisions } from '../scene/defaults';
 import { edgeProfile, endMargin, endOvershoot, endPlanesOf, halfSpaceMatrix, hasPerpendicularEnds } from '../scene/edgeProfile';
 import { resolveEnds } from '../scene/edgeEnds';
 import { stretchFactors } from '../scene/ellipse';
+import { isScaled, scaleOf } from '../scene/groupScale';
 import { circularStep, linearStep, normalizeArray } from '../scene/arrayPattern';
 import { cutReach, faceFrame, frameRect, normalizePattern, patternCells } from '../scene/pattern';
 import { isRotational, revolveParams, shapeContours, svgContours } from '../scene/shapes2d';
@@ -241,6 +242,8 @@ function transformLines(node: SceneNode): string[] {
   if (node.rotation.some((v) => v !== 0)) lines.push(`rotate(${vec(node.rotation)})`);
   // Lo specchio è il più interno (si applica per primo, come in x' = R·D·x + p)
   lines.push(...mirrorLines(node.mirror));
+  // La scala di un gruppo ridimensionato è la più interna di tutte (x' = R·D·S·x + p)
+  if (node.type === 'group' && isScaled(node)) lines.push(`scale(${vec(scaleOf(node))})`);
   // Il taglierino di un raccordo non si vede: non ha colore
   if (node.mode === 'solid' && !isCutter(node)) lines.push(`color(${rgb(node.color)})`);
   return lines;
@@ -260,6 +263,15 @@ function nodeLines(scene: Scene, node: SceneNode, depth: number, inherited: Inhe
   const pad = IND.repeat(depth);
 
   if (free && node.type === 'group' && node.op === 'group') {
+    // Un Raggruppa ridimensionato: la scala non si compone nelle trasformazioni dei figli, quindi i figli stanno dentro
+    // un blocco con la trasformazione del gruppo (e la sua scala) e non ereditano altro
+    if (isScaled(node)) {
+      const placed = inherited === NO_TRANSFORM ? node : composeTransform(inherited, node);
+      const head = transformLines({ ...node, position: placed.position.map((v) => round(v)) as Vec3, rotation: placed.rotation.map((v) => round(v)) as Vec3, mirror: placed.mirror, mode: 'hole' })
+        .map((l) => `${pad}${l}`);
+      head[head.length - 1] += ' {';
+      return [`${pad}// ${node.name} (gruppo ridimensionato: oggetti separati)`, ...head, ...node.children.flatMap((c) => nodeLines(scene, scene.nodes[c], depth + 1, NO_TRANSFORM, true)), `${pad}}`];
+    }
     const here = composeTransform(inherited, node);
     return [`${pad}// ${node.name} (gruppo: oggetti separati)`, ...node.children.flatMap((c) => nodeLines(scene, scene.nodes[c], depth, here, true))];
   }

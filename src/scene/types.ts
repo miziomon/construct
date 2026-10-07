@@ -250,6 +250,8 @@ export type GroupNode = BaseNode & {
   shell?: ShellParams;
   /** Solo per `op: 'array'` (Ripetizione): l'unico figlio è l'originale. */
   array?: ArrayParams;
+  /** Ridimensionamento del gruppo per asse (vedi groupScale.ts); assente = 1, 1, 1. */
+  groupScale?: Vec3;
   /** Solo per `op: 'pattern'` (Applica pattern): l'unico figlio è il pezzo. */
   pattern?: PatternParams;
 };

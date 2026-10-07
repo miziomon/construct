@@ -1,10 +1,14 @@
 import { useMemo } from 'react';
 import { useResultStore } from '../../kernel/useKernel';
+import { useUiStore } from '../uiStore';
+import { BedDialog } from './BedDialog';
 import './StatusBar.scss';
 
 /** Barra di stato: misure e validità della mesh complessiva dei solid (utile prima di stampare). */
 export function StatusBar() {
   const { meshes, ms, busy, error } = useResultStore();
+  const bedSize = useUiStore((s) => s.bedSize);
+  const setBedDialogOpen = useUiStore((s) => s.setBedDialogOpen);
 
   const stats = useMemo(() => {
     const solids = meshes.filter((m) => !m.isHole && !m.empty);
@@ -27,6 +31,10 @@ export function StatusBar() {
 
   return (
     <footer className="status-bar">
+      {/* Dimensioni del piano di stampa: un clic apre la finestra per cambiarle */}
+      <button type="button" className="status-bar__item status-bar__bed" title="Dimensioni del piano di stampa: clicca per modificarle" onClick={() => setBedDialogOpen(true)}>
+        Piano {bedSize.width} × {bedSize.depth} mm
+      </button>
       {error ? (
         <span className="status-bar__item status-bar__item--error">Errore del kernel: {error}</span>
       ) : stats ? (
@@ -42,6 +50,7 @@ export function StatusBar() {
       <span className="status-bar__spacer" />
       <span className="status-bar__item">{busy ? 'Calcolo…' : `Calcolo ${ms.toFixed(0)} ms`}</span>
       <span className="status-bar__item">v{__APP_VERSION__}</span>
+      <BedDialog />
     </footer>
   );
 }

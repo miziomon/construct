@@ -83,7 +83,7 @@ export class Evaluator {
       });
       // Il Guscio ha in più i suoi spessori (e l'ingombro usato dalla cavità scalata)
       const shell = node.op === 'shell' ? `,${JSON.stringify(node.shell ?? null)}` : node.op === 'array' ? `,${JSON.stringify(node.array ?? null)}` : node.op === 'pattern' ? `,${JSON.stringify(node.pattern ?? null)}` : '';
-      return `G(${node.op},${node.position},${node.rotation}${node.mirror ? `,m${node.mirror.map(Number)}` : ''}${shell})[${kids.join('|')}]`;
+      return `G(${node.op},${node.position},${node.rotation}${node.mirror ? `,m${node.mirror.map(Number)}` : ''}${node.groupScale ? `,s${node.groupScale}` : ''}${shell})[${kids.join('|')}]`;
     }
     const { id: _id, name: _name, color: _color, mode: _mode, locked: _locked, lockRatio: _lockRatio, ...geometry } = node;
     // Il taglierino che chiude l'estremità su uno smusso dipende anche dai valori correnti di quello smusso
@@ -105,11 +105,13 @@ export class Evaluator {
   }
 
   /**
-   * Porta un Manifold dal sistema locale di un nodo a quello del genitore: prima lo specchio (per asse), poi la
+   * Porta un Manifold dal sistema locale di un nodo a quello del genitore: prima la scala (solo gruppi), poi lo specchio (per asse), la
    * rotazione e infine la traslazione. Restituisce un nuovo Manifold; `m` resta del chiamante.
    */
   private place(m: Manifold, t: Transform): Manifold {
     let current = m;
+    // Un gruppo ridimensionato: la scala per asse è la prima operazione, nel suo sistema locale
+    if (t.groupScale?.some((v) => v !== 1)) current = current.scale(t.groupScale);
     t.mirror?.forEach((on, axis) => {
       if (!on) return;
       // Manifold::Mirror rovescia anche il verso dei triangoli: il solido resta valido

@@ -12,6 +12,9 @@ import { cornerSphere } from '../../scene/cornerProfile';
 import { EDGE_SEGMENTS, maxFilletRadius } from '../../scene/edgeProfile';
 import { CORNER_SPHERE_SEGMENTS, MAX_SEGMENTS, MIN_SEGMENTS, MIN_SPHERE_SEGMENTS, SEGMENT_PRESETS } from '../../scene/defaults';
 import { BED_SIZE } from '../../scene/types';
+import { isScaled, normalizeScale, scaleOf, setGroupScale } from '../../scene/groupScale';
+import { round } from '../../scene/math';
+import { useUiStore } from '../uiStore';
 import type { CornerNode, EdgeNode, GroupNode, MeshNode, PrimitiveNode, SceneNode, Shape2DNode, ShellParams, Vec3 } from '../../scene/types';
 import { shellQuality } from '../../scene/shell';
 import { NumberField } from '../NumberField/NumberField';
@@ -55,6 +58,9 @@ export function PropertiesPanel() {
   const locked = useSceneStore((s) => s.selection.length === 1 && isLocked(s.scene, s.selection[0]));
   const arrayToolActive = useArrayTool((s) => s.active);
   const patternToolActive = usePatternTool((s) => s.active);
+  // Metà piatto su X e Y: i cursori della posizione coprono tutto il piano
+  const bedSize = useUiStore((s) => s.bedSize);
+  const bedHalf = [bedSize.width / 2, bedSize.depth / 2];
 
   if (selection.length === 0) return <p className="properties__empty">Seleziona un oggetto per modificarne le proprietà.</p>;
   if (!node) return <p className="properties__empty">{selection.length} oggetti selezionati. Ctrl+G li raggruppa (restano separati), U li unisce in un solo solido.</p>;
@@ -151,8 +157,8 @@ export function PropertiesPanel() {
             key={a}
             label={a}
             unit="mm"
-            min={i === 2 ? -50 : -BED_SIZE / 2}
-            max={i === 2 ? BED_SIZE : BED_SIZE / 2}
+            min={i === 2 ? -50 : -bedHalf[i]}
+            max={i === 2 ? BED_SIZE : bedHalf[i]}
             tooltip={[TIPS.posX, TIPS.posY, TIPS.posZ][i]}
             disabled={locked}
             value={node.position[i]}
@@ -183,6 +189,7 @@ export function PropertiesPanel() {
       {node.type === 'edge' && <EdgeFields node={node} patch={patch} locked={locked} />}
       {node.type === 'corner' && <CornerFields node={node} patch={patch} locked={locked} />}
       {/* Con lo strumento Serie aperto gli stessi campi sono già nel suo pannello */}
+      {node.type === 'group' && <GroupScaleFields node={node} patch={patch} locked={locked} />}
       {node.type === 'group' && node.op === 'array' && node.array && !arrayToolActive && (
         <Section title="Ripetizione">
           <ArrayFields params={node.array} disabled={locked} onChange={(change) => patch({ array: { ...node.array!, ...change } })} />
@@ -385,6 +392,43 @@ function EdgeFields({ node, patch, locked }: { node: EdgeNode; patch: (p: Partia
             onCommit={(v) => patch({ distance2: v })}
           />
         </>
+      )}
+    </Section>
+  );
+}
+
+/**
+ * Ridimensionamento di un gruppo di qualsiasi tipo: scala per asse in percentuale, applicata a tutto il contenuto
+ * (come il gizmo di Ridimensiona, R). Il centro della base dell'ingombro resta fermo.
+ */
+function GroupScaleFields({ node, patch, locked }: { node: GroupNode; patch: (p: Partial<GroupNode>) => void; locked: boolean }) {
+  const scale = scaleOf(node);
+  const apply = (next: Vec3) => {
+    // Ingombro attuale (già scalato) dal calcolo del kernel; senza mesh si cambia solo la scala
+    const box = localBoundsOf(useSceneStore.getState().scene, node.id);
+    const result = box ? setGroupScale(node, box, next) : { scale: normalizeScale(next), position: node.position };
+    patch({ groupScale: result.scale, position: result.position });
+  };
+  return (
+    <Section title="Dimensioni del gruppo">
+      <p className="properties__note">Scala per asse applicata a tutto il contenuto, come con Ridimensiona (R). Il centro della base resta fermo.</p>
+      {AXES.map((axis, i) => (
+        <NumberField
+          key={axis}
+          label={axis}
+          unit="%"
+          min={0.1}
+          max={100000}
+          step={1}
+          disabled={locked}
+          value={round(scale[i] * 100, 2)}
+          onCommit={(v) => apply(scale.map((old, j) => (j === i ? v / 100 : old)) as Vec3)}
+        />
+      ))}
+      {isScaled(node) && (
+        <button type="button" className="properties__action" disabled={locked} onClick={() => apply([1, 1, 1])}>
+          Ripristina 100%
+        </button>
       )}
     </Section>
   );

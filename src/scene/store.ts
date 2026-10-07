@@ -6,6 +6,7 @@ import { randomColor } from './color';
 import { lastShape, rememberShape } from './lastValues';
 import { layFlatPatch } from './layFlat';
 import { DEFAULT_COLOR, PRIMITIVE_LABELS, SHAPE2D_LABELS, halfHeight, primitiveDefaults, shape2dDefaults } from './defaults';
+import { isScaled } from './groupScale';
 import { composeTransform, conjugate, eulerToMatrix, matrixToEuler, normalizeMirror, round, toLocalTransform } from './math';
 import type { Mirror, Transform } from './math';
 
@@ -116,24 +117,37 @@ export function worldTransform(scene: Scene, id: string): Transform {
   return world;
 }
 
+/** Vero se qualche antenato del nodo è un gruppo ridimensionato. */
+function inScaledGroup(scene: Scene, id: string): boolean {
+  for (let cur = parentOf(scene, id); cur; cur = parentOf(scene, cur)) {
+    const g = scene.nodes[cur];
+    if (g?.type === 'group' && isScaled(g)) return true;
+  }
+  return false;
+}
+
 /**
  * Un nodo si può spostare in un gruppo (o alla radice se `parentId` è null) se né lui né la destinazione sono bloccati
  * e la destinazione è un gruppo che non coincide con il nodo né con un suo discendente.
  */
 export function canMoveInto(scene: Scene, id: string, parentId: string | null): boolean {
   if (!scene.nodes[id] || isLocked(scene, id)) return false;
+  // La scala di un gruppo ridimensionato non si compone nelle trasformazioni dei figli: spostare un nodo da o dentro un
+  // gruppo ridimensionato lo farebbe saltare (prima si riporta la scala al 100%)
+  if (inScaledGroup(scene, id)) return false;
   if (parentId === null) return true;
   const parent = scene.nodes[parentId];
   if (parent?.type !== 'group' || isLocked(scene, parentId)) return false;
   // Un Guscio svuota un solo solido: non accetta altri figli
   if (parent.op === 'shell' || parent.op === 'array' || parent.op === 'pattern') return false;
+  if (isScaled(parent) || inScaledGroup(scene, parentId)) return false;
   return parentId !== id && !descendants(scene, id).includes(parentId);
 }
 
 /** Etichetta di una modifica generica: il verbo dipende dai campi toccati. */
 function updateLabel(name: string | undefined, patch: object): string {
   const keys = Object.keys(patch);
-  const verb = keys.includes('position') ? 'Sposta' : keys.includes('rotation') ? 'Ruota' : keys.includes('name') ? 'Rinomina' : keys.includes('color') ? 'Colore' : 'Modifica';
+  const verb = keys.includes('groupScale') ? 'Ridimensiona' : keys.includes('position') ? 'Sposta' : keys.includes('rotation') ? 'Ruota' : keys.includes('name') ? 'Rinomina' : keys.includes('color') ? 'Colore' : 'Modifica';
   return name ? `${verb} ${name}` : verb;
 }
 
@@ -438,7 +452,8 @@ export const useSceneStore = create<SceneState>()(
           const released: string[] = [];
           for (const id of selectedRoots(s.scene, s.selection)) {
             const g = s.scene.nodes[id];
-            if (g.type !== 'group' || isLocked(s.scene, id)) continue;
+            // Un gruppo ridimensionato resta com'è: i figli non possono assorbirne la scala
+            if (g.type !== 'group' || isLocked(s.scene, id) || isScaled(g)) continue;
             // Ricompone la trasformazione del gruppo su ogni figlio per non spostarlo nel mondo
             for (const cid of g.children) {
               const child = s.scene.nodes[cid];

@@ -18,6 +18,20 @@ I messaggi di commit seguono i [Conventional Commits](https://www.conventionalco
 
 ## [Non rilasciato]
 
+## [0.22.0] - 2026-10-07
+
+### Aggiunto
+- **Dimensioni del piano di stampa** nella barra di stato, prima dell'ingombro ("Piano 256 × 256 mm"). Un clic apre una finestra per cambiare larghezza (X) e profondità (Y), da 20 a 2000 mm, con il pulsante "Predefinito 256 × 256". Piano, griglia, bordo e limiti dei cursori della posizione seguono le nuove misure, che restano salvate nel browser.
+- **Ridimensiona (R) su qualsiasi gruppo**: Raggruppa, Unione, Differenza, Intersezione, Inviluppo convesso, Guscio, Ripetizione e Pattern si ridimensionano con il gizmo come una forma primitiva, applicando la scala a tutto il contenuto (anche per un solo asse). Il centro della base resta fermo e le misure si arrotondano a 0,5 mm (0,01 mm con Maiusc). Un solo passo di Annulla.
+- Nuova sezione **Dimensioni del gruppo** nelle proprietà di ogni gruppo: scala per asse in percentuale e pulsante "Ripristina 100%".
+- Nel codice OpenSCAD un gruppo ridimensionato ha `scale([sx, sy, sz])` come modificatore più interno; un Raggruppa ridimensionato esce come blocco con la sua trasformazione e i figli dentro.
+
+### Modificato
+- Un nodo non può essere trascinato dentro o fuori da un gruppo ridimensionato, e Separa lascia com'è un gruppo ridimensionato: prima si riporta la scala al 100%, altrimenti i figli salterebbero.
+
+### Corretto
+- Il ridimensionamento di un gruppo con risultato vuoto non produce più posizioni non valide.
+
 ## [0.21.0] - 2026-10-07
 
 ### Aggiunto

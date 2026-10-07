@@ -6,6 +6,20 @@ export type Theme = 'light' | 'dark';
 /** Piatto di stampa: tutto visibile, senza la base piena (restano griglia e bordo), oppure nascosto del tutto. */
 export type BedMode = 'full' | 'grid' | 'none';
 
+/** Dimensioni del piano di stampa in mm (larghezza su X, profondità su Y). */
+export interface BedSize {
+  width: number;
+  depth: number;
+}
+
+/** Piano predefinito e limiti accettati: sotto 20 mm non serve a nulla, sopra 2000 mm la griglia si ingolfa. */
+export const DEFAULT_BED: BedSize = { width: 256, depth: 256 };
+export const BED_LIMITS = { min: 20, max: 2000 } as const;
+
+/** Dimensione valida: numero finito entro i limiti, arrotondato al decimo di mm. Altrimenti `fallback`. */
+const cleanBedSide = (value: unknown, fallback: number): number =>
+  typeof value === 'number' && Number.isFinite(value) ? Math.round(Math.min(BED_LIMITS.max, Math.max(BED_LIMITS.min, value)) * 10) / 10 : fallback;
+
 const NEXT_BED: Record<BedMode, BedMode> = { full: 'grid', grid: 'none', none: 'full' };
 
 /** Tendine della barra strumenti che si possono aprire anche da tastiera. */
@@ -44,6 +58,12 @@ interface UiState {
   ghostOps: boolean;
   theme: Theme;
   bedMode: BedMode;
+  /** Dimensioni del piano di stampa (si salvano in localStorage). */
+  bedSize: BedSize;
+  setBedSize: (size: Partial<BedSize>) => void;
+  /** Modale delle dimensioni del piano aperta (non si salva). */
+  bedDialogOpen: boolean;
+  setBedDialogOpen: (open: boolean) => void;
   /** Tab della libreria aperta (si salva in localStorage). */
   libraryTab: LibraryTab;
   setLibraryTab: (tab: LibraryTab) => void;
@@ -85,6 +105,10 @@ export const useUiStore = create<UiState>()(
       ghostOps: false,
       theme: 'light',
       bedMode: 'full',
+      bedSize: DEFAULT_BED,
+      setBedSize: (size) => set({ bedSize: { width: cleanBedSide(size.width, get().bedSize.width), depth: cleanBedSide(size.depth, get().bedSize.depth) } }),
+      bedDialogOpen: false,
+      setBedDialogOpen: (bedDialogOpen) => set({ bedDialogOpen }),
       libraryTab: 'shapes3d',
       setLibraryTab: (libraryTab) => set({ libraryTab }),
       libraryGroupsOpen: {},
@@ -113,7 +137,7 @@ export const useUiStore = create<UiState>()(
     {
       name: 'webcad:ui',
       // La modale del codice non si ripristina all'avvio
-      partialize: (s) => ({ theme: s.theme, bedMode: s.bedMode, libraryTab: s.libraryTab, libraryGroupsOpen: s.libraryGroupsOpen, libraryFavorites: s.libraryFavorites, libraryRecent: s.libraryRecent }),
+      partialize: (s) => ({ theme: s.theme, bedMode: s.bedMode, bedSize: s.bedSize, libraryTab: s.libraryTab, libraryGroupsOpen: s.libraryGroupsOpen, libraryFavorites: s.libraryFavorites, libraryRecent: s.libraryRecent }),
       // Si accettano solo i campi noti e validi: un valore salvato da una versione precedente (o rovinato) non rompe l'avvio
       merge: (saved, current) => {
         const s = (saved ?? {}) as Partial<UiState>;
@@ -121,6 +145,7 @@ export const useUiStore = create<UiState>()(
           ...current,
           theme: s.theme === 'dark' ? 'dark' : current.theme,
           bedMode: s.bedMode && s.bedMode in NEXT_BED ? s.bedMode : current.bedMode,
+          bedSize: { width: cleanBedSide(s.bedSize?.width, DEFAULT_BED.width), depth: cleanBedSide(s.bedSize?.depth, DEFAULT_BED.depth) },
           libraryTab: s.libraryTab && LIBRARY_TABS.includes(s.libraryTab) ? s.libraryTab : current.libraryTab,
           // Solo valori booleani: il resto del localStorage non è fidato
           libraryGroupsOpen: Object.fromEntries(Object.entries(s.libraryGroupsOpen ?? {}).filter(([, v]) => typeof v === 'boolean')),

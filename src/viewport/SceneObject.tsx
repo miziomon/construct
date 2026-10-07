@@ -10,6 +10,8 @@ import { useViewportPalette } from './palette';
 import { round } from '../scene/math';
 import { halfHeight } from '../scene/defaults';
 import { applyScale } from '../scene/resize';
+import { resizeGroup } from '../scene/groupScale';
+import { localBounds } from '../scene/shell';
 import { cornerAt, faceMap } from '../scene/edgeTool';
 import { useEdgeTool } from '../ui/EdgeTool/edgeToolStore';
 import { useMeasure } from '../ui/Measure/measureStore';
@@ -19,6 +21,7 @@ import { layOnFaceAndDrop } from '../kernel/placement';
 import { notify } from '../ui/notify/notifyStore';
 import { snapToMesh } from '../scene/snap';
 import type { Vec3 } from '../scene/types';
+import type { Transform } from '../scene/math';
 
 const SNAP_MOVE = 1; // mm
 const SNAP_ROTATE = THREE.MathUtils.degToRad(15);
@@ -264,9 +267,15 @@ export function SceneObject({ rootId, meshes, selection, locked, showGizmo }: Pr
   };
 
   const scaling = gizmoMode === 'resize' || gizmoMode === 'extrude';
-  // Solo forme con misure proprie si ridimensionano (non gruppi né mesh); Estrudi solo le forme 2D
+  // Le forme con misure proprie si ridimensionano con le loro misure; un gruppo di qualsiasi tipo con una scala per asse
+  // (solo in Ridimensiona); le mesh importate no. Estrudi solo le forme 2D
   // Estrudi (T) agisce sull'altezza delle forme 2D: un'estrusione rotazionale non ha un'altezza da trascinare
-  const resizable = (node.type === 'primitive' || node.type === 'shape2d') && (gizmoMode !== 'extrude' || (node.type === 'shape2d' && node.extrusion !== 'rotate'));
+  const resizable =
+    ((node.type === 'primitive' || node.type === 'shape2d') && (gizmoMode !== 'extrude' || (node.type === 'shape2d' && node.extrusion !== 'rotate'))) ||
+    (node.type === 'group' && gizmoMode === 'resize');
+
+  /** Ingombro del gruppo nel suo sistema locale (già scalato): il centro della base è il punto fisso del ridimensionamento. */
+  const groupBox = () => localBounds(meshes.filter((m) => !m.empty), node as Transform);
 
   /** Scala letta dal gizmo; in modalità Estrudi conta solo l'asse Z (il cubetto centrale non deve allargare il profilo). */
   const currentScale = (p: THREE.Object3D): Vec3 => (gizmoMode === 'extrude' ? [1, 1, p.scale.z] : [p.scale.x, p.scale.y, p.scale.z]);
@@ -276,6 +285,20 @@ export function SceneObject({ rootId, meshes, selection, locked, showGizmo }: Pr
     const p = proxy;
     const w = wrapper.current;
     if (!p || !w) return;
+    if (scaling && node.type === 'group') {
+      // Gruppo: la scala sta attorno al centro della base dell'ingombro (nel sistema R del gruppo, con lo specchio applicato)
+      const [sx, sy, sz] = currentScale(p);
+      const box = groupBox();
+      if (![...box.min, ...box.max].every(Number.isFinite)) return;
+      const sign = (axis: number) => (node.mirror?.[axis] ? -1 : 1);
+      const pivot = new THREE.Vector3(((box.min[0] + box.max[0]) / 2) * sign(0), ((box.min[1] + box.max[1]) / 2) * sign(1), box.min[2] * sign(2));
+      const base = new THREE.Matrix4().makeTranslation(pivot.x, pivot.y, pivot.z);
+      const local = base.clone().multiply(new THREE.Matrix4().makeScale(sx, sy, sz)).multiply(base.clone().invert());
+      const world = nodeMatrix(node.position, node.rotation);
+      w.matrix.copy(world).multiply(local).multiply(world.clone().invert());
+      w.matrixWorldNeedsUpdate = true;
+      return;
+    }
     if (scaling && (node.type === 'primitive' || node.type === 'shape2d')) {
       // Scala attorno al centro della base (punto più basso, a -hz in locale): la base resta ferma
       const [sx, sy, sz] = currentScale(p);
@@ -295,6 +318,15 @@ export function SceneObject({ rootId, meshes, selection, locked, showGizmo }: Pr
   const onCommit = () => {
     const p = proxy;
     if (!p) return;
+    if (scaling && node.type === 'group') {
+      // Un gruppo si ridimensiona nell'insieme: scala per asse e nuova posizione (il centro della base resta fermo)
+      const scale = currentScale(p);
+      p.scale.set(1, 1, 1);
+      if (scale.every((v) => v === 1)) return;
+      const result = resizeGroup(node, groupBox(), scale, shift ? 0.01 : 0.5);
+      updateNode(rootId, { groupScale: result.scale, position: result.position } as never);
+      return;
+    }
     if (scaling) {
       if (node.type !== 'primitive' && node.type !== 'shape2d') return;
       const scale = currentScale(p);

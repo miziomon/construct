@@ -336,6 +336,8 @@ test('il tasto P cicla il piatto e ogni stato cambia davvero quello che è diseg
 });
 
 test('ogni pulsante della toolbar ha il tooltip dettagliato con la scorciatoia', async ({ page }) => {
+  // Ogni tooltip compare dopo 400 ms: con trenta pulsanti il tempo standard non basta
+  test.setTimeout(120_000);
   await addShape(page, 'Cubo');
   const buttons = page.locator('header.toolbar .tooltip-host button');
   const count = await buttons.count();
@@ -2097,4 +2099,120 @@ test('Pattern: avviso se i calcoli sono pesanti e anteprima semplificata, che no
   const scene = await sceneState(page);
   expect(scene.nodes[scene.rootIds[0]].pattern.cells).toBe(400);
   expect(scene.nodes[scene.rootIds[0]].pattern.preview).toBeUndefined();
+});
+
+type Page = import('@playwright/test').Page;
+
+/** Larghezza (X) dell'insieme di tutte le mesh calcolate. */
+const totalWidth = (page: Page) =>
+  page.evaluate(() => {
+    const meshes = window.__webcad!.results.getState().meshes.filter((m) => !m.empty);
+    return Math.max(...meshes.map((m) => m.bbox.max[0])) - Math.min(...meshes.map((m) => m.bbox.min[0]));
+  });
+
+test.describe('Ridimensiona (R) su un gruppo di qualsiasi tipo', () => {
+  /** Due oggetti alla radice, selezionati insieme: serve per le operazioni che combinano più oggetti. */
+  async function twoShapes(page: Page) {
+    await addShape(page, 'Cubo');
+    await addShape(page, 'Sfera');
+    await page.evaluate(() => window.__webcad!.store.getState().select(window.__webcad!.store.getState().scene.rootIds));
+  }
+  const cases: [string, (page: Page) => Promise<void>, string][] = [
+    ['Raggruppa', async (page) => { await twoShapes(page); await page.keyboard.press('Control+g'); }, 'group'],
+    ['Unione', async (page) => { await twoShapes(page); await page.keyboard.press('u'); }, 'union'],
+    ['Inviluppo convesso', async (page) => { await twoShapes(page); await page.keyboard.press('j'); }, 'hull'],
+    ['Differenza', async (page) => { await twoShapes(page); await page.evaluate(() => { const s = window.__webcad!.store.getState(); const ball = s.scene.rootIds.find((id) => s.scene.nodes[id].type === 'primitive' && (s.scene.nodes[id] as { kind: string }).kind === 'sphere')!; s.updateNode(ball, { radius: 4 } as never); s.select([s.scene.rootIds.find((id) => id !== ball)!, ball]); s.combineSelected('difference'); }); }, 'difference'],
+    ['Intersezione', async (page) => { await twoShapes(page); await page.evaluate(() => window.__webcad!.store.getState().combineSelected('intersection')); }, 'intersection'],
+    ['Guscio', async (page) => { await addShape(page, 'Cubo'); await page.keyboard.press('g'); await page.getByRole('region', { name: 'Guscio' }).getByRole('button', { name: 'OK' }).click(); }, 'shell'],
+    ['Ripetizione', async (page) => { await addShape(page, 'Cubo'); await page.keyboard.press('o'); await page.getByRole('region', { name: 'Serie' }).getByRole('button', { name: 'OK' }).click(); }, 'array'],
+    ['Pattern', async (page) => { await addShape(page, 'Cubo'); await page.keyboard.press('z'); await page.getByRole('region', { name: 'Pattern' }).getByRole('button', { name: 'OK' }).click(); }, 'pattern'],
+  ];
+
+  for (const [name, setup, op] of cases) {
+    test(`${name}: la maniglia X del gizmo allarga tutto il gruppo`, async ({ page }) => {
+      await setup(page);
+      await settled(page);
+      const scene = await sceneState(page);
+      const id = scene.rootIds[0];
+      expect(scene.nodes[id]).toMatchObject({ type: 'group', op });
+      const before = await totalWidth(page);
+      await page.evaluate((gid) => window.__webcad!.store.getState().select([gid]), id);
+      await page.keyboard.press('r');
+      await page.waitForTimeout(150);
+      await dragGizmoAxis(page, scene.nodes[id].position, 'X', 60);
+      await settled(page);
+      const after = (await sceneState(page)).nodes[id];
+      expect(after.groupScale?.[0], 'scala X del gruppo').toBeGreaterThan(1);
+      expect(after.groupScale?.[1] ?? 1).toBe(1);
+      await expect.poll(() => totalWidth(page)).toBeGreaterThan(before * 1.1);
+      await expect(page.locator('.status-bar')).toContainText('Mesh valida');
+      // Un solo passo di Annulla: tutto torna com'era
+      await page.keyboard.press('Control+z');
+      await settled(page);
+      expect((await sceneState(page)).nodes[id].groupScale).toBeUndefined();
+      expect(await totalWidth(page)).toBeCloseTo(before, 2);
+    });
+  }
+
+  test('le dimensioni si cambiano anche dalle proprietà e il codice ha scale()', async ({ page }) => {
+    await twoShapes(page);
+    await page.keyboard.press('u');
+    await settled(page);
+    const id = (await sceneState(page)).rootIds[0];
+    const before = await totalWidth(page);
+    const x = page.locator('section', { has: page.getByText('Dimensioni del gruppo') }).locator('.number-field__input').first();
+    await x.fill('200');
+    await x.press('Enter');
+    await settled(page);
+    expect((await sceneState(page)).nodes[id].groupScale).toEqual([2, 1, 1]);
+    expect(await totalWidth(page)).toBeCloseTo(before * 2, 1);
+    expect(await readCode(page)).toContain('scale([2, 1, 1])');
+    await page.getByRole('button', { name: 'Ripristina 100%' }).click();
+    await settled(page);
+    expect((await sceneState(page)).nodes[id].groupScale).toBeUndefined();
+    expect(await totalWidth(page)).toBeCloseTo(before, 1);
+  });
+});
+
+test('Piano di stampa: le dimensioni stanno nella barra di stato, prima dell\'ingombro, e si cambiano da una modale', async ({ page }) => {
+  await addShape(page, 'Cubo');
+  const status = page.locator('.status-bar');
+  const items = status.locator('.status-bar__item');
+  await expect(items.first()).toHaveText('Piano 256 × 256 mm');
+  await expect(items.nth(1)).toContainText('Ingombro');
+  const plate = () => page.evaluate(() => {
+    const geometry = (window.__r3f!.scene.getObjectByName('bed-plate') as unknown as { geometry: { parameters: { width: number; height: number } } }).geometry;
+    return [geometry.parameters.width, geometry.parameters.height];
+  });
+  expect(await plate()).toEqual([256, 256]);
+
+  await status.getByRole('button', { name: /Piano 256/ }).click();
+  const dialog = page.getByRole('dialog', { name: 'Dimensioni del piano' });
+  await expect(dialog).toBeVisible();
+  const width = dialog.locator('.number-field', { hasText: 'Larghezza X' }).locator('input');
+  const depth = dialog.locator('.number-field', { hasText: 'Profondità Y' }).locator('input');
+  await width.fill('300');
+  await width.press('Enter');
+  // Annulla non cambia nulla
+  await dialog.getByRole('button', { name: 'Annulla' }).click();
+  await expect(status.getByRole('button')).toHaveText('Piano 256 × 256 mm');
+
+  await status.getByRole('button', { name: /Piano 256/ }).click();
+  await width.fill('300');
+  await width.press('Enter');
+  await depth.fill('180');
+  await depth.press('Enter');
+  await dialog.getByRole('button', { name: 'Applica' }).click();
+  await expect(dialog).toBeHidden();
+  await expect(status.getByRole('button')).toHaveText('Piano 300 × 180 mm');
+  await expect.poll(plate).toEqual([300, 180]);
+
+  // Resta dopo il ricaricamento, e "Predefinito" riporta 256 × 256
+  await page.reload();
+  await page.waitForFunction(() => !!window.__webcad && !!window.__r3f);
+  await expect(status.getByRole('button')).toHaveText('Piano 300 × 180 mm');
+  await status.getByRole('button').click();
+  await dialog.getByRole('button', { name: /Predefinito/ }).click();
+  await dialog.getByRole('button', { name: 'Applica' }).click();
+  await expect(status.getByRole('button')).toHaveText('Piano 256 × 256 mm');
 });

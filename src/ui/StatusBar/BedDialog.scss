@@ -1,0 +1,55 @@
+@use '../../styles/abstracts' as *;
+
+.bed-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: $space-3;
+  min-width: 320px;
+
+  &__text {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.45;
+    color: color('text-muted');
+  }
+
+  &__fields {
+    display: flex;
+    flex-direction: column;
+    gap: $space-2;
+  }
+
+  &__actions {
+    display: flex;
+    align-items: center;
+    gap: $space-2;
+  }
+
+  &__spacer {
+    flex: 1;
+  }
+
+  &__button {
+    padding: 6px 12px;
+    border: 1px solid color('border');
+    border-radius: $radius-md;
+    background: color('bg');
+    font-size: 13px;
+    @include focus-ring;
+
+    &:hover {
+      background: color('panel-raised');
+    }
+
+    &--primary {
+      border-color: color('accent');
+      background: color('accent');
+      color: #fff;
+
+      &:hover {
+        background: color('accent');
+        filter: brightness(1.08);
+      }
+    }
+  }
+}
