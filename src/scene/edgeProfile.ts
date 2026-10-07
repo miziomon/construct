@@ -1,10 +1,11 @@
+import { MIN_SEGMENTS } from './defaults';
 import type { EdgeNode, EndPlane, Vec3 } from './types';
 
 /** Funzioni pure del taglierino di raccordo e smusso, condivise da kernel e generatore OpenSCAD (così non divergono). */
 
 type Vec2 = [number, number];
 
-/** Segmenti del cerchio di un raccordo (stesso valore nel kernel e nel codice OpenSCAD). */
+/** Segmenti predefiniti del cerchio di un raccordo (stesso valore nel kernel e nel codice OpenSCAD). */
 export const EDGE_SEGMENTS = 64;
 
 /** Misura minima accettata: evita profili degeneri. */
@@ -13,7 +14,7 @@ export const MIN_EDGE_SIZE = 0.01;
 /** Estremità dello spigolo tagliate da un piano obliquo oltre questa inclinazione non si estrudono più in modo sicuro. */
 const MAX_TILT_RATIO = 50;
 
-type ProfileSource = Pick<EdgeNode, 'treatment' | 'angle' | 'radius' | 'distance1' | 'distance2'>;
+type ProfileSource = Pick<EdgeNode, 'treatment' | 'angle' | 'radius' | 'distance1' | 'distance2' | 'segments'>;
 
 export interface EdgeProfile {
   /** Poligono in senso antiorario nel piano XY locale (apice nell'origine, bisettrice lungo +X). */
@@ -30,14 +31,21 @@ const halfAngle = (angleDeg: number) => (Math.min(179, Math.max(1, angleDeg)) * 
  * (area r²·(cot(β/2) − (π − β)/2)). Smusso: triangolo tra l'apice e i due punti a distanza d1 e d2 lungo le facce.
  */
 export function edgeProfile(p: ProfileSource): EdgeProfile {
+  // Semi-apertura dell'angolo: tutto il profilo è espresso rispetto alla bisettrice (asse +X)
   const h = halfAngle(p.angle);
   const [cos, sin] = [Math.cos(h), Math.sin(h)];
   if (p.treatment === 'fillet') {
     const r = Math.max(MIN_EDGE_SIZE, p.radius);
+    // Distanza dall'apice ai punti di tangenza del cerchio con le due facce
     const d = r / Math.tan(h);
+    // Il cerchio ha `segments` lati sull'intero giro (come $fn): meno lati = raccordo più sfaccettato.
+    // Si tengono almeno MIN_SEGMENTS lati (un cerchio a 2 lati non esiste) e un numero intero.
+    const segments = Math.max(MIN_SEGMENTS, Math.round(p.segments ?? EDGE_SEGMENTS));
     return {
+      // Triangolo apice + due punti di tangenza: il cerchio verrà sottratto da questo poligono
       polygon: [[0, 0], [d * cos, -d * sin], [d * cos, d * sin]],
-      circle: { center: [r / sin, 0], radius: r, segments: EDGE_SEGMENTS },
+      // Centro del cerchio sulla bisettrice, a distanza r/sin(h) dall'apice
+      circle: { center: [r / sin, 0], radius: r, segments },
     };
   }
   const d1 = Math.max(MIN_EDGE_SIZE, p.distance1);
@@ -64,9 +72,19 @@ export function chamferAngle(distance1: number, distance2: number, openingDeg: n
 /** Raggio massimo del raccordo: la distanza dei punti di tangenza dallo spigolo non può superare la larghezza delle facce. */
 export const maxFilletRadius = (p: Pick<EdgeNode, 'angle' | 'reach'>) => p.reach * Math.tan(halfAngle(p.angle));
 
-/** Piani di chiusura con i valori predefiniti (perpendicolari, a Z = 0 e Z = lunghezza) al posto dei null. */
-export function endPlanesOf(p: Pick<EdgeNode, 'ends' | 'length'>): [EndPlane, EndPlane] {
-  return [p.ends[0] ?? { normal: [0, 0, -1], offset: 0 }, p.ends[1] ?? { normal: [0, 0, 1], offset: p.length }];
+/**
+ * Abbondanza (mm) del taglierino oltre le estremità perpendicolari. Un'estremità libera sta esattamente sulla faccia del
+ * pezzo: con gli errori di arrotondamento della rotazione il taglio si ferma una frazione di micron prima e resta una
+ * lamina di materiale con lo spigolo vivo. Solo per i taglierini convessi (differenza): oltre l'estremità c'è aria,
+ * mentre un taglierino concavo aggiunge materiale e sporgerebbe.
+ */
+export const END_OVERSHOOT = 0.01;
+export const endOvershoot = (p: Pick<EdgeNode, 'convex'>) => (p.convex ? END_OVERSHOOT : 0);
+
+/** Piani di chiusura con i valori predefiniti (perpendicolari, a Z = 0 e Z = lunghezza, con l'abbondanza) al posto dei null. */
+export function endPlanesOf(p: Pick<EdgeNode, 'ends' | 'length' | 'convex'>): [EndPlane, EndPlane] {
+  const over = endOvershoot(p);
+  return [p.ends[0] ?? { normal: [0, 0, -1], offset: over }, p.ends[1] ?? { normal: [0, 0, 1], offset: p.length + over }];
 }
 
 /** Vero se entrambe le estremità sono perpendicolari: basta estrudere la sezione per la lunghezza esatta. */

@@ -130,3 +130,28 @@ describe('Raggruppa nel kernel', () => {
     expect(xml.toLowerCase()).toContain('#00ff00');
   });
 });
+
+describe('operandi fantasma (modalità #)', () => {
+  it('differenza: solo i sottratti, in coordinate mondo con la trasformazione del gruppo', () => {
+    const scene = sceneOf(
+      [box('a', [0, 0, 0], '#ff0000'), box('b', [5, 0, 0], '#00ff00'), group('d', 'difference', ['a', 'b'], { position: [100, 0, 0] })],
+      ['d'],
+    );
+    const ghosts = new Evaluator(wasm).ghosts(scene, ['d']);
+    expect(ghosts.map((m) => m.id)).toEqual(['b']);
+    // Il sottratto sta in 5 nel gruppo, quindi in 105 nel mondo
+    expect((ghosts[0].bbox.min[0] + ghosts[0].bbox.max[0]) / 2).toBeCloseTo(105, 3);
+  });
+
+  it('intersezione: tutti gli operandi; unione: solo i fori; forma semplice: nessuno', () => {
+    const hole = box('h', [0, 0, 0], '#0000ff', { mode: 'hole' });
+    const scene = sceneOf(
+      [box('a', [0, 0, 0], '#ff0000'), box('b', [5, 0, 0], '#00ff00'), hole, group('i', 'intersection', ['a', 'b'], {}), group('u', 'union', ['a', 'h'], {})],
+      ['i', 'u'],
+    );
+    const ev = new Evaluator(wasm);
+    expect(ev.ghosts(scene, ['i']).map((m) => m.id)).toEqual(['a', 'b']);
+    expect(ev.ghosts(scene, ['u']).map((m) => m.id)).toEqual(['h']);
+    expect(ev.ghosts(sceneOf([box('x', [0, 0, 0], '#fff')], ['x']), ['x'])).toEqual([]);
+  });
+});

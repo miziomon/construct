@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
-import { answerConfirm, dismissToast, useNotifyStore } from './notifyStore';
+import { answerConfirm, dismissToast, setConfirmOption, setPromptText, useNotifyStore } from './notifyStore';
 import './Notifications.scss';
 
 /** Toast in basso a sinistra e finestra di conferma modale (elemento <dialog> nativo, gestisce focus e Esc). */
@@ -32,6 +32,22 @@ export function Notifications() {
 
       <dialog ref={dialog} className="dialog" onCancel={(e) => { e.preventDefault(); answerConfirm(false); }}>
         <p className="dialog__message">{confirm?.message}</p>
+        {confirm?.text !== undefined && (
+          <input
+            className="dialog__input"
+            type="text"
+            aria-label={confirm.message}
+            value={confirm.text}
+            onChange={(e) => setPromptText(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && answerConfirm(true)}
+          />
+        )}
+        {confirm?.option && (
+          <label className="dialog__check">
+            <input type="checkbox" checked={confirm.option.checked} onChange={(e) => setConfirmOption(e.target.checked)} />
+            {confirm.option.label}
+          </label>
+        )}
         <div className="dialog__actions">
           <button type="button" className="dialog__button" onClick={() => answerConfirm(false)}>Annulla</button>
           <button type="button" className="dialog__button dialog__button--primary" onClick={() => answerConfirm(true)}>

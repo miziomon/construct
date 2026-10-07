@@ -36,7 +36,7 @@ export default defineConfig({
       },
       workbox: {
         // Elenco completo: js, css, html e il WASM di manifold (circa 540 KB)
-        globPatterns: ['**/*.{js,css,html,wasm,svg,png,ico,webmanifest}'],
+        globPatterns: ['**/*.{js,css,html,wasm,svg,png,ico,webmanifest,ttf}'],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
       },
     }),
@@ -54,6 +54,8 @@ export default defineConfig({
           groups: [
             { name: 'react', test: nm('(react|react-dom|scheduler)[\\/]'), priority: 40, includeDependenciesRecursively: false },
             { name: 'r3f', test: nm('@react-three[\\/]'), priority: 30, includeDependenciesRecursively: false },
+            // I loader di three (SVGLoader) hanno un chunk loro: si scaricano solo quando servono (importazione di un SVG)
+            { name: 'three-loaders', test: nm('three[\\/]examples'), priority: 25, includeDependenciesRecursively: false },
             { name: 'three', test: nm('three[\\/]'), priority: 20, includeDependenciesRecursively: false },
             { name: 'vendor', test: nm(''), priority: 10 },
           ],

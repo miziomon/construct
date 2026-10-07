@@ -1,9 +1,19 @@
 import type { Manifold, ManifoldToplevel } from 'manifold-3d';
 import { CORNER_SPHERE_SEGMENTS, twistDivisions } from '../scene/defaults';
-import { edgeProfile, endMargin, endPlanesOf, hasPerpendicularEnds } from '../scene/edgeProfile';
+import { edgeProfile, endMargin, endOvershoot, endPlanesOf, hasPerpendicularEnds } from '../scene/edgeProfile';
+import { resolveEnds } from '../scene/edgeEnds';
 import { stretchFactors } from '../scene/ellipse';
+import { buildPattern } from './pattern';
+import { arrayCopies } from '../scene/arrayPattern';
+import type { CopyTransform } from '../scene/arrayPattern';
+import { isRotational, revolveParams, shapeContours, svgContours } from '../scene/shapes2d';
+import { textContours } from '../scene/fontOutline';
+import { fontInfo } from '../scene/fontCatalog';
+import { cavityOf, SHELL_OPEN_MARGIN } from '../scene/shell';
+import { cornerCutter } from '../scene/cornerProfile';
 import { maxPolyhedronRadius, polygonMaxRadius, polygonShrunkRadius, polyhedronVertices, roundedPolyhedronCenters } from '../scene/polyhedra';
-import type { EdgeNode, MeshNode, PrimitiveNode, Scene, SceneNode, Shape2DNode, Vec3 } from '../scene/types';
+import type { Transform } from '../scene/math';
+import type { CornerNode, EdgeNode, GroupNode, MeshNode, PrimitiveNode, Scene, SceneNode, Shape2DNode, ShellParams, Vec3 } from '../scene/types';
 
 /** Risultato del calcolo per un oggetto (mesh in mm, Z verso l'alto). Un Raggruppa produce una mesh per ogni figlio. */
 export interface NodeMesh {
@@ -65,15 +75,21 @@ export class Evaluator {
   /** Chiave di cache: dipende dai soli parametri geometrici e trasformazione, non da id, nome, colore, modo. */
   private key(scene: Scene, node: SceneNode): string {
     if (node.type === 'group') {
+      // La chiave di un gruppo contiene quella dei figli (con il segno: '+' solid, '-' hole) in ordine:
+      // cambiando un figlio, l'ordine, il modo o l'operazione cambia la chiave e il gruppo si ricalcola.
       const kids = node.children.map((c) => {
         const k = this.key(scene, scene.nodes[c]);
         return `${scene.nodes[c].mode === 'hole' ? '-' : '+'}${k}`;
       });
-      return `G(${node.op},${node.position},${node.rotation})[${kids.join('|')}]`;
+      // Il Guscio ha in più i suoi spessori (e l'ingombro usato dalla cavità scalata)
+      const shell = node.op === 'shell' ? `,${JSON.stringify(node.shell ?? null)}` : node.op === 'array' ? `,${JSON.stringify(node.array ?? null)}` : node.op === 'pattern' ? `,${JSON.stringify(node.pattern ?? null)}` : '';
+      return `G(${node.op},${node.position},${node.rotation}${node.mirror ? `,m${node.mirror.map(Number)}` : ''}${shell})[${kids.join('|')}]`;
     }
-    const { id: _id, name: _name, color: _color, mode: _mode, locked: _locked, ...geometry } = node;
+    const { id: _id, name: _name, color: _color, mode: _mode, locked: _locked, lockRatio: _lockRatio, ...geometry } = node;
+    // Il taglierino che chiude l'estremità su uno smusso dipende anche dai valori correnti di quello smusso
+    const live = node.type === 'edge' && node.endVia ? `|${JSON.stringify(resolveEnds(scene, node))}` : '';
     // Il tipo resta nella chiave: primitive e forme 2D hanno campi diversi
-    return `P${JSON.stringify(geometry)}`;
+    return `P${JSON.stringify(geometry)}${live}`;
   }
 
   /**
@@ -86,6 +102,48 @@ export class Evaluator {
     const scaled = m.scale(f);
     m.delete();
     return scaled;
+  }
+
+  /**
+   * Porta un Manifold dal sistema locale di un nodo a quello del genitore: prima lo specchio (per asse), poi la
+   * rotazione e infine la traslazione. Restituisce un nuovo Manifold; `m` resta del chiamante.
+   */
+  private place(m: Manifold, t: Transform): Manifold {
+    let current = m;
+    t.mirror?.forEach((on, axis) => {
+      if (!on) return;
+      // Manifold::Mirror rovescia anche il verso dei triangoli: il solido resta valido
+      const next = current.mirror([axis === 0 ? 1 : 0, axis === 1 ? 1 : 0, axis === 2 ? 1 : 0]);
+      if (current !== m) current.delete();
+      current = next;
+    });
+    const rotated = current.rotate(t.rotation);
+    if (current !== m) current.delete();
+    const placed = rotated.translate(t.position);
+    rotated.delete();
+    return placed;
+  }
+
+  /**
+   * Copia di una Ripetizione: l'originale (di proprietà della cache, non si libera) ruotato attorno al pivot e traslato.
+   * Restituisce sempre un nuovo Manifold, anche per la copia che non si muove.
+   */
+  private copyOf(original: Manifold, t: CopyTransform): Manifold {
+    let current = original;
+    if (t.rotation.some((v) => v !== 0)) {
+      const toPivot = current.translate([-t.pivot[0], -t.pivot[1], -t.pivot[2]]);
+      const turned = toPivot.rotate(t.rotation);
+      toPivot.delete();
+      current = turned.translate(t.pivot);
+      turned.delete();
+    }
+    if (t.translate.some((v) => v !== 0)) {
+      const moved = current.translate(t.translate);
+      if (current !== original) current.delete();
+      return moved;
+    }
+    // Nessuno spostamento: una copia vera, perché chi chiama libera tutte le copie
+    return current === original ? original.translate([0, 0, 0]) : current;
   }
 
   /** Costruisce la primitiva centrata nell'origine, senza trasformazioni. */
@@ -196,8 +254,12 @@ export class Evaluator {
     }
     const length = Math.max(EPS, p.length);
     if (hasPerpendicularEnds(p)) {
-      const prism = Manifold.extrude(section, length);
+      // Un po' di abbondanza da entrambe le parti: il taglio non si ferma sulla faccia del pezzo (vedi END_OVERSHOOT)
+      const over = endOvershoot(p);
+      const extruded = Manifold.extrude(section, length + 2 * over);
       section.delete();
+      const prism = extruded.translate([0, 0, -over]);
+      extruded.delete();
       return prism;
     }
     const margin = endMargin(p);
@@ -212,6 +274,94 @@ export class Evaluator {
       prism = trimmed;
     }
     return prism;
+  }
+
+  /**
+   * Cavità del Guscio di `child`, già nel sistema del gruppo (stessa posizione e rotazione del figlio), oppure null
+   * se le pareti non entrano nel solido. Il Manifold restituito è del chiamante, che lo deve liberare.
+   */
+  private shellCavity(scene: Scene, child: SceneNode, shell: ShellParams): Manifold | null {
+    const cavity = cavityOf(scene, child, shell);
+    if (cavity.kind === 'error') return null;
+
+    if (cavity.kind === 'exact') {
+      // Cavità esatta: la forma ridotta si costruisce centrata, si alza dello `offset` e si porta dove sta il figlio
+      const shape = cavity.node.type === 'primitive' ? this.primitive(cavity.node) : this.shape2d(cavity.node);
+      const lifted = shape.translate(cavity.offset);
+      shape.delete();
+      const placed = this.place(lifted, child);
+      lifted.delete();
+      return placed;
+    }
+
+    if (cavity.kind === 'parts') {
+      // Cavità per figlio: ogni solido dell'unione ha la sua cavità esatta, nella sua posizione; poi si uniscono.
+      // Tra due solidi uniti resta una parete interna (le cavità non si toccano), come dichiarato nel pannello
+      const placed = cavity.parts.map((part) => {
+        const shape = part.node.type === 'primitive' ? this.primitive(part.node) : this.shape2d(part.node);
+        const lifted = shape.translate(part.offset);
+        shape.delete();
+        const moved = this.place(lifted, part);
+        lifted.delete();
+        return moved;
+      });
+      const union = this.wasm.Manifold.union(placed);
+      placed.forEach((m) => m.delete());
+      return union;
+    }
+
+    if (cavity.kind === 'prism') {
+      // Cavità a prisma: la sezione del solido (già nel sistema del guscio) si restringe di w con un offset 2D e si
+      // estrude dal fondo alla cima, più il margine di apertura. Pareti uniformi anche ai giunti e attorno ai fori
+      const solid = this.build(scene, child);
+      const section = solid.slice(cavity.zMid);
+      const eroded = section.offset(-shell.wall, 'Miter', 2);
+      section.delete();
+      if (eroded.isEmpty()) {
+        eroded.delete();
+        return null;
+      }
+      const floor = cavity.z0 + shell.bottom;
+      const prism = this.wasm.Manifold.extrude(eroded, cavity.z1 + SHELL_OPEN_MARGIN - floor).translate([0, 0, floor]);
+      eroded.delete();
+      return prism;
+    }
+
+    // Cavità scalata: il figlio senza posizione né rotazione (in cache, non si libera) viene scalato attorno al perno
+    // (centro della base), alzato dello spessore del fondo e poi portato dove sta il figlio
+    const bare = { ...child, position: [0, 0, 0], rotation: [0, 0, 0], mirror: undefined } as SceneNode;
+    const base = this.build(scene, bare);
+    const [px, py, pz] = cavity.pivot;
+    const steps: ((m: Manifold) => Manifold)[] = [
+      (m) => m.translate([-px, -py, -pz]),
+      (m) => m.scale(cavity.scale),
+      (m) => m.translate([px, py, pz + cavity.lift]),
+      (m) => this.place(m, child),
+    ];
+    let current = base;
+    for (const step of steps) {
+      const next = step(current);
+      // Il primo handle è della cache: solo gli intermedi si liberano
+      if (current !== base) current.delete();
+      current = next;
+    }
+    return current;
+  }
+
+  /**
+   * Taglierino di uno smusso angolare, con il vertice nell'origine: involucro convesso del vertice e dei punti sugli
+   * spigoli; per lo sferico si sottrae la sfera tangente agli spigoli (resta il materiale dentro la sfera).
+   */
+  private cornerCutter(p: CornerNode): Manifold {
+    const { Manifold } = this.wasm;
+    const cutter = cornerCutter(p);
+    const hull = Manifold.hull(cutter.points);
+    if (!cutter.sphere) return hull;
+    const sphere = Manifold.sphere(cutter.sphere.radius, cutter.sphere.segments).translate(cutter.sphere.center);
+    const cut = Manifold.difference([hull, sphere]);
+    hull.delete();
+    sphere.delete();
+    return cut;
   }
 
   /** Forma 2D estrusa lungo Z, centrata nell'origine. */
@@ -230,6 +380,18 @@ export class Evaluator {
       } else {
         section = CrossSection.circle(radius, p.segments);
       }
+    } else if (p.kind === 'text') {
+      // Contorni delle lettere: i buchi (O, A, 8) sono contorni con verso opposto, quindi regola NonZero
+      const contours = textContours({ ...p, font: fontInfo(p.font).id });
+      // Testo vuoto (o solo spazi): forma vuota, non un errore
+      section = contours.length ? new CrossSection(contours, 'NonZero') : CrossSection.compose([]);
+    } else if (p.kind === 'svg') {
+      // Disegno importato: contorni scalati a width × depth, riempimento pari-dispari (i tracciati interni sono fori)
+      const contours = svgContours(p);
+      section = contours.length ? new CrossSection(contours, 'EvenOdd') : CrossSection.compose([]);
+    } else if (p.kind !== 'square') {
+      // Forme poligonali (anello, cuore, stelle, ...): il foro dell'anello è un secondo contorno, quindi regola pari-dispari
+      section = new CrossSection(shapeContours(p), 'EvenOdd');
     } else {
       const w = Math.max(EPS, p.width);
       const d = Math.max(EPS, p.depth);
@@ -250,6 +412,26 @@ export class Evaluator {
       const stretched = section.scale([f[0], f[1]]);
       section.delete();
       section = stretched;
+    }
+    // Contorno (offset 2D): ingrandisce o restringe il profilo prima di estruderlo. Se si restringe fino a farlo sparire
+    // resta una sezione vuota, quindi un solido vuoto (come il testo vuoto), non un errore
+    const offset = p.offset ?? 0;
+    if (offset !== 0) {
+      const sharp = p.offsetJoin === 'sharp';
+      // Angoli vivi con un limite alto (come offset(delta) di OpenSCAD), arrotondati con gli stessi segmenti degli angoli arrotondati
+      const grown = section.offset(offset, sharp ? 'Miter' : 'Round', sharp ? 1000 : 2, CORNER_SEGMENTS);
+      section.delete();
+      section = grown;
+    }
+    if (isRotational(p)) {
+      // Estrusione rotazionale (rotate_extrude): il profilo si sposta di `radius` dall'asse e gira attorno a Z; la Y del
+      // profilo diventa Z e la X il raggio. Manifold tiene solo la parte con x > 0 (quella oltre l'asse si scarta)
+      const { angle, radius, segments } = revolveParams(p);
+      const moved = section.translate([radius, 0]);
+      section.delete();
+      const revolved = Manifold.revolve(moved, segments, angle);
+      moved.delete();
+      return revolved;
     }
     const divisions = twistDivisions(p.twist);
     // La scala va passata come vettore [x, y]: con un numero singolo manifold 3.5 produce un prisma dimezzato
@@ -273,32 +455,78 @@ export class Evaluator {
       local = this.shape2d(node);
     } else if (node.type === 'mesh') {
       local = this.meshNode(node);
+    } else if (node.type === 'corner') {
+      local = this.cornerCutter(node);
     } else if (node.type === 'edge') {
-      local = this.edgeCutter(node);
+      // I piani di chiusura seguono lo smusso che chiude l'estremità, se ce n'è uno
+      local = this.edgeCutter({ ...node, ends: resolveEnds(scene, node) });
     } else {
-      // Gruppo: solid combinati con union/intersection, poi si sottrae l'unione degli hole
+      // GRUPPO. I figli sono costruiti (o presi dalla cache) già posizionati nel sistema del gruppo; qui si
+      // combinano con l'operazione del gruppo. Le mesh dei figli restano di proprietà della cache: non si liberano.
       const kids = node.children.map((c) => scene.nodes[c]);
       const { Manifold } = this.wasm;
       if (node.op === 'difference') {
-        // Differenza: il primo figlio è la base, tutti gli altri vengono sottratti
+        // DIFFERENZA: il primo figlio è la base, tutti gli altri vengono sottratti (il modo solid/hole è ignorato)
         const parts = kids.map((k) => this.build(scene, k));
         const result = parts.length ? Manifold.difference(parts) : Manifold.union([]);
-        const placed = result.rotate(node.rotation).translate(node.position);
+        const placed = this.place(result, node);
+        result.delete();
+        this.cache.set(key, placed);
+        return placed;
+      }
+      if (node.op === 'shell' && node.shell && kids.length === 1) {
+        // GUSCIO: è una differenza automatica `figlio − cavità`, dove la cavità (stessa forma ridotta, oppure il
+        // solido scalato) la ricava `shellCavity`. Se le pareti non entrano più nel solido (misure cambiate dopo la
+        // creazione) non c'è cavità e il solido resta pieno invece di dare un errore a metà valutazione.
+        const solid = this.build(scene, kids[0]);
+        const cavity = this.shellCavity(scene, kids[0], node.shell);
+        const result = cavity ? Manifold.difference([solid, cavity]) : solid.translate([0, 0, 0]);
+        cavity?.delete();
+        const placed = this.place(result, node);
+        result.delete();
+        this.cache.set(key, placed);
+        return placed;
+      }
+      if (node.op === 'array' && node.array && kids.length === 1) {
+        // RIPETIZIONE: l'originale si costruisce una volta (cache) e si piazzano le copie, poi si uniscono
+        const original = this.build(scene, kids[0]);
+        const copies = arrayCopies(node.array).map((t) => this.copyOf(original, t));
+        const merged = copies.length ? Manifold.union(copies) : Manifold.union([]);
+        copies.forEach((c) => c.delete());
+        const placed = this.place(merged, node);
+        merged.delete();
+        this.cache.set(key, placed);
+        return placed;
+      }
+      if (node.op === 'pattern' && node.pattern && kids.length === 1) {
+        // PATTERN: il pezzo con le celle (Voronoi, esagoni, cerchi) tagliate da una faccia, oppure il reticolo 3D
+        const original = this.build(scene, kids[0]);
+        const result = buildPattern(this.wasm, original, node.pattern);
+        const placed = this.place(result, node);
         result.delete();
         this.cache.set(key, placed);
         return placed;
       }
       // Il Raggruppa (op 'group') dentro una booleana equivale a una unione di tutti i figli: non ha fori
       const isGroup = node.op === 'group';
+      // I solid sono i figli che aggiungono materiale; i hole quelli che lo tolgono dal risultato
       const solids = kids.filter((k) => isGroup || k.mode === 'solid').map((k) => this.build(scene, k));
       const holes = isGroup ? [] : kids.filter((k) => k.mode === 'hole').map((k) => this.build(scene, k));
-      const base = node.op === 'union' || isGroup ? Manifold.union(solids) : solids.length ? Manifold.intersection(solids) : Manifold.union([]);
+      // UNIONE (o Raggruppa): somma di tutti i solid. INTERSEZIONE: solo la parte comune a tutti i solid.
+      // INVILUPPO CONVESSO: la forma convessa più piccola che li contiene tutti (senza solidi, un insieme vuoto)
+      const base =
+        node.op === 'union' || isGroup
+          ? Manifold.union(solids)
+          : node.op === 'hull'
+            ? solids.length ? Manifold.hull(solids) : Manifold.union([])
+            : solids.length ? Manifold.intersection(solids) : Manifold.union([]);
+      // I hole si sottraggono dopo aver combinato i solid
       local = holes.length ? Manifold.difference([base, ...holes]) : base;
       // Se nessuna sottrazione è avvenuta, base è già il risultato: niente da liberare
       if (local !== base) base.delete();
     }
 
-    const placed = local.rotate(node.rotation).translate(node.position);
+    const placed = this.place(local, node);
     local.delete();
     this.cache.set(key, placed);
     return placed;
@@ -318,7 +546,7 @@ export class Evaluator {
     let m = this.build(scene, node);
     let temporary = false;
     for (let i = ancestors.length - 1; i >= 0; i--) {
-      const next = m.rotate(ancestors[i].rotation).translate(ancestors[i].position);
+      const next = this.place(m, ancestors[i]);
       if (temporary) m.delete();
       m = next;
       temporary = true;
@@ -327,7 +555,12 @@ export class Evaluator {
     if (temporary) m.delete();
   }
 
-  /** Valuta tutti gli oggetti alla radice e libera dalla cache i nodi non più presenti. */
+  /**
+   * Valuta tutti gli oggetti alla radice e libera dalla cache i nodi non più presenti.
+   * Passi: 1) ogni radice produce una mesh (una per figlio se è un Raggruppa); 2) le booleane (unione, intersezione,
+   * differenza, guscio) sono già state calcolate da `build`, che riusa i sottoalberi non cambiati dalla cache;
+   * 3) mark and sweep: si liberano i Manifold dei nodi non toccati in questo giro.
+   */
   evaluate(scene: Scene): EvalResult {
     const t0 = performance.now();
     this.touched.clear();
@@ -348,7 +581,51 @@ export class Evaluator {
     return { meshes, ms: performance.now() - t0 };
   }
 
-  /** Unione di tutti i solid (per export STL), compresi i figli dei Raggruppa. L'handle restituito va liberato dal chiamante. */
+  /**
+   * Operandi "fantasma" degli oggetti indicati, come il modificatore # di OpenSCAD: i pezzi che una booleana usa ma che
+   * non compaiono nel risultato (i sottratti di una differenza, i fori, la cavità del guscio) e, in un'intersezione,
+   * tutti gli operandi. Le mesh sono in coordinate mondo. Usa i sottoalberi già in cache, quindi costa poco.
+   */
+  ghosts(scene: Scene, rootIds: string[]): NodeMesh[] {
+    const out: NodeMesh[] = [];
+    /** `chain` = gruppi dal più esterno a quello che contiene gli operandi. */
+    const visitGroup = (group: GroupNode, chain: GroupNode[], rootId: string) => {
+      const kids = group.children.map((c) => scene.nodes[c]);
+      const operands = group.op === 'difference' ? kids.slice(1) : group.op === 'intersection' ? kids.filter((k) => k.mode === 'solid') : [];
+      // Fori di unione e intersezione (nella differenza sono già tutti operandi sottratti)
+      const holes = group.op === 'union' || group.op === 'intersection' || group.op === 'hull' ? kids.filter((k) => k.mode === 'hole') : [];
+      /** Porta un Manifold dal sistema del gruppo al mondo e lo converte in mesh. */
+      const emit = (node: SceneNode, m: Manifold, owned: boolean) => {
+        let current = m;
+        let temporary = owned;
+        for (let i = chain.length - 1; i >= 0; i--) {
+          const next = this.place(current, chain[i]);
+          if (temporary) current.delete();
+          current = next;
+          temporary = true;
+        }
+        out.push(toMesh(node, current, rootId, [...chain.map((g) => g.id), node.id]));
+        if (temporary) current.delete();
+      };
+      for (const k of [...operands, ...holes]) emit(k, this.build(scene, k), false);
+      if (group.op === 'shell' && group.shell && kids.length === 1) {
+        const cavity = this.shellCavity(scene, kids[0], group.shell);
+        if (cavity) emit({ id: `${group.id}:cavity`, color: group.color, mode: 'solid' } as SceneNode, cavity, true);
+      }
+      // Le booleane annidate hanno i loro operandi
+      for (const k of kids) if (k.type === 'group') visitGroup(k, [...chain, k], rootId);
+    };
+    for (const id of rootIds) {
+      const root = scene.nodes[id];
+      if (root?.type === 'group') visitGroup(root, [root], id);
+    }
+    return out;
+  }
+
+  /**
+   * Unione di tutti i solid (per export STL), compresi i figli dei Raggruppa: l'esportazione è un solo solido, quindi
+   * qui il Raggruppa si fonde davvero. I fori alla radice non entrano. L'handle restituito va liberato dal chiamante.
+   */
   unionOfSolids(scene: Scene): Manifold {
     this.touched.clear();
     const parts: Manifold[] = [];

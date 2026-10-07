@@ -9,7 +9,7 @@ const KEYWORDS = new Set(['for', 'if', 'else', 'module', 'function', 'let', 'tru
 
 const FUNCTIONS = new Set([
   'translate', 'rotate', 'scale', 'mirror', 'color', 'hull', 'union', 'difference', 'intersection',
-  'cube', 'sphere', 'cylinder', 'circle', 'square', 'polyhedron', 'offset', 'linear_extrude', 'rotate_extrude', 'import',
+  'cube', 'sphere', 'cylinder', 'circle', 'square', 'polygon', 'polyhedron', 'offset', 'linear_extrude', 'rotate_extrude', 'import', 'text', 'use',
 ]);
 
 // Un elemento per volta: commento, numero, identificatore (anche $fn), punteggiatura, spazi

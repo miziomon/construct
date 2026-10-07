@@ -120,6 +120,29 @@
     gap: $space-1;
   }
 
+  // Lucchetto delle proporzioni (SVG)
+  &__lock {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px $space-2;
+    border: 1px solid color('border');
+    border-radius: $radius-sm;
+    background: color('bg');
+    font-size: 12px;
+    @include focus-ring;
+
+    &[aria-pressed='true'] {
+      border-color: color('accent');
+      background: color('accent-soft');
+      color: color('accent');
+    }
+
+    &:disabled {
+      opacity: 0.45;
+    }
+  }
+
   &__chip {
     min-width: 28px;
     padding: 3px 6px;
@@ -166,6 +189,11 @@
     overflow: hidden;
     border: 1px solid color('border');
     border-radius: $radius-sm;
+  }
+
+  // Con molte voci (le operazioni dei gruppi) i pulsanti vanno a capo invece di essere tagliati
+  &__segmented--wrap {
+    flex-wrap: wrap;
   }
 
   &__segment {

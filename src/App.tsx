@@ -1,19 +1,21 @@
-import { Suspense, lazy, useEffect } from 'react';
+import { Suspense, useEffect } from 'react';
 import { Toolbar } from './ui/Toolbar/Toolbar';
-import { ShapeLibrary } from './ui/ShapeLibrary/ShapeLibrary';
+import { LibraryTabs } from './ui/ShapeLibrary/LibraryTabs';
 import { Outliner } from './ui/Outliner/Outliner';
 import { Sidebar } from './ui/Sidebar/Sidebar';
 import { StatusBar } from './ui/StatusBar/StatusBar';
+import { Timeline } from './ui/Timeline/Timeline';
 import { UpdatePrompt } from './ui/UpdatePrompt/UpdatePrompt';
 import { Notifications } from './ui/notify/Notifications';
 import { Viewport } from './viewport/Viewport';
 import { useUiStore } from './ui/uiStore';
+import { lazyLoad } from './ui/lazyLoad';
 import { useShortcuts } from './hooks/useShortcuts';
 import { importFiles } from './import/importFile';
 import './App.scss';
 
 // La modale del codice (e il generatore OpenSCAD) si scarica solo quando serve
-const CodeModal = lazy(() => import('./ui/CodeModal/CodeModal'));
+const CodeModal = lazyLoad(() => import('./ui/CodeModal/CodeModal'));
 
 /** Colore di sfondo della pagina per la barra del browser (stessi valori del token "bg"). */
 const THEME_COLORS = { light: '#e9eff6', dark: '#14171c' };
@@ -43,11 +45,12 @@ export default function App() {
       <Toolbar />
       <div className="app__body">
         <aside className="app__left" aria-label="Libreria e oggetti">
-          <ShapeLibrary />
+          <LibraryTabs />
           <Outliner />
         </aside>
         <main className="app__center">
           <Viewport />
+          <Timeline />
           <StatusBar />
         </main>
         <Sidebar />

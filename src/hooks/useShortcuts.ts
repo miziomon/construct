@@ -1,26 +1,73 @@
 import { useEffect } from 'react';
 import { useSceneStore } from '../scene/store';
 import { useUiStore } from '../ui/uiStore';
-import { dropSelectionToBed } from '../kernel/placement';
+import { combineToBed, dropSelectionToBed } from '../kernel/placement';
 import { useEdgeTool } from '../ui/EdgeTool/edgeToolStore';
+import { newProject } from '../ui/fileActions';
+import { toggleShell, useShellTool } from '../ui/Shell/shellToolStore';
+import { useMeasure } from '../ui/Measure/measureStore';
+import { toggleMeasure } from '../ui/Measure/toggleMeasure';
+import { useLayFlat } from '../ui/LayFlat/layFlatStore';
+import { useArrayTool } from '../ui/Array/arrayToolStore';
+import { usePatternTool } from '../ui/Pattern/patternToolStore';
+import { togglePattern } from '../ui/Pattern/togglePattern';
+import { toggleArray } from '../ui/Array/toggleArray';
+import { toggleLayFlat } from '../ui/LayFlat/toggleLayFlat';
 
 const isTyping = (t: EventTarget | null) => t instanceof HTMLElement && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
 
 /** Scorciatoie da tastiera globali. Sono ignorate mentre si scrive in un campo. */
-/** Avvia Raccordo o Smusso (la tastiera F e S). */
-const edgeStart = (kind: 'fillet' | 'chamfer') => useEdgeTool.getState().start(kind);
+/** Avvia Raccordo, Smusso o Smusso angolare (i tasti F, S e A). */
+const edgeStart = (kind: 'fillet' | 'chamfer' | 'corner') => useEdgeTool.getState().start(kind);
+
+/** Tasto di ogni strumento degli spigoli. */
+const EDGE_KEYS = { f: 'fillet', s: 'chamfer', a: 'corner' } as const;
 
 export function useShortcuts(): void {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (isTyping(e.target)) return;
-      // Raccordo e Smusso: Esc annulla, Invio conferma, F e S chiudono lo strumento; il resto è ignorato
+      // Guscio aperto: Esc annulla, Invio conferma, tutto il resto è ignorato
+      const shell = useShellTool.getState();
+      if (shell.active) {
+        if (e.key === 'Escape') shell.cancel();
+        else if (e.key === 'Enter') shell.commit();
+        return;
+      }
+      // Serie aperta: Esc annulla, Invio conferma, tutto il resto è ignorato (i campi hanno già la loro tastiera)
+      const array = useArrayTool.getState();
+      if (array.active) {
+        if (e.key === 'Escape') array.cancel();
+        else if (e.key === 'Enter') array.commit();
+        return;
+      }
+      // Pattern aperto: Esc annulla (con la scelta della faccia in corso la interrompe), Invio conferma, il resto è ignorato
+      const pattern = usePatternTool.getState();
+      if (pattern.active) {
+        if (e.key === 'Escape') (pattern.picking ? pattern.setPicking(false) : pattern.cancel());
+        else if (e.key === 'Enter') pattern.commit();
+        return;
+      }
+      // Misura aperta: Esc o I la chiudono, il resto è ignorato (i clic scelgono punti, non modificano la scena)
+      const measure = useMeasure.getState();
+      if (measure.active) {
+        if (e.key === 'Escape' || (!e.ctrlKey && !e.metaKey && e.key.toLowerCase() === 'i')) measure.cancel();
+        return;
+      }
+      // Appoggia su una faccia aperto: Esc o V lo chiudono, il resto è ignorato (i clic scelgono una faccia)
+      const layFlat = useLayFlat.getState();
+      if (layFlat.active) {
+        if (e.key === 'Escape' || (!e.ctrlKey && !e.metaKey && e.key.toLowerCase() === 'v')) layFlat.cancel();
+        return;
+      }
+      // Raccordo, Smusso e Smusso angolare: Esc annulla, Invio conferma, il tasto dello strumento lo chiude e quello di un altro lo cambia; il resto è ignorato
       const edge = useEdgeTool.getState();
       if (edge.tool) {
         const k = e.key.toLowerCase();
-        if (e.key === 'Escape' || (!e.ctrlKey && !e.metaKey && ((k === 'f' && edge.tool === 'fillet') || (k === 's' && edge.tool === 'chamfer')))) edge.cancel();
+        const kind = k in EDGE_KEYS ? EDGE_KEYS[k as keyof typeof EDGE_KEYS] : undefined;
+        if (e.key === 'Escape' || (!e.ctrlKey && !e.metaKey && kind === edge.tool)) edge.cancel();
         else if (e.key === 'Enter') edge.commit();
-        else if (!e.ctrlKey && !e.metaKey && (k === 'f' || k === 's')) edge.start(k === 'f' ? 'fillet' : 'chamfer');
+        else if (!e.ctrlKey && !e.metaKey && kind) edge.start(kind);
         return;
       }
       // Con una modale aperta le scorciatoie dell'editor (Canc, G, ...) non devono agire sulla scena:
@@ -45,7 +92,7 @@ export function useShortcuts(): void {
       if (mod && key === 'z') { e.preventDefault(); if (e.shiftKey) temporal.redo(); else temporal.undo(); }
       else if (mod && key === 'y') { e.preventDefault(); temporal.redo(); }
       else if (mod && key === 'd') { e.preventDefault(); s.duplicateSelected(); }
-      else if (mod && key === 'g') { e.preventDefault(); if (e.shiftKey) s.ungroupSelected(); else s.groupSelected(); }
+      else if (mod && key === 'g') { e.preventDefault(); if (e.shiftKey) s.ungroupSelected(); else combineToBed('group'); }
       else if (!mod && key === 'c') useUiStore.getState().toggleCode();
       else if (!mod && key === 'd') useUiStore.getState().toggleTheme();
       else if (!mod && key === 'm') useUiStore.getState().toggleMenu();
@@ -54,10 +101,25 @@ export function useShortcuts(): void {
       else if (!mod && key === 'h') s.toggleHoleSelected();
       else if (!mod && key === 'l') s.toggleLockSelected();
       else if (!mod && key === 'b') dropSelectionToBed();
+      else if (!mod && key === 'x') useUiStore.getState().toggleGhostOps();
+      else if (!mod && key === 'n') void newProject();
       else if (!mod && key === 'p') useUiStore.getState().cycleBed();
-      else if (!mod && key === 'u') s.unionSelected();
+      else if (!mod && key === 'u') combineToBed('union');
+      else if (!mod && key === 'j') combineToBed('hull');
+      else if (!mod && key === 'v' && s.scene.rootIds.length) toggleLayFlat();
+      else if (!mod && key === 'o') toggleArray();
+      else if (!mod && key === 'z') togglePattern();
+      else if (!mod && key === 'g') toggleShell();
+      else if (!mod && key === 'i' && s.scene.rootIds.length) toggleMeasure();
+      // Allinea (K) e Specchia (Y) aprono la loro tendina sulla barra; un secondo tasto la richiude
+      else if (!mod && (key === 'k' || key === 'y')) {
+        const ui = useUiStore.getState();
+        const menu = key === 'k' ? 'align' : 'mirror';
+        ui.setToolbarMenu(ui.toolbarMenu === menu ? null : menu);
+      }
       else if (!mod && key === 'f' && s.scene.rootIds.length) edgeStart('fillet');
       else if (!mod && key === 's' && s.scene.rootIds.length) edgeStart('chamfer');
+      else if (!mod && key === 'a' && s.scene.rootIds.length) edgeStart('corner');
       else if (key === 'f2') {
         // Rinomina l'oggetto selezionato nell'elenco oggetti
         e.preventDefault();

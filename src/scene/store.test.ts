@@ -170,3 +170,74 @@ describe('store della scena', () => {
     });
   });
 });
+
+describe('etichette della timeline', () => {
+  /** Etichette in ordine cronologico: passati, corrente, futuri. */
+  const labels = () => {
+    const t = useSceneStore.temporal.getState();
+    return [...t.pastStates.map((p) => p.op), st().op, ...[...t.futureStates].reverse().map((p) => p.op)];
+  };
+
+  it('ogni stato porta il nome dell\'operazione che lo ha prodotto', () => {
+    st().addPrimitive('box');
+    const [id] = st().scene.rootIds;
+    st().updateNode(id, { position: [5, 0, 10] });
+    st().updateNode(id, { size: [30, 20, 20] });
+    st().updateNode(id, { name: 'Mio cubo' });
+    expect(labels()).toEqual(['Nuovo progetto', 'Aggiungi Cubo', 'Sposta Cubo', 'Modifica Cubo', 'Rinomina Cubo']);
+  });
+
+  it('undo e redo riportano anche l\'etichetta e la lista resta completa', () => {
+    st().addPrimitive('box');
+    st().addPrimitive('sphere');
+    undo();
+    expect(st().op).toBe('Aggiungi Cubo');
+    expect(labels()).toEqual(['Nuovo progetto', 'Aggiungi Cubo', 'Aggiungi Sfera']);
+    useSceneStore.temporal.getState().redo();
+    expect(st().op).toBe('Aggiungi Sfera');
+  });
+
+  it('un salto di più passi funziona come una serie di undo', () => {
+    st().addPrimitive('box');
+    st().addPrimitive('sphere');
+    st().addPrimitive('cone');
+    useSceneStore.temporal.getState().undo(3);
+    expect(st().scene.rootIds).toHaveLength(0);
+    expect(labels()).toEqual(['Nuovo progetto', 'Aggiungi Cubo', 'Aggiungi Sfera', 'Aggiungi Cono']);
+    useSceneStore.temporal.getState().redo(2);
+    expect(st().scene.rootIds).toHaveLength(2);
+    expect(st().op).toBe('Aggiungi Sfera');
+  });
+
+  it('con la cronologia in pausa lo stato corrente non cambia nome', () => {
+    st().addPrimitive('box');
+    const [id] = st().scene.rootIds;
+    useSceneStore.temporal.getState().pause();
+    st().updateNode(id, { position: [9, 9, 10] });
+    useSceneStore.temporal.getState().resume();
+    expect(st().op).toBe('Aggiungi Cubo');
+  });
+
+  it('un\'azione che non cambia nulla non rinomina lo stato', () => {
+    st().addPrimitive('box');
+    st().select([]);
+    st().dropToBed({});
+    expect(st().op).toBe('Aggiungi Cubo');
+    expect(useSceneStore.temporal.getState().pastStates).toHaveLength(1);
+  });
+
+  it('Inviluppo convesso: crea un gruppo hull dai due oggetti e Separa lo scioglie', () => {
+    st().addPrimitive('box');
+    st().addPrimitive('sphere');
+    const [a, b] = st().scene.rootIds;
+    st().updateNode(a, { position: [-20, 0, 10] });
+    st().updateNode(b, { position: [20, 0, 10] });
+    st().select([a, b]);
+    st().combineSelected('hull');
+    const [gid] = st().scene.rootIds;
+    expect(st().scene.rootIds).toHaveLength(1);
+    expect(st().scene.nodes[gid]).toMatchObject({ type: 'group', op: 'hull', name: 'Inviluppo convesso' });
+    st().ungroupSelected();
+    expect(st().scene.rootIds).toHaveLength(2);
+  });
+});

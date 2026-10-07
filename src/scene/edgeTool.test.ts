@@ -250,7 +250,9 @@ describe('codice OpenSCAD del taglierino', () => {
     if (!result.ok) throw new Error(result.error);
     const code = sceneToOpenScad(result.scene);
     expect(code).toContain('difference() {');
-    expect(code).toContain('linear_extrude(height = 20)');
+    // Un po' di abbondanza (0,01 mm) da entrambe le parti: il taglio non si ferma sulla faccia del pezzo
+    expect(code).toContain('translate([0, 0, -0.01])');
+    expect(code).toContain('linear_extrude(height = 20.02)');
     expect(code).toContain('circle(r = 3, $fn = 64);');
     expect(code).not.toContain('intersection()');
     expect(code).not.toContain('multmatrix');

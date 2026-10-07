@@ -11,3 +11,14 @@
     display: block;
   }
 }
+
+// Etichetta della distanza sulla linea della Misura (testo HTML sovrapposto alla vista 3D)
+.measure-label {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(20, 23, 28, 0.88);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}

@@ -1,11 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, CircleDashed, GripVertical, Lock, Package } from 'lucide-react';
+import { ChevronDown, ChevronRight, CircleDashed, GripVertical, Lock, Package, Sigma, Smile } from 'lucide-react';
 import { isLocked, useSceneStore } from '../../scene/store';
 import { useUiStore } from '../uiStore';
 import { PRIMITIVE_ICONS, SHAPE2D_ICONS } from '../ShapeLibrary/ShapeLibrary';
-import { EDGE_ICONS, GROUP_ICONS, GROUP_NAMES } from '../groupIcons';
+import { CORNER_ICONS, CORNER_NAMES, EDGE_ICONS, GROUP_ICONS, GROUP_NAMES } from '../groupIcons';
 import { dropTarget, zoneAt, type DropZone } from './dnd';
 import './Outliner.scss';
+
+/** Icona e nome degli oggetti nati dalle tab Simboli ed Emoji (non si presentano come "Testo"). */
+const ORIGIN_ICONS = { symbol: Sigma, emoji: Smile } as const;
+const ORIGIN_LABELS = { symbol: 'Simbolo', emoji: 'Emoji' } as const;
 
 /** Tipo MIME del trascinamento interno: i file trascinati dal sistema (importazione) restano un'altra cosa. */
 const DRAG_TYPE = 'application/x-webcad-node';
@@ -86,10 +90,14 @@ function Row({ id, depth, collapsed, toggle, hint, setHint }: RowProps) {
         ? Package
         : node.type === 'edge'
           ? EDGE_ICONS[node.treatment]
-          : node.type === 'shape2d'
-            ? SHAPE2D_ICONS[node.kind]
-            : PRIMITIVE_ICONS[node.kind];
-  const kindLabel = node.type === 'group' ? GROUP_NAMES[node.op] : node.type === 'edge' ? (node.treatment === 'fillet' ? 'Raccordo' : 'Smusso') : undefined;
+          : node.type === 'corner'
+            ? CORNER_ICONS[node.treatment]
+            : node.type === 'shape2d'
+              ? node.kind === 'text' && node.origin
+                ? ORIGIN_ICONS[node.origin]
+                : SHAPE2D_ICONS[node.kind]
+              : PRIMITIVE_ICONS[node.kind];
+  const kindLabel = node.type === 'group' ? GROUP_NAMES[node.op] : node.type === 'edge' ? (node.treatment === 'fillet' ? 'Raccordo' : 'Smusso') : node.type === 'corner' ? CORNER_NAMES[node.treatment] : node.type === 'shape2d' && node.kind === 'text' && node.origin ? ORIGIN_LABELS[node.origin] : undefined;
   const dropHere = hint?.id === id ? hint.zone : null;
   const cls = [
     'outliner__row',

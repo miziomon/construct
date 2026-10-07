@@ -1,6 +1,7 @@
 import { get, set } from 'idb-keyval';
 import type { Scene } from './types';
 import { useSceneStore } from './store';
+import { normalizeTreatmentGroups } from './treatment';
 import { decodeAsset, encodeAsset, getAsset, type MeshAsset } from '../import/assets';
 import { restoreAssets } from '../import/restore';
 import { notify } from '../ui/notify/notifyStore';
@@ -28,7 +29,9 @@ export async function initPersistence(): Promise<void> {
   if (isScene(saved)) {
     try {
       // Le mesh importate si recuperano e si registrano nel kernel prima di mostrare la scena
-      useSceneStore.getState().loadScene(await restoreAssets(saved));
+      useSceneStore.getState().loadScene(await restoreAssets(normalizeTreatmentGroups(saved)));
+      // La scena ripristinata è il punto di partenza della timeline, non un'operazione da annullare
+      useSceneStore.temporal.getState().clear();
     } catch {
       notify.error('Impossibile ripristinare la scena salvata.');
     }
@@ -63,5 +66,6 @@ export function sceneFromJson(text: string): { scene: Scene; assets: MeshAsset[]
   if (data.format !== FORMAT || !isScene(data.scene)) throw new Error('Il file non è un progetto WebCAD valido.');
   if ((data.version ?? 1) > VERSION) throw new Error('Il progetto è stato salvato da una versione più recente di WebCAD.');
   const assets = Object.entries(data.assets ?? {}).map(([id, encoded]) => decodeAsset(id, encoded));
-  return { scene: data.scene, assets };
+  // Le scene di versioni precedenti hanno i gruppi dei trattamenti all'origine: si portano sul pezzo
+  return { scene: normalizeTreatmentGroups(data.scene), assets };
 }

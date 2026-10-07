@@ -1,4 +1,6 @@
 import type { PrimitiveKind, PrimitiveNode, Shape2DKind, Shape2DNode } from './types';
+import { DEFAULT_FONT } from './fontCatalog';
+import { RATIO_INFO, profileExtent } from './shapes2d';
 
 /** Etichette italiane delle primitive, usate in libreria e outliner. */
 export const PRIMITIVE_LABELS: Record<PrimitiveKind, string> = {
@@ -34,7 +36,22 @@ export const SEGMENT_PRESETS: { value: number; label: string; title: string }[] 
 /** Segmenti delle sfere agli angoli di una scatola arrotondata. */
 export const CORNER_SPHERE_SEGMENTS = 24;
 
-export const SHAPE2D_LABELS: Record<Shape2DKind, string> = { circle: 'Cerchio', square: 'Quadrato' };
+// Nessuna etichetta è l'inizio di un'altra: i pulsanti si trovano per titolo ("Aggiungi: <etichetta>...")
+export const SHAPE2D_LABELS: Record<Shape2DKind, string> = {
+  circle: 'Cerchio',
+  square: 'Quadrato',
+  ring: 'Anello',
+  heart: 'Cuore',
+  star5: 'Stella 5 punte',
+  star6: 'Stella 6 punte',
+  egg: 'Uovo',
+  trapezoid: 'Trapezio',
+  cross: 'Croce',
+  drop: 'Goccia',
+  crescent: 'Mezzaluna',
+  text: 'Testo',
+  svg: 'SVG',
+};
 
 /**
  * Divisioni verticali di un'estrusione con torsione: una ogni 2° di rotazione.
@@ -51,7 +68,8 @@ export const DEFAULT_COLOR = '#4da3ff';
 
 /** Altezza (mm) del punto più basso della forma rispetto al suo centro. */
 export function halfHeight(p: PrimitiveNode | Shape2DNode): number {
-  if (p.type === 'shape2d') return p.height / 2;
+  // Estrusione rotazionale: la Y del profilo diventa l'altezza, quindi conta metà della sua profondità
+  if (p.type === 'shape2d') return p.extrusion === 'rotate' ? profileExtent(p).depth / 2 : p.height / 2;
   switch (p.kind) {
     case 'box': return p.size[2] / 2;
     case 'cylinder':
@@ -99,5 +117,14 @@ export function shape2dDefaults(kind: Shape2DKind): DistributiveOmit<Shape2DNode
   switch (kind) {
     case 'circle': return { ...base, kind, radius: 10, segments: DEFAULT_SEGMENTS, cornerRadius: 0 };
     case 'square': return { ...base, kind, width: 20, depth: 20, cornerRadius: 0 };
+    case 'text': return { ...base, kind, text: 'Testo', font: DEFAULT_FONT, size: 10, height: 3 };
+    // Il disegno vero lo fornisce l'importazione (`addSvg`): qui un segnaposto vuoto
+    case 'svg': return { ...base, kind, contours: [], width: 20, depth: 20, fileName: '' };
+    // Forme poligonali: 20 × 20 mm (tranne dove la forma ha una proporzione propria) e il parametro predefinito
+    case 'egg': return { ...base, kind, width: 16, depth: 22, ratio: RATIO_INFO.egg!.default };
+    case 'trapezoid': return { ...base, kind, width: 24, depth: 16, ratio: RATIO_INFO.trapezoid!.default };
+    case 'heart': return { ...base, kind, width: 20, depth: 20, ratio: 0 };
+    case 'drop': return { ...base, kind, width: 16, depth: 24, ratio: 0 };
+    default: return { ...base, kind, width: 20, depth: 20, ratio: RATIO_INFO[kind]!.default };
   }
 }

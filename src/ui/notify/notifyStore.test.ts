@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { answerConfirm, confirmDialog, dismissToast, notify, useNotifyStore } from './notifyStore';
+import { answerConfirm, confirmDialog, confirmWithOption, dismissToast, notify, promptDialog, setConfirmOption, setPromptText, useNotifyStore } from './notifyStore';
 
 afterEach(() => {
   vi.useRealTimers();
@@ -32,5 +32,37 @@ describe('notifyStore', () => {
     answerConfirm(true);
     expect(await second).toBe(true);
     expect(useNotifyStore.getState().confirm).toBeUndefined();
+  });
+
+  it('promptDialog restituisce il testo scritto, il valore proposto se non si cambia, null se si annulla', async () => {
+    const typed = promptDialog('Nome?', 'proposto.json', 'Salva');
+    expect(useNotifyStore.getState().confirm?.text).toBe('proposto.json');
+    setPromptText('scelto.json');
+    answerConfirm(true);
+    expect(await typed).toBe('scelto.json');
+
+    const untouched = promptDialog('Nome?', 'proposto.json');
+    answerConfirm(true);
+    expect(await untouched).toBe('proposto.json');
+
+    const cancelled = promptDialog('Nome?', 'proposto.json');
+    setPromptText('qualcosa');
+    answerConfirm(false);
+    expect(await cancelled).toBeNull();
+  });
+
+  it('confirmWithOption restituisce lo stato della casella solo se si conferma', async () => {
+    const checked = confirmWithOption('Svuotare?', 'Svuota', 'Anche la cronologia');
+    // All'apertura la casella non è spuntata
+    expect(useNotifyStore.getState().confirm?.option).toEqual({ label: 'Anche la cronologia', checked: false });
+    setConfirmOption(true);
+    answerConfirm(true);
+    expect(await checked).toEqual({ ok: true, checked: true });
+
+    // Annullando, la casella spuntata non conta
+    const cancelled = confirmWithOption('Svuotare?', 'Svuota', 'Anche la cronologia');
+    setConfirmOption(true);
+    answerConfirm(false);
+    expect(await cancelled).toEqual({ ok: false, checked: false });
   });
 });

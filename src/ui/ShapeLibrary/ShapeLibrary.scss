@@ -1,10 +1,59 @@
 @use '../../styles/abstracts' as *;
 
 .shape-library {
+  display: flex;
+  // Altezza fissa: cambiando tab la sezione Oggetti sotto non si sposta (il pannello della tab scorre da solo)
+  flex: 0 0 52%;
+  flex-direction: column;
+  min-height: 0;
   border-bottom: 1px solid color('border');
 
-  &__title {
-    @include section-title;
+  &__tabs {
+    display: flex;
+    gap: 2px;
+    padding: $space-2 $space-2 0;
+    border-bottom: 1px solid color('border');
+  }
+
+  &__tab {
+    flex: 1;
+    padding: 6px 2px;
+    border: 1px solid transparent;
+    border-bottom: 0;
+    border-radius: $radius-sm $radius-sm 0 0;
+    background: transparent;
+    // Quattro tab in 240 px: l'etichetta resta su una riga
+    font-size: 10.5px;
+    font-weight: 600;
+    white-space: nowrap;
+    color: color('text-muted');
+    cursor: pointer;
+    @include focus-ring;
+
+    &:hover {
+      color: color('text');
+    }
+
+    &--active {
+      border-color: color('border');
+      background: color('panel-raised');
+      color: color('accent');
+    }
+  }
+
+  // Il pannello della tab scorre da solo: l'elenco oggetti sotto mantiene sempre un po' di spazio
+  &__panel {
+    flex: 1;
+    min-height: 0;
+    padding-top: $space-3;
+    overflow-y: auto;
+  }
+
+  &__loading {
+    margin: 0;
+    padding: $space-3;
+    font-size: 12px;
+    color: color('text-muted');
   }
 
   &__grid {
@@ -33,5 +82,153 @@
 
   &__label {
     font-size: 11px;
+  }
+}
+
+// Tab Simboli: ricerca e griglia di caratteri con l'anteprima
+.symbols {
+  padding: 0 $space-3 $space-3;
+
+  &__search {
+    width: 100%;
+    margin-bottom: $space-2;
+    padding: 6px $space-2;
+    border: 1px solid color('border');
+    border-radius: $radius-sm;
+    background: color('bg');
+    color: inherit;
+    @include focus-ring;
+  }
+
+  &__title {
+    @include section-title;
+    padding-right: 0;
+    padding-left: 0;
+  }
+
+  &__grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: $space-1;
+  }
+
+  // Cella con il carattere e la stella dei preferiti in alto a destra
+  &__cell {
+    position: relative;
+  }
+
+  &__star {
+    position: absolute;
+    top: 1px;
+    right: 1px;
+    display: flex;
+    padding: 2px;
+    border: 0;
+    border-radius: $radius-sm;
+    background: transparent;
+    color: color('text-muted');
+    opacity: 0;
+    cursor: pointer;
+    @include focus-ring;
+
+    &--on {
+      color: #e0a800;
+      opacity: 1;
+    }
+  }
+
+  &__cell:hover &__star,
+  &__cell:focus-within &__star {
+    opacity: 1;
+  }
+
+  &__toolbar {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: $space-1;
+  }
+
+  &__toggle-all {
+    display: inline-flex;
+    align-items: center;
+    gap: $space-1;
+    padding: 2px $space-2;
+    border: 1px solid color('border');
+    border-radius: $radius-sm;
+    background: color('panel-raised');
+    font-size: 11px;
+    @include focus-ring;
+
+    &:hover {
+      border-color: color('accent');
+      color: color('accent');
+    }
+  }
+
+  &__item {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: center;
+    aspect-ratio: 1;
+    border: 1px solid color('border');
+    border-radius: $radius-sm;
+    background: color('panel-raised');
+    @include focus-ring;
+
+    &:hover {
+      border-color: color('accent');
+      color: color('accent');
+    }
+  }
+
+  &__glyph {
+    font-size: 20px;
+    line-height: 1;
+  }
+}
+
+// Gruppi a fisarmonica delle tab Simboli ed Emoji
+.accordion {
+  border-top: 1px solid color('border');
+
+  &:first-of-type {
+    border-top: 0;
+  }
+
+  &__heading {
+    margin: 0;
+  }
+
+  &__title {
+    @include section-title;
+    display: flex;
+    align-items: center;
+    gap: $space-1;
+    width: 100%;
+    padding-right: 0;
+    padding-left: 0;
+    border: 0;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+    @include focus-ring;
+
+    &:hover {
+      color: color('text');
+    }
+  }
+
+  &__label {
+    flex: 1;
+  }
+
+  &__count {
+    font-weight: 500;
+    letter-spacing: 0;
+  }
+
+  &__body {
+    padding-bottom: $space-2;
   }
 }

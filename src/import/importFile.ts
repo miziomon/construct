@@ -3,8 +3,6 @@ import { useSceneStore } from '../scene/store';
 import type { Vec3 } from '../scene/types';
 import { notify } from '../ui/notify/notifyStore';
 import { addAsset, removeAsset } from './assets';
-import { parseStl } from './stl';
-import { parse3mf } from './threemf';
 import { ImportError, type ImportedMesh } from './types';
 
 /** Oltre questa soglia l'editor diventa troppo lento: il file viene rifiutato con un messaggio. */
@@ -62,31 +60,42 @@ async function addImported(mesh: ImportedMesh, fileName: string): Promise<boolea
   return true;
 }
 
-/** Importa file STL e 3MF scelti dall'utente; ogni errore diventa una notifica e non blocca gli altri file. */
+/** Importa file STL, 3MF e SVG scelti dall'utente; ogni errore diventa una notifica e non blocca gli altri file. */
 export async function importFiles(files: File[]): Promise<void> {
   let added = 0;
+  let drawings = 0;
   for (const file of files) {
     try {
       const ext = file.name.split('.').pop()?.toLowerCase();
       const baseName = file.name.replace(/\.[^.]+$/, '');
+      // Un SVG è un disegno 2D: diventa una forma estrusa, senza passare dal kernel come le mesh
+      if (ext === 'svg') {
+        // Il lettore SVG (e SVGLoader di three) si scarica solo ora
+        const { parseSvg } = await import('./svg');
+        const svg = parseSvg(await file.text(), baseName);
+        useSceneStore.getState().addSvg({ ...svg, fileName: file.name });
+        drawings++;
+        continue;
+      }
       const buffer = await file.arrayBuffer();
       let meshes: ImportedMesh[];
-      if (ext === 'stl') meshes = parseStl(buffer, baseName);
-      else if (ext === '3mf') meshes = parse3mf(buffer, baseName);
-      else throw new ImportError(`Formato non supportato: ${file.name}. Usa file STL o 3MF.`);
+      if (ext === 'stl') meshes = (await import('./stl')).parseStl(buffer, baseName);
+      else if (ext === '3mf') meshes = (await import('./threemf')).parse3mf(buffer, baseName);
+      else throw new ImportError(`Formato non supportato: ${file.name}. Usa file STL, 3MF o SVG.`);
       for (const mesh of meshes) if (await addImported(mesh, file.name)) added++;
     } catch (err) {
       notify.error(err instanceof ImportError ? err.message : `Impossibile leggere "${file.name}".`);
     }
   }
   if (added) notify.info(added === 1 ? 'Mesh importata.' : `${added} mesh importate.`);
+  if (drawings) notify.info(drawings === 1 ? 'Disegno SVG importato come forma 2D.' : `${drawings} disegni SVG importati come forme 2D.`);
 }
 
-/** Apre il selettore file e importa quanto scelto. */
-export function pickAndImport(): void {
+/** Apre il selettore file e importa quanto scelto (`accept` limita i formati: mesh 3D oppure disegni SVG). */
+export function pickAndImport(accept = '.stl,.3mf,.svg'): void {
   const input = document.createElement('input');
   input.type = 'file';
-  input.accept = '.stl,.3mf';
+  input.accept = accept;
   input.multiple = true;
   input.onchange = () => void importFiles(Array.from(input.files ?? []));
   input.click();

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyScale } from './resize';
+import { applyScale, hasScale, isRatioLocked, lockedPatch, scalePatch, scalePercent } from './resize';
 import { halfHeight, primitiveDefaults, shape2dDefaults } from './defaults';
 import type { PrimitiveNode, Shape2DNode } from './types';
 
@@ -74,4 +74,100 @@ describe('applyScale', () => {
     const dz = halfHeight({ ...node, ...patch } as Shape2DNode) - halfHeight(node);
     expect(dz).toBe(5);
   });
+
+  it('forme 2D poligonali: scalano ingombro e altezza, il parametro ratio non cambia', () => {
+    const star = shape('star5', { width: 20, depth: 20, ratio: 0.4, height: 10 } as Partial<Shape2DNode>);
+    const patch = applyScale(star, [2, 1, 0.5]);
+    expect(patch).toEqual({ height: 5, width: 40, depth: 20 });
+    expect('ratio' in patch).toBe(false);
+  });
+
+  it('testo: la dimensione segue la media dei due assi del piano, altezza lo Z', () => {
+    const text = shape('text', { size: 10, height: 4 } as Partial<Shape2DNode>);
+    expect(applyScale(text, [2, 2, 1])).toEqual({ height: 4, size: 20 });
+    expect(applyScale(text, [1, 1, 2])).toEqual({ height: 8, size: 10 });
+  });
+
+  describe('SVG importato', () => {
+    const svg = (patch: Partial<Shape2DNode> = {}) =>
+      shape('svg', { contours: [[[-20, -10], [20, -10], [20, 10], [-20, 10]]], width: 40, depth: 20, fileName: 'a.svg', ...patch } as Partial<Shape2DNode>);
+
+    it('con le proporzioni bloccate (predefinito) larghezza e profondità seguono lo stesso fattore, quello trascinato', () => {
+      expect(applyScale(svg(), [2, 1, 1])).toMatchObject({ width: 80, depth: 40 });
+      expect(applyScale(svg(), [1, 0.5, 1])).toMatchObject({ width: 20, depth: 10 });
+      // Il fattore più lontano da 1 vince e l'altezza resta libera
+      expect(applyScale(svg(), [1.1, 1.5, 2])).toMatchObject({ width: 60, depth: 30, height: 20 });
+    });
+
+    it('la profondità non si arrotonda per conto suo: il rapporto resta quello del disegno', () => {
+      const r = applyScale(svg({ width: 30, depth: 20 } as Partial<Shape2DNode>), [1.3, 1, 1]);
+      expect(r.width).toBe(39);
+      expect(r.depth).toBeCloseTo(26, 3);
+    });
+
+    it('con il lucchetto aperto gli assi sono indipendenti', () => {
+      expect(applyScale(svg({ lockRatio: false } as Partial<Shape2DNode>), [2, 1, 1])).toMatchObject({ width: 80, depth: 20 });
+    });
+  });
 });
+
+describe('lucchetto delle proporzioni sulle altre forme', () => {
+  it('di default solo gli SVG sono bloccati', () => {
+    expect(isRatioLocked(shape('square'))).toBe(false);
+    expect(isRatioLocked(prim('box'))).toBe(false);
+    expect(isRatioLocked(shape('square', { lockRatio: true } as Partial<Shape2DNode>))).toBe(true);
+  });
+
+  it('cubo bloccato: la maniglia scala tutti i lati dello stesso fattore, anche se i lati sono diversi', () => {
+    const box = prim('box', { size: [20, 10, 40], lockRatio: true } as Partial<PrimitiveNode>);
+    const r = applyScale(box, [2, 1, 1]);
+    expect(r.size).toEqual([40, 20, 80]);
+    // Libero: solo l'asse trascinato
+    expect(applyScale(prim('box', { size: [20, 10, 40] } as Partial<PrimitiveNode>), [2, 1, 1]).size).toEqual([40, 10, 40]);
+  });
+
+  it('quadrato e cerchio bloccati: i due assi seguono lo stesso fattore', () => {
+    expect(applyScale(shape('square', { width: 20, depth: 10, lockRatio: true } as Partial<Shape2DNode>), [2, 1, 1])).toMatchObject({ width: 40, depth: 20 });
+    const circle = applyScale(shape('circle', { radius: 10, radiusY: 5, lockRatio: true } as Partial<Shape2DNode>), [1.5, 1, 1]);
+    expect(circle).toMatchObject({ radius: 15, radiusY: 7.5 });
+  });
+
+  it('lockedPatch: la misura modificata trascina le altre dello stesso fattore', () => {
+    expect(lockedPatch(prim('box', { size: [20, 10, 40] } as Partial<PrimitiveNode>), 'size', 40, 0)).toEqual({ size: [40, 20, 80] });
+    expect(lockedPatch(prim('box', { size: [20, 10, 40] } as Partial<PrimitiveNode>), 'size', 5, 1)).toEqual({ size: [10, 5, 20] });
+    expect(lockedPatch(shape('square', { width: 20, depth: 10 } as Partial<Shape2DNode>), 'depth', 20)).toEqual({ depth: 20, width: 40 });
+    expect(lockedPatch(shape('circle', { radius: 10, radiusY: 5 } as Partial<Shape2DNode>), 'radiusY', 10)).toEqual({ radius: 20, radiusY: 10 });
+    // Cerchio tondo: il raggio Y resta assente
+    expect(lockedPatch(shape('circle'), 'radius', 12)).toEqual({ radius: 12, radiusY: undefined });
+    // Nessun compagno: testo e cilindro usano la modifica semplice
+    expect(lockedPatch(shape('text'), 'size', 20)).toBeNull();
+    expect(lockedPatch(prim('cylinder'), 'radius', 5)).toBeNull();
+  });
+});
+
+describe('Scala in percentuale', () => {
+  it('il 100 % è la misura iniziale della forma e vale per cubo e forme 2D, non per le altre primitive', () => {
+    expect(scalePercent(prim('box'))).toBe(100);
+    expect(scalePercent(prim('box', { size: [40, 40, 40] } as Partial<PrimitiveNode>))).toBe(200);
+    expect(scalePercent(shape('circle', { radius: 5 } as Partial<Shape2DNode>))).toBe(50);
+    expect(scalePercent(shape('text', { size: 30 } as Partial<Shape2DNode>))).toBe(300);
+    expect(hasScale(prim('box'))).toBe(true);
+    expect(hasScale(prim('sphere'))).toBe(false);
+  });
+
+  it('scalePatch ridimensiona in proporzione (anche se il lucchetto è aperto) e lascia invariata l altezza delle forme 2D', () => {
+    expect(scalePatch(prim('box', { size: [20, 10, 40] } as Partial<PrimitiveNode>), 200).size).toEqual([40, 20, 80]);
+    const r = scalePatch(shape('square', { width: 20, depth: 10, height: 7 } as Partial<Shape2DNode>), 50);
+    expect(r).toMatchObject({ width: 10, depth: 5, height: 7 });
+  });
+});
+
+describe('estrusione rotazionale e ridimensionamento', () => {
+  it('l altezza lineare non si tocca e il raggio dall asse scala con X e Y', () => {
+    const node = shape('circle', { radius: 10, extrusion: 'rotate', revolveRadius: 20 } as Partial<Shape2DNode>);
+    const r = applyScale(node, [2, 2, 3]);
+    expect(r).toMatchObject({ radius: 20, revolveRadius: 40 });
+    expect(r).not.toHaveProperty('height');
+  });
+});
+

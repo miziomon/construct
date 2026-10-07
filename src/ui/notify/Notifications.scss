@@ -67,6 +67,32 @@
     line-height: 1.5;
   }
 
+  &__input {
+    width: 100%;
+    margin: 0 0 $space-5;
+    padding: 6px $space-2;
+    border: 1px solid color('border');
+    border-radius: $radius-sm;
+    background: color('bg');
+    color: inherit;
+    @include focus-ring;
+  }
+
+  // Casella opzionale sopra i pulsanti
+  &__check {
+    display: flex;
+    align-items: flex-start;
+    gap: $space-2;
+    margin: 0 0 $space-5;
+    font-size: 13px;
+    line-height: 1.4;
+    cursor: pointer;
+
+    input {
+      margin-top: 2px;
+    }
+  }
+
   &__actions {
     display: flex;
     justify-content: flex-end;

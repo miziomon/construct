@@ -1,0 +1,87 @@
+@use '../../styles/abstracts' as *;
+
+.timeline {
+  display: flex;
+  align-items: center;
+  gap: $space-1;
+  height: $timeline-height;
+  padding: 0 $space-2;
+  border-top: 1px solid color('border');
+  background: color('panel');
+
+  &__arrow {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border: 1px solid transparent;
+    border-radius: $radius-md;
+    background: transparent;
+    @include focus-ring;
+
+    &:hover:not(:disabled) {
+      background: color('panel-raised');
+    }
+
+    &:disabled {
+      opacity: 0.35;
+      cursor: default;
+    }
+  }
+
+  // Striscia orizzontale dei passi, con scorrimento sottile
+  &__steps {
+    display: flex;
+    flex: 1;
+    gap: $space-1;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    overflow-x: auto;
+    @include thin-scrollbar;
+  }
+
+  &__step {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 26px;
+    padding: 0 $space-2;
+    border: 1px solid color('border');
+    border-radius: $radius-md;
+    background: transparent;
+    font-size: 12px;
+    white-space: nowrap;
+    @include focus-ring;
+
+    &:hover:not(:disabled) {
+      background: color('panel-raised');
+    }
+
+    &:disabled {
+      cursor: default;
+    }
+
+    // Passo corrente: stesso stile dei pulsanti attivi della barra strumenti
+    &--current {
+      border-color: color('accent');
+      background: color('accent-soft');
+      color: color('accent');
+    }
+
+    // Passi annullati, ancora ripristinabili
+    &--future {
+      color: color('text-muted');
+      border-style: dashed;
+    }
+  }
+
+  &__number {
+    font-size: 10px;
+    font-weight: 600;
+    color: color('text-muted');
+  }
+}

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { useSceneStore } from '../scene/store';
 import { getKernel } from './client';
+import { applyPlacement } from './placement';
 import type { NodeMesh } from './evaluate';
 
 interface ResultState {
@@ -36,6 +37,9 @@ export function startKernelSync(): void {
         // Anche se nel frattempo la scena è cambiata si pubblica il risultato: durante il trascinamento di uno
         // slider l'anteprima si aggiorna dal vivo. Il giro successivo (se dirty) arriva subito dopo con l'ultima scena.
         useResultStore.setState({ meshes: result.meshes, ms: result.ms, error: undefined });
+        // Con l'ingombro aggiornato si appoggiano sul piatto gli oggetti in attesa; la correzione cambia la scena e
+        // rimette `dirty`, quindi il giro successivo ricalcola con la posizione corretta
+        if (!dirty) applyPlacement();
       } while (dirty);
     } catch (err) {
       useResultStore.setState({ error: err instanceof Error ? err.message : String(err) });

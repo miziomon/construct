@@ -1,7 +1,7 @@
 {
   "name": "webcad",
   "private": true,
-  "version": "0.8.0",
+  "version": "0.20.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -21,6 +21,7 @@
     "immer": "^11.1.21",
     "lucide-react": "^1.52.0",
     "manifold-3d": "^3.5.4",
+    "opentype.js": "^2.0.0",
     "react": "~19.3.0",
     "react-dom": "~19.3.0",
     "three": "^0.186.1",

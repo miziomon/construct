@@ -1,11 +1,24 @@
-import type { ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { isAppGroup, isLocked, parentOf, useSceneStore } from '../../scene/store';
-import { EDGE_ICONS, GROUP_ICONS, GROUP_NAMES } from '../groupIcons';
-import { maxFilletRadius } from '../../scene/edgeProfile';
-import { MAX_SEGMENTS, MIN_SEGMENTS, MIN_SPHERE_SEGMENTS, SEGMENT_PRESETS } from '../../scene/defaults';
+import { queueKeepBase } from '../../kernel/placement';
+import { CORNER_ICONS, CORNER_NAMES, EDGE_ICONS, GROUP_ICONS, GROUP_NAMES } from '../groupIcons';
+import { isCutter } from '../../scene/treatment';
+import { FONTS, FONT_CATEGORIES, fontInfo } from '../../scene/fontCatalog';
+import type { FontCategory, FontInfo } from '../../scene/fontCatalog';
+import { Lock, Unlock } from 'lucide-react';
+import { isPolygonShape, isRotational, RATIO_INFO, revolveParams } from '../../scene/shapes2d';
+import { isRatioLocked, lockedPatch, scalePatch, scalePercent } from '../../scene/resize';
+import { cornerSphere } from '../../scene/cornerProfile';
+import { EDGE_SEGMENTS, maxFilletRadius } from '../../scene/edgeProfile';
+import { CORNER_SPHERE_SEGMENTS, MAX_SEGMENTS, MIN_SEGMENTS, MIN_SPHERE_SEGMENTS, SEGMENT_PRESETS } from '../../scene/defaults';
 import { BED_SIZE } from '../../scene/types';
-import type { EdgeNode, GroupNode, MeshNode, PrimitiveNode, SceneNode, Shape2DNode, Vec3 } from '../../scene/types';
+import type { CornerNode, EdgeNode, GroupNode, MeshNode, PrimitiveNode, SceneNode, Shape2DNode, ShellParams, Vec3 } from '../../scene/types';
+import { shellQuality } from '../../scene/shell';
 import { NumberField } from '../NumberField/NumberField';
+import { ArrayFields } from '../Array/ArrayFields';
+import { useArrayTool } from '../Array/arrayToolStore';
+import { PatternFields } from '../Pattern/PatternFields';
+import { localBoundsOf, usePatternTool } from '../Pattern/patternToolStore';
 import { SliderField } from '../SliderField/SliderField';
 import { TIPS } from './tooltips';
 import { maxPolyhedronRadius, polygonMaxRadius } from '../../scene/polyhedra';
@@ -40,11 +53,17 @@ export function PropertiesPanel() {
   const inAppGroup = useSceneStore((s) => s.selection.length === 1 && isAppGroup(s.scene.nodes[parentOf(s.scene, s.selection[0]) ?? '']));
   // Bloccato lui o un gruppo che lo contiene
   const locked = useSceneStore((s) => s.selection.length === 1 && isLocked(s.scene, s.selection[0]));
+  const arrayToolActive = useArrayTool((s) => s.active);
+  const patternToolActive = usePatternTool((s) => s.active);
 
   if (selection.length === 0) return <p className="properties__empty">Seleziona un oggetto per modificarne le proprietà.</p>;
   if (!node) return <p className="properties__empty">{selection.length} oggetti selezionati. Ctrl+G li raggruppa (restano separati), U li unisce in un solo solido.</p>;
 
-  const patch = (p: Partial<PrimitiveNode> | Partial<Shape2DNode> | Partial<MeshNode> | Partial<GroupNode> | Partial<EdgeNode>) => updateNode(node.id, p);
+  const patch = (p: Partial<PrimitiveNode> | Partial<Shape2DNode> | Partial<MeshNode> | Partial<GroupNode> | Partial<EdgeNode> | Partial<CornerNode>) => {
+    // Misure e rotazione cambiano l'ingombro: la base dell'oggetto resta dov'era (sul piatto o impilata). Lo spostamento no
+    if (!('position' in p)) queueKeepBase(node.id);
+    updateNode(node.id, p);
+  };
   const setVec = (key: 'position' | 'rotation', i: number, v: number) => {
     const next = [...node[key]] as Vec3;
     next[i] = v;
@@ -54,11 +73,11 @@ export function PropertiesPanel() {
   return (
     <div className="properties">
       <Section
-        title={node.type === 'group' ? GROUP_NAMES[node.op] : node.type === 'edge' ? (node.treatment === 'fillet' ? 'Raccordo' : 'Smusso') : 'Oggetto'}
+        title={node.type === 'group' ? GROUP_NAMES[node.op] : node.type === 'edge' ? (node.treatment === 'fillet' ? 'Raccordo' : 'Smusso') : node.type === 'corner' ? CORNER_NAMES[node.treatment] : 'Oggetto'}
         icon={
-          node.type === 'group' || node.type === 'edge'
+          node.type === 'group' || isCutter(node)
             ? (() => {
-                const Icon = node.type === 'group' ? GROUP_ICONS[node.op] : EDGE_ICONS[node.treatment];
+                const Icon = node.type === 'group' ? GROUP_ICONS[node.op] : node.type === 'corner' ? CORNER_ICONS[node.treatment] : EDGE_ICONS[node.treatment];
                 return <Icon size={14} className="properties__section-icon" aria-hidden="true" />;
               })()
             : undefined
@@ -68,7 +87,7 @@ export function PropertiesPanel() {
           <span className="properties__label">Nome</span>
           <input className="properties__text" value={node.name} onChange={(e) => patch({ name: e.target.value })} />
         </label>
-        {node.type !== 'edge' && (
+        {!isCutter(node) && (
           <label className="properties__row">
             <span className="properties__label">Colore</span>
             <input className="properties__color" type="color" value={node.color} onChange={(e) => patch({ color: e.target.value })} />
@@ -79,7 +98,7 @@ export function PropertiesPanel() {
           <input type="checkbox" className="properties__checkbox" checked={!!node.locked} onChange={(e) => patch({ locked: e.target.checked })} />
           <span className="properties__hint">{locked && !node.locked ? 'Bloccato dal gruppo' : 'Impedisce spostamenti e modifiche'}</span>
         </label>
-        {node.type !== 'edge' && (
+        {!isCutter(node) && (
         <div className="properties__row">
           <span className="properties__label">Tipo</span>
           <div className="properties__segmented" role="group" aria-label="Solido o foro">
@@ -100,13 +119,14 @@ export function PropertiesPanel() {
         </div>
         )}
         {isAppGroup(node) && <p className="properties__note">Gli oggetti restano separati (colori e codice propri) e si muovono insieme. Per fonderli in un solo solido usa Unisci (U).</p>}
-        {node.type === 'group' && node.op !== 'group' && (
+        {/* Il Guscio ha un solo figlio e le sue misure: non si può trasformare in un'altra booleana */}
+        {node.type === 'group' && node.op !== 'group' && node.op !== 'shell' && node.op !== 'array' && node.op !== 'pattern' && (
           <div className="properties__row">
             <span className="properties__label">Operazione</span>
-            <div className="properties__segmented" role="group" aria-label="Operazione del gruppo">
-              {(['union', 'difference', 'intersection'] as const).map((op) => (
+            <div className="properties__segmented properties__segmented--wrap" role="group" aria-label="Operazione del gruppo">
+              {(['union', 'difference', 'intersection', 'hull'] as const).map((op) => (
                 <button key={op} type="button" className={`properties__segment${node.op === op ? ' properties__segment--active' : ''}`} aria-pressed={node.op === op} disabled={locked} onClick={() => patch({ op })}>
-                  {op === 'union' ? 'Unione' : op === 'difference' ? 'Differenza' : 'Intersezione'}
+                  {op === 'union' ? 'Unione' : op === 'difference' ? 'Differenza' : op === 'intersection' ? 'Intersezione' : 'Inviluppo'}
                 </button>
               ))}
             </div>
@@ -123,7 +143,7 @@ export function PropertiesPanel() {
         )}
       </Section>
 
-      {node.type !== 'edge' && (
+      {!isCutter(node) && (
       <>
       <Section title={inGroup ? 'Posizione (relativa al gruppo)' : 'Posizione'}>
         {AXES.map((a, i) => (
@@ -161,6 +181,28 @@ export function PropertiesPanel() {
       )}
 
       {node.type === 'edge' && <EdgeFields node={node} patch={patch} locked={locked} />}
+      {node.type === 'corner' && <CornerFields node={node} patch={patch} locked={locked} />}
+      {/* Con lo strumento Serie aperto gli stessi campi sono già nel suo pannello */}
+      {node.type === 'group' && node.op === 'array' && node.array && !arrayToolActive && (
+        <Section title="Ripetizione">
+          <ArrayFields params={node.array} disabled={locked} onChange={(change) => patch({ array: { ...node.array!, ...change } })} />
+        </Section>
+      )}
+      {node.type === 'group' && node.op === 'pattern' && node.pattern && !patternToolActive && (
+        <Section title="Pattern">
+          <PatternFields
+            params={node.pattern}
+            disabled={locked}
+            onChange={(change) => patch({ pattern: { ...node.pattern!, ...change } })}
+            onRefreshBounds={() => {
+              // Ingombro attuale del pezzo (figlio) nel sistema del gruppo: il disegno si estende a tutta la nuova area
+              const bounds = localBoundsOf(useSceneStore.getState().scene, node.children[0]);
+              if (bounds) patch({ pattern: { ...node.pattern!, bounds } });
+            }}
+          />
+        </Section>
+      )}
+      {node.type === 'group' && node.op === 'shell' && node.shell && <ShellFields node={node} shell={node.shell} patch={patch} locked={locked} />}
       {node.type === 'primitive' && <PrimitiveFields node={node} patch={patch} locked={locked} />}
       {node.type === 'mesh' && (
         <Section title="Mesh importata">
@@ -180,6 +222,103 @@ export function PropertiesPanel() {
   );
 }
 
+/** Spessori di un Guscio già creato, modificabili dal vivo (stessi limiti del pannello dello strumento). */
+function ShellFields({ node, shell, patch, locked }: { node: GroupNode; shell: ShellParams; patch: (p: Partial<GroupNode>) => void; locked: boolean }) {
+  const { wall, bottom } = shell;
+  const child = useSceneStore((s) => s.scene.nodes[node.children[0]]);
+  // Senza cavità esatta (sfera, toro, mesh...) le pareti sono approssimate: lo si dice
+  const quality = useSceneStore((s) => (child ? shellQuality(s.scene, child) : undefined));
+  return (
+    <Section title="Guscio">
+      {quality === 'scaled' && <p className="properties__note">Pareti approssimate: la cavità è l'oggetto rimpicciolito, lo spessore è esatto solo nei punti estremi.</p>}
+      {quality === 'parts' && <p className="properties__note">Ogni solido ha la sua cavità: tra un solido e l'altro resta una parete interna.</p>}
+      <SliderField
+        label="Laterale"
+        unit="mm"
+        min={0.1}
+        max={20}
+        step={0.1}
+        hardMin={0.1}
+        hardMax={BED_SIZE}
+        tooltip="Spessore delle pareti laterali, in mm."
+        disabled={locked}
+        value={wall}
+        onCommit={(v) => patch({ shell: { ...shell, wall: v } })}
+      />
+      <SliderField
+        label="Inferiore"
+        unit="mm"
+        min={0}
+        max={20}
+        step={0.1}
+        hardMin={0}
+        hardMax={BED_SIZE}
+        tooltip="Spessore del fondo, in mm. La cima resta sempre aperta."
+        disabled={locked}
+        value={bottom}
+        onCommit={(v) => patch({ shell: { ...shell, bottom: v } })}
+      />
+    </Section>
+  );
+}
+
+/** Misure di uno smusso angolare già creato: tipo, distanza e, per lo sferico, i segmenti, modificabili dal vivo. */
+function CornerFields({ node, patch, locked }: { node: CornerNode; patch: (p: Partial<CornerNode>) => void; locked: boolean }) {
+  const maxDistance = Math.max(0.2, Math.round(Math.min(...node.lengths) * 100) / 100);
+  const sphere = node.treatment === 'fillet' ? cornerSphere(node.directions, Math.min(node.distance, ...node.lengths)) : null;
+  return (
+    <Section title="Misure">
+      <p className="properties__note">
+        Angolo con {node.directions.length} spigoli{sphere ? `, raggio della sfera ${Math.round(sphere.radius * 100) / 100} mm` : ''}.
+      </p>
+      <div className="properties__row">
+        <span className="properties__label">Tipo</span>
+        <div className="properties__segmented" role="group" aria-label="Tipo di smusso angolare">
+          {(['chamfer', 'fillet'] as const).map((treatment) => (
+            <button
+              key={treatment}
+              type="button"
+              className={`properties__segment${node.treatment === treatment ? ' properties__segment--active' : ''}`}
+              aria-pressed={node.treatment === treatment}
+              disabled={locked}
+              onClick={() => patch({ treatment })}
+            >
+              {treatment === 'chamfer' ? 'Piano' : 'Sferico'}
+            </button>
+          ))}
+        </div>
+      </div>
+      <SliderField
+        label="Distanza"
+        unit="mm"
+        min={0.1}
+        max={maxDistance}
+        step={0.1}
+        hardMin={0.01}
+        hardMax={maxDistance}
+        tooltip="Distanza dal vertice, lungo ogni spigolo, dove il taglio incontra lo spigolo, in mm."
+        disabled={locked}
+        value={node.distance}
+        onCommit={(v) => patch({ distance: v })}
+      />
+      {node.treatment === 'fillet' && (
+        <SliderField
+          label="Segmenti"
+          min={MIN_SPHERE_SEGMENTS}
+          max={MAX_SEGMENTS}
+          step={4}
+          hardMin={MIN_SPHERE_SEGMENTS}
+          hardMax={MAX_SEGMENTS}
+          tooltip="Risoluzione della calotta, come per la sfera. Sono sempre multipli di 4."
+          disabled={locked}
+          value={node.segments ?? CORNER_SPHERE_SEGMENTS}
+          onCommit={(v) => patch({ segments: Math.max(MIN_SPHERE_SEGMENTS, Math.round(v / 4) * 4) })}
+        />
+      )}
+    </Section>
+  );
+}
+
 /** Misure di un raccordo o di uno smusso già creato: stesse del pannello dello strumento, modificabili dal vivo. */
 function EdgeFields({ node, patch, locked }: { node: EdgeNode; patch: (p: Partial<EdgeNode>) => void; locked: boolean }) {
   const limit = (max: number) => Math.max(0.2, Math.round(max * 100) / 100);
@@ -189,19 +328,34 @@ function EdgeFields({ node, patch, locked }: { node: EdgeNode; patch: (p: Partia
         {node.convex ? 'Spigolo convesso' : 'Spigolo concavo'}, apertura {Math.round(node.angle * 10) / 10}°, lunghezza {Math.round(node.length * 100) / 100} mm.
       </p>
       {node.treatment === 'fillet' ? (
-        <SliderField
-          label="Raggio"
-          unit="mm"
-          min={0.1}
-          max={limit(maxFilletRadius(node))}
-          step={0.1}
-          hardMin={0.01}
-          hardMax={limit(maxFilletRadius(node))}
-          tooltip="Raggio del raccordo, in mm. Il massimo dipende dalla larghezza delle due superfici."
-          disabled={locked}
-          value={node.radius}
-          onCommit={(v) => patch({ radius: v })}
-        />
+        <>
+          <SliderField
+            label="Raggio"
+            unit="mm"
+            min={0.1}
+            max={limit(maxFilletRadius(node))}
+            step={0.1}
+            hardMin={0.01}
+            hardMax={limit(maxFilletRadius(node))}
+            tooltip="Raggio del raccordo, in mm. Il massimo dipende dalla larghezza delle due superfici."
+            disabled={locked}
+            value={node.radius}
+            onCommit={(v) => patch({ radius: v })}
+          />
+          {/* Scene salvate prima della 0.9.0 non hanno il campo: valgono 64 segmenti */}
+          <SliderField
+            label="Segmenti"
+            min={MIN_SEGMENTS}
+            max={MAX_SEGMENTS}
+            step={1}
+            hardMin={MIN_SEGMENTS}
+            hardMax={MAX_SEGMENTS}
+            tooltip="Risoluzione del raccordo, come per i cerchi. Conta il cerchio intero: pochi segmenti danno un arrotondamento a sfaccettature."
+            disabled={locked}
+            value={node.segments ?? EDGE_SEGMENTS}
+            onCommit={(v) => patch({ segments: Math.round(v) })}
+          />
+        </>
       ) : (
         <>
           <SliderField
@@ -310,12 +464,16 @@ function PrimitiveFields({ node, patch, locked }: { node: Extract<SceneNode, { t
               disabled={locked}
               value={node.size[i]}
               onCommit={(v) => {
+                // Con il lucchetto chiuso anche gli altri lati scalano dello stesso fattore
+                const coupled = isRatioLocked(node) ? lockedPatch(node, 'size', v, i) : null;
+                if (coupled) return patch(coupled as Partial<PrimitiveNode>);
                 const size = [...node.size] as Vec3;
                 size[i] = v;
                 patch({ size } as Partial<PrimitiveNode>);
               }}
             />
           ))}
+          <ProportionControls node={node} patch={patch as (p: object) => void} locked={locked} />
           {rounding(node.cornerRadius ?? 0, Math.min(...node.size) / 2 - 0.01)}
         </Section>
       );
@@ -421,27 +579,181 @@ function SegmentsControl({ value, onChange, disabled, sphere = false }: Segments
   );
 }
 
-/** Campi di una forma 2D estrusa: profilo (cerchio o quadrato) più parametri di estrusione. */
-function Shape2DFields({ node, patch, locked }: { node: Shape2DNode; patch: (p: Partial<Shape2DNode>) => void; locked: boolean }) {
-  const slider = (label: string, value: number, key: string, tooltip: string, opts: { unit: string; min: number; max: number; step?: number; hardMin?: number; hardMax?: number }) => (
-    <SliderField key={key} label={label} tooltip={tooltip} disabled={locked} value={value} onCommit={(v) => patch({ [key]: v } as Partial<Shape2DNode>)} {...opts} />
+/**
+ * Campo di testo che modifica la scena solo alla conferma (Invio o uscita dal campo, Esc annulla): come NumberField,
+ * ogni modifica è un solo passo di Annulla e un solo ricalcolo, non uno per lettera.
+ */
+function TextField({ label, tooltip, value, disabled, onCommit }: { label: string; tooltip: string; value: string; disabled: boolean; onCommit: (value: string) => void }) {
+  const [draft, setDraft] = useState(value);
+  const [focused, setFocused] = useState(false);
+  // Allinea la bozza al valore esterno (annulla, ripeti) quando non si sta scrivendo
+  useEffect(() => {
+    if (!focused) setDraft(value);
+  }, [value, focused]);
+  // Esc annulla: la bozza si scarta senza confermarla all'uscita dal campo
+  const cancelled = useRef(false);
+  const commit = () => {
+    if (!cancelled.current && draft !== value) onCommit(draft);
+    cancelled.current = false;
+  };
+  return (
+    <label className="properties__row" title={tooltip}>
+      <span className="properties__label">{label}</span>
+      <input
+        className="properties__text"
+        value={draft}
+        disabled={disabled}
+        onFocus={() => setFocused(true)}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => {
+          setFocused(false);
+          commit();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur();
+          else if (e.key === 'Escape') {
+            cancelled.current = true;
+            setDraft(value);
+            e.currentTarget.blur();
+          }
+        }}
+      />
+    </label>
   );
-  const length = { unit: 'mm', min: 0.5, max: BED_SIZE, step: 0.5, hardMin: 0.1, hardMax: 2000 };
-  // Raggio massimo di arrotondamento: poco meno dell'inraggio del poligono, o di metà lato minore del quadrato
-  const maxRounding = node.kind === 'circle' ? polygonMaxRadius(node.radius, node.segments) : Math.max(0, Math.min(node.width, node.depth) / 2 - 0.01);
-  const rounding = slider('Raccordo', node.cornerRadius ?? 0, 'cornerRadius', TIPS.rounding, {
-    unit: 'mm',
-    min: 0,
-    max: Math.max(0.5, maxRounding),
-    step: 0.5,
-    hardMin: 0,
-    hardMax: Math.max(0, maxRounding),
-  });
+}
+
+/** Campi di una forma 2D estrusa: profilo (cerchio, quadrato, forme poligonali o testo) più parametri di estrusione. */
+/**
+ * Lucchetto delle proporzioni e slider Scala di una forma: con il lucchetto chiuso le misure indipendenti (larghezza e
+ * profondità, i lati del cubo, i due raggi) cambiano insieme; la Scala (100 % = misura iniziale della forma, o del file
+ * per gli SVG) ridimensiona sempre in proporzione. Il testo ha solo la Scala.
+ */
+function ProportionControls({ node, patch, locked }: { node: PrimitiveNode | Shape2DNode; patch: (p: object) => void; locked: boolean }) {
+  const ratioLocked = isRatioLocked(node);
+  const hasLock = !(node.type === 'shape2d' && node.kind === 'text');
   return (
     <>
-      <Section title="Profilo 2D">
-        {node.kind === 'circle'
-          ? [
+      {hasLock && (
+        <div className="properties__row">
+          <span className="properties__label">Proporzioni</span>
+          <button
+            type="button"
+            className="properties__lock"
+            aria-pressed={ratioLocked}
+            disabled={locked}
+            title={ratioLocked ? TIPS.ratioLocked : TIPS.ratioUnlocked}
+            onClick={() => patch({ lockRatio: !ratioLocked })}
+          >
+            {ratioLocked ? <Lock size={14} /> : <Unlock size={14} />}
+            {ratioLocked ? 'Bloccate' : 'Libere'}
+          </button>
+        </div>
+      )}
+      <SliderField
+        label="Scala"
+        unit="%"
+        min={10}
+        max={500}
+        step={1}
+        hardMin={1}
+        hardMax={5000}
+        tooltip={TIPS.scale}
+        disabled={locked}
+        value={Math.round(scalePercent(node))}
+        onCommit={(v) => patch(scalePatch(node, v))}
+      />
+    </>
+  );
+}
+
+/**
+ * Font del menu Testo raggruppati per stile. I font di simboli (usati dalla tab Simboli) compaiono, in un gruppo a
+ * parte, solo se sono quello del nodo: così il menu li mostra senza proporli come font di testo.
+ */
+function fontGroups(current: string): [FontCategory, FontInfo[]][] {
+  const groups = FONT_CATEGORIES.map((c): [FontCategory, FontInfo[]] => [c, FONTS.filter((f) => f.category === c)]);
+  const active = fontInfo(current);
+  if (active.category === 'Simboli') groups.push(['Simboli', [active]]);
+  return groups;
+}
+
+function Shape2DFields({ node, patch, locked }: { node: Shape2DNode; patch: (p: Partial<Shape2DNode>) => void; locked: boolean }) {
+  const ratioLocked = isRatioLocked(node);
+  /** Misura modificata: con il lucchetto chiuso le misure legate scalano dello stesso fattore, in un solo passo di Annulla. */
+  const edit = (key: string, value: number) => patch((ratioLocked ? lockedPatch(node, key, value) : null) ?? ({ [key]: value } as Partial<Shape2DNode>));
+  const slider = (label: string, value: number, key: string, tooltip: string, opts: { unit: string; min: number; max: number; step?: number; hardMin?: number; hardMax?: number }) => (
+    <SliderField key={key} label={label} tooltip={tooltip} disabled={locked} value={value} onCommit={(v) => edit(key, v)} {...opts} />
+  );
+  const length = { unit: 'mm', min: 0.5, max: BED_SIZE, step: 0.5, hardMin: 0.1, hardMax: 2000 };
+  const rotational = isRotational(node);
+  const revolve = revolveParams(node);
+  /** Cambia il tipo di estrusione: al primo passaggio a Rotazionale scrive i valori calcolati (poi restano anche tornando a Lineare). */
+  const setExtrusion = (kind: 'linear' | 'rotate') =>
+    patch(
+      (kind === 'rotate'
+        ? { extrusion: 'rotate', revolveAngle: revolve.angle, revolveRadius: revolve.radius, revolveSegments: revolve.segments }
+        : { extrusion: 'linear' }) as Partial<Shape2DNode>,
+    );
+  // Raggio massimo di arrotondamento: poco meno dell'inraggio del poligono, o di metà lato minore del quadrato
+  const roundable = node.kind === 'circle' || node.kind === 'square';
+  const maxRounding = node.kind === 'circle' ? polygonMaxRadius(node.radius, node.segments) : node.kind === 'square' ? Math.max(0, Math.min(node.width, node.depth) / 2 - 0.01) : 0;
+  const rounding = roundable
+    ? slider('Raccordo', node.cornerRadius ?? 0, 'cornerRadius', TIPS.rounding, {
+        unit: 'mm',
+        min: 0,
+        max: Math.max(0.5, maxRounding),
+        step: 0.5,
+        hardMin: 0,
+        hardMax: Math.max(0, maxRounding),
+      })
+    : null;
+  // Forme poligonali: Larghezza, Profondità e (se la forma ne ha uno) il parametro con la sua etichetta
+  const ratioInfo = isPolygonShape(node) ? RATIO_INFO[node.kind] : null;
+  return (
+    <>
+      <Section title={node.kind === 'text' ? (node.origin === 'symbol' ? 'Simbolo' : node.origin === 'emoji' ? 'Emoji' : 'Testo') : 'Profilo 2D'}>
+        {node.kind === 'text' ? (
+          [
+            <TextField key="text" label={node.origin ? 'Carattere' : 'Testo'} tooltip={TIPS.text} value={node.text} disabled={locked} onCommit={(v) => patch({ text: v } as Partial<Shape2DNode>)} />,
+            <label key="font" className="properties__row" title={TIPS.font}>
+              <span className="properties__label">Font</span>
+              <select className="properties__text" value={fontInfo(node.font).id} disabled={locked} onChange={(e) => patch({ font: e.target.value } as Partial<Shape2DNode>)}>
+                {fontGroups(node.font).map(([category, fonts]) => (
+                  <optgroup key={category} label={category}>
+                    {fonts.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </label>,
+            slider('Dimensione', node.size, 'size', TIPS.textSize, length),
+          ]
+        ) : isPolygonShape(node) ? (
+          [
+            slider('Larghezza', node.width, 'width', TIPS.width, length),
+            slider('Profondità', node.depth, 'depth', TIPS.depth, length),
+            ratioInfo && (
+              <SliderField
+                key="ratio"
+                label={ratioInfo.label}
+                unit="%"
+                min={Math.round(ratioInfo.min * 100)}
+                max={Math.round(ratioInfo.max * 100)}
+                step={1}
+                hardMin={Math.round(ratioInfo.min * 100)}
+                hardMax={Math.round(ratioInfo.max * 100)}
+                tooltip={ratioInfo.tip}
+                disabled={locked}
+                value={Math.round(node.ratio * 100)}
+                onCommit={(v) => patch({ ratio: v / 100 } as Partial<Shape2DNode>)}
+              />
+            ),
+          ]
+        ) : node.kind === 'circle' ? (
+          [
               slider('Raggio X', node.radius, 'radius', TIPS.radiusX, { ...length, max: BED_SIZE / 2 }),
               <SliderField
                 key="radiusY"
@@ -455,29 +767,85 @@ function Shape2DFields({ node, patch, locked }: { node: Shape2DNode; patch: (p: 
                 tooltip={TIPS.radiusY}
                 disabled={locked}
                 value={node.radiusY ?? node.radius}
-                onCommit={(v) => patch({ radiusY: Math.abs(v - node.radius) < 1e-9 ? undefined : v } as Partial<Shape2DNode>)}
+                onCommit={(v) => {
+                  // Con il lucchetto chiuso cambia anche il raggio X; se i due raggi coincidono la forma torna tonda
+                  const next = (ratioLocked ? lockedPatch(node, 'radiusY', v) : null) ?? { radiusY: v };
+                  const radius = (next.radius as number | undefined) ?? node.radius;
+                  patch({ ...next, radiusY: Math.abs((next.radiusY as number) - radius) < 1e-9 ? undefined : next.radiusY } as Partial<Shape2DNode>);
+                }}
               />,
               <SegmentsControl key="segments" value={node.segments} disabled={locked} onChange={(n) => patch({ segments: n } as Partial<Shape2DNode>)} />,
               rounding,
             ]
-          : [slider('Larghezza', node.width, 'width', TIPS.width, length), slider('Profondità', node.depth, 'depth', TIPS.depth, length), rounding]}
+        ) : (
+          [slider('Larghezza', node.width, 'width', TIPS.width, length), slider('Profondità', node.depth, 'depth', TIPS.depth, length), rounding]
+        )}
+        <ProportionControls node={node} patch={patch as (p: object) => void} locked={locked} />
+        {/* Contorno: offset 2D del profilo (positivo ingrandisce, negativo restringe), prima dell'estrusione */}
+        {slider('Contorno', node.offset ?? 0, 'offset', TIPS.offset, { unit: 'mm', min: -20, max: 20, step: 0.5, hardMin: -2000, hardMax: 2000 })}
+        {(node.offset ?? 0) !== 0 && (
+          <div className="properties__row" title={TIPS.offsetJoin}>
+            <span className="properties__label">Angoli</span>
+            <div className="properties__segmented" role="group" aria-label="Angoli del contorno">
+              {([['round', 'Arrotondati'], ['sharp', 'Vivi']] as const).map(([join, label]) => (
+                <button
+                  key={join}
+                  type="button"
+                  className={`properties__segment${(node.offsetJoin ?? 'round') === join ? ' properties__segment--active' : ''}`}
+                  aria-pressed={(node.offsetJoin ?? 'round') === join}
+                  disabled={locked}
+                  onClick={() => patch({ offsetJoin: join } as Partial<Shape2DNode>)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </Section>
       <Section title="Estrusione">
-        {slider('Altezza', node.height, 'height', TIPS.extrudeHeight, length)}
-        {slider('Torsione', node.twist, 'twist', TIPS.twist, { unit: '°', min: -360, max: 360, step: 5, hardMin: -3600, hardMax: 3600 })}
-        <SliderField
-          label="Scala cima"
-          unit="%"
-          min={0}
-          max={300}
-          step={5}
-          hardMin={0}
-          hardMax={500}
-          tooltip={TIPS.scaleTop}
-          disabled={locked}
-          value={Math.round(node.scaleTop * 100)}
-          onCommit={(v) => patch({ scaleTop: v / 100 })}
-        />
+        <div className="properties__row" title={TIPS.extrusionKind}>
+          <span className="properties__label">Tipo</span>
+          <div className="properties__segmented" role="group" aria-label="Tipo di estrusione">
+            {([['linear', 'Lineare'], ['rotate', 'Rotazionale']] as const).map(([kind, label]) => (
+              <button
+                key={kind}
+                type="button"
+                className={`properties__segment${(rotational ? 'rotate' : 'linear') === kind ? ' properties__segment--active' : ''}`}
+                aria-pressed={(rotational ? 'rotate' : 'linear') === kind}
+                disabled={locked}
+                onClick={() => setExtrusion(kind)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {rotational ? (
+          <>
+            {slider('Angolo', revolve.angle, 'revolveAngle', TIPS.revolveAngle, { unit: '°', min: 1, max: 360, step: 1, hardMin: 1, hardMax: 360 })}
+            {slider('Raggio', revolve.radius, 'revolveRadius', TIPS.revolveRadius, { unit: 'mm', min: 0, max: BED_SIZE, step: 0.5, hardMin: 0, hardMax: 2000 })}
+            {slider('Segmenti', revolve.segments, 'revolveSegments', TIPS.revolveSegments, { unit: '', min: 8, max: 128, step: 1, hardMin: 3, hardMax: 256 })}
+          </>
+        ) : (
+          <>
+            {slider('Altezza', node.height, 'height', TIPS.extrudeHeight, length)}
+            {slider('Torsione', node.twist, 'twist', TIPS.twist, { unit: '°', min: -360, max: 360, step: 5, hardMin: -3600, hardMax: 3600 })}
+            <SliderField
+              label="Scala cima"
+              unit="%"
+              min={0}
+              max={300}
+              step={5}
+              hardMin={0}
+              hardMax={500}
+              tooltip={TIPS.scaleTop}
+              disabled={locked}
+              value={Math.round(node.scaleTop * 100)}
+              onCommit={(v) => patch({ scaleTop: v / 100 })}
+            />
+          </>
+        )}
       </Section>
     </>
   );

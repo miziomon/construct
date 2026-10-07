@@ -2,9 +2,10 @@
 import * as Comlink from 'comlink';
 import Module from 'manifold-3d';
 import wasmUrl from 'manifold-3d/manifold.wasm?url';
-import { Evaluator, toMesh, type AssetCheck, type EvalResult } from './evaluate';
+import { Evaluator, toMesh, type AssetCheck, type EvalResult, type NodeMesh } from './evaluate';
 import { writeStl } from './export/stl';
 import { write3mf } from './export/threemf';
+import { ensureFonts } from './fontLoader';
 import type { Scene } from '../scene/types';
 
 // Il WASM viene caricato una sola volta, alla prima richiesta
@@ -24,14 +25,24 @@ const api = {
   /** Calcola le mesh di tutti gli oggetti alla radice. I buffer tornano al thread principale senza copia. */
   async evaluate(scene: Scene): Promise<EvalResult> {
     const ev = await getEvaluator();
+    await ensureFonts(scene);
     const result = ev.evaluate(scene);
     const transfer = result.meshes.flatMap((m) => [m.positions.buffer, m.indices.buffer]);
     return Comlink.transfer(result, transfer);
   },
 
+  /** Operandi "fantasma" (come # di OpenSCAD) degli oggetti indicati. */
+  async ghosts(scene: Scene, rootIds: string[]): Promise<NodeMesh[]> {
+    const ev = await getEvaluator();
+    await ensureFonts(scene);
+    const meshes = ev.ghosts(scene, rootIds);
+    return Comlink.transfer(meshes, meshes.flatMap((m) => [m.positions.buffer, m.indices.buffer]));
+  },
+
   /** STL binario con l'unione di tutti i solid alla radice. */
   async exportStl(scene: Scene): Promise<Uint8Array<ArrayBuffer>> {
     const ev = await getEvaluator();
+    await ensureFonts(scene);
     const union = ev.unionOfSolids(scene);
     try {
       const mesh = toMesh({ id: 'all', color: '#fff', mode: 'solid' } as never, union);
@@ -45,6 +56,7 @@ const api = {
   /** 3MF con un oggetto per ogni solid alla radice (un colore ciascuno). */
   async export3mf(scene: Scene): Promise<Uint8Array<ArrayBuffer>> {
     const ev = await getEvaluator();
+    await ensureFonts(scene);
     const { meshes } = ev.evaluate(scene);
     const parts = meshes
       .filter((m) => !m.isHole && !m.empty)

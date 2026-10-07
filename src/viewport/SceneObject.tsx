@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { ElementRef } from 'react';
 import { Edges, TransformControls } from '@react-three/drei';
+import { useThree } from '@react-three/fiber';
 import type { ThreeEvent } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { NodeMesh } from '../kernel/evaluate';
@@ -8,12 +10,20 @@ import { useViewportPalette } from './palette';
 import { round } from '../scene/math';
 import { halfHeight } from '../scene/defaults';
 import { applyScale } from '../scene/resize';
-import { faceMap } from '../scene/edgeTool';
+import { cornerAt, faceMap } from '../scene/edgeTool';
 import { useEdgeTool } from '../ui/EdgeTool/edgeToolStore';
+import { useMeasure } from '../ui/Measure/measureStore';
+import { useLayFlat } from '../ui/LayFlat/layFlatStore';
+import { usePatternTool } from '../ui/Pattern/patternToolStore';
+import { layOnFaceAndDrop } from '../kernel/placement';
+import { notify } from '../ui/notify/notifyStore';
+import { snapToMesh } from '../scene/snap';
 import type { Vec3 } from '../scene/types';
 
 const SNAP_MOVE = 1; // mm
 const SNAP_ROTATE = THREE.MathUtils.degToRad(15);
+/** Raggio di aggancio dello strumento Misura, in pixel dello schermo. */
+const MEASURE_SNAP_PIXELS = 12;
 
 interface Props {
   /** Oggetto alla radice della scena. */
@@ -39,10 +49,11 @@ interface PartProps {
   selected: boolean;
   locked: boolean;
   onPointerDown: (e: ThreeEvent<PointerEvent>, mesh: NodeMesh) => void;
+  onDoubleClick: (e: ThreeEvent<MouseEvent>, mesh: NodeMesh) => void;
 }
 
 /** Una mesh dell'oggetto, nel suo colore, con il contorno di selezione. */
-function Part({ mesh, selected, locked, onPointerDown }: PartProps) {
+function Part({ mesh, selected, locked, onPointerDown, onDoubleClick }: PartProps) {
   const palette = useViewportPalette();
   // Geometria da buffer; "flatShading" sul materiale evita lo smussamento degli spigoli
   const geometry = useMemo(() => {
@@ -55,33 +66,114 @@ function Part({ mesh, selected, locked, onPointerDown }: PartProps) {
   useEffect(() => () => geometry.dispose(), [geometry]);
 
   // Con Raccordo o Smusso attivi i clic scelgono le facce al posto di selezionare l'oggetto
-  const tool = useEdgeTool((s) => s.tool);
+  const edgeTool = useEdgeTool((s) => s.tool);
+  // Con la Misura attiva i clic scelgono i punti da misurare, e non selezionano nemmeno
+  const measuring = useMeasure((s) => s.active);
+  const canvasHeight = useThree((s) => s.size.height);
+  /** Punto agganciato sotto il puntatore (vertice, spigolo o superficie) con la tolleranza in mm di MEASURE_SNAP_PIXELS pixel. */
+  const snapAt = (e: ThreeEvent<PointerEvent | MouseEvent>) => {
+    if (e.faceIndex == null) return null;
+    const camera = e.camera;
+    // Millimetri per pixel alla distanza del punto colpito (prospettica) o in generale (ortografica)
+    const perPixel = camera instanceof THREE.PerspectiveCamera
+      ? (2 * e.distance * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2)) / canvasHeight
+      : camera instanceof THREE.OrthographicCamera
+        ? (camera.top - camera.bottom) / camera.zoom / canvasHeight
+        : 0;
+    return snapToMesh(mesh, e.faceIndex, [e.point.x, e.point.y, e.point.z], perPixel * MEASURE_SNAP_PIXELS);
+  };
+  // Qualunque strumento modale attivo toglie la selezione dai clic sugli oggetti
+  // Appoggia su una faccia: i clic scelgono la faccia da portare sul piatto
+  const layFlat = useLayFlat((s) => s.active);
+  // Pattern: i clic scelgono la faccia da cui parte il disegno (solo dopo "Scegli faccia")
+  const patternPicking = usePatternTool((s) => s.picking);
+  const tool = edgeTool ?? (measuring ? 'measure' : layFlat ? 'layflat' : patternPicking ? 'pattern' : null);
   const choosing = useEdgeTool((s) => s.tool !== null && s.preview === null);
-  const { setHover, pickFace } = useEdgeTool.getState();
+  const measure = useMeasure.getState();
+  const { setHover, pickFace, setHoverCorner, pickCorner } = useEdgeTool.getState();
   /** Faccia sotto il puntatore (indice del triangolo colpito, tradotto nella faccia piana a cui appartiene). */
   const faceAt = (e: ThreeEvent<PointerEvent | MouseEvent>) => (e.faceIndex == null ? -1 : faceMap(mesh).triFace[e.faceIndex]);
+  /**
+   * Smusso angolare: vertice d'angolo più vicino al punto colpito, tra quelli della faccia sotto il puntatore
+   * (indice del vertice nella mesh, oppure -1).
+   */
+  const cornerUnder = (e: ThreeEvent<PointerEvent | MouseEvent>) => {
+    const face = faceAt(e);
+    return face < 0 ? -1 : cornerAt(mesh, faceMap(mesh), face, [e.point.x, e.point.y, e.point.z]);
+  };
 
   return (
     <mesh
       geometry={geometry}
       onPointerDown={tool ? undefined : (e) => onPointerDown(e, mesh)}
+      onDoubleClick={tool ? undefined : (e) => onDoubleClick(e, mesh)}
       onPointerMove={
-        choosing
+        layFlat
           ? (e) => {
               e.stopPropagation();
+              const face = faceAt(e);
+              useLayFlat.getState().setHover(face >= 0 ? { mesh, face } : null);
+            }
+          : patternPicking
+          ? (e) => {
+              e.stopPropagation();
+              const face = faceAt(e);
+              usePatternTool.getState().setHover(face >= 0 ? { mesh, face } : null);
+            }
+          : measuring
+          ? (e) => {
+              e.stopPropagation();
+              measure.setHover(snapAt(e));
+            }
+          : choosing
+          ? (e) => {
+              e.stopPropagation();
+              if (tool === 'corner') {
+                // Con lo smusso angolare si evidenzia il vertice, non la faccia
+                const vertex = cornerUnder(e);
+                setHoverCorner(vertex >= 0 ? { mesh, vertex } : null);
+                return;
+              }
               const face = faceAt(e);
               setHover(face >= 0 ? { mesh, face } : null);
             }
           : undefined
       }
-      onPointerOut={tool ? () => setHover(null) : undefined}
+      onPointerOut={layFlat ? () => useLayFlat.getState().setHover(null) : patternPicking ? () => usePatternTool.getState().setHover(null) : measuring ? () => measure.setHover(null) : edgeTool ? () => (edgeTool === 'corner' ? setHoverCorner(null) : setHover(null)) : undefined}
       onClick={
-        choosing
+        layFlat
           ? (e) => {
               // Un trascinamento (rotazione della vista) non è una scelta
               if (e.delta > 3) return;
               e.stopPropagation();
-              pickFace(mesh, faceAt(e));
+              const face = faceAt(e);
+              if (face < 0) return;
+              if (!layOnFaceAndDrop(mesh, face)) notify.error('L\'oggetto è bloccato: sbloccalo per appoggiarlo su una faccia.');
+              useLayFlat.getState().cancel();
+            }
+          : patternPicking
+          ? (e) => {
+              // Un trascinamento (rotazione della vista) non è una scelta
+              if (e.delta > 3) return;
+              e.stopPropagation();
+              const face = faceAt(e);
+              if (face >= 0) usePatternTool.getState().pickFace(mesh, face);
+            }
+          : measuring
+          ? (e) => {
+              // Un trascinamento (rotazione della vista) non è una scelta
+              if (e.delta > 3) return;
+              e.stopPropagation();
+              const snap = snapAt(e);
+              if (snap) measure.pick(snap);
+            }
+          : choosing
+          ? (e) => {
+              // Un trascinamento (rotazione della vista) non è una scelta
+              if (e.delta > 3) return;
+              e.stopPropagation();
+              if (tool === 'corner') pickCorner(mesh, cornerUnder(e), e.shiftKey);
+              else pickFace(mesh, faceAt(e));
             }
           : undefined
       }
@@ -110,6 +202,7 @@ export function SceneObject({ rootId, meshes, selection, locked, showGizmo }: Pr
   const node = useSceneStore((s) => s.scene.nodes[rootId]);
   const gizmoMode = useSceneStore((s) => s.gizmoMode);
   const select = useSceneStore((s) => s.select);
+  const setGizmoMode = useSceneStore((s) => s.setGizmoMode);
   const updateNode = useSceneStore((s) => s.updateNode);
 
   const wrapper = useRef<THREE.Group>(null);
@@ -117,6 +210,19 @@ export function SceneObject({ rootId, meshes, selection, locked, showGizmo }: Pr
   const [proxy, setProxy] = useState<THREE.Object3D | null>(null);
   const startMatrix = useRef(new THREE.Matrix4());
   const [shift, setShift] = useState(false);
+  // Gizmo di trascinamento (callback ref in uno state: si configura appena esiste)
+  const [controls, setControls] = useState<ElementRef<typeof TransformControls> | null>(null);
+
+  // In Sposta restano le frecce X, Y, Z e il quadrato del piano XY: la maniglia centrale libera e i piani XZ e YZ
+  // (che muoverebbero anche in Z) si tolgono dal gizmo, così lo Z cambia solo trascinando espressamente la freccia Z
+  useEffect(() => {
+    if (!controls) return;
+    // three-stdlib non espone i gruppi di maniglie (sono privati): si accede per nome e si rimuovono una volta sola
+    const inner = (controls as unknown as { gizmo: { gizmo: Record<string, THREE.Object3D>; picker: Record<string, THREE.Object3D> } }).gizmo;
+    for (const group of [inner.gizmo.translate, inner.picker.translate]) {
+      group.children.filter((h) => ['XYZ', 'XZ', 'YZ'].includes(h.name)).forEach((h) => group.remove(h));
+    }
+  }, [controls]);
 
   // Quando arrivano le mesh ricalcolate, l'eventuale spostamento di anteprima non serve più
   useEffect(() => {
@@ -148,9 +254,19 @@ export function SceneObject({ rootId, meshes, selection, locked, showGizmo }: Pr
     select([e.altKey ? mesh.id : mesh.path[0]], e.shiftKey);
   };
 
+  /**
+   * Doppio clic: l'oggetto è già selezionato dal primo clic del doppio clic (due pointerdown),
+   * quindi basta passare alla modalità Sposta (W) per mostrare il gizmo di spostamento.
+   */
+  const onDoubleClick = (e: ThreeEvent<MouseEvent>) => {
+    e.stopPropagation();
+    setGizmoMode('translate');
+  };
+
   const scaling = gizmoMode === 'resize' || gizmoMode === 'extrude';
   // Solo forme con misure proprie si ridimensionano (non gruppi né mesh); Estrudi solo le forme 2D
-  const resizable = (node.type === 'primitive' || node.type === 'shape2d') && (gizmoMode !== 'extrude' || node.type === 'shape2d');
+  // Estrudi (T) agisce sull'altezza delle forme 2D: un'estrusione rotazionale non ha un'altezza da trascinare
+  const resizable = (node.type === 'primitive' || node.type === 'shape2d') && (gizmoMode !== 'extrude' || (node.type === 'shape2d' && node.extrusion !== 'rotate'));
 
   /** Scala letta dal gizmo; in modalità Estrudi conta solo l'asse Z (il cubetto centrale non deve allargare il profilo). */
   const currentScale = (p: THREE.Object3D): Vec3 => (gizmoMode === 'extrude' ? [1, 1, p.scale.z] : [p.scale.x, p.scale.y, p.scale.z]);
@@ -204,7 +320,7 @@ export function SceneObject({ rootId, meshes, selection, locked, showGizmo }: Pr
     <>
       <group ref={wrapper} matrixAutoUpdate={false}>
         {meshes.map((mesh) => (
-          <Part key={mesh.id} mesh={mesh} locked={locked} selected={selection.some((id) => mesh.path.includes(id))} onPointerDown={onPointerDown} />
+          <Part key={mesh.id} mesh={mesh} locked={locked} selected={selection.some((id) => mesh.path.includes(id))} onPointerDown={onPointerDown} onDoubleClick={onDoubleClick} />
         ))}
       </group>
 
@@ -216,6 +332,7 @@ export function SceneObject({ rootId, meshes, selection, locked, showGizmo }: Pr
       />
       {showGizmo && proxy && gizmoMode !== 'select' && (!scaling || resizable) && (
         <TransformControls
+          ref={setControls}
           object={proxy}
           mode={scaling ? 'scale' : gizmoMode}
           // In modalità Estrudi resta solo l'asse Z (l'altezza dell'estrusione)

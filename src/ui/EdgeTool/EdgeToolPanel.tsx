@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Check, X } from 'lucide-react';
 import { round } from '../../scene/math';
 import { maxFilletRadius } from '../../scene/edgeProfile';
+import { MAX_SEGMENTS, MIN_SEGMENTS } from '../../scene/defaults';
 import { EDGE_ICONS } from '../groupIcons';
 import { SliderField } from '../SliderField/SliderField';
 import { currentParams, useEdgeTool, type ChamferMode } from './edgeToolStore';
@@ -40,7 +41,8 @@ export function EdgeToolPanel() {
     };
   }, [tool]);
 
-  if (!tool) return null;
+  // Lo smusso angolare ha un pannello suo (CornerPanel)
+  if (!tool || tool === 'corner') return null;
   const isFillet = tool === 'fillet';
   const Icon = EDGE_ICONS[tool];
   const params = currentParams(state);
@@ -87,6 +89,19 @@ export function EdgeToolPanel() {
               history={false}
               value={params.radius}
               onCommit={(v) => setOption({ radius: v })}
+            />
+            <SliderField
+              label="Segmenti"
+              min={MIN_SEGMENTS}
+              max={MAX_SEGMENTS}
+              step={1}
+              hardMin={MIN_SEGMENTS}
+              hardMax={MAX_SEGMENTS}
+              tooltip="Risoluzione del raccordo, come per i cerchi: pochi segmenti danno un arrotondamento a sfaccettature, molti un raccordo liscio. Conta il cerchio intero."
+              disabled={!ready}
+              history={false}
+              value={state.segments}
+              onCommit={(v) => setOption({ segments: Math.round(v) })}
             />
           </>
         ) : (

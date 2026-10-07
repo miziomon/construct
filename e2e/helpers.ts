@@ -2,6 +2,11 @@ import { expect, type Page } from '@playwright/test';
 
 /** Apre l'app con un database pulito e attende che il kernel sia pronto. */
 export async function openApp(page: Page): Promise<void> {
+  // Il selettore di file del sistema non si può pilotare: si prova il ramo senza API (finestra del nome + download);
+  // i test che ne hanno bisogno mettono un finto showSaveFilePicker
+  await page.addInitScript(() => {
+    (window as { showSaveFilePicker?: unknown }).showSaveFilePicker = undefined;
+  });
   await page.goto('/');
   // Database pulito: la scena salvata da un test precedente non deve influenzare il successivo
   await page.evaluate(async () => {
@@ -27,7 +32,15 @@ export async function settled(page: Page): Promise<void> {
 
 export async function addShape(page: Page, label: string): Promise<void> {
   // Il nome accessibile dei pulsanti è il testo ("Cubo"): la descrizione "Aggiungi: …" sta nel title
-  await page.locator(`button[title^="Aggiungi: ${label}"]`).click();
+  const button = page.locator(`button[title^="Aggiungi: ${label}"]`);
+  // La libreria è a tab: se la forma non sta in quella aperta si passa all'altra
+  if (!(await button.isVisible())) {
+    for (const tab of ['Forme 3D', 'Forme 2D']) {
+      await page.getByRole('tab', { name: tab }).click();
+      if (await button.isVisible()) break;
+    }
+  }
+  await button.click();
   await settled(page);
 }
 

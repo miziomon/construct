@@ -56,6 +56,107 @@ describe('Evaluator', () => {
     expect(m.bbox.max[0]).toBeCloseTo(12, 3);
   });
 
+  it('specchia un gruppo: il figlio si riflette e il solido resta valido', () => {
+    // Cono con la punta in alto, a destra dell'origine; il gruppo è specchiato sull'asse X
+    const cone = prim('c', 'cone', { radiusBottom: 10, radiusTop: 0, height: 20, position: [30, 0, 0] } as Partial<PrimitiveNode>);
+    const plain = new Evaluator(wasm).evaluate({ nodes: { c: cone }, rootIds: ['c'] }).meshes[0];
+    const scene: Scene = { nodes: { c: cone, g: group('g', ['c'], { mirror: [true, false, false] }) }, rootIds: ['g'] };
+    const [m] = new Evaluator(wasm).evaluate(scene).meshes;
+    expect(m.status).toBe('NoError');
+    expect(m.volume).toBeCloseTo(plain.volume, 3);
+    expect(m.bbox.min[0]).toBeCloseTo(-plain.bbox.max[0], 3);
+    expect(m.bbox.max[0]).toBeCloseTo(-plain.bbox.min[0], 3);
+  });
+
+  it('specchia un nodo sull asse Z prima della rotazione: il cono si capovolge', () => {
+    const cone = prim('c', 'cone', { radiusBottom: 10, radiusTop: 0, height: 20, mirror: [false, false, true] } as Partial<PrimitiveNode>);
+    const [m] = new Evaluator(wasm).evaluate({ nodes: { c: cone }, rootIds: ['c'] }).meshes;
+    expect(m.status).toBe('NoError');
+    expect(m.volume).toBeGreaterThan(0);
+    // La base larga ora sta in alto: il baricentro dei vertici è sopra lo zero
+    let sumZ = 0;
+    for (let i = 2; i < m.positions.length; i += 3) sumZ += m.positions[i];
+    expect(sumZ).toBeGreaterThan(0);
+  });
+
+  describe('estrusione rotazionale', () => {
+    const revolved = (patch: Record<string, unknown>) => {
+      const node = shape('a', 'circle', { radius: 10, extrusion: 'rotate', revolveRadius: 25, revolveSegments: 64, ...patch } as Partial<Shape2DNode>);
+      return new Evaluator(wasm).evaluate({ nodes: { a: node }, rootIds: ['a'] }).meshes[0];
+    };
+
+    it('un cerchio lontano dall asse è un toro: volume di Pappus e ingombro', () => {
+      const m = revolved({});
+      expect(m.status).toBe('NoError');
+      // Area del poligono a 64 lati con raggio 10, per 2π·R (la rivoluzione a 64 segmenti perde lo 0,16 %)
+      const area = 0.5 * 64 * 100 * Math.sin((2 * Math.PI) / 64);
+      expect(m.volume / (2 * Math.PI * 25 * area)).toBeGreaterThan(0.99);
+      expect(m.volume / (2 * Math.PI * 25 * area)).toBeLessThan(1.001);
+      expect(m.bbox.max[0]).toBeCloseTo(35, 1);
+      expect(m.bbox.min[0]).toBeCloseTo(-35, 1);
+      // La Y del profilo è la Z del solido, centrata
+      expect(m.bbox.max[2]).toBeCloseTo(10, 1);
+      expect(m.bbox.min[2]).toBeCloseTo(-10, 1);
+    });
+
+    it('con 180 gradi dà mezzo toro dal lato +Y (si parte da +X in senso antiorario)', () => {
+      const full = revolved({});
+      const half = revolved({ revolveAngle: 180 });
+      expect(half.status).toBe('NoError');
+      expect(half.volume / full.volume).toBeCloseTo(0.5, 2);
+      expect(half.bbox.min[1]).toBeGreaterThan(-0.01);
+      expect(half.bbox.max[1]).toBeCloseTo(35, 0);
+    });
+
+    it('una forma che attraversa l asse si taglia: resta solo la parte con x > 0 e la mesh è valida', () => {
+      const m = revolved({ revolveRadius: 5 });
+      expect(m.status).toBe('NoError');
+      expect(m.volume).toBeGreaterThan(0);
+      // La parte oltre l'asse non c'è: il raggio massimo è 5 + 10
+      expect(m.bbox.max[0]).toBeCloseTo(15, 1);
+    });
+
+    it('l estrusione lineare resta com era quando extrusion è assente o lineare', () => {
+      const linear = new Evaluator(wasm).evaluate({ nodes: { a: shape('a', 'square', { width: 20, depth: 10, height: 5, cornerRadius: 0 } as Partial<Shape2DNode>) }, rootIds: ['a'] }).meshes[0];
+      const explicit = new Evaluator(wasm).evaluate({ nodes: { a: shape('a', 'square', { width: 20, depth: 10, height: 5, cornerRadius: 0, extrusion: 'linear' } as Partial<Shape2DNode>) }, rootIds: ['a'] }).meshes[0];
+      expect(linear.volume).toBeCloseTo(1000, 3);
+      expect(explicit.volume).toBeCloseTo(1000, 3);
+    });
+  });
+
+  describe('inviluppo convesso', () => {
+    const two = (op: GroupNode['op'], extra: Record<string, ReturnType<typeof prim>> = {}) => {
+      const a = prim('a', 'box', { size: [10, 10, 10], position: [-20, 0, 0] } as Partial<PrimitiveNode>);
+      const b = prim('b', 'box', { size: [10, 10, 10], position: [20, 0, 0] } as Partial<PrimitiveNode>);
+      const scene: Scene = { nodes: { a, b, ...extra, g: group('g', ['a', 'b', ...Object.keys(extra)], { op }) }, rootIds: ['g'] };
+      return new Evaluator(wasm).evaluate(scene).meshes[0];
+    };
+
+    it('due cubi lontani: l inviluppo li riempie (parallelepipedo da 50 × 10 × 10) e l unione no', () => {
+      const hull = two('hull');
+      expect(hull.status).toBe('NoError');
+      expect(hull.volume).toBeCloseTo(50 * 10 * 10, 2);
+      expect(two('union').volume).toBeCloseTo(2 * 1000, 2);
+      expect(hull.bbox.min[0]).toBeCloseTo(-25, 3);
+      expect(hull.bbox.max[0]).toBeCloseTo(25, 3);
+    });
+
+    it('un foro dentro il gruppo si sottrae dall inviluppo', () => {
+      const hole = prim('h', 'box', { size: [4, 4, 40], mode: 'hole' } as Partial<PrimitiveNode>);
+      const m = two('hull', { h: hole });
+      expect(m.status).toBe('NoError');
+      // Il foro 4 × 4 attraversa tutta l'altezza (10): tolgono 4 × 4 × 10
+      expect(m.volume).toBeCloseTo(5000 - 160, 1);
+    });
+
+    it('senza solidi dà un insieme vuoto, non un errore', () => {
+      const hole = prim('h', 'box', { size: [4, 4, 4], mode: 'hole' } as Partial<PrimitiveNode>);
+      const scene: Scene = { nodes: { h: hole, g: group('g', ['h'], { op: 'hull' }) }, rootIds: ['g'] };
+      const [m] = new Evaluator(wasm).evaluate(scene).meshes;
+      expect(m.empty).toBe(true);
+    });
+  });
+
   it('intersezione di due sfere sovrapposte non è vuota', () => {
     const a = prim('a', 'sphere', { radius: 10 } as Partial<PrimitiveNode>);
     const b = prim('b', 'sphere', { radius: 10, position: [10, 0, 0] } as Partial<PrimitiveNode>);
@@ -177,5 +278,71 @@ describe('Evaluator', () => {
     // Ingombro invariato: le facce restano piane alla distanza originale
     expect(meshes[0].bbox.max[0]).toBeCloseTo(10, 3);
     expect(ms).toBeLessThan(200);
+  });
+});
+
+describe('nuove forme 2D e testo nel kernel', () => {
+  const extruded = (node: Shape2DNode) => new Evaluator(wasm).evaluate({ nodes: { a: node }, rootIds: ['a'] }).meshes[0];
+  const POLYGON_KINDS = ['ring', 'heart', 'star5', 'star6', 'egg', 'trapezoid', 'cross', 'drop', 'crescent'] as const;
+
+  it.each(POLYGON_KINDS)('%s: solido valido con l\'ingombro richiesto, appoggiato a metà altezza', (kind) => {
+    const m = extruded(shape('a', kind, { width: 30, depth: 20, height: 6 } as Partial<Shape2DNode>));
+    expect(m.status).toBe('NoError');
+    expect(m.volume).toBeGreaterThan(0);
+    expect(m.bbox.max[0] - m.bbox.min[0]).toBeCloseTo(30, 2);
+    expect(m.bbox.max[1] - m.bbox.min[1]).toBeCloseTo(20, 2);
+    expect(m.bbox.max[2] - m.bbox.min[2]).toBeCloseTo(6, 3);
+  });
+
+  it('anello: il foro è vuoto (volume = esterno meno foro) e la torsione funziona con le forme nuove', () => {
+    const ring = extruded(shape('a', 'ring', { width: 40, depth: 40, ratio: 0.5, height: 5 } as Partial<Shape2DNode>));
+    // Poligono a 64 lati: pochi decimi di punto percentuale sotto il cerchio ideale
+    expect(Math.abs(ring.volume / (Math.PI * (20 ** 2 - 10 ** 2) * 5) - 1)).toBeLessThan(0.005);
+    const twisted = extruded(shape('a', 'star5', { width: 20, depth: 20, height: 10, twist: 90 } as Partial<Shape2DNode>));
+    expect(twisted.status).toBe('NoError');
+    const cone = extruded(shape('a', 'cross', { width: 20, depth: 20, height: 10, scaleTop: 0 } as Partial<Shape2DNode>));
+    const prism = extruded(shape('a', 'cross', { width: 20, depth: 20, height: 10 } as Partial<Shape2DNode>));
+    expect(cone.volume).toBeCloseTo(prism.volume / 3, 0);
+  });
+
+  describe('testo', () => {
+    beforeAll(async () => {
+      const { readFileSync } = await import('node:fs');
+      const { registerFont } = await import('../scene/fontOutline');
+      const { FONTS } = await import('../scene/fontCatalog');
+      for (const f of FONTS) {
+        const b = readFileSync(`src/assets/fonts/${f.file}`);
+        registerFont(f.id, b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer);
+      }
+    });
+    const textShape = (patch: Record<string, unknown> = {}) => shape('a', 'text', patch as Partial<Shape2DNode>);
+
+    it('estrude le lettere con i buchi: "O" ha meno volume del riempimento', () => {
+      const o = extruded(textShape({ text: 'O', size: 20, height: 3 }));
+      expect(o.status).toBe('NoError');
+      expect(o.bbox.max[2] - o.bbox.min[2]).toBeCloseTo(3, 3);
+      // L'altezza della O è circa quella delle maiuscole (la O sborda un poco)
+      expect(o.bbox.max[1] - o.bbox.min[1]).toBeGreaterThan(19);
+      expect(o.bbox.max[1] - o.bbox.min[1]).toBeLessThan(22);
+      const solid = (o.bbox.max[0] - o.bbox.min[0]) * (o.bbox.max[1] - o.bbox.min[1]) * 3;
+      expect(o.volume).toBeLessThan(solid * 0.75);
+    });
+
+    it('più testo = più ingombro, font diversi = forme diverse; il testo vuoto non rompe', () => {
+      const short = extruded(textShape({ text: 'Ci', size: 10 }));
+      const long = extruded(textShape({ text: 'Ciao mondo', size: 10 }));
+      expect(long.bbox.max[0] - long.bbox.min[0]).toBeGreaterThan(3 * (short.bbox.max[0] - short.bbox.min[0]));
+      const script = extruded(textShape({ text: 'Ciao', font: 'pacifico' }));
+      const sans = extruded(textShape({ text: 'Ciao', font: 'roboto-bold' }));
+      expect(script.volume).not.toBeCloseTo(sans.volume, 0);
+      const empty = extruded(textShape({ text: '' }));
+      expect(empty.empty).toBe(true);
+    });
+
+    it('un font sconosciuto ripiega sul primo del catalogo invece di fallire', () => {
+      const fallback = extruded(textShape({ text: 'Ciao', font: 'non-esiste' }));
+      const first = extruded(textShape({ text: 'Ciao', font: 'roboto-bold' }));
+      expect(fallback.volume).toBeCloseTo(first.volume, 3);
+    });
   });
 });
