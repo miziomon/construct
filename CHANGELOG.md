@@ -18,6 +18,23 @@ I messaggi di commit seguono i [Conventional Commits](https://www.conventionalco
 
 ## [Non rilasciato]
 
+## [0.29.0] - 2026-10-08
+
+### Aggiunto
+- **Somma di Minkowski**: nuovo tipo di gruppo "Minkowski" (`minkowski()` di OpenSCAD) calcolato dal kernel con `minkowskiSum` di manifold-3d: il primo oggetto si espande del volume di ogni successivo (con una sfera, arrotonda gli spigoli di qualsiasi solido). Si crea importando un file OpenSCAD e si può scegliere tra le operazioni di un gruppo nel pannello Proprietà; il codice esportato ha `minkowski()` e si rilegge. Non c'è ancora un comando di barra.
+- **Stampanti Anycubic ed Elegoo** nei preset del piano di stampa: Anycubic i3 Mega, Kobra 2, Kobra 2 Pro, Kobra 2 Neo, Kobra 2 Plus, Kobra 2 Max, Kobra 3, Kobra 3 V2, Kobra 3 Max e Kobra S1; Elegoo Neptune 3 Pro, Neptune 3 Max, Neptune 4, Neptune 4 Pro, Neptune 4 Plus, Neptune 4 Max e Centauri Carbon. Le misure di i3 Mega, Kobra 2, Kobra 2 Pro, Kobra 2 Neo, Kobra 2 Plus e Neptune 4 Plus vengono dalla conoscenza comune dei modelli e non da una verifica sul sito del produttore.
+- **Confronto con OpenSCAD** dei tre esempi della cartella `import/`: volume e ingombro del solido importato coincidono con quelli di OpenSCAD (ingombro entro 0,03 mm, volume entro l'1%). Il dettaglio è in `docs/da-fare.md`.
+
+### Corretto
+- **Intervalli con passo** (`[0:1:6]`): il passo veniva scambiato con la fine, quindi un `for` su un intervallo a tre parti faceva una sola iterazione (in `Bauble.scad` mancavano sei pale su sette).
+- **Estrusione con torsione di profili sottili**: il volume usciva gonfio o svuotato fino al 14% secondo il verso della torsione (i quadrilateri laterali lunghi e storti, divisi in due triangoli). Ora i lati del profilo si spezzano in tratti lunghi quanto uno strato e l'errore scende sotto l'1%. Vale per tutte le forme 2D con torsione, non solo per l'importazione.
+- **Giro di `rotate_extrude` con `$fa` e `$fs`**: i segmenti si calcolano dal raggio massimo del profilo come fa OpenSCAD (prima restavano 64).
+- **`translate` fuori da `minkowski`**: il risultato si sposta una volta sola (non anche con l'operando), perché i figli stanno nel sistema locale del gruppo.
+
+### Modificato
+- `minkowskiSum` di manifold-3d sbaglia quando il secondo solido non contiene l'origine (il risultato comprende anche il primo): Construct porta i due solidi con il centro nell'origine, li somma e rimette il risultato al suo posto. Se il secondo è concavo e il primo no, i due si scambiano.
+- La somma di Minkowski tra solidi con molti lati è lenta: in `BabyToy.scad` (cilindro a 251 lati con una sfera) il calcolo dura circa 12 s, nel worker e con il risultato in cache.
+
 ## [0.28.0] - 2026-10-08
 
 ### Aggiunto

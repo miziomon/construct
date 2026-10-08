@@ -2347,7 +2347,8 @@ test('Piano di stampa: la tendina delle stampanti ha la misura per prima e compi
   for (const label of labels) expect(label).toMatch(/^\d+ × \d+ mm · /);
   // La marca compare una volta sola, seguita dai modelli
   expect(labels).toContain('180 × 180 mm · Bambu Lab: A1 mini · Prusa: MINI+');
-  expect(labels).toContain('256 × 256 mm · Bambu Lab: A1, P1S, P1P, X1C');
+  expect(labels).toContain('256 × 256 mm · Bambu Lab: A1, P1S, P1P, X1C · Elegoo: Centauri Carbon');
+  expect(labels).toContain('420 × 420 mm · Anycubic: Kobra 2 Max, Kobra 3 Max · Elegoo: Neptune 3 Max, Neptune 4 Max');
   expect(labels.some((l) => l.startsWith('350 × 320 mm') && l.includes('H2D'))).toBe(true);
   // Con le misure attuali (256 × 256) è scelta la voce giusta
   await expect(select.locator('option:checked')).toHaveText(/^256 × 256 mm/);
@@ -2971,7 +2972,7 @@ test('Importa OpenSCAD: un file .scad diventa oggetti veri, con un solo passo di
         translate([5, 5, 3]) cube([30, 20, 20]);
       }
       translate([60, 0, 0]) cylinder(h = 10, r = 8);
-      minkowski() { cube(2); sphere(1); }
+      projection() cube(2);
     `),
   });
   await settled(page);
@@ -2983,8 +2984,8 @@ test('Importa OpenSCAD: un file .scad diventa oggetti veri, con un solo passo di
   // Un messaggio dice quanti oggetti; ciò che è stato saltato si legge in una modale, con la riga e il codice originale
   await expect(page.getByText(/scatola\.scad: importati 4 oggetti/)).toBeVisible();
   const report = page.getByRole('dialog', { name: 'Importazione di scatola.scad' });
-  await expect(report.getByText(/minkowski\(\) non è supportato/)).toBeVisible();
-  await expect(report.getByLabel(/Codice vicino alla riga 8/)).toContainText('minkowski() { cube(2); sphere(1); }');
+  await expect(report.getByText(/projection\(\) non è supportato/)).toBeVisible();
+  await expect(report.getByLabel(/Codice vicino alla riga 8/)).toContainText('projection() cube(2);');
   await page.keyboard.press('Escape');
   await expect(report).toBeHidden();
   // Il risultato è un solido valido

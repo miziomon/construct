@@ -131,9 +131,9 @@ export function PropertiesPanel() {
           <div className="properties__row">
             <span className="properties__label">Operazione</span>
             <div className="properties__segmented properties__segmented--wrap" role="group" aria-label="Operazione del gruppo">
-              {(['union', 'difference', 'intersection', 'hull'] as const).map((op) => (
+              {(['union', 'difference', 'intersection', 'hull', 'minkowski'] as const).map((op) => (
                 <button key={op} type="button" className={`properties__segment${node.op === op ? ' properties__segment--active' : ''}`} aria-pressed={node.op === op} disabled={locked} onClick={() => patch({ op })}>
-                  {op === 'union' ? 'Unione' : op === 'difference' ? 'Differenza' : op === 'intersection' ? 'Intersezione' : 'Inviluppo'}
+                  {op === 'union' ? 'Unione' : op === 'difference' ? 'Differenza' : op === 'intersection' ? 'Intersezione' : op === 'hull' ? 'Inviluppo' : 'Minkowski'}
                 </button>
               ))}
             </div>

@@ -8,7 +8,7 @@ export interface Token {
 const KEYWORDS = new Set(['for', 'if', 'else', 'module', 'function', 'let', 'true', 'false', 'undef', 'center']);
 
 const FUNCTIONS = new Set([
-  'translate', 'rotate', 'scale', 'mirror', 'color', 'hull', 'union', 'difference', 'intersection',
+  'translate', 'rotate', 'scale', 'mirror', 'color', 'hull', 'minkowski', 'union', 'difference', 'intersection',
   'cube', 'sphere', 'cylinder', 'circle', 'square', 'polygon', 'polyhedron', 'offset', 'linear_extrude', 'rotate_extrude', 'import', 'text', 'use',
 ]);
 

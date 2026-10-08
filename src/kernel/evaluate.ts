@@ -4,6 +4,8 @@ import { edgeProfile, endMargin, endOvershoot, endPlanesOf, hasPerpendicularEnds
 import { resolveEnds } from '../scene/edgeEnds';
 import { stretchFactors } from '../scene/ellipse';
 import { buildPattern } from './pattern';
+import { subdivideContours, twistPieceLength } from './twist';
+import { minkowskiOf } from './minkowski';
 import { arrayCopies } from '../scene/arrayPattern';
 import type { CopyTransform } from '../scene/arrayPattern';
 import { isRotational, revolveParams, shapeContours, svgContours } from '../scene/shapes2d';
@@ -436,9 +438,14 @@ export class Evaluator {
       return revolved;
     }
     const divisions = twistDivisions(p.twist);
+    const height = Math.max(EPS, p.height);
+    // Con la torsione i lati lunghi del profilo si spezzano in tratti corti: altrimenti i quadrilateri laterali, torti e
+    // divisi in due triangoli, gonfiano o svuotano il solido (fino al 14% su un profilo sottile)
+    const profile = divisions > 0 ? new CrossSection(subdivideContours(section.toPolygons(), twistPieceLength(height, divisions), divisions + 1), 'EvenOdd') : section;
     // La scala va passata come vettore [x, y]: con un numero singolo manifold 3.5 produce un prisma dimezzato
     const scale = Math.max(0, p.scaleTop);
-    const solid = Manifold.extrude(section, Math.max(EPS, p.height), divisions, p.twist, [scale, scale], true);
+    const solid = Manifold.extrude(profile, height, divisions, p.twist, [scale, scale], true);
+    if (profile !== section) profile.delete();
     section.delete();
     return solid;
   }
@@ -515,13 +522,16 @@ export class Evaluator {
       const solids = kids.filter((k) => isGroup || k.mode === 'solid').map((k) => this.build(scene, k));
       const holes = isGroup ? [] : kids.filter((k) => k.mode === 'hole').map((k) => this.build(scene, k));
       // UNIONE (o Raggruppa): somma di tutti i solid. INTERSEZIONE: solo la parte comune a tutti i solid.
-      // INVILUPPO CONVESSO: la forma convessa più piccola che li contiene tutti (senza solidi, un insieme vuoto)
+      // INVILUPPO CONVESSO: la forma convessa più piccola che li contiene tutti (senza solidi, un insieme vuoto).
+      // MINKOWSKI: somma dei solid uno dopo l'altro (il primo si espande del volume di ogni successivo)
       const base =
         node.op === 'union' || isGroup
           ? Manifold.union(solids)
           : node.op === 'hull'
             ? solids.length ? Manifold.hull(solids) : Manifold.union([])
-            : solids.length ? Manifold.intersection(solids) : Manifold.union([]);
+            : node.op === 'minkowski'
+              ? minkowskiOf(Manifold, solids)
+              : solids.length ? Manifold.intersection(solids) : Manifold.union([]);
       // I hole si sottraggono dopo aver combinato i solid
       local = holes.length ? Manifold.difference([base, ...holes]) : base;
       // Se nessuna sottrazione è avvenuta, base è già il risultato: niente da liberare
@@ -595,7 +605,7 @@ export class Evaluator {
       const kids = group.children.map((c) => scene.nodes[c]);
       const operands = group.op === 'difference' ? kids.slice(1) : group.op === 'intersection' ? kids.filter((k) => k.mode === 'solid') : [];
       // Fori di unione e intersezione (nella differenza sono già tutti operandi sottratti)
-      const holes = group.op === 'union' || group.op === 'intersection' || group.op === 'hull' ? kids.filter((k) => k.mode === 'hole') : [];
+      const holes = group.op === 'union' || group.op === 'intersection' || group.op === 'hull' || group.op === 'minkowski' ? kids.filter((k) => k.mode === 'hole') : [];
       /** Porta un Manifold dal sistema del gruppo al mondo e lo converte in mesh. */
       const emit = (node: SceneNode, m: Manifold, owned: boolean) => {
         let current = m;

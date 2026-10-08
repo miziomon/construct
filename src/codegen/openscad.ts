@@ -493,8 +493,8 @@ function groupLines(scene: Scene, g: GroupNode, head: string[], depth: number): 
     return [...open, ...body(kids, depth + 1), `${pad}}`];
   }
 
-  // UNIONE, INTERSEZIONE e INVILUPPO CONVESSO: blocco dei solid combinati; se ci sono hole, difference(solids, holes)
-  const combine = g.op === 'intersection' ? 'intersection' : g.op === 'hull' ? 'hull' : 'union';
+  // UNIONE, INTERSEZIONE, INVILUPPO CONVESSO e MINKOWSKI: blocco dei solid combinati; se ci sono hole, difference(solids, holes)
+  const combine = g.op === 'intersection' ? 'intersection' : g.op === 'hull' ? 'hull' : g.op === 'minkowski' ? 'minkowski' : 'union';
   const lines: string[] = [...open];
   if (holes.length) {
     lines.push(`${pad}${IND}difference() {`);

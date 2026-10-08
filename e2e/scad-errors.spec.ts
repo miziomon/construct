@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { openApp, openMenuItem, sceneState, settled } from './helpers';
+import { openApp, openMenuItem, readCode, sceneState, settled } from './helpers';
 
 /** Importa un file .scad dal pannello Importa del menu. */
 async function importScad(page: import('@playwright/test').Page, name: string, code: string) {
@@ -40,6 +40,24 @@ test('Importa OpenSCAD con comandi non gestiti: il resto si importa e ogni coman
   // Il colore con nome CSS è stato letto
   const scene = await sceneState(page);
   expect(scene.nodes[scene.rootIds[0]].color).toBe('#ff6347');
+});
+
+test('Importa OpenSCAD con minkowski: gruppo Minkowski, il translate di fuori vale una volta sola e il volume è quello giusto', async ({ page }) => {
+  await importScad(page, 'mink.scad', 'translate([0, 30, 0]) minkowski() { cube(10); sphere(2, $fn = 32); }\n');
+  // Nessun problema: nessuna modale
+  await expect(page.getByRole('dialog', { name: /Importazione di/ })).toHaveCount(0);
+  const scene = await sceneState(page);
+  const group = scene.nodes[scene.rootIds[0]];
+  expect(group).toMatchObject({ type: 'group', op: 'minkowski', position: [0, 30, 0] });
+  const bbox = await page.evaluate(() => window.__construct!.results.getState().meshes[0].bbox);
+  // Cubo da 10 mm arrotondato da una sfera di 2 mm di raggio, spostato di 30 mm in Y (non di 60)
+  expect(bbox.min[1]).toBeCloseTo(28, 0);
+  expect(bbox.max[1]).toBeCloseTo(42, 0);
+  const volume = await page.evaluate(() => window.__construct!.results.getState().meshes[0].volume);
+  expect(volume).toBeGreaterThan(2500);
+  expect(volume).toBeLessThan(2620);
+  // Il codice generato ha minkowski()
+  expect(await readCode(page)).toContain('minkowski()');
 });
 
 test('Importa OpenSCAD senza problemi: nessuna modale', async ({ page }) => {

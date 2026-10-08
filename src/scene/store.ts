@@ -77,7 +77,7 @@ interface SceneState {
 }
 
 /** Nome base del gruppo creato da ogni operazione. */
-const GROUP_LABELS: Record<GroupOp, string> = { group: 'Gruppo', union: 'Unione', intersection: 'Intersezione', difference: 'Differenza', shell: 'Guscio', hull: 'Inviluppo convesso', array: 'Ripetizione', pattern: 'Pattern' };
+const GROUP_LABELS: Record<GroupOp, string> = { group: 'Gruppo', union: 'Unione', intersection: 'Intersezione', difference: 'Differenza', shell: 'Guscio', hull: 'Inviluppo convesso', minkowski: 'Minkowski', array: 'Ripetizione', pattern: 'Pattern' };
 
 /** Altezza iniziale dell'estrusione di un SVG importato (mm). */
 const SVG_EXTRUDE_HEIGHT = 2;

@@ -1,4 +1,4 @@
-import { CircleDot, Group, PackageOpen, Pyramid, Network, Repeat2, Shrink, SquareRoundCorner, SquaresIntersect, SquaresSubtract, SquaresUnite, TriangleRight } from 'lucide-react';
+import { CircleDot, Group, PackageOpen, Plus, Pyramid, Network, Repeat2, Shrink, SquareRoundCorner, SquaresIntersect, SquaresSubtract, SquaresUnite, TriangleRight } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { GroupOp } from '../scene/types';
 
@@ -10,6 +10,7 @@ export const GROUP_ICONS: Record<GroupOp, LucideIcon> = {
   intersection: SquaresIntersect,
   shell: PackageOpen,
   hull: Shrink,
+  minkowski: Plus,
   array: Repeat2,
   pattern: Network,
 };
@@ -22,6 +23,7 @@ export const GROUP_NAMES: Record<GroupOp, string> = {
   intersection: 'Intersezione',
   shell: 'Guscio',
   hull: 'Inviluppo convesso',
+  minkowski: 'Minkowski',
   array: 'Ripetizione',
   pattern: 'Pattern',
 };

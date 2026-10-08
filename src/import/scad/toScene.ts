@@ -5,7 +5,7 @@ import { matrixToEuler, round } from '../../scene/math';
 import type { Mat3 } from '../../scene/math';
 import { newId } from '../../scene/store';
 import type { GroupNode, PrimitiveNode, SceneNode, Shape2DNode, Vec3 } from '../../scene/types';
-import { evaluateScad } from './evaluate';
+import { evaluateScad, transformItems } from './evaluate';
 import type { GroupOp, Item, Mat, PrimItem, ScadIssue } from './evaluate';
 import { ScadError } from './parse';
 
@@ -27,7 +27,7 @@ export interface ScadImport {
   count: number;
 }
 
-const GROUP_NAMES: Record<GroupOp, string> = { union: 'Unione', difference: 'Differenza', intersection: 'Intersezione', hull: 'Inviluppo convesso' };
+const GROUP_NAMES: Record<GroupOp, string> = { union: 'Unione', difference: 'Differenza', intersection: 'Intersezione', hull: 'Inviluppo convesso', minkowski: 'Minkowski' };
 
 /** Misure minime accettate: sotto il kernel produrrebbe geometrie degeneri. */
 const MIN = 0.01;
@@ -200,11 +200,14 @@ export function importScad(source: string): ScadImport {
       if (!same(d.scale[0], d.scale[1])) addNote('Una scala diversa in X e in Y attorno a rotate_extrude() è stata approssimata.');
       if (c[0] < -1e-9) addNote('rotate_extrude(): una parte del profilo sta oltre l\'asse (X negativa) e si perde.');
       const [kx, kz] = [d.scale[0], d.scale[2]];
+      // Segmenti del giro: $fn, oppure la formula di OpenSCAD con $fa e $fs sul raggio massimo del profilo
+      const maxRadius = Math.max(0, c[0] + width / 2) * kx;
+      const revolveSegments = sh.rev.fn || (sh.rev.auto ? Math.ceil(Math.max(Math.min(360 / sh.rev.auto.fa, (maxRadius * 2 * Math.PI) / sh.rev.auto.fs), 5)) : 0);
       const revolve = {
         extrusion: 'rotate' as const,
         ...(sh.rev.angle < 360 ? { revolveAngle: r3(sh.rev.angle) } : {}),
         revolveRadius: r3(Math.max(0, c[0]) * kx),
-        ...(sh.rev.fn ? { revolveSegments: Math.min(256, Math.max(3, sh.rev.fn)) } : {}),
+        ...(revolveSegments ? { revolveSegments: Math.min(256, Math.max(3, revolveSegments)) } : {}),
         ...offsetOf(kx),
         position: d.position,
         rotation: d.rotation,
@@ -281,14 +284,18 @@ export function importScad(source: string): ScadImport {
       count++;
       return node.id;
     }
-    const childIds = item.children.map(convert).filter((id): id is string => id !== null);
+    // Minkowski: il gruppo porta posizione e rotazione, la scala (e lo specchio) si assorbono nei figli
+    const placement = item.M ? decompose(item.M, [0, 0, 0]) : null;
+    if (placement?.skewed) addNote('Una scala non uniforme dopo una rotazione è stata approssimata.');
+    const kids = placement ? transformItems(item.children, [placement.scale[0], 0, 0, 0, 0, placement.scale[1], 0, 0, 0, 0, placement.mirrored ? -placement.scale[2] : placement.scale[2], 0, 0, 0, 0, 1]) : item.children;
+    const childIds = kids.map(convert).filter((id): id is string => id !== null);
     if (!childIds.length) return null;
     // Un gruppo con un solo figlio è il figlio (una differenza senza sottrazioni, un'unione di un oggetto)
     if (childIds.length === 1 && item.op !== 'hull') return childIds[0];
     const id = newId();
     const group: GroupNode = {
       id, type: 'group', name: GROUP_NAMES[item.op], op: item.op, children: childIds,
-      position: [0, 0, 0], rotation: [0, 0, 0], mode: 'solid', color: nodes[childIds[0]].color,
+      position: placement?.position ?? [0, 0, 0], rotation: placement?.rotation ?? [0, 0, 0], mode: 'solid', color: nodes[childIds[0]].color,
     };
     nodes[id] = group;
     count++;

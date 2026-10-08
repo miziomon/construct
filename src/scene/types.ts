@@ -142,9 +142,10 @@ export type MeshNode = BaseNode & {
 
 /**
  * 'group' è il Raggruppa: concetto solo dell'app, gli oggetti restano separati (colori e codice propri) e si muovono insieme.
- * Le altre sono operazioni booleane vere, anche nel codice OpenSCAD; 'hull' è l'inviluppo convesso (hull() di OpenSCAD).
+ * Le altre sono operazioni booleane vere, anche nel codice OpenSCAD; 'hull' è l'inviluppo convesso (hull() di OpenSCAD) e 'minkowski' la somma di Minkowski dei figli (minkowski()):
+ * la forma si espande di tutto il volume del secondo oggetto, come arrotondare un solido con una sfera.
  */
-export type GroupOp = 'group' | 'union' | 'intersection' | 'difference' | 'shell' | 'hull' | 'array' | 'pattern';
+export type GroupOp = 'group' | 'union' | 'intersection' | 'difference' | 'shell' | 'hull' | 'minkowski' | 'array' | 'pattern';
 
 /** Misure del Guscio (vedi src/scene/shell.ts). */
 export interface ShellParams {

@@ -27,10 +27,20 @@ describe('preset del piano di stampa', () => {
   });
 
   it('l\'etichetta comincia dalla misura e nomina la marca una volta sola', () => {
-    expect(presetLabel(findPreset(256, 256)!)).toBe('256 × 256 mm · Bambu Lab: A1, P1S, P1P, X1C');
+    expect(presetLabel(findPreset(256, 256)!)).toBe('256 × 256 mm · Bambu Lab: A1, P1S, P1P, X1C · Elegoo: Centauri Carbon');
     // Marche diverse sulla stessa misura: ognuna con i suoi modelli
     expect(presetLabel(findPreset(180, 180)!)).toBe('180 × 180 mm · Bambu Lab: A1 mini · Prusa: MINI+');
     for (const p of BED_PRESETS) expect(presetLabel(p).split('Bambu Lab').length).toBeLessThanOrEqual(2);
+  });
+
+  it('le stampanti Anycubic ed Elegoo richieste ci sono, ognuna con la sua area', () => {
+    const presetOf = (brand: string, model: string) => BED_PRESETS.find((p) => p.printers.some((b) => b.brand === brand && b.models.includes(model)));
+    for (const [brand, model, side] of [
+      ['Anycubic', 'Kobra 3', 250], ['Anycubic', 'Kobra S1', 250], ['Anycubic', 'Kobra 3 V2', 255], ['Anycubic', 'Kobra 2 Max', 420], ['Anycubic', 'Kobra 3 Max', 420],
+      ['Elegoo', 'Centauri Carbon', 256], ['Elegoo', 'Neptune 4', 225], ['Elegoo', 'Neptune 4 Pro', 225], ['Elegoo', 'Neptune 3 Max', 420], ['Elegoo', 'Neptune 4 Max', 420],
+    ] as const) {
+      expect(presetOf(brand, model), `${brand} ${model}`).toMatchObject({ width: side, depth: side });
+    }
   });
 
   it('findPreset non trova misure personalizzate', () => {

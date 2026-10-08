@@ -79,10 +79,11 @@ Primo passo economico alla Tinkercad: **Duplica e ripeti** (Ctrl+D ripete l'ulti
 - Quote tra oggetti (distanza tra due oggetti o tra un oggetto e il piatto, da digitare per spostarli) e quote sulle singole facce o sui fori: oggi le quote sono solo le tre dimensioni dell'ingombro.
 - Menu contestuale del vuoto con più voci (Incolla, viste, Importa) e menu sulle righe dell'elenco oggetti.
 - Piatti: provare i metadati scritti nel 3MF (`Metadata/model_settings.config`) in Bambu Studio e Orca, perché non si possono verificare senza gli slicer (restano ignorati dai programmi che non li conoscono), trascinamento degli oggetti tra i piatti, piatti con misure diverse.
-- Import OpenSCAD: `rotate_extrude`, `offset`, `minkowski`, `polyhedron`, `text`, forme 2D con fori (`polygon` con `paths`) e booleane 2D, `import()`, `use`/`include` e librerie come BOSL2.
+- Import OpenSCAD: quello che resta è nella sezione "Importa OpenSCAD" qui sotto (`polyhedron`, `import()`, `use`/`include` e librerie come BOSL2, booleane 2D vere).
 - Impostazioni: lingua, unità, colori dei nuovi oggetti, qualità predefinita delle curve, scorciatoie personalizzabili.
 - Schermata di benvenuto: modelli di esempio (la scheda c'è ma non è ancora selezionabile) e l'elenco dei progetti recenti.
-- Preset del piano: altre stampanti (Anycubic, Elegoo, Voron) e preset salvati dall'utente.
+- Preset del piano: altre stampanti (Voron) e preset salvati dall'utente. Anycubic ed Elegoo ci sono dalla 0.29.0.
+- Comando di barra per la somma di Minkowski: oggi il gruppo nasce solo dall'importazione di un file OpenSCAD (o cambiando l'operazione di un gruppo dal pannello Proprietà).
 - Ripetizione: "Rendi indipendenti" (Separa produce N oggetti veri, uno per copia), serie lungo un percorso o una curva, passo diverso per ogni asse nella lineare con angolo, copie che seguono un oggetto di riferimento, Ctrl+D che ripete l'ultimo spostamento (Duplica e ripeti di Tinkercad).
 - Estrusione rotazionale: opzione simmetrica (come Fusion, da -angolo/2 a +angolo/2) e passo elicoidale (come Blender Screw).
 - Inviluppo convesso anche per le forme 2D (prima dell'estrusione).
@@ -93,7 +94,28 @@ Primo passo economico alla Tinkercad: **Duplica e ripeti** (Ctrl+D ripete l'ulti
 - Controllo automatico del peso dei chunk in build (`size-limit`).
 - Nomi in italiano e ricerca per le emoji (scartati per ora).
 
-## Importa OpenSCAD: cosa non si legge ancora (aggiornato alla 0.28.0)
+## Importa OpenSCAD: cosa non si legge ancora (aggiornato alla 0.29.0)
+
+### Esempi della cartella `import/` (0.29.0)
+
+Tre esempi CC0 di prova, confrontati con OpenSCAD in locale (build con backend Manifold, `openscad --backend=manifold -o out.stl file.scad`): si legge l'STL, si calcolano volume e ingombro e si confrontano con quelli del solido importato e calcolato dal kernel di Construct.
+
+| File | Comandi che servivano | Volume (Construct / OpenSCAD) | Ingombro | Tempo di calcolo |
+|---|---|---|---|---|
+| `Bauble.scad` | intervallo `[0:1:count-1]`, `rotate_extrude` di `polygon`, `linear_extrude` con torsione, `hull`, `$fa`/`$fs` | 114 896 / 115 946 mm³ (-0,9%) | uguale (±0,03 mm) | circa 2 s |
+| `Bauble2.scad` | `offset` annidati, `linear_extrude` con torsione e scala, `rotate_extrude`, moduli con `$fs`/`$fa` | 60 166 / 60 159 mm³ (+0,01%) | uguale | circa 0,6 s |
+| `BabyToy.scad` | `minkowski` (tre blocchi, anche con prisma triangolare e cilindro a 251 lati) | 38 901 / 38 809 mm³ (+0,24%) | uguale (±0,01 mm) | circa 12 s |
+
+Che cosa non funzionava e come è stato risolto:
+- **`Bauble`: le pale mancavano** (una su sette). Causa: un intervallo con il passo, `[0:1:6]`, veniva letto come "inizio 0, passo 6, fine 1", quindi il ciclo `for` faceva una sola iterazione. Corretto (con test).
+- **`Bauble`: pale più sottili del vero** (-14% di volume per ogni pala). Causa: nell'estrusione con torsione manifold divide ogni quadrilatero laterale in due triangoli, e su un lato lungo (120 mm) il quadrilatero è molto storto: il solido esce gonfio o svuotato (fino al 14%) a seconda del verso della torsione. Ora il kernel spezza i lati del profilo in tratti lunghi quanto uno strato (come fa OpenSCAD, con molti più triangoli): errore sotto l'1%. Vale anche per le forme native con torsione.
+- **`Bauble`: giro a 64 lati invece di 180.** Il profilo di `rotate_extrude` ora usa `$fa`/`$fs` del file con la formula di OpenSCAD sul raggio massimo.
+- **`BabyToy`: nessun oggetto.** Mancava `minkowski`. Ora è un gruppo "Minkowski" (kernel con `Manifold.minkowskiSum`, codice `minkowski()` e importazione). Due cose da sapere: `minkowskiSum` di manifold-3d sbaglia se il secondo solido non contiene l'origine (il risultato comprende anche il primo), quindi gli operandi si portano al centro, si sommano e il risultato si risposta; inoltre in OpenSCAD `translate(t) minkowski() { A; B; }` sposta il risultato una volta sola, quindi i figli stanno nel sistema locale del gruppo.
+- **`Bauble2`: unico scarto noto**, gli `offset(±.1) offset(1) offset(-1)` (apertura che arrotonda le punte della stella) si sommano in un contorno di ±0,1: il volume coincide, le punte restano un po' più vive (nota nel rapporto di importazione).
+
+Ancora aperto su questi esempi: la durata di `BabyToy` (12 s: la somma di Minkowski tra un cilindro a 251 lati e una sfera a 52 è pesante; gira nel worker e il risultato resta in cache finché non cambia). Si potrebbe ridurre con una versione più veloce per solidi convessi (invece dell'inviluppo di tutte le somme di vertici) o con un'anteprima a pochi segmenti.
+
+### Cosa non si legge ancora
 
 Dalla 0.27.0 l'importazione legge anche `let`/`assign`, le liste per comprensione complete (`for` annidati, `if`/`else`, `each`, `let`, forma del C), `^`, le funzioni anonime, `children(i)`, `$children`, `$fa`/`$fs`, `multmatrix`, `polygon` con `paths`, `offset`, `rotate_extrude`, `text`, `resize` e molte funzioni (`lookup`, `search`, `rands`, `cross`, `chr`, `ord`, `is_string`, `is_bool`, `is_function`). Quello che resta è più difficile e va valutato insieme.
 
@@ -101,7 +123,8 @@ Dalla 0.27.0 l'importazione legge anche `let`/`assign`, le liste per comprension
 |---|---|---|
 | `polyhedron` | Media-alta | Non c'è un nodo di poliedro generico (i dadi sono solidi fissi). La via è una mesh importata (`MeshNode`), che richiede la registrazione asincrona dell'asset nel worker, un solido chiuso e a tenuta, e l'inversione dell'ordine delle facce (OpenSCAD le vuole in senso orario). Oggi `importScad` e lo store sono sincroni: andrebbe reso asincrono il percorso di importazione. |
 | `import("file.stl")` | Alta | Il file sta accanto al `.scad`: bisogna far scegliere più file insieme (o una cartella), registrare ogni mesh e collegarla ai nodi. Come il `polyhedron`, richiede un flusso asincrono. |
-| `minkowski` generico | Alta | manifold-3d 3.5 ha `minkowskiSum`, mai usato in Construct. Servirebbero un nuovo tipo di gruppo nel kernel e nel generatore di codice, e attenzione ai tempi di calcolo (cresce con le facce dei due solidi). Il caso più comune, `minkowski()` di un cubo e una sfera, equivale a un box con spigoli arrotondati (`cornerRadius`) e si potrebbe riconoscere da solo. |
+| `offset` annidati (apertura e chiusura) | Media | `offset(r=-1) offset(r=1)`: oggi si sommano (contorno netto), ma non arrotondano le punte come OpenSCAD. Servirebbero operazioni 2D sul profilo prima dell'estrusione (unione, apertura, chiusura). |
+| `minkowski` più veloce | Media | Fatto in 0.29.0, ma con solidi a molti lati è lento (BabyToy 12 s). |
 | `projection` | Alta | Nessun corrispettivo: servirebbe una forma 2D ottenuta dalla sezione o dall'ombra di un solido (`slice` esiste nel kernel, usata solo dal Guscio). |
 | `surface` | Alta | Legge un file di dati o un'immagine: stesso problema dei file esterni di `import`. |
 | `roof` | Molto alta | È poco usato e richiede lo scheletro del poligono (straight skeleton). |

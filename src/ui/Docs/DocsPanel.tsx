@@ -182,13 +182,13 @@ export default function DocsPanel() {
           <li>Primitive: <code>cube</code>, <code>sphere</code>, <code>cylinder</code>, <code>circle</code>, <code>square</code>, <code>polygon</code> (anche con <code>paths</code>).</li>
           <li>Da 2D a 3D: <code>linear_extrude</code>, <code>rotate_extrude</code>, <code>offset</code>, <code>text</code>.</li>
           <li>Trasformazioni: <code>translate</code>, <code>rotate</code>, <code>scale</code>, <code>mirror</code>, <code>resize</code>, <code>multmatrix</code>, <code>color</code> (nomi CSS, esadecimali e terne; la trasparenza si scarta).</li>
-          <li>Booleane e inviluppo: <code>union</code>, <code>difference</code>, <code>intersection</code>, <code>hull</code>, <code>intersection_for</code>.</li>
+          <li>Booleane, inviluppo e somma di Minkowski: <code>union</code>, <code>difference</code>, <code>intersection</code>, <code>hull</code>, <code>minkowski</code>, <code>intersection_for</code>.</li>
           <li>Linguaggio: <code>for</code>, <code>if</code>, <code>let</code>, list comprehension, moduli e funzioni, variabili e operatori matematici.</li>
         </ul>
         <h5>Non ancora supportato</h5>
         <ul>
           <li><code>polyhedron</code> e <code>import()</code> di altri file.</li>
-          <li><code>minkowski</code>, <code>projection</code>, <code>surface</code> e <code>roof</code>.</li>
+          <li><code>projection</code>, <code>surface</code>, <code>roof</code> e <code>fill</code>.</li>
         </ul>
       </Section>
 
@@ -215,7 +215,7 @@ export default function DocsPanel() {
           Sì: dopo il primo caricamento Construct è una PWA e si usa anche senza connessione. Puoi installarla dal browser.
         </Faq>
         <Faq q="Perché un file .scad non si importa del tutto?">
-          L&apos;import legge un sottoinsieme di OpenSCAD. Gli elementi non supportati (per esempio <code>polyhedron</code>, <code>minkowski</code>, <code>import()</code>) vengono saltati e un avviso li elenca. Controlla l&apos;elenco nella sezione Codice OpenSCAD.
+          L&apos;import legge un sottoinsieme di OpenSCAD. Gli elementi non supportati (per esempio <code>polyhedron</code>, <code>projection</code>, <code>import()</code>) vengono saltati e un avviso li elenca. Controlla l&apos;elenco nella sezione Codice OpenSCAD.
         </Faq>
         <Faq q="STL o 3MF?">
           L&apos;STL contiene solo la forma di un piatto. Il 3MF conserva anche i colori e tutti i piatti: usalo se il tuo slicer lo supporta, altrimenti l&apos;STL va sempre bene.

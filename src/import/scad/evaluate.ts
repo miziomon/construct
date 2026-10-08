@@ -4,7 +4,7 @@ import { NAMED_COLORS } from './colors';
 
 /**
  * Valutatore di un sottoinsieme di OpenSCAD: esegue il programma (variabili, funzioni, moduli, `for`, `if`, `let`) e
- * produce un albero di oggetti con la loro trasformazione già composta. Ciò che non conosce (minkowski, polyhedron,
+ * produce un albero di oggetti con la loro trasformazione già composta. Ciò che non conosce (polyhedron,
  * import, ...) si salta con un avviso invece di bloccare l'importazione.
  */
 
@@ -162,6 +162,8 @@ const NO_EXTRUDE: Extrude = { h: 1, center: true, twist: 0, scale: 1 };
 export interface Revolve {
   angle: number;
   fn: number;
+  /** $fa e $fs del file, quando non c'è $fn: i segmenti si calcolano dal raggio massimo del profilo (come fa OpenSCAD). */
+  auto?: { fa: number; fs: number };
   profile: Mat;
 }
 
@@ -205,12 +207,18 @@ export interface PrimItem {
   color?: string;
 }
 
-export type GroupOp = 'union' | 'difference' | 'intersection' | 'hull';
+export type GroupOp = 'union' | 'difference' | 'intersection' | 'hull' | 'minkowski';
 
 export interface GroupItem {
   kind: 'group';
   op: GroupOp;
   children: Item[];
+  /**
+   * Solo per `minkowski`: trasformazione del gruppo. I figli stanno nel suo sistema locale, perché la somma di Minkowski
+   * non commuta con le traslazioni dei singoli operandi (`translate(t) minkowski() { A; B; }` sposta il risultato una
+   * volta sola, mentre due operandi già traslati lo sposterebbero due volte).
+   */
+  M?: Mat;
 }
 
 export type Item = PrimItem | GroupItem;
@@ -228,8 +236,13 @@ export interface ScadResult {
 }
 
 /** Applica una trasformazione a tutti gli oggetti (moltiplicandola a sinistra della loro). */
-function transformItems(items: Item[], A: Mat): Item[] {
-  return items.map((it) => (it.kind === 'prim' ? { ...it, M: mulMat(A, it.M) } : { ...it, children: transformItems(it.children, A) }));
+export function transformItems(items: Item[], A: Mat): Item[] {
+  return items.map((it) => {
+    if (it.kind === 'prim') return { ...it, M: mulMat(A, it.M) };
+    // Un gruppo con la propria trasformazione (minkowski) si muove tutto intero: i figli restano nel suo sistema
+    if (it.M) return { ...it, M: mulMat(A, it.M) };
+    return { ...it, children: transformItems(it.children, A) };
+  });
 }
 
 // --- Ingombro degli oggetti (per resize) ---------------------------------------------------------------------------
@@ -260,7 +273,17 @@ function boxOf(items: Item[]): Box | null {
   let total: Box | null = null;
   for (const it of items) {
     let b: Box | null;
-    if (it.kind === 'group') {
+    if (it.kind === 'group' && it.op === 'minkowski') {
+      // Somma di Minkowski: l'ingombro è la somma degli ingombri dei figli (nel sistema del gruppo), poi trasformata
+      const boxes = it.children.map((child) => boxOf([child]));
+      b = boxes.every((x): x is Box => x !== null)
+        ? boxOfCorners(
+            it.M ?? IDENTITY,
+            boxes.reduce((s, x) => [s[0] + x.min[0], s[1] + x.min[1], s[2] + x.min[2]], [0, 0, 0]) as [number, number, number],
+            boxes.reduce((s, x) => [s[0] + x.max[0], s[1] + x.max[1], s[2] + x.max[2]], [0, 0, 0]) as [number, number, number],
+          )
+        : null;
+    } else if (it.kind === 'group') {
       // Una differenza ha l'ingombro della sola base
       b = boxOf(it.op === 'difference' ? it.children.slice(0, 1) : it.children);
     } else {
@@ -326,7 +349,7 @@ interface Ctx {
   /** Dentro `linear_extrude`: le forme 2D diventano solidi con questa estrusione. */
   ext?: Extrude;
   /** Dentro `rotate_extrude`: `M` è la trasformazione 2D del profilo e `outer` quella di fuori, applicata al solido. */
-  rev?: { angle: number; fn: number; outer: Mat };
+  rev?: { angle: number; fn: number; auto?: { fa: number; fs: number }; outer: Mat };
   /** Dentro `offset()`: contorno da applicare alle forme 2D. */
   off?: Offset;
   /** Figli del modulo in corso (`children()`), da valutare nel contesto di chi li richiama; `which` sceglie quali. */
@@ -583,8 +606,8 @@ export function evaluateScad(source: string): ScadResult {
         const a = asNum(ev(e.a, env), NaN);
         const b = asNum(ev(e.b, env), NaN);
         const c = e.c ? asNum(ev(e.c, env), NaN) : undefined;
-        // [inizio:passo:fine] oppure [inizio:fine] con passo 1
-        return c === undefined ? new Range(a, 1, b) : new Range(a, b, c);
+        // [inizio:passo:fine] oppure [inizio:fine] con passo 1. Il parser mette il passo in `c` e la fine in `b`
+        return c === undefined ? new Range(a, 1, b) : new Range(a, c, b);
       }
       case 'gfor': case 'gforc': case 'gif': case 'geach': case 'glet': {
         const out: Value[] = [];
@@ -735,7 +758,7 @@ export function evaluateScad(source: string): ScadResult {
     }
     const flat: Flat = {
       ext: ctx.ext ?? NO_EXTRUDE,
-      rev: ctx.rev ? { angle: ctx.rev.angle, fn: ctx.rev.fn, profile: ctx.M } : undefined,
+      rev: ctx.rev ? { angle: ctx.rev.angle, fn: ctx.rev.fn, auto: ctx.rev.auto, profile: ctx.M } : undefined,
       off: ctx.off && ctx.off.v !== 0 ? ctx.off : undefined,
     };
     // Per un profilo di rotate_extrude la trasformazione del solido è quella di fuori
@@ -857,7 +880,12 @@ export function evaluateScad(source: string): ScadResult {
           angle = 360;
         }
         // Dentro, `M` è la trasformazione 2D del profilo: parte dall'identità, quella di fuori si applica al solido
-        return runAll(kids, new Env(env), { ...ctx, M: IDENTITY, ext: undefined, rev: { angle, fn: fnOf(env, p.$fn, NaN), outer: ctx.M } });
+        const fn = fnOf(env, p.$fn, NaN);
+        // Senza $fn, se il file imposta $fa o $fs i segmenti dipendono dal raggio del profilo, noto solo alla conversione
+        const fa = env.get('$fa');
+        const fs = env.get('$fs');
+        const auto = !fn && (fa !== undefined || fs !== undefined) ? { fa: Math.max(0.01, isNum(fa) ? fa : 12), fs: Math.max(0.01, isNum(fs) ? fs : 2) } : undefined;
+        return runAll(kids, new Env(env), { ...ctx, M: IDENTITY, ext: undefined, rev: { angle, fn, auto, outer: ctx.M } });
       }
       case 'offset': {
         const p = a(['r', 'delta', 'chamfer']);
@@ -933,6 +961,14 @@ export function evaluateScad(source: string): ScadResult {
         const items = groupedChildren(kids, new Env(env), ctx);
         return s.name === 'union' && items.length > 1 ? [{ kind: 'group', op: 'union', children: items }] : items;
       }
+      case 'minkowski': {
+        // I figli si calcolano nel sistema del gruppo: la trasformazione di fuori si applica al risultato, una volta sola
+        const items = groupedChildren(kids, new Env(env), { ...ctx, M: IDENTITY });
+        if (!items.length) return [];
+        // Un solo figlio: la somma è il figlio stesso
+        if (items.length === 1) return transformItems(items, ctx.M);
+        return [{ kind: 'group', op: 'minkowski', children: items, M: ctx.M }];
+      }
       case 'difference': case 'intersection': case 'hull': {
         const items = groupedChildren(kids, new Env(env), ctx);
         if (!items.length) return [];
@@ -971,7 +1007,7 @@ export function evaluateScad(source: string): ScadResult {
         return parts.length > 1 ? [{ kind: 'group', op: 'intersection', children: parts }] : parts;
       }
       case 'echo': case 'assert': return [];
-      case 'fill': case 'minkowski': case 'projection': case 'polyhedron': case 'surface': case 'import': case 'roof':
+      case 'fill': case 'projection': case 'polyhedron': case 'surface': case 'import': case 'roof':
         warn(`${s.name}() non è supportato: saltato.`);
         return [];
       default: return undefined;

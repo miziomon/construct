@@ -152,10 +152,10 @@ describe('import di file OpenSCAD: limiti e avvisi', () => {
   });
 
   it('le istruzioni non supportate si saltano con un avviso e il resto si importa', () => {
-    const r = importScad('projection() cube(1); cube(3); minkowski() { cube(2); sphere(1); }');
+    const r = importScad('projection() cube(1); cube(3); polyhedron(points = [[0, 0, 0]], faces = [[0]]);');
     expect(r.count).toBe(1);
     expect(r.warnings.join(' ')).toMatch(/projection/);
-    expect(r.warnings.join(' ')).toMatch(/minkowski/);
+    expect(r.warnings.join(' ')).toMatch(/polyhedron/);
   });
 
   it('use e include non si leggono, e una forma 2D fuori da linear_extrude si salta', () => {
@@ -347,9 +347,9 @@ describe('import di file OpenSCAD: colori, intersection_for e rapporto dei probl
   });
 
   it('ogni problema porta la riga del codice e il livello', () => {
-    const r = importScad('cube(1);\n\nminkowski() { cube(2); sphere(1); }\nb = foo(2);\nx = 1;\nx = 2;');
+    const r = importScad('cube(1);\n\nprojection() cube(2);\nb = foo(2);\nx = 1;\nx = 2;');
     const at = (text: RegExp) => r.issues.find((i) => text.test(i.message));
-    expect(at(/minkowski/)).toMatchObject({ line: 3, level: 'error' });
+    expect(at(/projection/)).toMatchObject({ line: 3, level: 'error' });
     expect(at(/foo\(\)/)).toMatchObject({ line: 4, level: 'error' });
     expect(at(/più volte/)).toMatchObject({ line: 6, level: 'note' });
   });
@@ -362,5 +362,41 @@ describe('import di file OpenSCAD: colori, intersection_for e rapporto dei probl
   it('un errore di sintassi è un problema con la sua riga', () => {
     const r = importScad('cube(10);\ncube(;');
     expect(r.issues).toEqual([expect.objectContaining({ line: 2, level: 'error' })]);
+  });
+});
+
+describe('import di file OpenSCAD: intervalli, $fa e $fs nei profili', () => {
+  const xs = (code: string) => {
+    const r = importScad(code);
+    return r.plates[0].rootIds.map((id) => r.nodes[id].position[0]);
+  };
+
+  it('un intervallo [inizio:passo:fine] usa il passo (non la fine come passo)', () => {
+    expect(xs('for (i = [0 : 2 : 6]) translate([i, 0, 0]) sphere(0.5);')).toEqual([0, 2, 4, 6]);
+    expect(xs('for (i = [10 : -3 : 0]) translate([i, 0, 0]) sphere(0.5);')).toEqual([10, 7, 4, 1]);
+    expect(xs('for (i = [0 : 1 : 2]) translate([i, 0, 0]) sphere(0.5);')).toEqual([0, 1, 2]);
+  });
+
+  it('le pale di Bauble: sette quadrati ruotati di 360/7 gradi', () => {
+    const r = importScad('count = 7; linear_extrude(10) for (a = [0 : 1 : count - 1]) rotate(a * 360 / count) square([20, 2], center = true);');
+    expect(r.plates[0].rootIds).toHaveLength(7);
+    // Gli angoli sopra 180° tornano come negativi: si confrontano modulo 360
+    const angles = r.plates[0].rootIds.map((id) => ((r.nodes[id].rotation[2] % 360) + 360) % 360);
+    expect(angles[1]).toBeCloseTo(360 / 7, 1);
+    expect(angles[6]).toBeCloseTo(6 * (360 / 7), 1);
+  });
+
+  it('rotate_extrude con $fa e $fs: i segmenti si calcolano dal raggio del profilo', () => {
+    // Raggio massimo 32: min(360 / 2 = 180, 2π · 32 / 0.2 = 1005) = 180
+    expect(first('$fa = 2; $fs = 0.2; rotate_extrude() translate([30, 0]) circle(2);').node).toMatchObject({ extrusion: 'rotate', revolveSegments: 180 });
+    // Raggio piccolo: lo limita $fs (2π · 12 / 2 = 37,7 → 38)
+    expect(first('$fa = 2; $fs = 2; rotate_extrude() translate([10, 0]) circle(2);').node).toMatchObject({ revolveSegments: 38 });
+    // Con $fn vince $fn; senza nulla resta il predefinito
+    expect(first('$fa = 2; rotate_extrude($fn = 24) translate([10, 0]) circle(2);').node).toMatchObject({ revolveSegments: 24 });
+    expect((first('rotate_extrude() translate([10, 0]) circle(2);').node as Shape2DNode).revolveSegments).toBeUndefined();
+  });
+
+  it('una torsione negativa si rilegge con il segno invertito', () => {
+    expect(first('linear_extrude(height = 120, twist = -160) square([120, 5], center = true);').node).toMatchObject({ kind: 'square', twist: 160 });
   });
 });
