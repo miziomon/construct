@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import Module from 'manifold-3d';
-import type { ManifoldToplevel } from 'manifold-3d';
+import type { Manifold, ManifoldToplevel } from 'manifold-3d';
 import { sceneToOpenScad } from '../codegen/openscad';
 import { importScad } from '../import/scad/toScene';
 import { primitiveDefaults, shape2dDefaults } from '../scene/defaults';
@@ -168,5 +168,48 @@ describe('minkowskiOf con operandi lontani dall\'origine o concavi', () => {
     const { min, max } = minkowskiOf(Manifold, [cube, ring]).boundingBox();
     near(min, [-10, -10, -2]);
     near(max, [20, 20, 12]);
+  });
+});
+
+describe('minkowskiOf: ottimizzazioni (componenti connesse e toppe convesse)', () => {
+  /** Differenza simmetrica tra due solidi, in mm³. */
+  const diff = (a: Manifold, b: Manifold) => a.subtract(b).volume() + b.subtract(a).volume();
+  /** Riferimento: il calcolo di manifold, valido con la sfera centrata nell'origine. */
+  const reference = (a: Manifold, ball: Manifold) => a.minkowskiSum(ball);
+
+  it.each([
+    ['forma a L', () => wasm.Manifold.union([wasm.Manifold.cube([30, 10, 10], false), wasm.Manifold.cube([10, 30, 10], false)])],
+    ['scatola con guscio', () => wasm.Manifold.cube([40, 40, 30], true).subtract(wasm.Manifold.cube([36, 36, 40], true).translate([0, 0, 7]))],
+    ['cilindro con guscio', () => wasm.Manifold.cylinder(30, 20, 20, 32).subtract(wasm.Manifold.cylinder(40, 18, 18, 32).translate([0, 0, 2]))],
+  ])('%s con una sfera coincide con manifold', (_name, make) => {
+    const solid = make();
+    const ball = wasm.Manifold.sphere(2, 24);
+    const result = minkowskiOf(wasm.Manifold, [solid, ball]);
+    const expected = reference(solid, ball);
+    expect(Math.abs(result.volume() - expected.volume())).toBeLessThan(expected.volume() * 1e-4);
+    expect(diff(result, expected)).toBeLessThan(expected.volume() * 1e-3);
+  });
+
+  it('tre solidi separati (come BabyToy) si sommano a coppie, in fretta e con lo stesso risultato', () => {
+    const { Manifold } = wasm;
+    const solid = Manifold.union([
+      Manifold.cube([16, 16, 16], true).translate([15, 15, 12]),
+      Manifold.cylinder(20, 8, 8, 3).translate([45, 15, 4]),
+      Manifold.cylinder(20, 8, 8, 40).translate([75, 15, 4]),
+    ]);
+    const ball = Manifold.sphere(2, 16);
+    const started = performance.now();
+    const result = minkowskiOf(Manifold, [solid, ball]);
+    const ms = performance.now() - started;
+    const expected = reference(solid, ball);
+    expect(diff(result, expected)).toBeLessThan(expected.volume() * 1e-3);
+    // Con il solo calcolo di manifold servirebbero molti secondi
+    expect(ms).toBeLessThan(5000);
+  }, 60000);
+
+  it('operandi vuoti danno un solido vuoto, senza errori', () => {
+    const { Manifold } = wasm;
+    expect(minkowskiOf(Manifold, [Manifold.union([]), Manifold.sphere(2, 16)]).isEmpty()).toBe(true);
+    expect(minkowskiOf(Manifold, [Manifold.cube([5, 5, 5], false), Manifold.union([])]).isEmpty()).toBe(true);
   });
 });

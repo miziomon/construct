@@ -38,6 +38,16 @@ describe('contorni del testo', () => {
     expect(both.maxX).toBeGreaterThan(onlyA.maxX);
   });
 
+  it("la spaziatura moltiplica l'avanzamento: a 2 il testo è più largo e resta centrato", () => {
+    const normal = bounds(textContours({ text: 'HHH', font: 'roboto-bold', size: 10 }));
+    const wide = bounds(textContours({ text: 'HHH', font: 'roboto-bold', size: 10, spacing: 2 }));
+    expect(wide.maxX - wide.minX).toBeGreaterThan((normal.maxX - normal.minX) * 1.5);
+    // Come in OpenSCAD il centro è quello dell'avanzamento totale: la parte visibile resta a sinistra dell'origine
+    expect(wide.minX).toBeLessThan(0);
+    // spacing = 1 equivale a non indicarlo
+    expect(textContours({ text: 'HHH', font: 'roboto-bold', size: 10, spacing: 1 })).toEqual(text('HHH'));
+  });
+
   it('la "O" ha un contorno esterno e un foro di verso opposto, la "I" un solo contorno', () => {
     const o = text('O');
     expect(o).toHaveLength(2);

@@ -147,7 +147,8 @@ function linearShape2dLines(p: Shape2DNode): string[] {
     // Il font si importa con `use <file.ttf>` in testa al file (il file sta accanto al codice); la centratura è quella
     // del kernel (orizzontale sull'avanzamento, verticale sull'ingombro dei glifi)
     const text = p.text.replace(/[\\"]/g, (c) => `\\${c}`);
-    return [extrude, `text("${text}", size = ${n(p.size)}, font = "${scadFontName(fontInfo(p.font))}", halign = "center", valign = "center");`];
+    const spacing = p.spacing !== undefined && p.spacing !== 1 ? `, spacing = ${n(p.spacing)}` : '';
+    return [extrude, `text("${text}", size = ${n(p.size)}${spacing}, font = "${scadFontName(fontInfo(p.font))}", halign = "center", valign = "center");`];
   }
   if (p.kind !== 'square') {
     // Forme poligonali e disegni SVG: un contorno, oppure più contorni (il foro dell'anello) con `paths`; punti su più righe

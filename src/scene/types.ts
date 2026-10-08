@@ -109,6 +109,8 @@ export type Shape2DNode = BaseNode & {
       text: string;
       font: string;
       size: number;
+      /** Moltiplicatore dell'avanzamento tra le lettere, come `spacing` di OpenSCAD (assente = 1, spaziatura normale). */
+      spacing?: number;
       /** Se il testo è nato dalla tab Simboli o Emoji: l'oggetto si chiama e si mostra come tale, non come "Testo". */
       origin?: 'symbol' | 'emoji';
     }

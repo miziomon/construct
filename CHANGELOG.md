@@ -18,6 +18,14 @@ I messaggi di commit seguono i [Conventional Commits](https://www.conventionalco
 
 ## [Non rilasciato]
 
+## [0.31.0] - 2026-10-08
+
+### Aggiunto
+- **Spaziatura del testo** (`spacing` di OpenSCAD): il Testo ha il campo Spaziatura nelle Proprietà (moltiplicatore della distanza tra le lettere, 1 = normale), il codice esportato scrive `spacing = ...` e l'importazione la legge, quindi l'avviso "la spaziatura non si importa" non compare più. Valori fuori da 0,1-10 si limitano con una nota.
+
+### Modificato
+- **Minkowski molto più veloce**. La somma si distribuisce sull'unione (si sommano le componenti connesse una a una) e i solidi concavi con facce piane si scompongono in toppe convesse. Misure con gli stessi solidi del kernel: `BabyToy` da 12-18 s a 0,2 s, forma a L 217 ms → 15 ms, scatola con guscio 212 ms → 51 ms, cilindro con guscio a 64 lati 3,6 s → 1,5 s. Il risultato coincide con quello di prima (differenza sotto 0,01% del volume). Con superfici concave molto curve e fitte (una sfera cava a 48 lati) il guadagno è modesto (circa 8-10 s): è annotato in `docs/da-fare.md`.
+
 ## [0.30.0] - 2026-10-08
 
 ### Aggiunto

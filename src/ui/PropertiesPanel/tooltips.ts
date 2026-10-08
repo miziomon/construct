@@ -39,6 +39,7 @@ export const TIPS = {
   text: 'Testo: le lettere da estrudere. Si conferma con Invio o uscendo dal campo (Esc annulla).',
   font: 'Font: lo stile delle lettere. I file dei font stanno nello ZIP dell\'export OpenSCAD.',
   textSize: 'Dimensione: altezza approssimativa delle maiuscole, in mm (come size di text() in OpenSCAD).',
+  textSpacing: 'Spaziatura: moltiplica la distanza tra le lettere (1 = normale, come spacing di text() in OpenSCAD).',
   scaleTop: 'Scala cima: dimensione della cima rispetto alla base, in %. 100 dà un prisma, 0 una punta (cono o piramide).',
   segments: 'Segmenti: quanti lati ha la curva. Pochi lati danno un poligono, molti lati una forma liscia ma più pesante da calcolare.',
   sides: 'Lati: numero di lati del poligono. 3 è un triangolo, 6 un esagono, 12 un dodecagono.',

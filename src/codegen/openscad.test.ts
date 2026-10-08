@@ -208,6 +208,10 @@ describe('nuove forme 2D e testo in OpenSCAD', () => {
     expect(code).toContain('text("Ciao \\"mondo\\"", size = 12, font = "Pacifico:style=Regular", halign = "center", valign = "center");');
     expect(code).toContain('text("a\\\\b"');
     expect(code).toContain('font = "Roboto:style=Bold"');
+    // La spaziatura compare solo se diversa da 1
+    expect(code).not.toContain('spacing');
+    expect(codeOf(node('text', { id: 't4', text: 'Ciao', font: 'pacifico', size: 12, spacing: 1.5 }))).toContain('text("Ciao", size = 12, spacing = 1.5, font = "Pacifico:style=Regular"');
+    expect(codeOf(node('text', { id: 't5', text: 'Ciao', font: 'pacifico', spacing: 1 }))).not.toContain('spacing');
     // Gli use stanno in testa, prima del primo oggetto
     expect(code.indexOf('use <')).toBeLessThan(code.indexOf('linear_extrude'));
   });

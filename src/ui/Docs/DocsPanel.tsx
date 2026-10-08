@@ -185,7 +185,7 @@ export default function DocsPanel() {
         <p>Un file <code>.scad</code> si legge come codice, si valuta e diventa oggetti veri della scena, in un solo passo di Annulla. Quello che non si capisce viene saltato e, se manca qualcosa, si apre una finestra con ogni problema, la riga e un frammento del codice originale. Il codice che Construct genera usa solo comandi che la stessa importazione sa rileggere.</p>
         <h4>Supportato</h4>
         <ul>
-          <li>Primitive: <code>cube</code>, <code>sphere</code>, <code>cylinder</code>, <code>circle</code>, <code>square</code>, <code>polygon</code> (anche con <code>paths</code>), <code>text</code>.</li>
+          <li>Primitive: <code>cube</code>, <code>sphere</code>, <code>cylinder</code>, <code>circle</code>, <code>square</code>, <code>polygon</code> (anche con <code>paths</code>), <code>text</code> (anche con <code>spacing</code>).</li>
           <li>Da 2D a 3D: <code>linear_extrude</code> (anche con torsione), <code>rotate_extrude</code>, <code>offset</code>.</li>
           <li>Trasformazioni: <code>translate</code>, <code>rotate</code>, <code>scale</code>, <code>mirror</code>, <code>resize</code>, <code>multmatrix</code>, <code>color</code> (nomi CSS, esadecimali e terne).</li>
           <li>Booleane, inviluppo e somma di Minkowski: <code>union</code>, <code>difference</code>, <code>intersection</code>, <code>hull</code>, <code>minkowski</code>, <code>intersection_for</code>, <code>render</code>.</li>
@@ -199,7 +199,7 @@ export default function DocsPanel() {
           <li><code>color</code>: la trasparenza (alpha) si scarta, la scena non ha trasparenza per oggetto.</li>
           <li><code>offset</code> annidati (apertura e chiusura): si sommano in un contorno netto, ma le punte non vengono arrotondate come in OpenSCAD. <code>offset(chamfer = true)</code> dà angoli vivi.</li>
           <li><code>linear_extrude</code> con <code>scale</code> diversa per X e Y: vale un solo valore.</li>
-          <li><code>minkowski</code>: corretto, ma con solidi a molti lati il calcolo può richiedere decine di secondi (gira in secondo piano).</li>
+          <li><code>minkowski</code>: corretto e veloce con solidi separati o con facce piane; con superfici concave molto curve e fitte (per esempio un guscio sferico) il calcolo può richiedere qualche secondo, in secondo piano.</li>
         </ul>
         <h4>Non ancora supportato</h4>
         <ul>

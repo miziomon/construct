@@ -321,6 +321,22 @@ describe('import di file OpenSCAD: nuove forme e operazioni', () => {
     expect(first('linear_extrude(height = 2) text("A", font = "Inesistente");').node).toMatchObject({ font: 'roboto-bold' });
   });
 
+  it('text: la spaziatura si importa e il codice di Construct la riscrive uguale', () => {
+    const r = importScad('linear_extrude(height = 2) text("Ciao", spacing = 1.5);');
+    expect(r.nodes[r.plates[0].rootIds[0]]).toMatchObject({ kind: 'text', spacing: 1.5 });
+    expect(r.warnings.join(' ')).not.toMatch(/spaziatura/);
+    // Senza spacing, o con spacing = 1, il campo non c'è
+    expect(first('linear_extrude(height = 2) text("A");').node).not.toHaveProperty('spacing');
+    expect(first('linear_extrude(height = 2) text("A", spacing = 1);').node).not.toHaveProperty('spacing');
+    // Fuori dai limiti: si limita e lo si dice
+    const wild = importScad('linear_extrude(height = 2) text("A", spacing = 50);');
+    expect(wild.nodes[wild.plates[0].rootIds[0]]).toMatchObject({ spacing: 10 });
+    expect(wild.warnings.join(' ')).toMatch(/spaziatura/);
+    // Roundtrip: scena → codice → import
+    const back = importScad(sceneToOpenScad({ nodes: r.nodes, rootIds: r.plates[0].rootIds }));
+    expect(back.nodes[back.plates[0].rootIds[0]]).toMatchObject({ kind: 'text', text: 'Ciao', spacing: 1.5 });
+  });
+
   it("resize porta l'ingombro alla misura chiesta, anche con auto", () => {
     expect(first('resize([20, 0, 0], auto = true) cube([10, 5, 2]);').node).toMatchObject({ size: [20, 10, 4] });
     near(first('resize([20, 0, 0], auto = true) cube([10, 5, 2]);').node.position, [10, 5, 2]);

@@ -95,10 +95,12 @@ function glyphFor(font: Font, char: string): { glyph: ReturnType<Font['charToGly
  * I glifi si dispongono a mano (avanzamento e crenatura): così non servono le tabelle di sostituzione dei font, che
  * opentype.js non legge tutte. Va usata con la regola di riempimento `NonZero` (i buchi di "O" o "A" sono contorni orari).
  */
-export function textContours(node: { text: string; font: string; size: number }): Vec2[][] {
+export function textContours(node: { text: string; font: string; size: number; spacing?: number }): Vec2[][] {
   const font = fonts.get(node.font);
   if (!font) throw new Error(`Font "${node.font}" non caricato.`);
   const em = Math.max(0.01, node.size) * EM_PER_SIZE;
+  // Spaziatura come `spacing` di OpenSCAD: moltiplica l'avanzamento di ogni lettera (crenatura compresa)
+  const spacing = node.spacing ?? 1;
 
   const contours: Vec2[][] = [];
   let pen = 0;
@@ -113,9 +115,9 @@ export function textContours(node: { text: string; font: string; size: number })
     const { glyph, owner } = glyphFor(font, char);
     // La scala dipende dal corpo del font che ha fornito il glifo
     const scale = em / owner.unitsPerEm;
-    if (previous && previousFont === owner) pen += owner.getKerningValue(previous, glyph) * scale;
+    if (previous && previousFont === owner) pen += owner.getKerningValue(previous, glyph) * scale * spacing;
     flatten(glyph.getPath(pen, 0, em).commands, contours);
-    pen += (glyph.advanceWidth ?? 0) * scale;
+    pen += (glyph.advanceWidth ?? 0) * scale * spacing;
     previous = glyph;
     previousFont = owner;
   }

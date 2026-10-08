@@ -103,7 +103,7 @@ Tre esempi CC0 di prova, confrontati con OpenSCAD in locale (build con backend M
 |---|---|---|---|---|
 | `Bauble.scad` | intervallo `[0:1:count-1]`, `rotate_extrude` di `polygon`, `linear_extrude` con torsione, `hull`, `$fa`/`$fs` | 114 896 / 115 946 mm³ (-0,9%) | uguale (±0,03 mm) | circa 2 s |
 | `Bauble2.scad` | `offset` annidati, `linear_extrude` con torsione e scala, `rotate_extrude`, moduli con `$fs`/`$fa` | 60 166 / 60 159 mm³ (+0,01%) | uguale | circa 0,6 s |
-| `BabyToy.scad` | `minkowski` (tre blocchi, anche con prisma triangolare e cilindro a 251 lati) | 38 901 / 38 809 mm³ (+0,24%) | uguale (±0,01 mm) | circa 12 s |
+| `BabyToy.scad` | `minkowski` (tre blocchi, anche con prisma triangolare e cilindro a 251 lati) | 38 901 / 38 809 mm³ (+0,24%) | uguale (±0,01 mm) | circa 0,2 s (0.31.0; erano 12 s) |
 
 Che cosa non funzionava e come è stato risolto:
 - **`Bauble`: le pale mancavano** (una su sette). Causa: un intervallo con il passo, `[0:1:6]`, veniva letto come "inizio 0, passo 6, fine 1", quindi il ciclo `for` faceva una sola iterazione. Corretto (con test).
@@ -112,7 +112,7 @@ Che cosa non funzionava e come è stato risolto:
 - **`BabyToy`: nessun oggetto.** Mancava `minkowski`. Ora è un gruppo "Minkowski" (kernel con `Manifold.minkowskiSum`, codice `minkowski()` e importazione). Due cose da sapere: `minkowskiSum` di manifold-3d sbaglia se il secondo solido non contiene l'origine (il risultato comprende anche il primo), quindi gli operandi si portano al centro, si sommano e il risultato si risposta; inoltre in OpenSCAD `translate(t) minkowski() { A; B; }` sposta il risultato una volta sola, quindi i figli stanno nel sistema locale del gruppo.
 - **`Bauble2`: unico scarto noto**, gli `offset(±.1) offset(1) offset(-1)` (apertura che arrotonda le punte della stella) si sommano in un contorno di ±0,1: il volume coincide, le punte restano un po' più vive (nota nel rapporto di importazione).
 
-Ancora aperto su questi esempi: la durata di `BabyToy` (12 s: la somma di Minkowski tra un cilindro a 251 lati e una sfera a 52 è pesante; gira nel worker e il risultato resta in cache finché non cambia). Si potrebbe ridurre con una versione più veloce per solidi convessi (invece dell'inviluppo di tutte le somme di vertici) o con un'anteprima a pochi segmenti.
+Risolto nella 0.31.0: la durata di `BabyToy` (era 12 s) scende a circa 0,2 s perché l'operando è l'unione di tre solidi separati, ciascuno convesso, e la somma di Minkowski si distribuisce sull'unione (si sommano le componenti una a una).
 
 ### Cosa non si legge ancora
 
@@ -123,7 +123,7 @@ Dalla 0.27.0 l'importazione legge anche `let`/`assign`, le liste per comprension
 | `polyhedron` | Media-alta | Non c'è un nodo di poliedro generico (i dadi sono solidi fissi). La via è una mesh importata (`MeshNode`), che richiede la registrazione asincrona dell'asset nel worker, un solido chiuso e a tenuta, e l'inversione dell'ordine delle facce (OpenSCAD le vuole in senso orario). Oggi `importScad` e lo store sono sincroni: andrebbe reso asincrono il percorso di importazione. |
 | `import("file.stl")` | Alta | Il file sta accanto al `.scad`: bisogna far scegliere più file insieme (o una cartella), registrare ogni mesh e collegarla ai nodi. Come il `polyhedron`, richiede un flusso asincrono. |
 | `offset` annidati (apertura e chiusura) | Media | `offset(r=-1) offset(r=1)`: oggi si sommano (contorno netto), ma non arrotondano le punte come OpenSCAD. Servirebbero operazioni 2D sul profilo prima dell'estrusione (unione, apertura, chiusura). |
-| `minkowski` più veloce | Media | Fatto in 0.29.0, ma con solidi a molti lati è lento (BabyToy 12 s). |
+| `minkowski` su superfici concave molto curve | Media | Dalla 0.31.0 BabyToy impiega 0,2 s (era 12 s): la somma si fa per componenti connesse e, per i solidi concavi, per toppe convesse. Resta lento un guscio con curve fitte (per esempio una sfera cava a 48 lati: circa 8-10 s), dove il costo sta nell'unione di centinaia di inviluppi: servirebbe un offset 3D diretto per operandi sferici. |
 | `projection` | Alta | Nessun corrispettivo: servirebbe una forma 2D ottenuta dalla sezione o dall'ombra di un solido (`slice` esiste nel kernel, usata solo dal Guscio). |
 | `surface` | Alta | Legge un file di dati o un'immagine: stesso problema dei file esterni di `import`. |
 | `roof` | Molto alta | È poco usato e richiede lo scheletro del poligono (straight skeleton). |

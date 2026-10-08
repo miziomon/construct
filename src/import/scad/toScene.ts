@@ -248,7 +248,7 @@ export function importScad(source: string): ScadImport {
       // Il font di OpenSCAD si cerca nel catalogo di Construct; la posizione è stimata perché i font non sono disponibili qui
       // (Construct centra il testo, OpenSCAD lo allinea a sinistra e sulla linea di base)
       const font = fontIdOf(sh.font);
-      const advance = [...sh.text].length * sh.size * 0.6;
+      const advance = [...sh.text].length * sh.size * 0.6 * sh.spacing;
       const cx = sh.halign === 'center' ? 0 : sh.halign === 'right' ? -advance / 2 : advance / 2;
       const cy = sh.valign === 'top' ? -sh.size / 2 : sh.valign === 'center' ? 0 : sh.size / 2;
       const d = decompose(item.M, [cx, cy, ext.center ? 0 : ext.h / 2]);
@@ -256,7 +256,7 @@ export function importScad(source: string): ScadImport {
       if (!same(d.scale[0], d.scale[1])) addNote('Un testo scalato in modo diverso in X e in Y è stato approssimato.');
       addNote('Testo: la posizione è stimata, perché il font di Construct può avere misure diverse da quello di OpenSCAD.');
       return {
-        ...shape2dDefaults('text'), ...base, name: SHAPE2D_LABELS.text, kind: 'text', text: sh.text, font, size: r3(Math.max(MIN, sh.size * d.scale[1])), height: heightOf(d.scale[2]),
+        ...shape2dDefaults('text'), ...base, name: SHAPE2D_LABELS.text, kind: 'text', text: sh.text, font, size: r3(Math.max(MIN, sh.size * d.scale[1])), ...(sh.spacing !== 1 ? { spacing: sh.spacing } : {}), height: heightOf(d.scale[2]),
         ...twist, ...scaleTop, ...offsetOf(d.scale[0]), position: d.position, rotation: d.rotation,
       } as Shape2DNode;
     }

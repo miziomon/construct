@@ -779,6 +779,8 @@ function Shape2DFields({ node, patch, locked }: { node: Shape2DNode; patch: (p: 
               </select>
             </label>,
             slider('Dimensione', node.size, 'size', TIPS.textSize, length),
+            // Simboli ed emoji sono un solo carattere: la spaziatura non ha senso
+            !node.origin && slider('Spaziatura', node.spacing ?? 1, 'spacing', TIPS.textSpacing, { unit: '×', min: 0.5, max: 3, step: 0.05, hardMin: 0.1, hardMax: 10 }),
           ]
         ) : isPolygonShape(node) ? (
           [

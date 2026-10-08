@@ -1466,6 +1466,20 @@ test('Testo: trentadue font in cinque gruppi, uno nuovo si applica e la mesh res
   await expect(page.locator('.status-bar')).toContainText('Mesh valida');
 });
 
+test('Testo: la Spaziatura allarga il testo, finisce nel codice e la mesh resta valida', async ({ page }) => {
+  await addShape(page, 'Testo');
+  await settled(page);
+  const width = () => page.evaluate(() => { const b = window.__construct!.results.getState().meshes[0].bbox; return b.max[0] - b.min[0]; });
+  const before = await width();
+  const spacing = page.locator('.slider-field', { hasText: 'Spaziatura' }).locator('.number-field__input');
+  await spacing.fill('2');
+  await spacing.press('Enter');
+  await settled(page);
+  expect(await width()).toBeGreaterThan(before * 1.3);
+  await expect(page.locator('.status-bar')).toContainText('Mesh valida');
+  expect(await readCode(page)).toContain('spacing = 2');
+});
+
 test('Lazy loading: i pannelli degli strumenti e le modali del menu si scaricano solo quando servono', async ({ page }) => {
   const loaded: string[] = [];
   page.on('request', (r) => loaded.push(r.url()));

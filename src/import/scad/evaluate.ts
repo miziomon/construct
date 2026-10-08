@@ -187,7 +187,7 @@ export type Shape =
   | ({ s: 'square'; size: [number, number]; center: boolean } & Flat)
   /** `paths`: elenco di indici dei punti per ogni contorno (il primo è l'esterno, gli altri sono fori). */
   | ({ s: 'polygon'; points: [number, number][]; paths?: number[][] } & Flat)
-  | ({ s: 'text'; text: string; font: string; size: number; halign: string; valign: string } & Flat);
+  | ({ s: 'text'; text: string; font: string; size: number; halign: string; valign: string; spacing: number } & Flat);
 
 /** Un problema trovato leggendo il codice: `error` = parte saltata o non capita, `note` = approssimazione o informazione. */
 export interface ScadIssue {
@@ -859,9 +859,12 @@ export function evaluateScad(source: string): ScadResult {
           return [];
         }
         const text = typeof p.text === 'string' ? p.text : p.text === undefined || p.text === null ? '' : strOf(p.text);
-        if (p.spacing !== undefined && asNum(p.spacing, 1) !== 1) note('text(): la spaziatura (spacing) non si importa.');
+        // La spaziatura è un moltiplicatore dell'avanzamento: Construct accetta da 0,1 a 10
+        const spacing = asNum(p.spacing, 1);
+        const clamped = Math.min(10, Math.max(0.1, spacing));
+        if (clamped !== spacing) note(`text(): la spaziatura (spacing = ${spacing}) è fuori dai limiti e diventa ${clamped}.`);
         return leaf2d(
-          { s: 'text', text, font: typeof p.font === 'string' ? p.font : '', size: asNum(p.size, 10), halign: typeof p.halign === 'string' ? p.halign : 'left', valign: typeof p.valign === 'string' ? p.valign : 'baseline' },
+          { s: 'text', text, font: typeof p.font === 'string' ? p.font : '', size: asNum(p.size, 10), halign: typeof p.halign === 'string' ? p.halign : 'left', valign: typeof p.valign === 'string' ? p.valign : 'baseline', spacing: clamped },
           ctx,
           'text',
         );
