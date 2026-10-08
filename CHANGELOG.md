@@ -18,6 +18,19 @@ I messaggi di commit seguono i [Conventional Commits](https://www.conventionalco
 
 ## [Non rilasciato]
 
+## [0.23.0] - 2026-10-08
+
+### Aggiunto
+- **Preset delle stampanti** nella finestra delle dimensioni del piano, divisi per marca e con nome e misure: Bambu Lab (A1 mini 180 × 180, A1 / P1S / P1P / X1C 256 × 256, H2D 350 × 320), Prusa (MK4S 250 × 210, CORE One 250 × 220, XL 360 × 360) e Creality (Ender-3 V3 / K1 220 × 220, K1 Max 300 × 300, K2 Plus 350 × 350). Un clic compila i due campi, il preset che coincide con le misure attuali è evidenziato e la conferma resta "Applica". Le aree già presenti in un'altra marca non si ripetono (la Prusa MINI+ è 180 × 180 come la A1 mini).
+- **Quote cliccabili nella vista**: con un oggetto selezionato compaiono le misure X, Y e Z del suo ingombro, nel sistema dell'oggetto. Un clic su una quota apre un campo dove si digita la misura in mm: Invio applica, Esc annulla. Vale per forme, forme 2D, gruppi (scala per asse, centro della base fermo) e mesh importate (scala uniforme); con le proporzioni bloccate gli altri assi seguono. La base resta dov'era e l'operazione è un solo passo di Annulla. Con l'oggetto bloccato le quote sono di sola lettura e durante il trascinamento del gizmo si nascondono.
+- **Menu contestuale** con il tasto destro su un oggetto: lo seleziona (se non lo è già, così una selezione multipla resta) e mostra soltanto i comandi applicabili, negli stessi gruppi della barra, con icona e scorciatoia. Si chiude con Esc, un clic fuori, la rotellina o un cambio di selezione e si naviga con le frecce. Un trascinamento con il tasto destro resta il movimento della vista.
+- Registro dei comandi condiviso (`src/ui/commands.tsx`): la barra e il menu leggono le stesse definizioni di nome, scorciatoia, abilitazione e azione.
+
+### Modificato
+- **Barra strumenti riorganizzata in sezioni** con il nome sotto i pulsanti: File, Trasforma, Combina, Modifica, Disponi, Oggetto e Vista. Prima 19 comandi stavano in un solo blocco. Nomi, scorciatoie e tooltip non cambiano; la barra è alta 62 px invece di 54 e i divisori sono più stretti.
+- Le etichette dei campi nella finestra del piano ("Larghezza X", "Profondità Y") non sono più tagliate.
+- Il menu Scorciatoie e il tooltip di Ridimensiona citano il clic destro e le quote.
+
 ## [0.22.0] - 2026-10-07
 
 ### Aggiunto

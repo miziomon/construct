@@ -82,6 +82,12 @@ interface UiState {
   pushLibraryRecent: (key: string) => void;
   placementPreview: PlacementPreview | null;
   setPlacementPreview: (preview: PlacementPreview | null) => void;
+  /** Gizmo in trascinamento: le quote nella vista si nascondono finché non finisce (non si salva). */
+  gizmoDragging: boolean;
+  setGizmoDragging: (dragging: boolean) => void;
+  /** Menu contestuale aperto, con la posizione del puntatore in pixel della finestra (non si salva). */
+  contextMenu: { x: number; y: number } | null;
+  setContextMenu: (menu: { x: number; y: number } | null) => void;
   toggleGhostOps: () => void;
   /** Apre la tendina indicata (chiudendo l'altra); `null` la chiude. */
   setToolbarMenu: (menu: ToolbarMenu | null) => void;
@@ -124,6 +130,10 @@ export const useUiStore = create<UiState>()(
       pushLibraryRecent: (key) => set({ libraryRecent: cleanKeys([key, ...get().libraryRecent], MAX_RECENT) }),
       placementPreview: null,
       setPlacementPreview: (placementPreview) => set({ placementPreview }),
+      gizmoDragging: false,
+      setGizmoDragging: (gizmoDragging) => set({ gizmoDragging }),
+      contextMenu: null,
+      setContextMenu: (contextMenu) => set({ contextMenu }),
       toggleGhostOps: () => set({ ghostOps: !get().ghostOps }),
       setToolbarMenu: (toolbarMenu) => set({ toolbarMenu }),
       toggleCode: () => set({ codeOpen: !get().codeOpen }),

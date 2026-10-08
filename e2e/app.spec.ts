@@ -2216,3 +2216,138 @@ test('Piano di stampa: le dimensioni stanno nella barra di stato, prima dell\'in
   await dialog.getByRole('button', { name: 'Applica' }).click();
   await expect(status.getByRole('button')).toHaveText('Piano 256 × 256 mm');
 });
+
+test('Piano di stampa: i preset delle stampanti compilano le misure e si confermano con Applica', async ({ page }) => {
+  const status = page.locator('.status-bar');
+  await status.getByRole('button', { name: /Piano 256/ }).click();
+  const dialog = page.getByRole('dialog', { name: 'Dimensioni del piano' });
+  // Le stampanti sono raggruppate per marca e riportano nome e misure
+  for (const brand of ['Bambu Lab', 'Prusa', 'Creality']) await expect(dialog.getByRole('group', { name: brand })).toBeVisible();
+  const bambu = dialog.getByRole('group', { name: 'Bambu Lab' });
+  await expect(bambu.getByRole('button', { name: /A1 mini.*180 × 180/ })).toBeVisible();
+  await expect(bambu.getByRole('button', { name: /H2D.*350 × 320/ })).toBeVisible();
+  // Il preset che coincide con le misure attuali è evidenziato
+  await expect(bambu.getByRole('button', { name: /A1 \/ P1S/ })).toHaveAttribute('aria-pressed', 'true');
+
+  await bambu.getByRole('button', { name: /A1 mini/ }).click();
+  await expect(dialog.locator('.number-field', { hasText: 'Larghezza X' }).locator('input')).toHaveValue('180');
+  // Non cambia nulla finché non si applica
+  await expect(page.locator('.status-bar__bed')).toHaveText('Piano 256 × 256 mm');
+  await dialog.getByRole('button', { name: 'Applica' }).click();
+  await expect(page.locator('.status-bar__bed')).toHaveText('Piano 180 × 180 mm');
+  await expect.poll(() => page.evaluate(() => (window.__r3f!.scene.getObjectByName('bed-plate') as unknown as { geometry: { parameters: { width: number } } }).geometry.parameters.width)).toBe(180);
+});
+
+test('Quote: un clic sulla quota X assegna la larghezza, con un solo passo di Annulla', async ({ page }) => {
+  await addShape(page, 'Cubo');
+  const id = (await sceneState(page)).rootIds[0];
+  const before = (await sceneState(page)).nodes[id];
+  expect(before.size).toEqual([20, 20, 20]);
+
+  const quote = page.locator('.dimension-label[data-axis="x"]');
+  await expect(quote).toBeVisible();
+  await expect(quote).toContainText('20');
+  await quote.click();
+  const input = page.locator('.dimension-input[data-axis="x"]');
+  await input.fill('40');
+  await input.press('Enter');
+  await settled(page);
+
+  const after = (await sceneState(page)).nodes[id];
+  expect(after.size).toEqual([40, 20, 20]);
+  // La base resta sul piatto
+  expect(after.position[2]).toBeCloseTo(before.position[2], 3);
+  await expect(page.locator('.dimension-label[data-axis="x"]')).toContainText('40');
+
+  // Un solo passo di cronologia: Annulla riporta la misura di prima
+  await page.keyboard.press('Control+z');
+  await settled(page);
+  expect((await sceneState(page)).nodes[id].size).toEqual([20, 20, 20]);
+});
+
+test('Quote: Esc annulla la modifica e un oggetto bloccato ha le quote in sola lettura', async ({ page }) => {
+  await addShape(page, 'Cubo');
+  const id = (await sceneState(page)).rootIds[0];
+  await page.locator('.dimension-label[data-axis="y"]').click();
+  const input = page.locator('.dimension-input[data-axis="y"]');
+  await input.fill('99');
+  await input.press('Escape');
+  await expect(input).toBeHidden();
+  expect((await sceneState(page)).nodes[id].size).toEqual([20, 20, 20]);
+
+  await page.keyboard.press('l');
+  await expect(page.locator('.dimension-label--readonly')).toHaveCount(3);
+  await expect(page.locator('button.dimension-label')).toHaveCount(0);
+});
+
+test('Quote: la quota Z di un cilindro ne cambia l\'altezza e lascia il raggio', async ({ page }) => {
+  await addShape(page, 'Cilindro');
+  const id = (await sceneState(page)).rootIds[0];
+  await page.locator('.dimension-label[data-axis="z"]').click();
+  const input = page.locator('.dimension-input[data-axis="z"]');
+  await input.fill('50');
+  await input.press('Enter');
+  await settled(page);
+  const node = (await sceneState(page)).nodes[id];
+  expect(node.height).toBe(50);
+  expect(node.radius).toBe(10);
+});
+
+test('Menu contestuale: il tasto destro su un oggetto mostra solo i comandi applicabili', async ({ page }) => {
+  await addShape(page, 'Cubo');
+  const menu = page.getByRole('menu', { name: 'Comandi per la selezione' });
+  await expect(menu).toBeHidden();
+  // Il cubo è centrato in (0, 0, 10): il tasto destro lì cade sull'oggetto
+  const at = await project(page, [0, 0, 10]);
+  await page.mouse.click(at.x, at.y, { button: 'right' });
+  await expect(menu).toBeVisible();
+  // Un solo oggetto: si può duplicare, eliminare, specchiare; non unire, raggruppare o allineare
+  for (const name of ['Duplica', 'Elimina', 'Specchia', 'Blocca', 'Raccordo']) await expect(menu.getByRole('menuitem', { name, exact: true })).toBeVisible();
+  for (const name of ['Unisci', 'Raggruppa', 'Allinea', 'Separa', 'Sposta']) await expect(menu.getByRole('menuitem', { name, exact: true })).toHaveCount(0);
+
+  // Esc chiude il menu
+  await page.keyboard.press('Escape');
+  await expect(menu).toBeHidden();
+
+  // Con due oggetti selezionati compaiono le booleane
+  await addShape(page, 'Cilindro');
+  await page.locator('.outliner__row', { hasText: 'Cubo' }).click();
+  await page.locator('.outliner__row', { hasText: 'Cilindro' }).click({ modifiers: ['Shift'] });
+  const second = await project(page, [0, 0, 10]);
+  await page.mouse.click(second.x, second.y, { button: 'right' });
+  await expect(menu.getByRole('menuitem', { name: 'Unisci', exact: true })).toBeVisible();
+  await expect(menu.getByRole('menuitem', { name: 'Allinea', exact: true })).toBeVisible();
+});
+
+test('Menu contestuale: una voce esegue il comando e chiude il menu', async ({ page }) => {
+  await addShape(page, 'Cubo');
+  const at = await project(page, [0, 0, 10]);
+  await page.mouse.click(at.x, at.y, { button: 'right' });
+  const menu = page.getByRole('menu', { name: 'Comandi per la selezione' });
+  await menu.getByRole('menuitem', { name: 'Duplica', exact: true }).click();
+  await settled(page);
+  await expect(menu).toBeHidden();
+  expect((await sceneState(page)).rootIds).toHaveLength(2);
+
+  // Il tasto destro nel vuoto non apre nulla
+  const empty = await project(page, [-120, 120, 0]);
+  await page.mouse.click(empty.x, empty.y, { button: 'right' });
+  await expect(menu).toBeHidden();
+});
+
+test('Barra strumenti: i comandi sono in gruppi con il nome della sezione', async ({ page }) => {
+  const toolbar = page.locator('header.toolbar');
+  for (const [name, buttons] of [
+    ['File', ['Nuovo progetto', 'Annulla', 'Ripeti']],
+    ['Trasforma', ['Seleziona', 'Sposta', 'Ruota', 'Ridimensiona', 'Estrudi']],
+    ['Combina', ['Raggruppa', 'Separa', 'Unisci', 'Inviluppo convesso']],
+    ['Modifica', ['Raccordo', 'Smusso', 'Smusso angolare', 'Guscio', 'Pattern']],
+    ['Disponi', ['Allinea', 'Specchia', 'Serie']],
+    ['Oggetto', ['Duplica', 'Elimina', 'Misura']],
+    ['Vista', ['Codice OpenSCAD', 'Tema']],
+  ] as const) {
+    const group = toolbar.getByRole('group', { name });
+    await expect(group, `sezione "${name}"`).toBeVisible();
+    for (const button of buttons) await expect(group.getByRole('button', { name: button, exact: true }), `"${button}" in "${name}"`).toBeVisible();
+  }
+});

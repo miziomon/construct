@@ -1,5 +1,6 @@
 import { Suspense, useEffect } from 'react';
 import { Toolbar } from './ui/Toolbar/Toolbar';
+import { ContextMenu } from './ui/ContextMenu/ContextMenu';
 import { LibraryTabs } from './ui/ShapeLibrary/LibraryTabs';
 import { Outliner } from './ui/Outliner/Outliner';
 import { Sidebar } from './ui/Sidebar/Sidebar';
@@ -61,6 +62,7 @@ export default function App() {
         </Suspense>
       )}
       <UpdatePrompt />
+      <ContextMenu />
       <Notifications />
     </div>
   );

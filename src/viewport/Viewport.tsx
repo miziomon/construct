@@ -21,6 +21,7 @@ import { useArrayTool } from '../ui/Array/arrayToolStore';
 import { usePatternTool } from '../ui/Pattern/patternToolStore';
 import { PatternOverlay } from './PatternOverlay';
 import { PlacementPreview } from './PlacementPreview';
+import { DimensionOverlay } from './DimensionOverlay';
 import './Viewport.scss';
 
 // I pannelli degli strumenti si scaricano alla prima attivazione (restano fuori dal caricamento iniziale)
@@ -76,7 +77,7 @@ export function Viewport() {
     !edgeToolActive && !shellToolActive && !measureActive && !layFlatActive && !arrayActive && !patternActive && gizmoMode !== 'select' && selection.length === 1 && rootIds.includes(selection[0]) && !isLocked(scene, selection[0]) ? selection[0] : undefined;
 
   return (
-    <div className="viewport">
+    <div className="viewport" onContextMenu={(e) => e.preventDefault()}>
       <SelectionActions />
       {/* Un pannello per volta e solo da attivo: il suo codice si scarica alla prima attivazione dello strumento */}
       <Suspense fallback={null}>
@@ -108,6 +109,7 @@ export function Viewport() {
         <MeasureOverlay />
         <LayFlatOverlay />
         <PatternOverlay />
+        <DimensionOverlay />
         <PlacementPreview />
         {[...meshesByRoot].map(([rootId, parts]) => (
           <SceneObject key={rootId} rootId={rootId} meshes={parts} selection={selection} locked={isLocked(scene, rootId)} showGizmo={rootId === gizmoId} />

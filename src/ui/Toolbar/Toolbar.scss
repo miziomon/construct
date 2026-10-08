@@ -30,10 +30,27 @@
     gap: 2px;
   }
 
+  /* Sezione: i pulsanti di un gruppo con il suo nome in piccolo sotto */
+  &__section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+  }
+
+  &__section-label {
+    font-size: 9px;
+    font-weight: 600;
+    line-height: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: color('text-muted');
+  }
+
   &__divider {
     width: 1px;
-    height: 22px;
-    margin: 0 $space-1;
+    height: 36px;
+    margin: 0;
     background: color('border');
   }
 

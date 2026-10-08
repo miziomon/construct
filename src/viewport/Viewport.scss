@@ -13,6 +13,41 @@
 }
 
 // Etichetta della distanza sulla linea della Misura (testo HTML sovrapposto alla vista 3D)
+// Quote dell'oggetto selezionato: il wrapper di drei non cattura i clic, solo l'etichetta
+.dimension-label,
+.dimension-input {
+  pointer-events: auto;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.dimension-label {
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(20, 23, 28, 0.88);
+  color: #fff;
+  cursor: text;
+
+  &:hover {
+    background: rgba(20, 23, 28, 1);
+    border-color: rgba(255, 255, 255, 0.7);
+  }
+
+  &--readonly {
+    cursor: default;
+    opacity: 0.8;
+  }
+}
+
+.dimension-input {
+  width: 76px;
+  border: 2px solid;
+  background: #fff;
+  color: #14171c;
+}
+
 .measure-label {
   padding: 2px 6px;
   border-radius: 4px;

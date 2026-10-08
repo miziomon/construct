@@ -39,6 +39,8 @@ const SHORTCUTS: { title: string; rows: [string, string][] }[] = [
       ['J', 'Inviluppo convesso: la forma più piccola e senza concavità che contiene gli oggetti selezionati'],
       ['F2', 'Rinomina l\'oggetto selezionato'],
       ['Alt+clic', 'Seleziona il singolo oggetto di un gruppo'],
+      ['Clic destro', 'Menu con i soli comandi applicabili alla selezione (se l\'oggetto non è selezionato lo seleziona)'],
+      ['Clic su una quota', 'Le quote X, Y e Z dell\'oggetto selezionato: si digita la misura in mm (Invio applica, Esc annulla)'],
       ['Ctrl+Maiusc+G', 'Separa il gruppo o l\'unione'],
       ['H', 'Solido / Foro'],
       ['L', 'Blocca / Sblocca'],

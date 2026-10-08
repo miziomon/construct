@@ -11,7 +11,7 @@ Fonti consultate: manuale di OpenSCAD (`rotate_extrude`, `offset`, `hull`), guid
 Allinea, Capovolgi).
 
 Cosa c'è già: Serie di copie (lineare, griglia, circolare) come gruppo Ripetizione, booleane (Unione, Differenza, Intersezione) e Foro, Raccordo, Smusso e Smusso angolare su spigoli scelti, Guscio,
-Allinea, Specchia (con anteprima), Misura con aggancio, estrusione lineare e rotazionale delle forme 2D, Contorno (offset 2D),
+Allinea, Specchia (con anteprima), Misura con aggancio, quote cliccabili X, Y e Z sull'oggetto selezionato, menu contestuale con il tasto destro, estrusione lineare e rotazionale delle forme 2D, Contorno (offset 2D),
 testo, SVG, simboli ed emoji, Inviluppo convesso, Appoggia sul piatto e su una faccia, import STL, 3MF e SVG, export STL, 3MF e
 OpenSCAD, timeline con Annulla.
 
@@ -76,6 +76,9 @@ Primo passo economico alla Tinkercad: **Duplica e ripeti** (Ctrl+D ripete l'ulti
 
 ## Idee minori
 
+- Quote tra oggetti (distanza tra due oggetti o tra un oggetto e il piatto, da digitare per spostarli) e quote sulle singole facce o sui fori: oggi le quote sono solo le tre dimensioni dell'ingombro.
+- Menu contestuale anche sul vuoto della vista (Incolla, vista, aggiungi forma) e sulle righe dell'elenco oggetti.
+- Preset del piano: altre stampanti (Anycubic, Elegoo, Voron) e preset salvati dall'utente.
 - Ripetizione: "Rendi indipendenti" (Separa produce N oggetti veri, uno per copia), serie lungo un percorso o una curva, passo diverso per ogni asse nella lineare con angolo, copie che seguono un oggetto di riferimento, Ctrl+D che ripete l'ultimo spostamento (Duplica e ripeti di Tinkercad).
 - Estrusione rotazionale: opzione simmetrica (come Fusion, da -angolo/2 a +angolo/2) e passo elicoidale (come Blender Screw).
 - Inviluppo convesso anche per le forme 2D (prima dell'estrusione).

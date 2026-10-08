@@ -19,6 +19,8 @@ import { useLayFlat } from '../ui/LayFlat/layFlatStore';
 import { usePatternTool } from '../ui/Pattern/patternToolStore';
 import { layOnFaceAndDrop } from '../kernel/placement';
 import { notify } from '../ui/notify/notifyStore';
+import { useUiStore } from '../ui/uiStore';
+import { getCommandContext } from '../ui/commands';
 import { snapToMesh } from '../scene/snap';
 import type { Vec3 } from '../scene/types';
 import type { Transform } from '../scene/math';
@@ -53,10 +55,11 @@ interface PartProps {
   locked: boolean;
   onPointerDown: (e: ThreeEvent<PointerEvent>, mesh: NodeMesh) => void;
   onDoubleClick: (e: ThreeEvent<MouseEvent>, mesh: NodeMesh) => void;
+  onContextMenu: (e: ThreeEvent<MouseEvent>, mesh: NodeMesh) => void;
 }
 
 /** Una mesh dell'oggetto, nel suo colore, con il contorno di selezione. */
-function Part({ mesh, selected, locked, onPointerDown, onDoubleClick }: PartProps) {
+function Part({ mesh, selected, locked, onPointerDown, onDoubleClick, onContextMenu }: PartProps) {
   const palette = useViewportPalette();
   // Geometria da buffer; "flatShading" sul materiale evita lo smussamento degli spigoli
   const geometry = useMemo(() => {
@@ -110,6 +113,7 @@ function Part({ mesh, selected, locked, onPointerDown, onDoubleClick }: PartProp
       geometry={geometry}
       onPointerDown={tool ? undefined : (e) => onPointerDown(e, mesh)}
       onDoubleClick={tool ? undefined : (e) => onDoubleClick(e, mesh)}
+      onContextMenu={tool ? undefined : (e) => onContextMenu(e, mesh)}
       onPointerMove={
         layFlat
           ? (e) => {
@@ -266,6 +270,20 @@ export function SceneObject({ rootId, meshes, selection, locked, showGizmo }: Pr
     setGizmoMode('translate');
   };
 
+  /**
+   * Tasto destro su un oggetto: lo seleziona (se non lo è già, così una selezione multipla resta) e apre il menu dei
+   * comandi applicabili. Un trascinamento con il tasto destro è il movimento della vista e non apre nulla.
+   */
+  const onContextMenu = (e: ThreeEvent<MouseEvent>) => {
+    if (e.delta > 3) return;
+    e.stopPropagation();
+    // Con uno strumento a pannello aperto l'oggetto è in anteprima: niente menu
+    const c = getCommandContext();
+    if (c.edgeTool || c.shellActive || c.measureActive || c.layFlatActive || c.arrayActive || c.patternActive) return;
+    if (!selection.includes(rootId)) select([rootId]);
+    useUiStore.getState().setContextMenu({ x: e.nativeEvent.clientX, y: e.nativeEvent.clientY });
+  };
+
   const scaling = gizmoMode === 'resize' || gizmoMode === 'extrude';
   // Le forme con misure proprie si ridimensionano con le loro misure; un gruppo di qualsiasi tipo con una scala per asse
   // (solo in Ridimensiona); le mesh importate no. Estrudi solo le forme 2D
@@ -352,7 +370,7 @@ export function SceneObject({ rootId, meshes, selection, locked, showGizmo }: Pr
     <>
       <group ref={wrapper} matrixAutoUpdate={false}>
         {meshes.map((mesh) => (
-          <Part key={mesh.id} mesh={mesh} locked={locked} selected={selection.some((id) => mesh.path.includes(id))} onPointerDown={onPointerDown} onDoubleClick={onDoubleClick} />
+          <Part key={mesh.id} mesh={mesh} locked={locked} selected={selection.some((id) => mesh.path.includes(id))} onPointerDown={onPointerDown} onDoubleClick={onDoubleClick} onContextMenu={onContextMenu} />
         ))}
       </group>
 
@@ -373,9 +391,19 @@ export function SceneObject({ rootId, meshes, selection, locked, showGizmo }: Pr
           size={0.8}
           translationSnap={shift ? null : SNAP_MOVE}
           rotationSnap={shift ? null : SNAP_ROTATE}
-          onMouseDown={() => startMatrix.current.copy(nodeMatrix(node.position, node.rotation))}
+          onMouseDown={() => {
+            startMatrix.current.copy(nodeMatrix(node.position, node.rotation));
+            // Durante il trascinamento le quote nella vista si nascondono
+            useUiStore.getState().setGizmoDragging(true);
+          }}
           onObjectChange={onChange}
-          onMouseUp={onCommit}
+          onMouseUp={() => {
+            try {
+              onCommit();
+            } finally {
+              useUiStore.getState().setGizmoDragging(false);
+            }
+          }}
         />
       )}
     </>
