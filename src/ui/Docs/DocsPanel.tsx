@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import { FONTS, FONT_CATEGORIES, googleFontsUrl } from '../../scene/fontCatalog';
 import { TOOLBAR_HELP, type HelpKey } from '../Toolbar/toolbarHelp';
 import { useUiStore } from '../uiStore';
 import './DocsPanel.scss';
@@ -17,7 +18,9 @@ const SECTIONS = [
   { id: 'modificare', title: 'Modificare' },
   { id: 'ripetizioni', title: 'Ripetizioni' },
   { id: 'piatti', title: 'Piatti e piano di stampa' },
-  { id: 'openscad', title: 'Codice OpenSCAD' },
+  { id: 'codice', title: 'Codice OpenSCAD' },
+  { id: 'openscad', title: 'OpenSCAD' },
+  { id: 'font', title: 'Font' },
   { id: 'import-export', title: 'Importare ed esportare' },
   { id: 'salvataggio', title: 'Salvataggio e progetti' },
   { id: 'scorciatoie', title: 'Scorciatoie' },
@@ -141,6 +144,7 @@ export default function DocsPanel() {
         <Command id="group" />
         <Command id="union" />
         <Command id="hull" />
+        <Command id="minkowski" />
         <Command id="ungroup" />
         <Command id="hole" />
         <Command id="ghost" />
@@ -172,24 +176,55 @@ export default function DocsPanel() {
         <Command id="bed" />
       </Section>
 
-      <Section id="openscad" title="Codice OpenSCAD">
-        <p>Il comando <strong>Codice</strong> (tasto C) mostra il codice OpenSCAD generato dalla scena. Si aggiorna a ogni modifica e si può copiare o scaricare. Dal menu Esporta si ottiene un file <code>.scad</code> (con il testo, uno ZIP con i font).</p>
+      <Section id="codice" title="Codice OpenSCAD">
+        <p>Il comando <strong>Codice</strong> (tasto C) mostra il codice OpenSCAD generato dalla scena. Si aggiorna a ogni modifica e si può copiare o scaricare. Dal menu Esporta si ottiene un file <code>.scad</code> (con il testo, uno ZIP con i font). Quali comandi OpenSCAD si possono importare è spiegato nella sezione successiva.</p>
         <Command id="code" />
-        <h4>Importare un file .scad</h4>
-        <p>Il file si legge come codice, si valuta e diventa oggetti veri della scena, in un solo passo di Annulla. Quello che non si capisce viene saltato e, se manca qualcosa, si apre una finestra con ogni problema, la riga e un frammento del codice originale.</p>
-        <h5>Supportato</h5>
+      </Section>
+
+      <Section id="openscad" title="OpenSCAD">
+        <p>Un file <code>.scad</code> si legge come codice, si valuta e diventa oggetti veri della scena, in un solo passo di Annulla. Quello che non si capisce viene saltato e, se manca qualcosa, si apre una finestra con ogni problema, la riga e un frammento del codice originale. Il codice che Construct genera usa solo comandi che la stessa importazione sa rileggere.</p>
+        <h4>Supportato</h4>
         <ul>
-          <li>Primitive: <code>cube</code>, <code>sphere</code>, <code>cylinder</code>, <code>circle</code>, <code>square</code>, <code>polygon</code> (anche con <code>paths</code>).</li>
-          <li>Da 2D a 3D: <code>linear_extrude</code>, <code>rotate_extrude</code>, <code>offset</code>, <code>text</code>.</li>
-          <li>Trasformazioni: <code>translate</code>, <code>rotate</code>, <code>scale</code>, <code>mirror</code>, <code>resize</code>, <code>multmatrix</code>, <code>color</code> (nomi CSS, esadecimali e terne; la trasparenza si scarta).</li>
-          <li>Booleane, inviluppo e somma di Minkowski: <code>union</code>, <code>difference</code>, <code>intersection</code>, <code>hull</code>, <code>minkowski</code>, <code>intersection_for</code>.</li>
-          <li>Linguaggio: <code>for</code>, <code>if</code>, <code>let</code>, list comprehension, moduli e funzioni, variabili e operatori matematici.</li>
+          <li>Primitive: <code>cube</code>, <code>sphere</code>, <code>cylinder</code>, <code>circle</code>, <code>square</code>, <code>polygon</code> (anche con <code>paths</code>), <code>text</code>.</li>
+          <li>Da 2D a 3D: <code>linear_extrude</code> (anche con torsione), <code>rotate_extrude</code>, <code>offset</code>.</li>
+          <li>Trasformazioni: <code>translate</code>, <code>rotate</code>, <code>scale</code>, <code>mirror</code>, <code>resize</code>, <code>multmatrix</code>, <code>color</code> (nomi CSS, esadecimali e terne).</li>
+          <li>Booleane, inviluppo e somma di Minkowski: <code>union</code>, <code>difference</code>, <code>intersection</code>, <code>hull</code>, <code>minkowski</code>, <code>intersection_for</code>, <code>render</code>.</li>
+          <li>Linguaggio: variabili, <code>module</code> e <code>function</code>, <code>children()</code>, <code>for</code>, <code>if</code>, <code>let</code>, list comprehension, funzioni anonime, intervalli <code>[inizio:passo:fine]</code>, operatori matematici e logici, modificatori <code>*</code>, <code>%</code> e <code>!</code>.</li>
+          <li>Funzioni: trigonometriche (in gradi), <code>abs</code>, <code>sqrt</code>, <code>pow</code>, <code>exp</code>, <code>ln</code>, <code>log</code>, <code>floor</code>, <code>ceil</code>, <code>round</code>, <code>sign</code>, <code>min</code>, <code>max</code>, <code>len</code>, <code>norm</code>, <code>cross</code>, <code>concat</code>, <code>str</code>, <code>chr</code>, <code>ord</code>, <code>lookup</code>, <code>search</code>, <code>rands</code> e i controlli <code>is_undef</code>, <code>is_num</code>, <code>is_list</code>, <code>is_string</code>, <code>is_bool</code>, <code>is_function</code>.</li>
+          <li>Qualità delle curve: <code>$fn</code>, <code>$fa</code> e <code>$fs</code>. <code>echo</code> e <code>assert</code> vengono ignorati.</li>
         </ul>
-        <h5>Non ancora supportato</h5>
+        <h4>Supportato con limiti</h4>
+        <ul>
+          <li><code>text</code>: il font si cerca tra quelli di Construct (vedi la sezione Font) e la posizione è stimata, perché le misure dei glifi possono differire da quelle di OpenSCAD.</li>
+          <li><code>color</code>: la trasparenza (alpha) si scarta, la scena non ha trasparenza per oggetto.</li>
+          <li><code>offset</code> annidati (apertura e chiusura): si sommano in un contorno netto, ma le punte non vengono arrotondate come in OpenSCAD. <code>offset(chamfer = true)</code> dà angoli vivi.</li>
+          <li><code>linear_extrude</code> con <code>scale</code> diversa per X e Y: vale un solo valore.</li>
+          <li><code>minkowski</code>: corretto, ma con solidi a molti lati il calcolo può richiedere decine di secondi (gira in secondo piano).</li>
+        </ul>
+        <h4>Non ancora supportato</h4>
         <ul>
           <li><code>polyhedron</code> e <code>import()</code> di altri file.</li>
+          <li><code>use</code> e <code>include</code> di file e librerie (BOSL2, MCAD...): i moduli richiamati risultano sconosciuti.</li>
           <li><code>projection</code>, <code>surface</code>, <code>roof</code> e <code>fill</code>.</li>
+          <li>Funzioni poco usate come <code>parent_module</code>, <code>textmetrics</code> e i dizionari (<code>object</code>, <code>has_key</code>).</li>
         </ul>
+        <p>L&apos;elenco di ciò che manca, con la difficoltà di ciascun comando, è tenuto aggiornato in <code>docs/da-fare.md</code>.</p>
+      </Section>
+
+      <Section id="font" title="Font">
+        <p>Il testo e i simboli usano questi font, tutti di <a href="https://fonts.google.com" target="_blank" rel="noopener noreferrer">Google Fonts</a> con licenza SIL Open Font License: si possono usare e ridistribuire liberamente. Sono inclusi nell&apos;app (funzionano anche offline) e finiscono nello ZIP dell&apos;export OpenSCAD, che li richiama con <code>use &lt;file.ttf&gt;</code> e <code>text(font = &quot;Famiglia:style=Stile&quot;)</code>. Il nome tra parentesi è lo stile del file; il link porta alla pagina del font.</p>
+        {[...FONT_CATEGORIES, 'Simboli' as const].map((category) => (
+          <div key={category}>
+            <h4>{category === 'Simboli' ? 'Simboli ed emoji' : category}</h4>
+            <ul>
+              {FONTS.filter((f) => f.category === category).map((f) => (
+                <li key={f.id}>
+                  <a href={googleFontsUrl(f)} target="_blank" rel="noopener noreferrer">{f.family}</a> ({f.style})
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
       </Section>
 
       <Section id="import-export" title="Importare ed esportare">
@@ -215,7 +250,7 @@ export default function DocsPanel() {
           Sì: dopo il primo caricamento Construct è una PWA e si usa anche senza connessione. Puoi installarla dal browser.
         </Faq>
         <Faq q="Perché un file .scad non si importa del tutto?">
-          L&apos;import legge un sottoinsieme di OpenSCAD. Gli elementi non supportati (per esempio <code>polyhedron</code>, <code>projection</code>, <code>import()</code>) vengono saltati e un avviso li elenca. Controlla l&apos;elenco nella sezione Codice OpenSCAD.
+          L&apos;import legge un sottoinsieme di OpenSCAD. Gli elementi non supportati (per esempio <code>polyhedron</code>, <code>projection</code>, <code>import()</code>) vengono saltati e un avviso li elenca. Controlla l&apos;elenco nella sezione OpenSCAD.
         </Faq>
         <Faq q="STL o 3MF?">
           L&apos;STL contiene solo la forma di un piatto. Il 3MF conserva anche i colori e tutti i piatti: usalo se il tuo slicer lo supporta, altrimenti l&apos;STL va sempre bene.

@@ -26,7 +26,7 @@ import type { ToolbarMenu } from './uiStore';
  */
 export type CommandId =
   | 'select' | 'translate' | 'rotate' | 'resize' | 'extrude'
-  | 'group' | 'ungroup' | 'union' | 'hull' | 'hole'
+  | 'group' | 'ungroup' | 'union' | 'hull' | 'minkowski' | 'hole'
   | 'fillet' | 'chamfer' | 'corner' | 'shell' | 'pattern'
   | 'align' | 'mirror' | 'layflat' | 'drop' | 'array'
   | 'duplicate' | 'lock' | 'delete' | 'measure';
@@ -179,6 +179,7 @@ export const COMMANDS: Record<CommandId, Command> = {
   },
   union: { id: 'union', help: 'union', shortcut: 'U', icon: (_c, size) => <SquaresUnite size={size} />, enabled: (c) => c.rootSelection.length >= 2, run: () => combineToBed('union'), menu: true },
   hull: { id: 'hull', help: 'hull', shortcut: 'J', icon: (_c, size) => <GROUP_ICONS.hull size={size} />, enabled: (c) => c.rootSelection.length >= 2, run: () => combineToBed('hull'), menu: true },
+  minkowski: { id: 'minkowski', help: 'minkowski', shortcut: '⇧J', icon: (_c, size) => <GROUP_ICONS.minkowski size={size} />, enabled: (c) => c.rootSelection.length >= 2, run: () => combineToBed('minkowski'), menu: true },
   hole: {
     id: 'hole', help: 'hole', shortcut: 'H', icon: (_c, size) => <CircleDashed size={size} />,
     enabled: (c) => c.hasSelection, active: (c) => c.allHoles, run: () => sceneState().toggleHoleSelected(), menu: true,
@@ -225,7 +226,7 @@ export const COMMANDS: Record<CommandId, Command> = {
 /** Gruppi della barra strumenti e del menu contestuale, nell'ordine in cui compaiono. */
 export const COMMAND_GROUPS: { label: string; ids: CommandId[] }[] = [
   { label: 'Trasforma', ids: ['select', 'translate', 'rotate', 'resize', 'extrude'] },
-  { label: 'Combina', ids: ['group', 'ungroup', 'union', 'hull', 'hole'] },
+  { label: 'Combina', ids: ['group', 'ungroup', 'union', 'hull', 'minkowski', 'hole'] },
   { label: 'Modifica', ids: ['fillet', 'chamfer', 'corner', 'shell', 'pattern'] },
   { label: 'Disponi', ids: ['align', 'mirror', 'layflat', 'drop', 'array'] },
   { label: 'Oggetto', ids: ['duplicate', 'lock', 'delete', 'measure'] },

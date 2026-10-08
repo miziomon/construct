@@ -18,6 +18,16 @@ I messaggi di commit seguono i [Conventional Commits](https://www.conventionalco
 
 ## [Non rilasciato]
 
+## [0.30.0] - 2026-10-08
+
+### Aggiunto
+- **Comando Minkowski** sulla barra (gruppo Combina), nel menu contestuale e con la scorciatoia Maiusc+J: con due o più oggetti selezionati crea il gruppo Minkowski (il primo selezionato è la base). Tooltip con spiegazione e immagine di esempio.
+- **Documentazione**: sezione "OpenSCAD" con i comandi supportati, quelli supportati con limiti e quelli non ancora supportati; sezione "Font" con l'elenco dei font disponibili e il link alla pagina di ciascuno su Google Fonts. La sezione "Codice OpenSCAD" resta per la vista del codice e l'esportazione.
+- **Undici font** di Google Fonts: Bilbo Swash Caps, Boogaloo, Calistoga, Dancing Script Regular, Marck Script, Meow Script, Modak, Niconne, Playfair Display Regular, Roboto Black e Sriracha (ora sono 32 di testo).
+
+### Modificato
+- `docs/da-fare.md`: elenco dei font della cartella openscad/fonts di Dropbox che non sono su Google Fonts (da verificare per la licenza prima di includerli).
+
 ## [0.29.0] - 2026-10-08
 
 ### Aggiunto

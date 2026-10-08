@@ -15,7 +15,7 @@ export interface ToolbarHelp {
 
 export type HelpKey =
   | 'new' | 'undo' | 'redo' | 'select' | 'translate' | 'rotate' | 'resize' | 'extrude'
-  | 'group' | 'union' | 'hull' | 'ungroup' | 'hole' | 'lock' | 'unlock'
+  | 'group' | 'union' | 'hull' | 'minkowski' | 'ungroup' | 'hole' | 'lock' | 'unlock'
   | 'fillet' | 'chamfer' | 'corner' | 'shell' | 'align' | 'mirror' | 'measure' | 'array' | 'pattern'
   | 'layflat' | 'drop' | 'duplicate' | 'delete' | 'ghost' | 'bed' | 'theme' | 'code';
 
@@ -31,6 +31,7 @@ export const TOOLBAR_HELP: Record<HelpKey, ToolbarHelp> = {
   group: { name: 'Raggruppa', what: 'Unisce più oggetti in un gruppo che si muove insieme, senza fonderli.', how: 'Seleziona almeno due oggetti e premi il pulsante: restano separati (colori e codice propri). Separa scioglie il gruppo.' },
   union: { name: 'Unisci', what: 'Fonde più oggetti in un solo solido con una unione booleana.', how: 'Seleziona almeno due oggetti: il risultato è un solo pezzo, appoggiato sul piatto. Un oggetto impostato come Foro viene invece sottratto.', image: 'union' },
   hull: { name: 'Inviluppo convesso', what: 'Crea la forma più piccola e senza concavità che contiene tutti gli oggetti.', how: 'Seleziona almeno due oggetti e premi il pulsante: è come tendere un elastico attorno a loro. Nel codice diventa hull().', image: 'hull' },
+  minkowski: { name: 'Minkowski', what: 'Somma di Minkowski: il primo oggetto si allarga della forma degli altri, come se li facessi scorrere su tutta la sua superficie.', how: 'Seleziona prima la base e poi la forma che la "arrotonda" (per esempio un cubo e una piccola sfera: il cubo diventa arrotondato di quel raggio), poi premi il pulsante. Usa forme semplici: con molti lati il calcolo è lento. Nel codice diventa minkowski().', image: 'minkowski' },
   ungroup: { name: 'Separa', what: 'Scioglie un gruppo o un\'unione e riporta gli oggetti separati.', how: 'Seleziona un gruppo alla radice e premi il pulsante: i figli tornano oggetti indipendenti nella posizione in cui sono.' },
   hole: { name: 'Solido o Foro', what: 'Trasforma l\'oggetto in un Foro: invece di aggiungere materiale lo toglie.', how: 'Seleziona l\'oggetto e premi il pulsante, poi uniscilo o mettilo in una Differenza con un solido: dove si sovrappongono il materiale sparisce.' },
   lock: { name: 'Blocca', what: 'Impedisce di spostare o modificare l\'oggetto per errore.', how: 'Seleziona l\'oggetto e premi il pulsante; un oggetto bloccato si riconosce nell\'elenco e si sblocca con lo stesso pulsante.' },

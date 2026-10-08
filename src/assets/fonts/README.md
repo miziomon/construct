@@ -28,6 +28,17 @@ Sono TTF **statici** (senza tabella `fvar`: opentype.js legge solo l'istanza pre
 | `PermanentMarker-Regular.ttf` | Permanent Marker | Regular | Corsivo e a mano |
 | `Bangers-Regular.ttf` | Bangers | Regular | Fantasia |
 | `PressStart2P-Regular.ttf` | Press Start 2P | Regular | Fantasia |
+| `Roboto-Black.ttf` | Roboto Black | Regular | Sans |
+| `PlayfairDisplay-Regular.ttf` | Playfair Display | Regular | Serif |
+| `Boogaloo-Regular.ttf` | Boogaloo | Regular | Display |
+| `Calistoga-Regular.ttf` | Calistoga | Regular | Display |
+| `DancingScript-Regular.ttf` | Dancing Script | Regular | Corsivo e a mano |
+| `BilboSwashCaps-Regular.ttf` | Bilbo Swash Caps | Regular | Corsivo e a mano |
+| `MarckScript-Regular.ttf` | Marck Script | Regular | Corsivo e a mano |
+| `MeowScript-Regular.ttf` | Meow Script | Regular | Corsivo e a mano |
+| `Niconne-Regular.ttf` | Niconne | Regular | Corsivo e a mano |
+| `Sriracha-Regular.ttf` | Sriracha | Regular | Corsivo e a mano |
+| `Modak-Regular.ttf` | Modak | Regular | Fantasia |
 
 ## Font di simboli (tab Simboli)
 

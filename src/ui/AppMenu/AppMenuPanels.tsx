@@ -41,6 +41,7 @@ const SHORTCUTS: { title: string; rows: [string, string][] }[] = [
       ['Z', 'Pattern: fora l\'oggetto con celle Voronoi casuali (seme), esagoni, cerchi, rombi o triangoli, da una o più facce; Invio conferma, Esc annulla; il risultato è un gruppo Pattern modificabile'],
       ['O', 'Serie: ripete l\'oggetto in fila, in griglia o in cerchio (Invio conferma, Esc annulla); il risultato è un gruppo Ripetizione modificabile'],
       ['J', 'Inviluppo convesso: la forma più piccola e senza concavità che contiene gli oggetti selezionati'],
+      ['Maiusc+J', 'Minkowski: il primo oggetto selezionato si allarga della forma degli altri (somma di Minkowski)'],
       ['F2', 'Rinomina l\'oggetto selezionato'],
       ['Alt+clic', 'Seleziona il singolo oggetto di un gruppo'],
       ['Clic destro su un oggetto', 'Menu con i soli comandi applicabili alla selezione (se l\'oggetto non è selezionato lo seleziona)'],

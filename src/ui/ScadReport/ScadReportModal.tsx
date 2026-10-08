@@ -75,7 +75,7 @@ export default function ScadReportModal() {
             </li>
           ))}
         </ol>
-        <p className="scad-report__foot">Il resto del file è stato importato. Le parti non gestite sono elencate in Documentazione, sezione Codice OpenSCAD.</p>
+        <p className="scad-report__foot">Il resto del file è stato importato. Le parti non gestite sono elencate in Documentazione, sezione OpenSCAD.</p>
       </div>
     </Modal>
   );

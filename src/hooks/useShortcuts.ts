@@ -106,7 +106,7 @@ export function useShortcuts(): void {
       else if (!mod && key === 'n') void newProject();
       else if (!mod && key === 'p') useUiStore.getState().cycleBed();
       else if (!mod && key === 'u') combineToBed('union');
-      else if (!mod && key === 'j') combineToBed('hull');
+      else if (!mod && key === 'j') combineToBed(e.shiftKey ? 'minkowski' : 'hull');
       else if (!mod && key === 'v' && s.scene.rootIds.length) toggleLayFlat();
       else if (!mod && key === 'o') toggleArray();
       else if (!mod && key === 'z') togglePattern();

@@ -1,6 +1,6 @@
 # Cose da fare
 
-Data: 7 ottobre 2026. Obiettivo: tenere in un solo posto le funzioni ancora da aggiungere a Construct, in ordine di priorità
+Data: 8 ottobre 2026. Obiettivo: tenere in un solo posto le funzioni ancora da aggiungere a Construct, in ordine di priorità
 per un uso orientato alla stampa 3D, dal confronto con OpenSCAD, Fusion 360, Blender e Tinkercad.
 Si aggiorna a ogni funzione completata (colonna Stato) e a ogni nuova idea.
 
@@ -12,7 +12,7 @@ Allinea, Capovolgi).
 
 Cosa c'è già: Serie di copie (lineare, griglia, circolare) come gruppo Ripetizione, booleane (Unione, Differenza, Intersezione) e Foro, Raccordo, Smusso e Smusso angolare su spigoli scelti, Guscio,
 Allinea, Specchia (con anteprima), Misura con aggancio, quote cliccabili X, Y e Z sull'oggetto selezionato, menu contestuale con il tasto destro, estrusione lineare e rotazionale delle forme 2D, Contorno (offset 2D),
-testo, SVG, simboli ed emoji, Inviluppo convesso, Appoggia sul piatto e su una faccia, import STL, 3MF e SVG, export STL, 3MF e
+testo, SVG, simboli ed emoji, Inviluppo convesso e Minkowski, Appoggia sul piatto e su una faccia, import STL, 3MF e SVG, export STL, 3MF e
 OpenSCAD, timeline con Annulla.
 
 ## Funzioni prioritarie
@@ -83,7 +83,6 @@ Primo passo economico alla Tinkercad: **Duplica e ripeti** (Ctrl+D ripete l'ulti
 - Impostazioni: lingua, unità, colori dei nuovi oggetti, qualità predefinita delle curve, scorciatoie personalizzabili.
 - Schermata di benvenuto: modelli di esempio (la scheda c'è ma non è ancora selezionabile) e l'elenco dei progetti recenti.
 - Preset del piano: altre stampanti (Voron) e preset salvati dall'utente. Anycubic ed Elegoo ci sono dalla 0.29.0.
-- Comando di barra per la somma di Minkowski: oggi il gruppo nasce solo dall'importazione di un file OpenSCAD (o cambiando l'operazione di un gruppo dal pannello Proprietà).
 - Ripetizione: "Rendi indipendenti" (Separa produce N oggetti veri, uno per copia), serie lungo un percorso o una curva, passo diverso per ogni asse nella lineare con angolo, copie che seguono un oggetto di riferimento, Ctrl+D che ripete l'ultimo spostamento (Duplica e ripeti di Tinkercad).
 - Estrusione rotazionale: opzione simmetrica (come Fusion, da -angolo/2 a +angolo/2) e passo elicoidale (come Blender Screw).
 - Inviluppo convesso anche per le forme 2D (prima dell'estrusione).
@@ -137,3 +136,21 @@ Dalla 0.27.0 l'importazione legge anche `let`/`assign`, le liste per comprension
 | `rotate_extrude` con angolo negativo o profilo oltre l'asse | Media | Oggi la parte con X negativa si perde, mentre OpenSCAD segnala un errore. |
 | Esporta e reimporta un solido rotazionale | Media | Il codice di Construct per `rotate_extrude` contiene un `intersection()` che ritaglia la parte oltre l'asse: riletto diventa un gruppo di tre oggetti invece della forma originale. Si potrebbe riconoscere lo schema. |
 | `text` | Media | La posizione è stimata (il font di OpenSCAD non è nel catalogo e le misure dei glifi non sono disponibili in modo sincrono). Con le misure vere dei font si potrebbe calcolare l'allineamento esatto. |
+
+## Font non presenti su Google Fonts
+
+Dalla cartella `C:\Users\maurizio.MAVIDA\Dropbox\openscad\fonts` (0.30.0) sono entrati nel catalogo i font che si trovano su Google Fonts (Bilbo Swash Caps, Boogaloo, Calistoga, Dancing Script Regular, Marck Script, Meow Script, Modak, Niconne, Playfair Display Regular, Roboto Black, Sriracha; Pacifico c'era già). Questi no, perché non risultano su Google Fonts:
+
+| File | Nota |
+|---|---|
+| `Be My Glittertine.ttf` | Font decorativo di terzi |
+| `Chasing Hearts.ttf` | Font decorativo di terzi |
+| `Chocolate.ttf` | Font decorativo di terzi |
+| `Christmas Icons.ttf` | Icone natalizie (font di simboli, non di testo) |
+| `Christmas Time.ttf` | Font decorativo di terzi |
+| `Kid Games.ttf` | Font decorativo di terzi |
+| `LovelyMelody.ttf` | Font decorativo di terzi |
+| `Sweet Child.ttf` | Font decorativo di terzi |
+| `Unicorn Calligraphy.ttf` | Font decorativo di terzi |
+
+Prima di includerli nell'app va verificata la licenza (molti font di questo tipo sono "solo uso personale" e non si possono ridistribuire nell'app né nello ZIP dell'export), che siano statici (senza tabella `fvar`) e che famiglia e stile coincidano con quelli dichiarati. In alternativa si può cercare un font simile con licenza OFL su Google Fonts.

@@ -33,7 +33,7 @@ describe('registro dei comandi', () => {
     useSceneStore.getState().addPrimitive('box');
     const ids = applicable();
     for (const id of ['duplicate', 'delete', 'mirror', 'lock', 'hole', 'shell', 'pattern', 'array', 'fillet', 'chamfer', 'corner', 'layflat'] as const) expect(ids).toContain(id);
-    for (const id of ['union', 'group', 'hull', 'align', 'ungroup'] as const) expect(ids).not.toContain(id);
+    for (const id of ['union', 'group', 'hull', 'minkowski', 'align', 'ungroup'] as const) expect(ids).not.toContain(id);
   });
 
   it('due oggetti: compaiono le booleane e Allinea, ma non gli strumenti sulle facce né Separa', () => {
@@ -42,7 +42,7 @@ describe('registro dei comandi', () => {
     s.addPrimitive('cylinder');
     s.select(useSceneStore.getState().scene.rootIds);
     const ids = applicable();
-    for (const id of ['union', 'group', 'hull', 'align'] as const) expect(ids).toContain(id);
+    for (const id of ['union', 'group', 'hull', 'minkowski', 'align'] as const) expect(ids).toContain(id);
     for (const id of ['fillet', 'chamfer', 'corner', 'layflat', 'ungroup'] as const) expect(ids).not.toContain(id);
   });
 

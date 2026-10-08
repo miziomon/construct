@@ -153,6 +153,17 @@ test.describe('immagini di esempio', () => {
     await page.mouse.move(...(Object.values(await project(page, [0, -9, 18])) as [number, number]));
     await page.waitForTimeout(300);
     await help(page, 'layflat');
+
+    // Minkowski: un cubo e una piccola sfera nello stesso centro, il cubo esce arrotondato
+    await page.keyboard.press('Escape');
+    await page.evaluate(() => window.__construct!.store.getState().clear());
+    const box = await add(page, 'box', { size: [24, 24, 24], position: [0, 0, 15] });
+    const ball = await add(page, 'sphere', { radius: 5, position: [0, 0, 15] });
+    await select(page, [box, ball]);
+    await frame(page, [0, 0, 15], 110);
+    await page.keyboard.press('Shift+J');
+    await settled(page);
+    await help(page, 'minkowski');
   });
 
   test('immagini del README', async ({ page }) => {

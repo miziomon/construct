@@ -1454,11 +1454,11 @@ test('Allinea: passando sopra un pulsante compare l\'anteprima del risultato e E
   await expect.poll(() => previewLines(page)).toBe(0);
 });
 
-test('Testo: ventuno font in cinque gruppi, uno nuovo si applica e la mesh resta valida', async ({ page }) => {
+test('Testo: trentadue font in cinque gruppi, uno nuovo si applica e la mesh resta valida', async ({ page }) => {
   await addShape(page, 'Testo');
   const select = page.locator('select.properties__text');
   await expect(select.locator('optgroup')).toHaveCount(5);
-  await expect(select.locator('option')).toHaveCount(21);
+  await expect(select.locator('option')).toHaveCount(32);
   await select.selectOption('stardos-stencil-bold');
   await settled(page);
   const scene = await sceneState(page);
@@ -1830,6 +1830,33 @@ test('Inviluppo convesso (J): due oggetti diventano un solo gruppo con hull() e 
   const volume = await page.evaluate(() => window.__construct!.results.getState().meshes[0].volume);
   expect(volume).toBeGreaterThan(20000);
   expect(await readCode(page)).toContain('hull() {');
+
+  // Ctrl+Z riporta i due oggetti
+  await page.keyboard.press('Control+z');
+  expect((await sceneState(page)).rootIds).toHaveLength(2);
+});
+
+test('Minkowski (Maiusc+J): cubo e sfera diventano un solo gruppo con minkowski(), più grande del cubo', async ({ page }) => {
+  await addShape(page, 'Cubo');
+  await addShape(page, 'Sfera');
+  // Il cubo (selezionato per primo) è la base; la sfera lo arrotonda
+  await page.evaluate(() => {
+    const st = window.__construct!.store.getState();
+    const [sfera, cubo] = st.scene.rootIds;
+    st.updateNode(cubo, { position: [0, 0, 10] });
+    st.updateNode(sfera, { position: [0, 0, 10] });
+    st.select([cubo, sfera]);
+  });
+  await settled(page);
+  await expect(page.getByRole('button', { name: 'Minkowski', exact: true })).toBeEnabled();
+
+  await page.keyboard.press('Shift+J');
+  await settled(page);
+  const scene = await sceneState(page);
+  expect(scene.rootIds).toHaveLength(1);
+  expect(scene.nodes[scene.rootIds[0]]).toMatchObject({ type: 'group', op: 'minkowski', name: 'Minkowski' });
+  await expect(page.locator('.status-bar')).toContainText('Mesh valida');
+  expect(await readCode(page)).toContain('minkowski() {');
 
   // Ctrl+Z riporta i due oggetti
   await page.keyboard.press('Control+z');
@@ -2847,8 +2874,18 @@ test('Documentazione: modale grande come il codice, con indice a ancore e FAQ', 
   await index.getByRole('link', { name: 'Codice OpenSCAD' }).click();
   await expect(dialog.getByRole('heading', { name: 'Codice OpenSCAD', level: 3 })).toBeInViewport();
   expect(page.url()).toBe(url);
+
+  // Sezione OpenSCAD: comandi supportati (Minkowski compreso) e non supportati
+  await index.getByRole('link', { name: 'OpenSCAD', exact: true }).click();
+  await expect(dialog.getByRole('heading', { name: 'OpenSCAD', level: 3, exact: true })).toBeInViewport();
   await expect(dialog.getByText('rotate_extrude').first()).toBeVisible();
+  await expect(dialog.getByText('minkowski', { exact: true }).first()).toBeVisible();
   await expect(dialog.getByText('polyhedron').first()).toBeVisible();
+
+  // Sezione Font: ogni font rimanda alla sua pagina su Google Fonts
+  await index.getByRole('link', { name: 'Font', exact: true }).click();
+  await expect(dialog.getByRole('heading', { name: 'Font', level: 3, exact: true })).toBeInViewport();
+  await expect(dialog.getByRole('link', { name: 'Playfair Display', exact: true }).first()).toHaveAttribute('href', 'https://fonts.google.com/specimen/Playfair+Display');
 
   // I testi dei comandi sono quelli dei tooltip
   await index.getByRole('link', { name: 'Modificare' }).click();

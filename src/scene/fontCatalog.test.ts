@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { FONTS, FONT_CATEGORIES, fontInfo, fontsUsed, scadFontName } from './fontCatalog';
+import { FONTS, FONT_CATEGORIES, fontInfo, fontsUsed, googleFontsUrl, scadFontName } from './fontCatalog';
 import { fontNames } from './fontOutline';
 
 const bytes = (file: string) => {
@@ -20,8 +20,8 @@ function hasFontTable(data: ArrayBuffer, tag: string): boolean {
 }
 
 describe('catalogo dei font', () => {
-  it('sono ventuno di testo e quattro di simboli, con id e file unici', () => {
-    expect(FONTS.filter((f) => f.category !== 'Simboli')).toHaveLength(21);
+  it('sono trentadue di testo e quattro di simboli, con id e file unici', () => {
+    expect(FONTS.filter((f) => f.category !== 'Simboli')).toHaveLength(32);
     expect(FONTS.filter((f) => f.category === 'Simboli')).toHaveLength(4);
     expect(new Set(FONTS.map((f) => f.id)).size).toBe(FONTS.length);
     expect(new Set(FONTS.map((f) => f.file)).size).toBe(FONTS.length);
@@ -39,6 +39,11 @@ describe('catalogo dei font', () => {
     // Font statico: opentype.js legge solo l'istanza predefinita dei font variabili (non il grassetto)
     expect(hasFontTable(data, 'fvar')).toBe(false);
     expect(scadFontName(f)).toBe(`${f.family}:style=${f.style}`);
+  });
+
+  it('googleFontsUrl punta alla pagina della famiglia su Google Fonts', () => {
+    expect(googleFontsUrl(fontInfo('playfair-bold'))).toBe('https://fonts.google.com/specimen/Playfair+Display');
+    expect(googleFontsUrl(fontInfo('roboto-black'))).toBe('https://fonts.google.com/specimen/Roboto');
   });
 
   it('fontInfo ripiega sul primo font se l\'id non esiste, fontsUsed elenca solo quelli usati', () => {

@@ -8,7 +8,7 @@ Tutto gira nel browser: il calcolo geometrico usa [manifold-3d](https://github.c
 
 ## Funzioni principali
 
-- **Forme**: cubo, cilindro, cono, sfera, toro, poliedri regolari, forme 2D estrudibili (cerchio, quadrato, poligoni), testo con una trentina di font, simboli, emoji e import di **SVG**, **STL** e **3MF**.
+- **Forme**: cubo, cilindro, cono, sfera, toro, poliedri regolari, forme 2D estrudibili (cerchio, quadrato, poligoni), testo con una quarantina di font di Google Fonts, simboli, emoji e import di **SVG**, **STL** e **3MF**.
 - **Booleane**: unione, differenza, intersezione, inviluppo convesso e fori; gli operandi si possono vedere in trasparenza, come il `#` di OpenSCAD.
 - **Strumenti di dettaglio**: Raccordo, Smusso e Smusso angolare con anteprima dal vivo, Guscio, Appoggia su una faccia, Allinea, Specchia e Misura con aggancio a vertici e spigoli.
 - **Serie** (lineare, griglia, circolare): il risultato è un gruppo parametrico "Ripetizione", si modificano i parametri e non le singole copie.
@@ -62,7 +62,7 @@ Ogni push su `main` avvia la GitHub Action `.github/workflows/deploy.yml`: build
 
 ## Scorciatoie
 
-Le principali: `Q` Seleziona, `W` Sposta, `E` Ruota, `R` Ridimensiona, `T` Estrudi, `U` Unisci, `J` Inviluppo, `H` Foro, `F` Raccordo, `S` Smusso, `A` Smusso angolare, `G` Guscio, `K` Allinea, `Y` Specchia, `I` Misura, `O` Serie, `Z` Pattern, `V` Appoggia su una faccia, `B` Appoggia sul piatto, `C` Codice OpenSCAD. L'elenco completo è nel menu dell'app e nel tooltip di ogni pulsante.
+Le principali: `Q` Seleziona, `W` Sposta, `E` Ruota, `R` Ridimensiona, `T` Estrudi, `U` Unisci, `J` Inviluppo, `Maiusc+J` Minkowski, `H` Foro, `F` Raccordo, `S` Smusso, `A` Smusso angolare, `G` Guscio, `K` Allinea, `Y` Specchia, `I` Misura, `O` Serie, `Z` Pattern, `V` Appoggia su una faccia, `B` Appoggia sul piatto, `C` Codice OpenSCAD. L'elenco completo è nel menu dell'app e nel tooltip di ogni pulsante.
 
 ## Struttura del progetto
 
