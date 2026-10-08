@@ -27,7 +27,7 @@ test('trascinando la freccia X del gizmo la scatola si sposta e il kernel ricalc
   expect(after[2]).toBe(10);
   await settled(page);
   // Il bbox calcolato dal kernel segue la nuova posizione
-  const minX = await page.evaluate(() => window.__webcad!.results.getState().meshes[0].bbox.min[0]);
+  const minX = await page.evaluate(() => window.__construct!.results.getState().meshes[0].bbox.min[0]);
   expect(minX).toBeCloseTo(after[0] - 10, 3);
 });
 
@@ -68,7 +68,7 @@ test('con due oggetti selezionati la barra propone la Differenza', async ({ page
   expect(group.op).toBe('difference');
   expect(scene.nodes[group.children[0]].name).toBe('Cubo');
   // Il cilindro ha raggio 10 e altezza 20 come la scatola: sottrae circa 6,3 cm³ dagli 8 cm³ iniziali
-  const volume = await page.evaluate(() => window.__webcad!.results.getState().meshes[0].volume);
+  const volume = await page.evaluate(() => window.__construct!.results.getState().meshes[0].volume);
   expect(volume).toBeGreaterThan(1500);
   expect(volume).toBeLessThan(2000);
 });
@@ -77,7 +77,7 @@ test('cerchio con 6 lati: esagono regolare estruso', async ({ page }) => {
   await addShape(page, 'Cerchio');
   await page.getByRole('button', { name: '6', exact: true }).click();
   await settled(page);
-  const volume = await page.evaluate(() => window.__webcad!.results.getState().meshes[0].volume);
+  const volume = await page.evaluate(() => window.__construct!.results.getState().meshes[0].volume);
   // Raggio 10, altezza 10: (3√3/2) · 100 · 10
   expect(volume).toBeCloseTo(((3 * Math.sqrt(3)) / 2) * 100 * 10, 0);
   await expect(page.locator('.properties__chip--active')).toHaveText('6');
@@ -108,7 +108,7 @@ test('importa un STL: nodo mesh centrato sul piatto, che sopravvive al ricaricam
   // Dopo il salvataggio automatico e il ricaricamento la mesh torna dall'archivio locale
   await page.waitForTimeout(900);
   await page.reload();
-  await page.waitForFunction(() => window.__webcad!.results.getState().meshes.length === 1);
+  await page.waitForFunction(() => window.__construct!.results.getState().meshes.length === 1);
   await expect(page.locator('.status-bar')).toContainText('Volume 8.00 cm³');
   expect((await sceneState(page)).nodes[scene.rootIds[0]].type).toBe('mesh');
 });
@@ -131,16 +131,17 @@ test('Esporta STL scarica un file binario valido', async ({ page }) => {
   await openMenuItem(page, 'Esporta');
   await page.getByRole('dialog').getByRole('button', { name: 'STL' }).click();
   const file = await download;
-  expect(file.suggestedFilename()).toBe('webcad.stl');
+  expect(file.suggestedFilename()).toBe('construct.stl');
   const path = await file.path();
   const { statSync } = await import('node:fs');
   expect(statSync(path).size).toBe(84 + 50 * 12);
 });
 
-test('versione visibile nel title e accanto al nome nell\'header', async ({ page }) => {
+test('la versione sta nel title e non più accanto al logo; il nome dell\'app è Construct', async ({ page }) => {
   const { version } = JSON.parse((await import('node:fs')).readFileSync('package.json', 'utf8'));
-  await expect(page).toHaveTitle(`WebCAD v${version}`);
-  await expect(page.locator('.toolbar__brand')).toContainText(`v${version}`);
+  await expect(page).toHaveTitle(`Construct v${version}`);
+  await expect(page.locator('.toolbar__brand')).toHaveText('Construct');
+  await expect(page.locator('.toolbar__version')).toHaveCount(0);
 });
 
 test('di default la modalità è Seleziona: nessun gizmo finché non si preme W', async ({ page }) => {
@@ -182,7 +183,7 @@ test('libreria con Cubo e solidi dei dadi; i preset dei lati sono 3, 4, 5, 6, 8,
 test('icosaedro: mesh valida appoggiata sul piatto, il raccordo ne riduce il volume', async ({ page }) => {
   await addShape(page, 'Icosaedro');
   await expect(page.locator('.status-bar')).toContainText('Mesh valida');
-  const read = () => page.evaluate(() => window.__webcad!.results.getState().meshes[0]);
+  const read = () => page.evaluate(() => window.__construct!.results.getState().meshes[0]);
   const sharp = await read();
   expect(sharp.bbox.min[2]).toBeCloseTo(0, 3);
   expect(sharp.bbox.max[2]).toBeCloseTo(20, 3);
@@ -389,7 +390,7 @@ test('cilindro non proporzionale: lo slider Raggio Y cambia l\'ingombro in Y e n
   await field.press('Enter');
   await settled(page);
   expect((await sceneState(page)).nodes[id].radiusY).toBe(4);
-  const bbox = await page.evaluate(() => window.__webcad!.results.getState().meshes[0].bbox);
+  const bbox = await page.evaluate(() => window.__construct!.results.getState().meshes[0].bbox);
   expect(bbox.max[0] - bbox.min[0]).toBeCloseTo(20, 3);
   expect(bbox.max[1] - bbox.min[1]).toBeCloseTo(8, 3);
   // Riportando Raggio Y a quello X la forma torna tonda e il campo opzionale sparisce
@@ -405,7 +406,7 @@ test('sfera: Raggio Z la rende un ellissoide che resta appoggiato al piatto', as
   await field.fill('20');
   await field.press('Enter');
   await settled(page);
-  const bbox = await page.evaluate(() => window.__webcad!.results.getState().meshes[0].bbox);
+  const bbox = await page.evaluate(() => window.__construct!.results.getState().meshes[0].bbox);
   expect(bbox.max[2] - bbox.min[2]).toBeCloseTo(40, 3);
 });
 
@@ -426,7 +427,7 @@ test('Raggruppa tiene separati gli oggetti (colori e codice propri) e li muove i
   expect(scene.rootIds).toHaveLength(1);
   expect(scene.nodes[scene.rootIds[0]].op).toBe('group');
   // Due mesh distinte, con colori diversi, che appartengono alla stessa radice
-  const meshes = await page.evaluate(() => window.__webcad!.results.getState().meshes.map((m) => ({ rootId: m.rootId, color: m.color, x: (m.bbox.min[0] + m.bbox.max[0]) / 2 })));
+  const meshes = await page.evaluate(() => window.__construct!.results.getState().meshes.map((m) => ({ rootId: m.rootId, color: m.color, x: (m.bbox.min[0] + m.bbox.max[0]) / 2 })));
   expect(meshes).toHaveLength(2);
   expect(new Set(meshes.map((m) => m.color)).size).toBe(2);
   expect(new Set(meshes.map((m) => m.rootId)).size).toBe(1);
@@ -440,7 +441,7 @@ test('Raggruppa tiene separati gli oggetti (colori e codice propri) e li muove i
   // Spostando il gruppo si muovono entrambe le mesh
   await page.keyboard.press('Shift+ArrowRight');
   await settled(page);
-  const moved = await page.evaluate(() => window.__webcad!.results.getState().meshes.map((m) => (m.bbox.min[0] + m.bbox.max[0]) / 2));
+  const moved = await page.evaluate(() => window.__construct!.results.getState().meshes.map((m) => (m.bbox.min[0] + m.bbox.max[0]) / 2));
   moved.forEach((x, i) => expect(x).toBeCloseTo(meshes[i].x + 10, 3));
 });
 
@@ -454,7 +455,7 @@ test('Unisci produce una sola mesh e union() nel codice', async ({ page }) => {
   const scene = await sceneState(page);
   expect(scene.rootIds).toHaveLength(1);
   expect(scene.nodes[scene.rootIds[0]].op).toBe('union');
-  expect(await page.evaluate(() => window.__webcad!.results.getState().meshes.length)).toBe(1);
+  expect(await page.evaluate(() => window.__construct!.results.getState().meshes.length)).toBe(1);
   expect(await readCode(page)).toContain('union() {');
 });
 
@@ -530,32 +531,32 @@ test('un clic su un oggetto raggruppato seleziona il gruppo, Alt+clic il singolo
   await addShape(page, 'Sfera');
   const [sphereId, cubeId] = (await sceneState(page)).rootIds; // l'ultimo creato sta in cima
   // Sfalsa la sfera per poter cliccare i due oggetti separatamente
-  await page.evaluate(([id]) => window.__webcad!.store.getState().updateNode(id as string, { position: [60, 0, 10] }), [sphereId]);
+  await page.evaluate(([id]) => window.__construct!.store.getState().updateNode(id as string, { position: [60, 0, 10] }), [sphereId]);
   await selectTwo(page, 'Cubo', 'Sfera');
   await page.getByRole('button', { name: /^Raggruppa/ }).click();
   await settled(page);
   const scene = await sceneState(page);
   const gid = scene.rootIds[0];
   const cubeWorld = await page.evaluate(([id]) => {
-    const m = window.__webcad!.results.getState().meshes.find((x) => x.id === id)!;
+    const m = window.__construct!.results.getState().meshes.find((x) => x.id === id)!;
     return [(m.bbox.min[0] + m.bbox.max[0]) / 2, (m.bbox.min[1] + m.bbox.max[1]) / 2, (m.bbox.min[2] + m.bbox.max[2]) / 2] as [number, number, number];
   }, [cubeId]);
   const at = await project(page, cubeWorld);
 
   await page.locator('canvas').click({ position: { x: 5, y: 5 } }); // deseleziona
   await page.mouse.click(at.x, at.y);
-  expect(await page.evaluate(() => window.__webcad!.store.getState().selection)).toEqual([gid]);
+  expect(await page.evaluate(() => window.__construct!.store.getState().selection)).toEqual([gid]);
   await page.keyboard.down('Alt');
   await page.mouse.click(at.x, at.y);
   await page.keyboard.up('Alt');
-  expect(await page.evaluate(() => window.__webcad!.store.getState().selection)).toEqual([cubeId]);
+  expect(await page.evaluate(() => window.__construct!.store.getState().selection)).toEqual([cubeId]);
 });
 
 /** Numero di passi di Annulla disponibili. */
-const history = (page: import('@playwright/test').Page) => page.evaluate(() => window.__webcad!.store.temporal.getState().pastStates.length);
+const history = (page: import('@playwright/test').Page) => page.evaluate(() => window.__construct!.store.temporal.getState().pastStates.length);
 
 /** Volume della prima mesh calcolata dal kernel. */
-const firstVolume = (page: import('@playwright/test').Page) => page.evaluate(() => window.__webcad!.results.getState().meshes[0].volume);
+const firstVolume = (page: import('@playwright/test').Page) => page.evaluate(() => window.__construct!.results.getState().meshes[0].volume);
 
 /** Sceglie due superfici di un cubo da 20 mm: la superiore e la frontale (visibili dalla camera di partenza). */
 async function pickTopAndFront(page: import('@playwright/test').Page) {
@@ -696,8 +697,8 @@ test('doppio clic su un oggetto: lo seleziona e passa a Sposta, il clic singolo 
   const id = (await sceneState(page)).rootIds[0];
   const top = await project(page, [0, 0, 20]);
   await page.locator('canvas').click({ position: { x: 5, y: 5 } }); // deseleziona
-  const mode = () => page.evaluate(() => window.__webcad!.store.getState().gizmoMode);
-  const selection = () => page.evaluate(() => window.__webcad!.store.getState().selection);
+  const mode = () => page.evaluate(() => window.__construct!.store.getState().gizmoMode);
+  const selection = () => page.evaluate(() => window.__construct!.store.getState().selection);
 
   // Clic singolo: seleziona e resta in Seleziona
   await page.mouse.click(top.x, top.y);
@@ -714,14 +715,14 @@ test('doppio clic su un oggetto: lo seleziona e passa a Sposta, il clic singolo 
 
 test('Guscio: anteprima dal vivo, Invio conferma in un solo passo di Annulla', async ({ page }) => {
   await addShape(page, 'Cubo');
-  const history = () => page.evaluate(() => window.__webcad!.store.temporal.getState().pastStates.length);
+  const history = () => page.evaluate(() => window.__construct!.store.temporal.getState().pastStates.length);
   const before = await history();
   await page.keyboard.press('g');
   const panel = page.getByRole('region', { name: 'Guscio' });
   await expect(panel).toBeVisible();
   await settled(page);
   // Cubo 20 mm con parete e fondo di 2 mm (il massimo predefinito è 2): cavità 16 × 16 × 18, dal fondo alla cima
-  await expect.poll(() => page.evaluate(() => window.__webcad!.results.getState().meshes[0].volume)).toBeCloseTo(8000 - 16 * 16 * 18, 2);
+  await expect.poll(() => page.evaluate(() => window.__construct!.results.getState().meshes[0].volume)).toBeCloseTo(8000 - 16 * 16 * 18, 2);
 
   // Il pulsante della libreria ha ancora il focus: Invio lo riattiverebbe e aggiungerebbe un altro cubo
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
@@ -736,7 +737,7 @@ test('Guscio: anteprima dal vivo, Invio conferma in un solo passo di Annulla', a
 
   await page.keyboard.press('Control+z');
   await settled(page);
-  expect(await page.evaluate(() => window.__webcad!.results.getState().meshes[0].volume)).toBeCloseTo(8000, 2);
+  expect(await page.evaluate(() => window.__construct!.results.getState().meshes[0].volume)).toBeCloseTo(8000, 2);
 });
 
 test('Guscio: Esc non lascia tracce e le pareti troppo spesse sono segnalate', async ({ page }) => {
@@ -778,7 +779,7 @@ test('due smussi su spigoli adiacenti della faccia superiore: il risultato coinc
   await chamfer([0, -10, 10], '3'); // sopra-fronte
   await chamfer([10, 0, 10], '3'); // sopra-destra
   // Due cunei da 4,5 mm² per 20 mm, più la parte in comune all'angolo (d³/3 = 9 mm³): 8000 − 180 + 9
-  const volume = await page.evaluate(() => window.__webcad!.results.getState().meshes[0].volume);
+  const volume = await page.evaluate(() => window.__construct!.results.getState().meshes[0].volume);
   expect(volume).toBeCloseTo(7829, 2);
   const scene = await sceneState(page);
   expect(Object.values(scene.nodes).filter((n: any) => n.type === 'edge')).toHaveLength(2);
@@ -809,7 +810,7 @@ test('dopo il Guscio il gizmo di Sposta sta sull oggetto e non nell origine del 
 
 test('Smusso angolare: si sceglie il vertice con il mouse, piano e sferico con i segmenti, OK in un solo passo di Annulla', async ({ page }) => {
   await addShape(page, 'Cubo');
-  const history = () => page.evaluate(() => window.__webcad!.store.temporal.getState().pastStates.length);
+  const history = () => page.evaluate(() => window.__construct!.store.temporal.getState().pastStates.length);
   const before = await history();
   await page.keyboard.press('a');
   const panel = page.getByRole('region', { name: 'Smusso angolare' });
@@ -823,15 +824,15 @@ test('Smusso angolare: si sceglie il vertice con il mouse, piano e sferico con i
   await expect(panel).toContainText('Vertici');
   await expect(panel.getByText('1 scelto', { exact: true })).toBeVisible();
   // Distanza iniziale 2 mm: si toglie un tetraedro di lato 2 (d³/6)
-  await expect.poll(() => page.evaluate(() => window.__webcad!.results.getState().meshes[0].volume)).toBeCloseTo(8000 - 8 / 6, 2);
+  await expect.poll(() => page.evaluate(() => window.__construct!.results.getState().meshes[0].volume)).toBeCloseTo(8000 - 8 / 6, 2);
 
   // Sferico: compare lo slider dei segmenti e si toglie meno del taglio piatto
-  const flat = await page.evaluate(() => window.__webcad!.results.getState().meshes[0].volume);
+  const flat = await page.evaluate(() => window.__construct!.results.getState().meshes[0].volume);
   await panel.getByRole('button', { name: 'Sferico' }).click();
   await settled(page);
   const segments = panel.locator('.slider-field', { hasText: 'Segmenti' }).locator('.number-field__input');
   await expect(segments).toBeVisible();
-  const round = await page.evaluate(() => window.__webcad!.results.getState().meshes[0].volume);
+  const round = await page.evaluate(() => window.__construct!.results.getState().meshes[0].volume);
   expect(round).toBeGreaterThan(flat);
   await segments.fill('64');
   await segments.press('Enter');
@@ -848,7 +849,7 @@ test('Smusso angolare: si sceglie il vertice con il mouse, piano e sferico con i
 
   await page.keyboard.press('Control+z');
   await settled(page);
-  expect(await page.evaluate(() => window.__webcad!.results.getState().meshes[0].volume)).toBeCloseTo(8000, 2);
+  expect(await page.evaluate(() => window.__construct!.results.getState().meshes[0].volume)).toBeCloseTo(8000, 2);
 });
 
 test('Smusso angolare: il tasto A apre e chiude lo strumento', async ({ page }) => {
@@ -866,18 +867,18 @@ test('Guscio su due cubi uniti: la cavità attraversa il giunto, senza parete in
   await addShape(page, 'Cubo');
   const [first, second] = (await sceneState(page)).rootIds;
   // Due cubi da 20 mm che si toccano su una faccia: blocco 40 × 20 × 20
-  await page.evaluate(([id]) => window.__webcad!.store.getState().updateNode(id as string, { position: [20, 0, 10] }), [second]);
-  await page.evaluate(([a, b]) => window.__webcad!.store.getState().select([a as string, b as string]), [first, second]);
+  await page.evaluate(([id]) => window.__construct!.store.getState().updateNode(id as string, { position: [20, 0, 10] }), [second]);
+  await page.evaluate(([a, b]) => window.__construct!.store.getState().select([a as string, b as string]), [first, second]);
   await page.keyboard.press('u');
   await settled(page);
-  expect(await page.evaluate(() => window.__webcad!.results.getState().meshes[0].volume)).toBeCloseTo(40 * 20 * 20, 2);
+  expect(await page.evaluate(() => window.__construct!.results.getState().meshes[0].volume)).toBeCloseTo(40 * 20 * 20, 2);
 
   await page.keyboard.press('g');
   await settled(page);
   const panel = page.getByRole('region', { name: 'Guscio' });
   await expect(panel).toContainText('nessuna parete interna');
   // Laterale e fondo di 2 mm: cavità 36 × 16 per 18 di altezza
-  await expect.poll(() => page.evaluate(() => window.__webcad!.results.getState().meshes[0].volume)).toBeCloseTo(40 * 20 * 20 - 36 * 16 * 18, 2);
+  await expect.poll(() => page.evaluate(() => window.__construct!.results.getState().meshes[0].volume)).toBeCloseTo(40 * 20 * 20 - 36 * 16 * 18, 2);
   await panel.getByRole('button', { name: 'OK' }).click();
   await settled(page);
   expect(await readCode(page)).toContain('projection(cut = true)');
@@ -889,12 +890,12 @@ test('l\'unione appoggia il risultato sul piatto e Ctrl+Z la annulla in un solo 
   // Il cubo viene sollevato di 50 mm: l'unione deve riportare tutto sul piatto
   const scene = await sceneState(page);
   const cubeId = Object.keys(scene.nodes).find((id) => scene.nodes[id].name === 'Cubo')!;
-  await page.evaluate((id) => window.__webcad!.store.getState().updateNode(id, { position: [0, 0, 60] }), cubeId);
+  await page.evaluate((id) => window.__construct!.store.getState().updateNode(id, { position: [0, 0, 60] }), cubeId);
   await settled(page);
   await page.locator('.outliner__row', { hasText: 'Cubo' }).click();
   await page.locator('.outliner__row', { hasText: 'Cilindro' }).click({ modifiers: ['Shift'] });
   await page.getByRole('button', { name: 'Unione' }).first().click();
-  await expect.poll(() => page.evaluate(() => Math.min(...window.__webcad!.results.getState().meshes.map((m) => m.bbox.min[2])))).toBeCloseTo(0, 3);
+  await expect.poll(() => page.evaluate(() => Math.min(...window.__construct!.results.getState().meshes.map((m) => m.bbox.min[2])))).toBeCloseTo(0, 3);
 
   await page.keyboard.press('Control+z');
   await expect(page.locator('.outliner__row')).toHaveCount(2);
@@ -908,7 +909,7 @@ test('cambiando l\'altezza dal pannello la base resta sul piatto', async ({ page
   await field.fill('50');
   await field.press('Enter');
   await settled(page);
-  const bbox = await page.evaluate(() => window.__webcad!.results.getState().meshes[0].bbox);
+  const bbox = await page.evaluate(() => window.__construct!.results.getState().meshes[0].bbox);
   expect(bbox.min[2]).toBeCloseTo(0, 3);
   expect(bbox.max[2]).toBeCloseTo(50, 3);
 });
@@ -977,8 +978,8 @@ test('la timeline elenca le operazioni e un clic riporta la scena a quel punto',
 
 test('Smusso angolare: Maiusc+clic aggiunge e toglie vertici con anteprima sempre viva e valori modificabili', async ({ page }) => {
   await addShape(page, 'Cubo');
-  const history = () => page.evaluate(() => window.__webcad!.store.temporal.getState().pastStates.length);
-  const volume = () => page.evaluate(() => window.__webcad!.results.getState().meshes[0].volume);
+  const history = () => page.evaluate(() => window.__construct!.store.temporal.getState().pastStates.length);
+  const volume = () => page.evaluate(() => window.__construct!.results.getState().meshes[0].volume);
   const before = await history();
   await page.keyboard.press('a');
   const panel = page.getByRole('region', { name: 'Smusso angolare' });
@@ -1042,7 +1043,7 @@ test('Smusso angolare: togliendo ultimo vertice si torna al pezzo intero', async
   await page.keyboard.up('Shift');
   await settled(page);
   await expect(panel.getByText('da scegliere', { exact: true })).toBeVisible();
-  expect(await page.evaluate(() => window.__webcad!.results.getState().meshes[0].volume)).toBeCloseTo(8000, 2);
+  expect(await page.evaluate(() => window.__construct!.results.getState().meshes[0].volume)).toBeCloseTo(8000, 2);
   // Si può scegliere di nuovo
   await page.mouse.click(at.x, at.y);
   await settled(page);
@@ -1076,7 +1077,7 @@ test('Salva senza selettore di file: chiede il nome e scarica con estensione .js
   await openMenuItem(page, 'Salva progetto');
   const dialog = page.getByRole('dialog');
   const name = dialog.getByRole('textbox');
-  await expect(name).toHaveValue('webcad-progetto.json');
+  await expect(name).toHaveValue('construct-progetto.json');
   await name.fill('il mio pezzo');
   const download = page.waitForEvent('download');
   await dialog.getByRole('button', { name: 'Salva' }).click();
@@ -1109,8 +1110,8 @@ test('Salva con il selettore di file: nome e cartella scelti, poi Salva riscrive
 
   await openMenuItem(page, 'Salva progetto');
   await expect.poll(async () => (await state()).written).toBe(1);
-  expect(await state()).toMatchObject({ picks: 1, suggested: 'webcad-progetto.json' });
-  expect(JSON.parse((await state()).json!).format).toBe('webcad-scene');
+  expect(await state()).toMatchObject({ picks: 1, suggested: 'construct-progetto.json' });
+  expect(JSON.parse((await state()).json!).format).toBe('construct-scene');
   await expect(page.locator('.toast--info')).toContainText('Salvato: scelto.json');
 
   // Il secondo Salva riscrive lo stesso file senza riaprire il selettore
@@ -1143,8 +1144,8 @@ test('Testo: scritta e font dal pannello, un passo di Annulla per ogni modifica,
   await addShape(page, 'Testo');
   await settled(page);
   const id = (await sceneState(page)).rootIds[0];
-  const history = () => page.evaluate(() => window.__webcad!.store.temporal.getState().pastStates.length);
-  const width = () => page.evaluate(() => { const b = window.__webcad!.results.getState().meshes[0].bbox; return b.max[0] - b.min[0]; });
+  const history = () => page.evaluate(() => window.__construct!.store.temporal.getState().pastStates.length);
+  const width = () => page.evaluate(() => { const b = window.__construct!.results.getState().meshes[0].bbox; return b.max[0] - b.min[0]; });
   const field = page.locator('label.properties__row', { has: page.locator('.properties__label', { hasText: /^Testo$/ }) }).locator('input');
 
   const before = await history();
@@ -1184,12 +1185,12 @@ test('Esporta OpenSCAD con il testo: ZIP con il .scad e i font usati', async ({ 
   await openMenuItem(page, 'Esporta');
   await page.getByRole('dialog').getByRole('button', { name: 'OpenSCAD' }).click();
   const file = await download;
-  expect(file.suggestedFilename()).toBe('webcad.zip');
+  expect(file.suggestedFilename()).toBe('construct.zip');
   const { readFileSync } = await import('node:fs');
   const { unzipSync, strFromU8 } = await import('fflate');
   const entries = unzipSync(new Uint8Array(readFileSync(await file.path())));
-  expect(Object.keys(entries).sort()).toEqual(['Lobster-Regular.ttf', 'webcad.scad']);
-  const code = strFromU8(entries['webcad.scad']);
+  expect(Object.keys(entries).sort()).toEqual(['Lobster-Regular.ttf', 'construct.scad']);
+  const code = strFromU8(entries['construct.scad']);
   expect(code).toContain('use <Lobster-Regular.ttf>;');
   expect(code).toContain('text("Testo", size = 10, font = "Lobster:style=Regular"');
   // Il TTF dello ZIP è un file font vero
@@ -1199,14 +1200,14 @@ test('Esporta OpenSCAD con il testo: ZIP con il .scad e i font usati', async ({ 
 
 /** Ingombro nel mondo di ogni oggetto alla radice, dai risultati del kernel. */
 const boundsOf = (page: import('@playwright/test').Page) =>
-  page.evaluate(() => window.__webcad!.results.getState().meshes.map((m) => ({ name: window.__webcad!.store.getState().scene.nodes[m.rootId].name, min: m.bbox.min, max: m.bbox.max })));
+  page.evaluate(() => window.__construct!.results.getState().meshes.map((m) => ({ name: window.__construct!.store.getState().scene.nodes[m.rootId].name, min: m.bbox.min, max: m.bbox.max })));
 
 test('Allinea (K): la tendina allinea cubo e sfera al lato scelto dell\'ingombro, in un solo passo di Annulla', async ({ page }) => {
   await addShape(page, 'Cubo');
   await addShape(page, 'Sfera');
   // Cubo e sfera a distanze diverse sull'asse X
   await page.evaluate(() => {
-    const st = window.__webcad!.store.getState();
+    const st = window.__construct!.store.getState();
     const [sfera, cubo] = st.scene.rootIds;
     st.updateNode(cubo, { position: [-40, 0, 10] });
     st.updateNode(sfera, { position: [30, 0, 10] });
@@ -1215,7 +1216,7 @@ test('Allinea (K): la tendina allinea cubo e sfera al lato scelto dell\'ingombro
   await settled(page);
   // Il tasto K apre la tendina; Max sull'asse X porta il lato destro di entrambi allo stesso punto
   await page.keyboard.press('k');
-  const history = () => page.evaluate(() => window.__webcad!.store.temporal.getState().pastStates.length);
+  const history = () => page.evaluate(() => window.__construct!.store.temporal.getState().pastStates.length);
   const before = await history();
   await page.locator('button[title^="Allinea sull\'asse X: max"]').click();
   await settled(page);
@@ -1232,7 +1233,7 @@ test('Specchia (Y): due oggetti si riflettono attorno al centro della selezione,
   await addShape(page, 'Cono');
   await addShape(page, 'Sfera');
   const [cono, sfera] = await page.evaluate(() => {
-    const st = window.__webcad!.store.getState();
+    const st = window.__construct!.store.getState();
     const [sfera, cono] = st.scene.rootIds;
     st.updateNode(cono, { position: [-40, 0, 10] });
     st.updateNode(sfera, { position: [30, 0, 10] });
@@ -1350,14 +1351,14 @@ test('Simboli: il codice si scarica solo aprendo la tab e un clic crea un Testo 
   expect(node).toMatchObject({ type: 'shape2d', kind: 'text', text: '★', font: 'noto-symbols-2' });
   await expect(page.locator('.status-bar')).toContainText('Mesh valida');
   // La stella ha davvero una geometria: volume maggiore di zero
-  const volume = await page.evaluate(() => window.__webcad!.results.getState().meshes[0].volume);
+  const volume = await page.evaluate(() => window.__construct!.results.getState().meshes[0].volume);
   expect(volume).toBeGreaterThan(10);
 });
 
 test('Nuovo con la casella "Svuota anche la cronologia": la timeline riparte da zero e Ctrl+Z non ripristina nulla', async ({ page }) => {
   await addShape(page, 'Cubo');
   await addShape(page, 'Sfera');
-  const history = () => page.evaluate(() => window.__webcad!.store.temporal.getState().pastStates.length);
+  const history = () => page.evaluate(() => window.__construct!.store.temporal.getState().pastStates.length);
   expect(await history()).toBeGreaterThan(1);
 
   await page.keyboard.press('n');
@@ -1376,7 +1377,7 @@ test('Nuovo con la casella "Svuota anche la cronologia": la timeline riparte da 
 test('Ultimi valori: le misure inserite su una forma restano per le forme nuove, anche dopo il ricaricamento', async ({ page }) => {
   await addShape(page, 'Cubo');
   await page.evaluate(() => {
-    const st = window.__webcad!.store.getState();
+    const st = window.__construct!.store.getState();
     st.updateNode(st.scene.rootIds[0], { size: [30, 12, 40], cornerRadius: 3 } as never);
   });
   await settled(page);
@@ -1384,7 +1385,7 @@ test('Ultimi valori: le misure inserite su una forma restano per le forme nuove,
   await page.waitForTimeout(900);
   await page.reload();
   await expect(page.locator('canvas')).toBeVisible();
-  await page.waitForFunction(() => !!window.__webcad);
+  await page.waitForFunction(() => !!window.__construct);
   await addShape(page, 'Cubo');
   const scene = await sceneState(page);
   const node = scene.nodes[scene.rootIds[0]];
@@ -1408,7 +1409,7 @@ async function cubeAndSphere(page: import('@playwright/test').Page) {
   await addShape(page, 'Cubo');
   await addShape(page, 'Sfera');
   const ids = await page.evaluate(() => {
-    const st = window.__webcad!.store.getState();
+    const st = window.__construct!.store.getState();
     const [sfera, cubo] = st.scene.rootIds;
     st.updateNode(cubo, { position: [-40, 0, 10] });
     st.updateNode(sfera, { position: [30, 0, 10] });
@@ -1518,7 +1519,7 @@ test('Emoji: quarta tab con le categorie, un clic crea un Testo estruso valido c
   const node = scene.nodes[scene.rootIds[0]];
   expect(node).toMatchObject({ type: 'shape2d', kind: 'text', text: '😂', font: 'noto-emoji' });
   await expect(page.locator('.status-bar')).toContainText('Mesh valida');
-  const volume = await page.evaluate(() => window.__webcad!.results.getState().meshes[0].volume);
+  const volume = await page.evaluate(() => window.__construct!.results.getState().meshes[0].volume);
   expect(volume).toBeGreaterThan(10);
 });
 
@@ -1552,7 +1553,7 @@ test('SVG: il lucchetto mantiene le proporzioni di larghezza e profondità, lo s
   await expect(lock).toHaveAttribute('aria-pressed', 'true');
 
   // Larghezza 80 con il lucchetto: la profondità segue (40) in un solo passo di Annulla
-  const history = () => page.evaluate(() => window.__webcad!.store.temporal.getState().pastStates.length);
+  const history = () => page.evaluate(() => window.__construct!.store.temporal.getState().pastStates.length);
   const before = await history();
   await field('Larghezza').fill('80');
   await field('Larghezza').press('Enter');
@@ -1646,8 +1647,8 @@ test('Estrusione rotazionale: un cerchio lontano dall\'asse diventa un toro, 180
   await addShape(page, 'Cerchio');
   const id = (await sceneState(page)).rootIds[0];
   const node = async () => (await sceneState(page)).nodes[id];
-  const bbox = () => page.evaluate(() => window.__webcad!.results.getState().meshes[0].bbox);
-  const volume = () => page.evaluate(() => window.__webcad!.results.getState().meshes[0].volume);
+  const bbox = () => page.evaluate(() => window.__construct!.results.getState().meshes[0].bbox);
+  const volume = () => page.evaluate(() => window.__construct!.results.getState().meshes[0].volume);
 
   await page.getByRole('button', { name: 'Rotazionale' }).click();
   await settled(page);
@@ -1713,7 +1714,7 @@ test('Lucchetto e Scala sul cubo: libero di default, con il lucchetto i lati cam
 test('Appoggia su una faccia (V): un clic sulla faccia scelta ruota il cubo inclinato e lo appoggia sul piatto in un solo passo di Annulla', async ({ page }) => {
   await addShape(page, 'Cubo');
   const id = await page.evaluate(() => {
-    const st = window.__webcad!.store.getState();
+    const st = window.__construct!.store.getState();
     const id = st.scene.rootIds[0];
     // Cubo inclinato di 30 gradi attorno a X e sollevato: nessuna faccia è sul piatto
     st.updateNode(id, { rotation: [30, 0, 0], position: [0, 0, 20] });
@@ -1726,7 +1727,7 @@ test('Appoggia su una faccia (V): un clic sulla faccia scelta ruota il cubo incl
 
   // Centro di un triangolo della faccia che guarda più in alto (visibile dalla camera) in coordinate mondo
   const target = await page.evaluate(() => {
-    const m = window.__webcad!.results.getState().meshes[0];
+    const m = window.__construct!.results.getState().meshes[0];
     let best = { nz: -2, c: [0, 0, 0] as [number, number, number] };
     for (let t = 0; t < m.indices.length / 3; t++) {
       const p = [0, 1, 2].map((k) => [0, 1, 2].map((a) => m.positions[m.indices[t * 3 + k] * 3 + a]));
@@ -1739,15 +1740,15 @@ test('Appoggia su una faccia (V): un clic sulla faccia scelta ruota il cubo incl
   });
   const at = await project(page, target);
   await page.mouse.move(at.x, at.y);
-  const history = () => page.evaluate(() => window.__webcad!.store.temporal.getState().pastStates.length);
+  const history = () => page.evaluate(() => window.__construct!.store.temporal.getState().pastStates.length);
   const before = await history();
   await page.mouse.click(at.x, at.y);
 
   // Lo strumento si chiude, il cubo è di nuovo allineato agli assi e sta sul piatto (la correzione arriva dopo il kernel)
   await expect(page.getByRole('region', { name: 'Appoggia su una faccia' })).toHaveCount(0);
   await settled(page);
-  await expect.poll(async () => (await page.evaluate(() => window.__webcad!.results.getState().meshes[0].bbox.min[2]))).toBeCloseTo(0, 2);
-  const bbox = await page.evaluate(() => window.__webcad!.results.getState().meshes[0].bbox);
+  await expect.poll(async () => (await page.evaluate(() => window.__construct!.results.getState().meshes[0].bbox.min[2]))).toBeCloseTo(0, 2);
+  const bbox = await page.evaluate(() => window.__construct!.results.getState().meshes[0].bbox);
   for (let a = 0; a < 3; a++) expect(bbox.max[a] - bbox.min[a]).toBeCloseTo(20, 2);
   // Un passo per la rotazione (la correzione sul piatto non conta come passo)
   expect(await history()).toBe(before + 1);
@@ -1770,7 +1771,7 @@ test('Appoggia su una faccia: Esc e il tasto V chiudono lo strumento senza tocca
 
 test('Contorno (offset 2D): un quadrato con +2 mm cresce, gli angoli vivi si scelgono e il codice ha offset()', async ({ page }) => {
   await addShape(page, 'Quadrato');
-  const bbox = () => page.evaluate(() => window.__webcad!.results.getState().meshes[0].bbox);
+  const bbox = () => page.evaluate(() => window.__construct!.results.getState().meshes[0].bbox);
   const field = page.locator('.slider-field').filter({ has: page.getByText('Contorno', { exact: true }) }).locator('.number-field__input');
   await field.fill('2');
   await field.press('Enter');
@@ -1802,7 +1803,7 @@ test('Inviluppo convesso (J): due oggetti diventano un solo gruppo con hull() e 
   await addShape(page, 'Cubo');
   await addShape(page, 'Sfera');
   await page.evaluate(() => {
-    const st = window.__webcad!.store.getState();
+    const st = window.__construct!.store.getState();
     const [sfera, cubo] = st.scene.rootIds;
     st.updateNode(cubo, { position: [-40, 0, 10] });
     st.updateNode(sfera, { position: [40, 0, 10] });
@@ -1818,7 +1819,7 @@ test('Inviluppo convesso (J): due oggetti diventano un solo gruppo con hull() e 
   expect(scene.nodes[scene.rootIds[0]]).toMatchObject({ type: 'group', op: 'hull', name: 'Inviluppo convesso' });
   await expect(page.locator('.status-bar')).toContainText('Mesh valida');
   // L'inviluppo riempie lo spazio tra le due forme: molto più volume di cubo e sfera insieme
-  const volume = await page.evaluate(() => window.__webcad!.results.getState().meshes[0].volume);
+  const volume = await page.evaluate(() => window.__construct!.results.getState().meshes[0].volume);
   expect(volume).toBeGreaterThan(20000);
   expect(await readCode(page)).toContain('hull() {');
 
@@ -1829,7 +1830,7 @@ test('Inviluppo convesso (J): due oggetti diventano un solo gruppo con hull() e 
 
 test('Serie (O): cinque copie in fila con anteprima dal vivo, OK crea un solo gruppo Ripetizione in un passo di Annulla', async ({ page }) => {
   await addShape(page, 'Cubo');
-  const history = () => page.evaluate(() => window.__webcad!.store.temporal.getState().pastStates.length);
+  const history = () => page.evaluate(() => window.__construct!.store.temporal.getState().pastStates.length);
   const before = await history();
   await page.keyboard.press('o');
   const panel = page.getByRole('region', { name: 'Serie' });
@@ -1837,7 +1838,7 @@ test('Serie (O): cinque copie in fila con anteprima dal vivo, OK crea un solo gr
   await settled(page);
 
   // Anteprima viva: cinque cubi da 20 mm con passo > 20 in fila lungo X, un solo oggetto
-  const bbox = () => page.evaluate(() => window.__webcad!.results.getState().meshes[0].bbox);
+  const bbox = () => page.evaluate(() => window.__construct!.results.getState().meshes[0].bbox);
   await expect.poll(async () => (await bbox()).max[0] - (await bbox()).min[0]).toBeGreaterThan(100);
   await expect(panel).toContainText('5 copie in totale');
   // La cronologia è in pausa durante l'anteprima
@@ -1874,7 +1875,7 @@ test('Serie: Esc annulla senza lasciare tracce, e il pulsante è spento senza un
   expect((await sceneState(page)).nodes).toEqual(before.nodes);
 
   // Nessuna selezione: il pulsante è disabilitato e il tasto non apre nulla
-  await page.evaluate(() => window.__webcad!.store.getState().select([]));
+  await page.evaluate(() => window.__construct!.store.getState().select([]));
   await expect(page.locator('header.toolbar button[aria-label^="Serie"]')).toBeDisabled();
   await page.keyboard.press('o');
   await expect(page.getByRole('region', { name: 'Serie' })).toHaveCount(0);
@@ -1886,7 +1887,7 @@ test('Ripetizione: i parametri si modificano dal pannello delle proprietà (tipo
   await page.getByRole('region', { name: 'Serie' }).getByRole('button', { name: 'OK' }).click();
   await settled(page);
   const id = (await sceneState(page)).rootIds[0];
-  const volume = () => page.evaluate(() => window.__webcad!.results.getState().meshes[0].volume);
+  const volume = () => page.evaluate(() => window.__construct!.results.getState().meshes[0].volume);
   expect(await volume()).toBeCloseTo(5 * 8000, -1);
 
   // Cambio il numero di copie dalle proprietà: nessun nuovo oggetto, il volume segue
@@ -1916,8 +1917,8 @@ test('Ripetizione: i parametri si modificano dal pannello delle proprietà (tipo
 
 test('Pattern (Z): anteprima Voronoi dal vivo, OK crea un solo gruppo Pattern in un passo di Annulla con le celle nel codice', async ({ page }) => {
   await addShape(page, 'Cubo');
-  const history = () => page.evaluate(() => window.__webcad!.store.temporal.getState().pastStates.length);
-  const volume = () => page.evaluate(() => window.__webcad!.results.getState().meshes[0].volume);
+  const history = () => page.evaluate(() => window.__construct!.store.temporal.getState().pastStates.length);
+  const volume = () => page.evaluate(() => window.__construct!.results.getState().meshes[0].volume);
   const before = await history();
   await page.keyboard.press('z');
   const panel = page.getByRole('region', { name: 'Pattern' });
@@ -1960,7 +1961,7 @@ test('Pattern: Esc annulla senza lasciare tracce, e il pulsante è spento senza 
   await expect(page.getByRole('region', { name: 'Pattern' })).toHaveCount(0);
   expect((await sceneState(page)).nodes).toEqual(before.nodes);
 
-  await page.evaluate(() => window.__webcad!.store.getState().select([]));
+  await page.evaluate(() => window.__construct!.store.getState().select([]));
   await expect(page.locator('header.toolbar button[aria-label^="Pattern"]')).toBeDisabled();
   await page.keyboard.press('z');
   await expect(page.getByRole('region', { name: 'Pattern' })).toHaveCount(0);
@@ -1972,7 +1973,7 @@ test('Pattern: seme, tipo, profondità, rombi, triangoli e facce si modificano d
   await page.getByRole('region', { name: 'Pattern' }).getByRole('button', { name: 'OK' }).click();
   await settled(page);
   const id = (await sceneState(page)).rootIds[0];
-  const volume = () => page.evaluate(() => window.__webcad!.results.getState().meshes[0].volume);
+  const volume = () => page.evaluate(() => window.__construct!.results.getState().meshes[0].volume);
   const pattern = async () => (await sceneState(page)).nodes[id].pattern;
   const first = await volume();
 
@@ -2046,7 +2047,7 @@ test('Pattern: Scegli facce aggiunge e toglie facce con il clic e mostra il pezz
   await page.keyboard.press('z');
   const panel = page.getByRole('region', { name: 'Pattern' });
   await settled(page);
-  const volume = () => page.evaluate(() => window.__webcad!.results.getState().meshes[0].volume);
+  const volume = () => page.evaluate(() => window.__construct!.results.getState().meshes[0].volume);
   await expect.poll(volume).toBeLessThan(7500);
 
   // Durante la scelta la vista mostra il cubo intero (si cliccano le facce del pezzo, non le pareti delle celle)
@@ -2106,7 +2107,7 @@ type Page = import('@playwright/test').Page;
 /** Larghezza (X) dell'insieme di tutte le mesh calcolate. */
 const totalWidth = (page: Page) =>
   page.evaluate(() => {
-    const meshes = window.__webcad!.results.getState().meshes.filter((m) => !m.empty);
+    const meshes = window.__construct!.results.getState().meshes.filter((m) => !m.empty);
     return Math.max(...meshes.map((m) => m.bbox.max[0])) - Math.min(...meshes.map((m) => m.bbox.min[0]));
   });
 
@@ -2115,14 +2116,14 @@ test.describe('Ridimensiona (R) su un gruppo di qualsiasi tipo', () => {
   async function twoShapes(page: Page) {
     await addShape(page, 'Cubo');
     await addShape(page, 'Sfera');
-    await page.evaluate(() => window.__webcad!.store.getState().select(window.__webcad!.store.getState().scene.rootIds));
+    await page.evaluate(() => window.__construct!.store.getState().select(window.__construct!.store.getState().scene.rootIds));
   }
   const cases: [string, (page: Page) => Promise<void>, string][] = [
     ['Raggruppa', async (page) => { await twoShapes(page); await page.keyboard.press('Control+g'); }, 'group'],
     ['Unione', async (page) => { await twoShapes(page); await page.keyboard.press('u'); }, 'union'],
     ['Inviluppo convesso', async (page) => { await twoShapes(page); await page.keyboard.press('j'); }, 'hull'],
-    ['Differenza', async (page) => { await twoShapes(page); await page.evaluate(() => { const s = window.__webcad!.store.getState(); const ball = s.scene.rootIds.find((id) => s.scene.nodes[id].type === 'primitive' && (s.scene.nodes[id] as { kind: string }).kind === 'sphere')!; s.updateNode(ball, { radius: 4 } as never); s.select([s.scene.rootIds.find((id) => id !== ball)!, ball]); s.combineSelected('difference'); }); }, 'difference'],
-    ['Intersezione', async (page) => { await twoShapes(page); await page.evaluate(() => window.__webcad!.store.getState().combineSelected('intersection')); }, 'intersection'],
+    ['Differenza', async (page) => { await twoShapes(page); await page.evaluate(() => { const s = window.__construct!.store.getState(); const ball = s.scene.rootIds.find((id) => s.scene.nodes[id].type === 'primitive' && (s.scene.nodes[id] as { kind: string }).kind === 'sphere')!; s.updateNode(ball, { radius: 4 } as never); s.select([s.scene.rootIds.find((id) => id !== ball)!, ball]); s.combineSelected('difference'); }); }, 'difference'],
+    ['Intersezione', async (page) => { await twoShapes(page); await page.evaluate(() => window.__construct!.store.getState().combineSelected('intersection')); }, 'intersection'],
     ['Guscio', async (page) => { await addShape(page, 'Cubo'); await page.keyboard.press('g'); await page.getByRole('region', { name: 'Guscio' }).getByRole('button', { name: 'OK' }).click(); }, 'shell'],
     ['Ripetizione', async (page) => { await addShape(page, 'Cubo'); await page.keyboard.press('o'); await page.getByRole('region', { name: 'Serie' }).getByRole('button', { name: 'OK' }).click(); }, 'array'],
     ['Pattern', async (page) => { await addShape(page, 'Cubo'); await page.keyboard.press('z'); await page.getByRole('region', { name: 'Pattern' }).getByRole('button', { name: 'OK' }).click(); }, 'pattern'],
@@ -2136,7 +2137,7 @@ test.describe('Ridimensiona (R) su un gruppo di qualsiasi tipo', () => {
       const id = scene.rootIds[0];
       expect(scene.nodes[id]).toMatchObject({ type: 'group', op });
       const before = await totalWidth(page);
-      await page.evaluate((gid) => window.__webcad!.store.getState().select([gid]), id);
+      await page.evaluate((gid) => window.__construct!.store.getState().select([gid]), id);
       await page.keyboard.press('r');
       await page.waitForTimeout(150);
       await dragGizmoAxis(page, scene.nodes[id].position, 'X', 60);
@@ -2209,33 +2210,12 @@ test('Piano di stampa: le dimensioni stanno nella barra di stato, prima dell\'in
 
   // Resta dopo il ricaricamento, e "Predefinito" riporta 256 × 256
   await page.reload();
-  await page.waitForFunction(() => !!window.__webcad && !!window.__r3f);
+  await page.waitForFunction(() => !!window.__construct && !!window.__r3f);
   await expect(status.getByRole('button')).toHaveText('Piano 300 × 180 mm');
   await status.getByRole('button').click();
   await dialog.getByRole('button', { name: /Predefinito/ }).click();
   await dialog.getByRole('button', { name: 'Applica' }).click();
   await expect(status.getByRole('button')).toHaveText('Piano 256 × 256 mm');
-});
-
-test('Piano di stampa: i preset delle stampanti compilano le misure e si confermano con Applica', async ({ page }) => {
-  const status = page.locator('.status-bar');
-  await status.getByRole('button', { name: /Piano 256/ }).click();
-  const dialog = page.getByRole('dialog', { name: 'Dimensioni del piano' });
-  // Le stampanti sono raggruppate per marca e riportano nome e misure
-  for (const brand of ['Bambu Lab', 'Prusa', 'Creality']) await expect(dialog.getByRole('group', { name: brand })).toBeVisible();
-  const bambu = dialog.getByRole('group', { name: 'Bambu Lab' });
-  await expect(bambu.getByRole('button', { name: /A1 mini.*180 × 180/ })).toBeVisible();
-  await expect(bambu.getByRole('button', { name: /H2D.*350 × 320/ })).toBeVisible();
-  // Il preset che coincide con le misure attuali è evidenziato
-  await expect(bambu.getByRole('button', { name: /A1 \/ P1S/ })).toHaveAttribute('aria-pressed', 'true');
-
-  await bambu.getByRole('button', { name: /A1 mini/ }).click();
-  await expect(dialog.locator('.number-field', { hasText: 'Larghezza X' }).locator('input')).toHaveValue('180');
-  // Non cambia nulla finché non si applica
-  await expect(page.locator('.status-bar__bed')).toHaveText('Piano 256 × 256 mm');
-  await dialog.getByRole('button', { name: 'Applica' }).click();
-  await expect(page.locator('.status-bar__bed')).toHaveText('Piano 180 × 180 mm');
-  await expect.poll(() => page.evaluate(() => (window.__r3f!.scene.getObjectByName('bed-plate') as unknown as { geometry: { parameters: { width: number } } }).geometry.parameters.width)).toBe(180);
 });
 
 test('Quote: un clic sulla quota X assegna la larghezza, con un solo passo di Annulla', async ({ page }) => {
@@ -2329,10 +2309,6 @@ test('Menu contestuale: una voce esegue il comando e chiude il menu', async ({ p
   await expect(menu).toBeHidden();
   expect((await sceneState(page)).rootIds).toHaveLength(2);
 
-  // Il tasto destro nel vuoto non apre nulla
-  const empty = await project(page, [-120, 120, 0]);
-  await page.mouse.click(empty.x, empty.y, { button: 'right' });
-  await expect(menu).toBeHidden();
 });
 
 test('Barra strumenti: i comandi sono in gruppi con il nome della sezione', async ({ page }) => {
@@ -2350,4 +2326,169 @@ test('Barra strumenti: i comandi sono in gruppi con il nome della sezione', asyn
     await expect(group, `sezione "${name}"`).toBeVisible();
     for (const button of buttons) await expect(group.getByRole('button', { name: button, exact: true }), `"${button}" in "${name}"`).toBeVisible();
   }
+});
+
+test('Piano di stampa: la tendina delle stampanti ha la misura per prima e compila i campi, e si conferma con Applica', async ({ page }) => {
+  const status = page.locator('.status-bar');
+  await status.getByRole('button', { name: /Piano 256/ }).click();
+  const dialog = page.getByRole('dialog', { name: 'Dimensioni del piano' });
+  const select = dialog.getByRole('combobox', { name: 'Stampante' });
+  // Ogni voce comincia dalla misura e poi elenca le stampanti che l'hanno
+  const labels = await select.locator('option').allTextContents();
+  expect(labels.length).toBeGreaterThan(5);
+  for (const label of labels) expect(label).toMatch(/^\d+ × \d+ mm · /);
+  expect(labels).toContain('180 × 180 mm · Bambu Lab A1 mini, Prusa MINI+');
+  expect(labels).toContain('256 × 256 mm · Bambu Lab A1, Bambu Lab P1S, Bambu Lab P1P, Bambu Lab X1C');
+  expect(labels.some((l) => l.startsWith('350 × 320 mm') && l.includes('H2D'))).toBe(true);
+  // Con le misure attuali (256 × 256) è scelta la voce giusta
+  await expect(select.locator('option:checked')).toHaveText(/^256 × 256 mm/);
+
+  await select.selectOption({ label: '180 × 180 mm · Bambu Lab A1 mini, Prusa MINI+' });
+  await expect(dialog.locator('.number-field', { hasText: 'Larghezza X' }).locator('input')).toHaveValue('180');
+  // Non cambia nulla finché non si applica
+  await expect(page.locator('.status-bar__bed')).toHaveText('Piano 256 × 256 mm');
+  await dialog.getByRole('button', { name: 'Applica' }).click();
+  await expect(page.locator('.status-bar__bed')).toHaveText('Piano 180 × 180 mm');
+  await expect.poll(() => page.evaluate(() => (window.__r3f!.scene.getObjectByName('bed-plate') as unknown as { geometry: { parameters: { width: number } } }).geometry.parameters.width)).toBe(180);
+
+  // Misure che non sono di nessuna stampante: la tendina mostra "personalizzate"
+  await page.locator('.status-bar__bed').click();
+  const width = dialog.locator('.number-field', { hasText: 'Larghezza X' }).locator('input');
+  await width.fill('300');
+  await width.press('Enter');
+  await expect(select.locator('option:checked')).toHaveText(/Misure personalizzate/);
+});
+
+test('Piano di stampa: i cursori seguono le misure del piano invece del vecchio limite di 256 mm', async ({ page }) => {
+  await page.locator('.status-bar__bed').click();
+  const dialog = page.getByRole('dialog', { name: 'Dimensioni del piano' });
+  await dialog.locator('.number-field', { hasText: 'Larghezza X' }).locator('input').fill('400');
+  await dialog.getByRole('button', { name: 'Applica' }).click();
+  await addShape(page, 'Cubo');
+  // Il cursore della larghezza arriva al lato maggiore del piano (400)
+  const range = page.locator('.slider-field', { hasText: 'Larghezza' }).locator('input[type=range]');
+  expect(Number(await range.getAttribute('max'))).toBe(400);
+});
+
+test('Menu contestuale sul vuoto: propone le forme e la crea nel punto cliccato', async ({ page }) => {
+  await addShape(page, 'Cubo');
+  const menu = page.getByRole('menu', { name: 'Aggiungi una forma' });
+  const where = [-80, 70] as const;
+  const empty = await project(page, [where[0], where[1], 0]);
+  await page.mouse.click(empty.x, empty.y, { button: 'right' });
+  await expect(menu).toBeVisible();
+  // Il menu elenca le forme 3D e 2D, non i comandi della selezione
+  for (const name of ['Cubo', 'Cilindro', 'Sfera', 'Cerchio', 'Cuore']) await expect(menu.getByRole('menuitem', { name, exact: true })).toBeVisible();
+  await expect(menu.getByRole('menuitem', { name: 'Duplica', exact: true })).toHaveCount(0);
+
+  await menu.getByRole('menuitem', { name: 'Sfera', exact: true }).click();
+  await settled(page);
+  await expect(menu).toBeHidden();
+  const scene = await sceneState(page);
+  expect(scene.rootIds).toHaveLength(2);
+  const sphere = scene.nodes[scene.rootIds[0]];
+  expect(sphere.kind).toBe('sphere');
+  // La sfera nasce dove si è cliccato (sul piano), appoggiata sul piatto
+  // (qualche decimo di mm di scarto: il puntatore è in pixel interi)
+  expect(Math.abs(sphere.position[0] - where[0])).toBeLessThan(3);
+  expect(Math.abs(sphere.position[1] - where[1])).toBeLessThan(3);
+  expect(sphere.position[2]).toBeCloseTo(sphere.radius, 3);
+});
+
+test('Menu contestuale: niente raccordi sulla sfera, Appoggia sul piatto solo se l\'oggetto è sollevato', async ({ page }) => {
+  await addShape(page, 'Sfera');
+  const menu = page.getByRole('menu', { name: 'Comandi per la selezione' });
+  const at = await project(page, [0, 0, 10]);
+  await page.mouse.click(at.x, at.y, { button: 'right' });
+  await expect(menu).toBeVisible();
+  for (const name of ['Raccordo', 'Smusso', 'Smusso angolare', 'Raggruppa', 'Separa', 'Appoggia sul piatto']) await expect(menu.getByRole('menuitem', { name, exact: true })).toHaveCount(0);
+  await expect(menu.getByRole('menuitem', { name: 'Duplica', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(menu).toBeHidden();
+
+  // Sollevata dal piatto, la sfera propone di appoggiarlo
+  const id = (await sceneState(page)).rootIds[0];
+  await page.evaluate((nodeId) => window.__construct!.store.getState().updateNode(nodeId, { position: [0, 0, 40] } as never), id);
+  await settled(page);
+  const high = await project(page, [0, 0, 40]);
+  await page.mouse.click(high.x, high.y, { button: 'right' });
+  await expect(menu.getByRole('menuitem', { name: 'Appoggia sul piatto', exact: true })).toBeVisible();
+});
+
+test('Quote: il lucchetto fa scalare tutti gli assi insieme', async ({ page }) => {
+  await addShape(page, 'Cubo');
+  const id = (await sceneState(page)).rootIds[0];
+  const lock = page.locator('.dimension-lock');
+  await expect(lock).toHaveAttribute('aria-pressed', 'false');
+  // Libero: cambia solo X
+  await page.locator('.dimension-label[data-axis="x"]').click();
+  await page.locator('.dimension-input[data-axis="x"]').fill('30');
+  await page.locator('.dimension-input[data-axis="x"]').press('Enter');
+  await settled(page);
+  expect((await sceneState(page)).nodes[id].size).toEqual([30, 20, 20]);
+
+  // Bloccato: X a 60 raddoppia anche Y e Z (da 30 × 20 × 20 a 60 × 40 × 40)
+  await lock.click();
+  await expect(lock).toHaveAttribute('aria-pressed', 'true');
+  expect((await sceneState(page)).nodes[id].lockRatio).toBe(true);
+  await page.locator('.dimension-label[data-axis="x"]').click();
+  await page.locator('.dimension-input[data-axis="x"]').fill('60');
+  await page.locator('.dimension-input[data-axis="x"]').press('Enter');
+  await settled(page);
+  expect((await sceneState(page)).nodes[id].size).toEqual([60, 40, 40]);
+});
+
+test('Benvenuto: al primo avvio propone da dove cominciare, la quarta scelta non è ancora disponibile', async ({ browser }) => {
+  // Contesto nuovo (localStorage separato): la pagina di beforeEach ha già segnato il benvenuto come visto
+  const page = await (await browser.newContext()).newPage();
+  await openApp(page, { welcome: true });
+  const dialog = page.getByRole('dialog', { name: 'Benvenuto in Construct' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('button', { name: /Nuovo progetto/ })).toBeEnabled();
+  await expect(dialog.getByRole('button', { name: /Parti da un cubo/ })).toBeEnabled();
+  await expect(dialog.getByRole('button', { name: /Importa/ })).toBeEnabled();
+  await expect(dialog.getByRole('button', { name: /Modelli di esempio/ })).toBeDisabled();
+
+  // "Parti da un cubo" crea la scena con un cubo e chiude la finestra
+  await dialog.getByRole('button', { name: /Parti da un cubo/ }).click();
+  await settled(page);
+  await expect(dialog).toBeHidden();
+  const scene = await sceneState(page);
+  expect(scene.rootIds).toHaveLength(1);
+  expect(scene.nodes[scene.rootIds[0]].kind).toBe('box');
+
+  // Non ricompare al ricaricamento
+  await page.reload();
+  await page.waitForFunction(() => !!window.__construct && !!window.__r3f);
+  await expect(page.getByRole('dialog', { name: 'Benvenuto in Construct' })).toHaveCount(0);
+});
+
+test('Benvenuto: Esc lo chiude senza toccare la scena e non ricompare', async ({ browser }) => {
+  // Contesto nuovo (localStorage separato): la pagina di beforeEach ha già segnato il benvenuto come visto
+  const page = await (await browser.newContext()).newPage();
+  await openApp(page, { welcome: true });
+  const dialog = page.getByRole('dialog', { name: 'Benvenuto in Construct' });
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  expect((await sceneState(page)).rootIds).toHaveLength(0);
+  await page.reload();
+  await page.waitForFunction(() => !!window.__construct && !!window.__r3f);
+  await expect(page.getByRole('dialog', { name: 'Benvenuto in Construct' })).toHaveCount(0);
+});
+
+test('Migrazione: le preferenze salvate con il vecchio nome (webcad:ui) passano a construct:ui e il benvenuto non compare', async ({ browser }) => {
+  // Contesto nuovo (localStorage separato): la pagina di beforeEach ha già segnato il benvenuto come visto
+  const page = await (await browser.newContext()).newPage();
+  await openApp(page, { welcome: true });
+  await page.evaluate(() => {
+    localStorage.clear();
+    localStorage.setItem('webcad:ui', JSON.stringify({ state: { theme: 'dark', bedMode: 'full', bedSize: { width: 300, depth: 200 } }, version: 0 }));
+  });
+  await page.reload();
+  await page.waitForFunction(() => !!window.__construct && !!window.__r3f);
+  await expect(page.getByRole('dialog', { name: 'Benvenuto in Construct' })).toHaveCount(0);
+  await expect(page.locator('.status-bar__bed')).toHaveText('Piano 300 × 200 mm');
+  expect(await page.evaluate(() => localStorage.getItem('construct:ui'))).toContain('"width":300');
+  expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe('dark');
 });

@@ -12,7 +12,7 @@ const ORIGIN_ICONS = { symbol: Sigma, emoji: Smile } as const;
 const ORIGIN_LABELS = { symbol: 'Simbolo', emoji: 'Emoji' } as const;
 
 /** Tipo MIME del trascinamento interno: i file trascinati dal sistema (importazione) restano un'altra cosa. */
-const DRAG_TYPE = 'application/x-webcad-node';
+const DRAG_TYPE = 'application/x-construct-node';
 
 /** Nodo trascinato in questo momento: durante il trascinamento il browser non permette di leggere il dataTransfer. */
 let draggedId: string | null = null;

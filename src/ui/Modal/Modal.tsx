@@ -11,10 +11,13 @@ interface Props {
   dismissable?: boolean;
   /** "large": 80% della larghezza e dell'altezza della finestra (es. codice OpenSCAD). */
   size?: 'default' | 'large';
+  /** "welcome": senza intestazione né margini del corpo, con la X in alto a destra (schermata di benvenuto). */
+  variant?: 'default' | 'welcome';
 }
 
 /** Finestra modale su <dialog> nativo: gestisce da sola focus, Esc e blocco dello sfondo. */
-export function Modal({ open, title, onClose, children, dismissable = true, size = 'default' }: Props) {
+export function Modal({ open, title, onClose, children, dismissable = true, size = 'default', variant = 'default' }: Props) {
+  const welcome = variant === 'welcome';
   const dialog = useRef<HTMLDialogElement>(null);
 
   // Apre e chiude il dialog nativo in base alla prop "open"
@@ -28,8 +31,9 @@ export function Modal({ open, title, onClose, children, dismissable = true, size
   return (
     <dialog
       ref={dialog}
-      className={`modal${size === 'large' ? ' modal--large' : ''}`}
-      aria-labelledby="modal-title"
+      className={`modal${size === 'large' ? ' modal--large' : ''}${welcome ? ' modal--welcome' : ''}`}
+      // Senza intestazione visibile il nome accessibile è il titolo stesso
+      {...(welcome ? { 'aria-label': title } : { 'aria-labelledby': 'modal-title' })}
       // Esc: chiude solo se consentito
       onCancel={(e) => {
         e.preventDefault();
@@ -41,6 +45,16 @@ export function Modal({ open, title, onClose, children, dismissable = true, size
       }}
     >
       {open && (
+        welcome ? (
+          <>
+            {dismissable && (
+              <button type="button" className="modal__close modal__close--float" aria-label="Chiudi" onClick={onClose}>
+                <X size={16} />
+              </button>
+            )}
+            {children}
+          </>
+        ) : (
         <>
           <header className="modal__header">
             <h2 className="modal__title" id="modal-title">{title}</h2>
@@ -52,6 +66,7 @@ export function Modal({ open, title, onClose, children, dismissable = true, size
           </header>
           <div className="modal__body">{children}</div>
         </>
+        )
       )}
     </dialog>
   );

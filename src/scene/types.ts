@@ -321,6 +321,3 @@ export interface Scene {
   /** Ordine di presentazione degli oggetti alla radice. */
   rootIds: string[];
 }
-
-/** Dimensioni del piatto di stampa di riferimento (mm). */
-export const BED_SIZE = 256;

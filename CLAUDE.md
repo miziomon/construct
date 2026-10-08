@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-WebCAD è un editor CAD 3D nel browser per la stampa 3D (React + React Three Fiber + manifold-3d in WebAssembly). Esporta STL, 3MF e codice OpenSCAD equivalente. Interfaccia, commenti, CHANGELOG e messaggi di commit sono in italiano; gli identificatori restano in inglese.
+Construct è un editor CAD 3D nel browser per la stampa 3D (React + React Three Fiber + manifold-3d in WebAssembly). Esporta STL, 3MF e codice OpenSCAD equivalente. Interfaccia, commenti, CHANGELOG e messaggi di commit sono in italiano; gli identificatori restano in inglese.
 
 ## Comandi
 
@@ -26,10 +26,12 @@ Il flusso dati è: **store della scena (Zustand + Immer + zundo) → kernel in W
 - `src/kernel/` calcola la geometria. `kernel.worker.ts` carica il WASM di manifold una sola volta ed espone via Comlink `evaluate`, `ghosts`, `exportStl`, `export3mf`, `registerAsset`; `client.ts` crea il worker unico; `useKernel.ts` ricalcola quando la scena cambia e alimenta `useResultStore` (`meshes`, `busy`, `ms`). `evaluate.ts` (classe `Evaluator`) traduce ogni nodo in `Manifold`; `pattern.ts` e `placement.ts` sono i calcoli pesanti lato kernel. I buffer delle mesh passano con `Comlink.transfer`.
 - `src/codegen/openscad.ts` genera il codice OpenSCAD dallo stesso albero. **Deve restare coerente con `evaluate.ts`**: ogni nuovo tipo di nodo, modificatore o parametro va gestito in entrambi (i pattern esportano le celle già calcolate, così il risultato coincide).
 - `src/import/` legge STL, 3MF, SVG; le mesh importate stanno in un registro di asset (`assets.ts`) fuori dalla scena, che ne tiene solo l'`assetId`, e vengono re-registrate nel worker al ripristino (`restore.ts`).
+- Il progetto si chiamava WebCAD: i dati salvati con il vecchio nome si migrano (`src/storageMigration.ts` copia le chiavi di localStorage; `persistence.ts` e `import/assets.ts` leggono in IndexedDB anche le chiavi `webcad:*`; i progetti `.json` con formato `webcad-scene` si aprono ancora). Non rinominare più le chiavi `construct:*` senza una migrazione.
+- `src/ui/commands.tsx` è il registro dei comandi sulla selezione: barra strumenti e menu contestuale (`src/ui/ContextMenu`) lo leggono entrambi; `inMenu` nasconde nel menu i comandi che per quell'oggetto non hanno senso. La schermata di benvenuto (`src/ui/Welcome`) compare solo al primo avvio (`firstVisit.ts`, da importare prima degli store in `main.tsx`).
 - `src/scene/persistence.ts` salva scena e asset in IndexedDB (`idb-keyval`) e gestisce i file di progetto versionati (`VERSION`): se cambia la forma dei dati, mantenere la lettura delle versioni precedenti.
 - `src/viewport/` è la vista 3D (selezione, gizmo, overlay di Raccordo/Pattern/Misura/Appoggia, operandi fantasma); `src/ui/` ha barra strumenti, pannelli, proprietà, outliner, timeline. Un nuovo comando di barra richiede anche scorciatoia (`src/hooks/useShortcuts.ts`) e tooltip in `src/ui/Toolbar/toolbarHelp.ts`.
 - Vite (`vite.config.ts`): `manifold-3d` è escluso dal pre-bundle (il glue Emscripten cerca il `.wasm` con `import.meta.url`), il codice è diviso in chunk (react, r3f, three, three-loaders, vendor) e `__APP_VERSION__` è definito da `package.json`.
-- Test e2e (`e2e/`): in modalità `e2e` l'app espone `window.__webcad` (`store`, `results`); gli helper `openApp` e `settled` in `e2e/helpers.ts` azzerano IndexedDB e attendono la fine del calcolo del kernel. Il service worker è bloccato nei test.
+- Test e2e (`e2e/`): in modalità `e2e` l'app espone `window.__construct` (`store`, `results`); gli helper `openApp` e `settled` in `e2e/helpers.ts` azzerano IndexedDB e attendono la fine del calcolo del kernel. Il service worker è bloccato nei test.
 
 ## Flusso dopo ogni modifica
 

@@ -1,6 +1,6 @@
 # Valutazione degli smussi e degli arrotondamenti
 
-Data: 6 ottobre 2026. Domanda: come si possono smussare gli angoli di un solido in WebCAD, mantenendo le quote
+Data: 6 ottobre 2026. Domanda: come si possono smussare gli angoli di un solido in Construct, mantenendo le quote
 esatte e tempi di calcolo da editor interattivo (obiettivo: sotto 300 ms per il caso tipico)?
 
 ## Opzioni valutate

@@ -32,7 +32,7 @@ export function UpdatePrompt() {
     <>
       <Modal open={needRefresh} title="Aggiornamento disponibile" dismissable={false} onClose={() => undefined}>
         <p>
-          È disponibile una nuova versione di WebCAD (in uso v{__APP_VERSION__}). Per continuare è necessario aggiornare.
+          È disponibile una nuova versione di Construct (in uso v{__APP_VERSION__}). Per continuare è necessario aggiornare.
           Se hai lavoro non salvato, salvalo prima: la pagina si ricaricherà.
         </p>
         <div className="modal__actions">
@@ -49,7 +49,7 @@ export function UpdatePrompt() {
 
       {offlineReady && !needRefresh && (
         <div className="update-prompt" role="status" aria-live="polite">
-          <p className="update-prompt__text">WebCAD è pronto per l’uso offline.</p>
+          <p className="update-prompt__text">Construct è pronto per l’uso offline.</p>
           <button type="button" className="update-prompt__button" onClick={() => setOfflineReady(false)} aria-label="Chiudi">
             <X size={14} />
           </button>

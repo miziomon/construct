@@ -5,6 +5,7 @@ import { newProject, openProject, saveProject, saveProjectAs } from '../fileActi
 import type { Panel } from './AppMenuPanels';
 import { Modal } from '../Modal/Modal';
 import { lazyLoad } from '../lazyLoad';
+import { migrateLocalKey, STORAGE } from '../../storageMigration';
 // Il corpo delle modali (scorciatoie, changelog, esportazione) si scarica solo alla prima apertura
 const AppMenuPanels = lazyLoad(() => import('./AppMenuPanels'));
 import './AppMenu.scss';
@@ -35,7 +36,8 @@ const GROUPS: Item[][] = [
 const TITLES: Record<Panel, string> = { import: 'Importa', export: 'Esporta', shortcuts: 'Scorciatoie da tastiera', news: 'Novità', about: 'About' };
 
 /** Ultima versione le cui Novità sono state viste: serve al badge "nuovo". */
-const SEEN_KEY = 'webcad:lastSeenVersion';
+const SEEN_KEY = STORAGE.seen.now;
+migrateLocalKey(STORAGE.seen.legacy, SEEN_KEY);
 
 /** True se dopo l'ultimo accesso c'è stato un aggiornamento (al primo avvio no). Il localStorage può non essere disponibile. */
 function hasUnseenNews(): boolean {

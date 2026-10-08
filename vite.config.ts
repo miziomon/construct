@@ -21,8 +21,8 @@ export default defineConfig({
       registerType: 'prompt',
       includeAssets: ['favicon.svg'],
       manifest: {
-        name: 'WebCAD',
-        short_name: 'WebCAD',
+        name: 'Construct',
+        short_name: 'Construct',
         description: 'Modellazione 3D rapida per la stampa 3D',
         lang: 'it',
         theme_color: '#e9eff6',

@@ -54,6 +54,22 @@ describe('quote: misura di un asse', () => {
     expect(resizeAxisPatch(mesh, box([0, 0, 0], [10, 20, 30]), 1, 40)).toEqual({ scale: 2 });
   });
 
+  it('con il lucchetto (uniform) tutti gli assi scalano dello stesso fattore', () => {
+    // Cilindro: raggio 10, altezza 20. Il diametro X passa da 20 a 40 (fattore 2): anche altezza e raggio Y raddoppiano
+    const cyl = resizeAxisPatch(prim('cylinder'), box([-10, -10, 0], [10, 10, 20]), 0, 40, true)!;
+    expect(cyl).toMatchObject({ radius: 20, height: 40 });
+    // Cubo non bloccato: senza lucchetto solo X, con il lucchetto tutti i lati
+    const cube = prim('box', { size: [20, 10, 5] } as Partial<PrimitiveNode>);
+    const b = box([-10, -5, -2.5], [10, 5, 2.5]);
+    expect(resizeAxisPatch(cube, b, 0, 40)!.size).toEqual([40, 10, 5]);
+    expect(resizeAxisPatch(cube, b, 0, 40, true)!.size).toEqual([40, 20, 10]);
+  });
+
+  it('gruppo con il lucchetto: la scala è la stessa su ogni asse', () => {
+    const patch = resizeAxisPatch(group(), box([-10, -10, 0], [10, 10, 20]), 0, 40, true)!;
+    expect(patch.groupScale).toEqual([2, 2, 2]);
+  });
+
   it('misure non valide o ingombro vuoto: nessuna modifica', () => {
     const node = prim('box');
     const b = box([-10, -10, -10], [10, 10, 10]);

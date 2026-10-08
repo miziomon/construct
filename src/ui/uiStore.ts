@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { migrateLocalKey, STORAGE } from '../storageMigration';
 
 export type Theme = 'light' | 'dark';
 
@@ -19,6 +20,9 @@ export const BED_LIMITS = { min: 20, max: 2000 } as const;
 /** Dimensione valida: numero finito entro i limiti, arrotondato al decimo di mm. Altrimenti `fallback`. */
 const cleanBedSide = (value: unknown, fallback: number): number =>
   typeof value === 'number' && Number.isFinite(value) ? Math.round(Math.min(BED_LIMITS.max, Math.max(BED_LIMITS.min, value)) * 10) / 10 : fallback;
+
+/** Lato maggiore del piano (mm): limite morbido dei cursori delle misure. Il piano non ha altezza, quindi vale anche per lo Z. */
+export const bedReach = (bed: BedSize): number => Math.max(bed.width, bed.depth);
 
 const NEXT_BED: Record<BedMode, BedMode> = { full: 'grid', grid: 'none', none: 'full' };
 
@@ -61,6 +65,9 @@ interface UiState {
   /** Dimensioni del piano di stampa (si salvano in localStorage). */
   bedSize: BedSize;
   setBedSize: (size: Partial<BedSize>) => void;
+  /** Schermata di benvenuto del primo avvio aperta (non si salva: la decide `firstVisit` all'avvio). */
+  welcomeOpen: boolean;
+  setWelcomeOpen: (open: boolean) => void;
   /** Modale delle dimensioni del piano aperta (non si salva). */
   bedDialogOpen: boolean;
   setBedDialogOpen: (open: boolean) => void;
@@ -85,9 +92,12 @@ interface UiState {
   /** Gizmo in trascinamento: le quote nella vista si nascondono finché non finisce (non si salva). */
   gizmoDragging: boolean;
   setGizmoDragging: (dragging: boolean) => void;
-  /** Menu contestuale aperto, con la posizione del puntatore in pixel della finestra (non si salva). */
-  contextMenu: { x: number; y: number } | null;
-  setContextMenu: (menu: { x: number; y: number } | null) => void;
+  /**
+   * Menu contestuale aperto, con la posizione del puntatore in pixel della finestra (non si salva). Con `point` (X e Y
+   * sul piano di stampa) è il menu del vuoto, che aggiunge una forma in quel punto; senza, quello dei comandi della selezione.
+   */
+  contextMenu: { x: number; y: number; point?: [number, number] } | null;
+  setContextMenu: (menu: { x: number; y: number; point?: [number, number] } | null) => void;
   toggleGhostOps: () => void;
   /** Apre la tendina indicata (chiudendo l'altra); `null` la chiude. */
   setToolbarMenu: (menu: ToolbarMenu | null) => void;
@@ -99,6 +109,9 @@ interface UiState {
   toggleTheme: () => void;
   cycleBed: () => void;
 }
+
+// Le preferenze salvate con il vecchio nome dell'app passano alla chiave nuova prima che lo store le legga
+migrateLocalKey(STORAGE.ui.legacy, STORAGE.ui.now);
 
 // Le preferenze dell'interfaccia restano in localStorage (non fanno parte della scena né dell'undo)
 export const useUiStore = create<UiState>()(
@@ -113,6 +126,8 @@ export const useUiStore = create<UiState>()(
       bedMode: 'full',
       bedSize: DEFAULT_BED,
       setBedSize: (size) => set({ bedSize: { width: cleanBedSide(size.width, get().bedSize.width), depth: cleanBedSide(size.depth, get().bedSize.depth) } }),
+      welcomeOpen: false,
+      setWelcomeOpen: (welcomeOpen) => set({ welcomeOpen }),
       bedDialogOpen: false,
       setBedDialogOpen: (bedDialogOpen) => set({ bedDialogOpen }),
       libraryTab: 'shapes3d',
@@ -145,7 +160,7 @@ export const useUiStore = create<UiState>()(
       cycleBed: () => set({ bedMode: NEXT_BED[get().bedMode] }),
     }),
     {
-      name: 'webcad:ui',
+      name: STORAGE.ui.now,
       // La modale del codice non si ripristina all'avvio
       partialize: (s) => ({ theme: s.theme, bedMode: s.bedMode, bedSize: s.bedSize, libraryTab: s.libraryTab, libraryGroupsOpen: s.libraryGroupsOpen, libraryFavorites: s.libraryFavorites, libraryRecent: s.libraryRecent }),
       // Si accettano solo i campi noti e validi: un valore salvato da una versione precedente (o rovinato) non rompe l'avvio
@@ -166,3 +181,6 @@ export const useUiStore = create<UiState>()(
     },
   ),
 );
+
+/** Lato maggiore del piano di stampa, aggiornato quando cambia (vedi `bedReach`). */
+export const useBedReach = (): number => useUiStore((s) => bedReach(s.bedSize));

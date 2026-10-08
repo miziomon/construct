@@ -24,6 +24,37 @@
   white-space: nowrap;
 }
 
+.dimension-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.dimension-lock {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 4px;
+  background: rgba(20, 23, 28, 0.88);
+  color: #fff;
+  cursor: pointer;
+
+  &[aria-pressed='true'] {
+    border-color: #4da3ff;
+    color: #4da3ff;
+  }
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.7;
+  }
+}
+
 .dimension-label {
   border: 1px solid rgba(255, 255, 255, 0.25);
   background: rgba(20, 23, 28, 0.88);

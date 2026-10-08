@@ -1,4 +1,4 @@
-# WebCAD: studio di fattibilità
+# Construct: studio di fattibilità
 
 Data: 5 ottobre 2026
 Stato: fase 1 (ricerca e valutazione), nessun codice scritto.
@@ -145,7 +145,7 @@ Extrude, inset, loop cut e knife richiedono una struttura half-edge e la selezio
 
 ## 5. Panorama dei concorrenti e delle tecnologie affini
 
-| Strumento | Cosa fa | Tecnologia | Rilevanza per WebCAD |
+| Strumento | Cosa fa | Tecnologia | Rilevanza per Construct |
 |---|---|---|---|
 | ManifoldCAD (manifoldcad.org) | Playground di scripting JS/TS, export GLB e 3MF | manifold-3d | Riferimento diretto per il kernel |
 | JSCAD / OpenJSCAD | CSG scritto in JS puro | BSP, V3 in alpha | Precedente JS, più lento e non manifold garantito |

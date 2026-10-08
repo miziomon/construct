@@ -15,14 +15,15 @@ export const sizeOfBox = (box: LocalBox): Vec3 => [box.max[0] - box.min[0], box.
  * Modifiche allo store per portare l'ingombro dell'oggetto a `value` mm lungo `axis` (la quota cliccata nella vista).
  * `box` è l'ingombro attuale nel sistema locale dell'oggetto. Restituisce null se la misura non è valida o il nodo non si
  * ridimensiona (raccordi e smussi). Le proporzioni bloccate e le forme a una sola misura (toro, dadi, testo) si
- * comportano come con il gizmo: gli altri assi seguono. La base resta dov'era: chi applica la patch chiama `queueKeepBase`.
+ * comportano come con il gizmo: gli altri assi seguono. Con `uniform` (il lucchetto delle quote) tutti gli assi scalano dello
+ * stesso fattore, qualunque sia la forma. La base resta dov'era: chi applica la patch chiama `queueKeepBase`.
  */
-export function resizeAxisPatch(node: SceneNode, box: LocalBox, axis: Axis, value: number): ResizePatch | null {
+export function resizeAxisPatch(node: SceneNode, box: LocalBox, axis: Axis, value: number, uniform = false): ResizePatch | null {
   const current = sizeOfBox(box)[axis];
   if (!Number.isFinite(value) || value < MIN_DIMENSION || !Number.isFinite(current) || current <= 0) return null;
   const f = value / current;
   /** Fattore sul solo asse indicato, 1 sugli altri. */
-  const only = (extra: Axis[] = []): Vec3 => [0, 1, 2].map((i) => (i === axis || extra.includes(i as Axis) ? f : 1)) as Vec3;
+  const only = (extra: Axis[] = []): Vec3 => [0, 1, 2].map((i) => (uniform || i === axis || extra.includes(i as Axis) ? f : 1)) as Vec3;
 
   switch (node.type) {
     case 'primitive':

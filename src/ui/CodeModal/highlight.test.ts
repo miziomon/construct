@@ -34,6 +34,6 @@ describe('tokenizeLine', () => {
   });
 
   it('un commento di sola riga è un unico segmento', () => {
-    expect(tokenizeLine('// Generato da WebCAD. Unità: millimetri.')).toEqual([{ kind: 'comment', text: '// Generato da WebCAD. Unità: millimetri.' }]);
+    expect(tokenizeLine('// Generato da Construct. Unità: millimetri.')).toEqual([{ kind: 'comment', text: '// Generato da Construct. Unità: millimetri.' }]);
   });
 });

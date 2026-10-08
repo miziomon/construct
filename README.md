@@ -1,4 +1,4 @@
-# WebCAD
+# Construct
 
 Editor CAD 3D nel browser pensato per la stampa 3D. Si costruisce il modello con forme, booleane e strumenti di dettaglio, si vede il risultato dal vivo e si esporta sia la mesh (STL, 3MF) sia il **codice OpenSCAD** equivalente, che si può aprire e modificare altrove.
 
@@ -14,10 +14,11 @@ Tutto gira nel browser: il calcolo geometrico usa [manifold-3d](https://github.c
 - **Serie** (lineare, griglia, circolare): il risultato è un gruppo parametrico "Ripetizione", si modificano i parametri e non le singole copie.
 - **Pattern**: fora un pezzo con celle **Voronoi casuali** riproducibili da un seme, **esagoni**, **cerchi**, **rombi** o **triangoli**, da una o più facce (anche scelte con il clic), passanti o a tasca, con parete, arrotondamento e margine regolabili. Un avviso segnala i calcoli lenti e l'anteprima semplificata li accelera.
 - **Codice OpenSCAD** sempre aggiornato, con `for()`, `offset()`, `hull()`, `rotate_extrude()` e le celle dei pattern già calcolate, così il risultato coincide con quello dell'app.
-- **Piano di stampa** configurabile (256 × 256 mm di default) dalla barra di stato, con i **preset delle stampanti** Bambu Lab (A1 mini, A1, P1S, P1P, X1C, H2D), Prusa (MK4S, CORE One, XL) e Creality (Ender-3 V3, K1, K1 Max, K2 Plus), e **Ridimensiona** su qualsiasi gruppo (unione, guscio, serie, pattern...) con il gizmo o dalle proprietà.
-- **Quote cliccabili**: l'oggetto selezionato mostra le misure X, Y e Z nella vista; un clic su una quota permette di digitare il valore in mm, senza passare dal pannello laterale.
-- **Menu contestuale** con il tasto destro: elenca solo i comandi applicabili alla selezione (con un solo oggetto niente Unisci, con due compaiono le booleane e Allinea).
-- **Barra strumenti a sezioni** (File, Trasforma, Combina, Modifica, Disponi, Oggetto, Vista), con il nome del gruppo sotto i pulsanti.
+- **Piano di stampa** configurabile (256 × 256 mm di default) dalla barra di stato, con una tendina delle stampanti (misura per prima, poi le stampanti che la hanno: Bambu Lab A1 mini, A1, P1S, P1P, X1C e H2D, Prusa, Creality) e **Ridimensiona** su qualsiasi gruppo (unione, guscio, serie, pattern...) con il gizmo o dalle proprietà.
+- **Quote cliccabili**: l'oggetto selezionato mostra le misure X, Y e Z nella vista; un clic su una quota permette di digitare il valore in mm, senza passare dal pannello laterale, e il lucchetto accanto le fa scalare tutte in proporzione.
+- **Menu contestuale** con il tasto destro: su un oggetto elenca solo i comandi che hanno senso per lui (Raggruppa con due o più oggetti, Separa su un gruppo, niente raccordi su una sfera...); nel vuoto propone di aggiungere una forma nel punto cliccato.
+- **Schermata di benvenuto** al primo avvio: progetto vuoto, partire da un cubo, importare un file (i modelli di esempio arriveranno).
+- **Barra strumenti a sezioni** (File, Trasforma, Combina, Modifica, Disponi, Oggetto, Vista), con il nome del gruppo sopra i pulsanti.
 - **Cronologia** con Annulla e Ripeti (un solo passo per operazione) e linea del tempo.
 - **Tooltip dettagliati** su ogni comando della barra: cosa fa, come si applica e, per i comandi più complessi, un'immagine di esempio.
 

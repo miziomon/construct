@@ -20,8 +20,9 @@ interface SceneState {
   /** Nome dell'operazione che ha prodotto la scena corrente: etichetta del passo nella timeline (vedi `labelled`). */
   op: string;
 
-  addPrimitive: (kind: PrimitiveKind) => void;
-  addShape2D: (kind: Shape2DKind) => void;
+  /** Aggiunge una forma 3D, appoggiata sul piatto: all'origine, o nel punto XY indicato (menu contestuale sul vuoto). */
+  addPrimitive: (kind: PrimitiveKind, at?: [number, number]) => void;
+  addShape2D: (kind: Shape2DKind, at?: [number, number]) => void;
   /** Aggiunge una forma Testo con il testo e il font dati (usata dalla tab Simboli), appoggiata sul piatto. */
   addText: (input: { text: string; font: string; origin?: 'symbol' | 'emoji'; label?: string }) => void;
   /** Aggiunge un disegno SVG importato come forma 2D estrusa (contorni in mm, centrati), appoggiata sul piatto. */
@@ -191,7 +192,7 @@ export const useSceneStore = create<SceneState>()(
       gizmoMode: 'select',
       op: 'Inizio',
 
-      addPrimitive: (kind) =>
+      addPrimitive: (kind, at) =>
         act(`Aggiungi ${PRIMITIVE_LABELS[kind]}`, (s) => {
           const id = newId();
           const node = {
@@ -203,7 +204,7 @@ export const useSceneStore = create<SceneState>()(
             position: [0, 0, 0] as Vec3,
           } as PrimitiveNode;
           // Appoggia la forma sul piatto: il punto più basso a Z = 0
-          node.position = [0, 0, halfHeight(node)];
+          node.position = [at?.[0] ?? 0, at?.[1] ?? 0, halfHeight(node)];
           // Ogni forma nuova ha un colore diverso e compare in cima all'elenco degli oggetti
           node.color = randomColor();
           s.scene.nodes[id] = node;
@@ -211,7 +212,7 @@ export const useSceneStore = create<SceneState>()(
           s.selection = [id];
         }),
 
-      addShape2D: (kind) =>
+      addShape2D: (kind, at) =>
         act(`Aggiungi ${SHAPE2D_LABELS[kind]}`, (s) => {
           const id = newId();
           const node = {
@@ -222,7 +223,7 @@ export const useSceneStore = create<SceneState>()(
             position: [0, 0, 0] as Vec3,
           } as Shape2DNode;
           // L'estrusione è centrata: la base tocca il piatto con Z = altezza / 2
-          node.position = [0, 0, halfHeight(node)];
+          node.position = [at?.[0] ?? 0, at?.[1] ?? 0, halfHeight(node)];
           node.color = randomColor();
           s.scene.nodes[id] = node;
           s.scene.rootIds.unshift(id);

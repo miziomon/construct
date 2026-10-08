@@ -35,6 +35,22 @@
     }
   }
 
+  // Benvenuto: più largo, senza intestazione, il contenuto disegna da sé lo sfondo
+  &--welcome {
+    width: min(640px, calc(100vw - #{$space-5 * 2}));
+    max-height: 92vh;
+    overflow: auto;
+    border-radius: 16px;
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
+  }
+
+  &__close--float {
+    position: absolute;
+    top: $space-3;
+    right: $space-3;
+    z-index: 2;
+  }
+
   &__header {
     display: flex;
     align-items: center;

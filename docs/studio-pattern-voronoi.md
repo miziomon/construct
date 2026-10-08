@@ -1,6 +1,6 @@
 # Studio di fattibilità: Applica pattern (Voronoi)
 
-Data: 7 ottobre 2026. Domanda: si può aggiungere a WebCAD un comando "Applica pattern" che tagli in un oggetto un pattern
+Data: 7 ottobre 2026. Domanda: si può aggiungere a Construct un comando "Applica pattern" che tagli in un oggetto un pattern
 Voronoi casuale, con i parametri principali modificabili (seme, numero di celle, spessore delle pareti, ...), mantenendo i
 tempi di calcolo da editor interattivo e il codice OpenSCAD esportabile?
 

@@ -24,7 +24,7 @@ export function boundsByRoot(): Record<string, Bounds> {
 }
 
 /** Punto più basso (Z) di ogni oggetto alla radice, dall'ingombro calcolato dal kernel. */
-function lowestZByRoot(): Record<string, number> {
+export function lowestZByRoot(): Record<string, number> {
   return Object.fromEntries(Object.entries(boundsByRoot()).map(([id, b]) => [id, b.min[2]]));
 }
 

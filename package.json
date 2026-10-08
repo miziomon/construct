@@ -1,13 +1,13 @@
 {
-  "name": "webcad",
+  "name": "construct",
   "private": true,
-  "version": "0.23.0",
+  "version": "0.24.0",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/miziomon/webcad.git"
+    "url": "git+https://github.com/miziomon/construct.git"
   },
-  "homepage": "https://github.com/miziomon/webcad#readme",
+  "homepage": "https://github.com/miziomon/construct#readme",
   "author": "Maurizio Pelizzone <maurizio@mavida.com>",
   "type": "module",
   "scripts": {

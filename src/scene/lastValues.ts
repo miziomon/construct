@@ -1,11 +1,12 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { FONTS } from './fontCatalog';
+import { migrateLocalKey, STORAGE } from '../storageMigration';
 
 /**
  * Ultimi valori inseriti dall'utente su una forma o su un pannello di dettaglio (raggio dello smusso, distanza dello
  * smusso angolare, dimensioni di un cubo, ...): le forme e gli strumenti nuovi partono da lì. Si salvano in
- * localStorage (chiave `webcad:last`) e non fanno parte della scena né della cronologia di Annulla.
+ * localStorage (chiave `construct:last`) e non fanno parte della scena né della cronologia di Annulla.
  *
  * Il contenuto di localStorage non è fidato: ogni valore passa da `isValid` sia quando si salva sia quando si legge,
  * quindi un valore rovinato o di un'altra versione viene scartato invece di rompere la creazione di una forma.
@@ -98,9 +99,12 @@ interface LastState {
   tools: Record<RememberedTool, Remembered>;
 }
 
+// I valori ricordati con il vecchio nome dell'app passano alla chiave nuova prima che lo store li legga
+migrateLocalKey(STORAGE.last.legacy, STORAGE.last.now);
+
 export const useLastValues = create<LastState>()(
   persist(() => ({ shapes: {}, tools: { edge: {}, shell: {} } }) as LastState, {
-    name: 'webcad:last',
+    name: STORAGE.last.now,
     version: 1,
     // Solo i dati noti, e validi: il localStorage può contenere di tutto
     merge: (saved, current) => {

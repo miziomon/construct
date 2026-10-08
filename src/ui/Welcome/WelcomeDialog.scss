@@ -1,0 +1,161 @@
+@use '../../styles/abstracts' as *;
+
+// Schermata di benvenuto: sfondo con la griglia del piano di stampa che sfuma, marchio, quattro schede
+.welcome {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 0 $space-5 $space-5;
+  // Alone morbido dall'alto, come una luce sul piano di lavoro
+  background:
+    radial-gradient(120% 90% at 50% -10%, color('accent-soft') 0%, transparent 60%),
+    color('panel');
+
+  &__hero {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: $space-5 0 $space-4;
+    text-align: center;
+
+    // Griglia sottile che si dissolve verso il basso
+    &::before {
+      content: '';
+      position: absolute;
+      inset: 0 (-$space-5);
+      z-index: 0;
+      background-image:
+        linear-gradient(color('border') 1px, transparent 1px),
+        linear-gradient(90deg, color('border') 1px, transparent 1px);
+      background-size: 28px 28px;
+      opacity: 0.45;
+      mask-image: linear-gradient(to bottom, #000 0%, transparent 90%);
+      -webkit-mask-image: linear-gradient(to bottom, #000 0%, transparent 90%);
+    }
+
+    > * {
+      position: relative;
+      z-index: 1;
+    }
+  }
+
+  &__mark {
+    border-radius: 14px;
+    box-shadow: 0 10px 28px rgba(20, 23, 28, 0.28), 0 0 0 1px rgba(77, 163, 255, 0.35);
+  }
+
+  &__title {
+    margin: $space-3 0 0;
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: color('text');
+  }
+
+  &__tagline {
+    margin: $space-1 0 0;
+    max-width: 460px;
+    font-size: 14px;
+    line-height: 1.45;
+    color: color('text-muted');
+  }
+
+  &__lead {
+    margin: $space-3 0 $space-3;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-align: center;
+    text-transform: uppercase;
+    color: color('text-muted');
+  }
+
+  &__grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: $space-3;
+
+    @media (max-width: 560px) {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  &__card {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: $space-1;
+    padding: $space-4;
+    border: 1px solid color('border');
+    border-radius: $radius-lg;
+    background: color('panel-raised');
+    color: color('text');
+    text-align: left;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+    @include focus-ring;
+
+    &:hover:not(:disabled) {
+      transform: translateY(-2px);
+      border-color: color('accent');
+      box-shadow: 0 10px 24px rgba(20, 40, 80, 0.16);
+    }
+
+    &:disabled {
+      cursor: default;
+      opacity: 0.55;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      transition: none;
+
+      &:hover:not(:disabled) {
+        transform: none;
+      }
+    }
+  }
+
+  &__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    margin-bottom: $space-1;
+    border-radius: $radius-md;
+    background: color('accent-soft');
+    color: color('accent');
+  }
+
+  &__card-title {
+    display: flex;
+    align-items: center;
+    gap: $space-2;
+    font-size: 15px;
+    font-weight: 700;
+  }
+
+  &__soon {
+    padding: 1px 7px;
+    border: 1px solid color('border');
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: color('text-muted');
+  }
+
+  &__card-text {
+    font-size: 12.5px;
+    line-height: 1.45;
+    color: color('text-muted');
+  }
+
+  &__foot {
+    margin: $space-4 0 0 !important;
+    font-size: 12px;
+    text-align: center;
+    color: color('text-muted');
+  }
+}

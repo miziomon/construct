@@ -10,7 +10,9 @@ export interface MeshAsset {
 }
 
 const assets = new Map<string, MeshAsset>();
-const idbKey = (id: string) => `webcad:asset:${id}`;
+const idbKey = (id: string) => `construct:asset:${id}`;
+/** Chiave dell'app quando si chiamava WebCAD: si legge ancora, così le mesh importate non vanno perse. */
+const legacyIdbKey = (id: string) => `webcad:asset:${id}`;
 
 export const getAsset = (id: string): MeshAsset | undefined => assets.get(id);
 
@@ -42,7 +44,7 @@ export async function loadAssets(ids: string[]): Promise<MeshAsset[]> {
     let asset = assets.get(id);
     if (!asset) {
       try {
-        const stored = await get<{ positions: Float32Array; indices: Uint32Array }>(idbKey(id));
+        const stored = await get<{ positions: Float32Array; indices: Uint32Array }>(idbKey(id)) ?? (await get<{ positions: Float32Array; indices: Uint32Array }>(legacyIdbKey(id)));
         if (stored) asset = { id, positions: stored.positions, indices: stored.indices };
       } catch {
         // IndexedDB non disponibile

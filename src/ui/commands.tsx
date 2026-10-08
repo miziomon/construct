@@ -1,8 +1,9 @@
 import { SquareArrowDown, AlignHorizontalJustifyStart, ArrowDownToLine, FlipHorizontal2, Ruler, Copy, Lock, Unlock, Group, MousePointer2, Move3d, Rotate3d, SquaresUnite, Scaling, ArrowUpFromLine, Trash2, Ungroup, CircleDashed } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { combineToBed, dropSelectionToBed } from '../kernel/placement';
+import { combineToBed, dropSelectionToBed, lowestZByRoot } from '../kernel/placement';
 import { isLocked, useSceneStore } from '../scene/store';
 import type { GizmoMode } from '../scene/store';
+import { isCutter } from '../scene/treatment';
 import type { Scene, SceneNode } from '../scene/types';
 import { canArray, useArrayTool } from './Array/arrayToolStore';
 import { toggleArray } from './Array/toggleArray';
@@ -126,6 +127,8 @@ export interface Command {
   dropdown?: ToolbarMenu;
   /** Il menu contestuale lo mostra. Le modalità del gizmo restano solo sulla barra. */
   menu: boolean;
+  /** Condizione in più per il menu (la barra usa solo `enabled`): nasconde i comandi che per questo oggetto non hanno senso. */
+  inMenu?: (c: CommandContext) => boolean;
 }
 
 /** Un solo strumento di bordo alla volta: il Guscio aperto si annulla, un secondo clic sullo stesso pulsante chiude. */
@@ -133,6 +136,21 @@ const toggleEdgeTool = (kind: 'fillet' | 'chamfer' | 'corner', c: CommandContext
   useShellTool.getState().cancel();
   return c.edgeTool === kind ? useEdgeTool.getState().cancel() : useEdgeTool.getState().start(kind);
 };
+
+/** Un solo oggetto selezionato, non un raccordo o uno smusso: su di lui hanno senso gli strumenti che lavorano sulle facce. */
+const singleSolid = (c: CommandContext): boolean => c.selection.length === 1 && !!c.single && !isCutter(c.single);
+
+/** Ha facce piane su cui lavorare (raccordi, smussi, appoggio): sfere e tori no. */
+const hasFlatFaces = (c: CommandContext): boolean => singleSolid(c) && !(c.single?.type === 'primitive' && (c.single.kind === 'sphere' || c.single.kind === 'torus'));
+
+/** Qualche oggetto selezionato non poggia sul piatto (il suo punto più basso non è a Z = 0). */
+const someOffBed = (c: CommandContext): boolean => {
+  const lowest = lowestZByRoot();
+  return c.rootSelection.some((id) => lowest[id] !== undefined && Math.abs(lowest[id]) > 0.001);
+};
+
+/** Comandi che restano per una selezione tutta bloccata: tutto il resto la modificherebbe. */
+const ALLOWED_WHEN_LOCKED: CommandId[] = ['lock', 'duplicate', 'measure'];
 
 const gizmo = (id: GizmoMode & CommandId, help: HelpKey, shortcut: string, Icon: typeof MousePointer2): Command => ({
   id,
@@ -164,11 +182,13 @@ export const COMMANDS: Record<CommandId, Command> = {
   hole: {
     id: 'hole', help: 'hole', shortcut: 'H', icon: (_c, size) => <CircleDashed size={size} />,
     enabled: (c) => c.hasSelection, active: (c) => c.allHoles, run: () => sceneState().toggleHoleSelected(), menu: true,
+    // Un raccordo o uno smusso è già un taglio: solido o foro non ha senso
+    inMenu: (c) => c.selection.every((id) => !isCutter(c.scene.nodes[id])),
   },
 
-  fillet: { id: 'fillet', help: 'fillet', shortcut: 'F', icon: (_c, size) => <EDGE_ICONS.fillet size={size} />, enabled: (c) => c.hasObjects, active: (c) => c.edgeTool === 'fillet', run: (c) => toggleEdgeTool('fillet', c), menu: true },
-  chamfer: { id: 'chamfer', help: 'chamfer', shortcut: 'S', icon: (_c, size) => <EDGE_ICONS.chamfer size={size} />, enabled: (c) => c.hasObjects, active: (c) => c.edgeTool === 'chamfer', run: (c) => toggleEdgeTool('chamfer', c), menu: true },
-  corner: { id: 'corner', help: 'corner', shortcut: 'A', icon: (_c, size) => <CORNER_ICONS.chamfer size={size} />, enabled: (c) => c.hasObjects, active: (c) => c.edgeTool === 'corner', run: (c) => toggleEdgeTool('corner', c), menu: true },
+  fillet: { id: 'fillet', help: 'fillet', shortcut: 'F', icon: (_c, size) => <EDGE_ICONS.fillet size={size} />, enabled: (c) => c.hasObjects, active: (c) => c.edgeTool === 'fillet', run: (c) => toggleEdgeTool('fillet', c), menu: true, inMenu: hasFlatFaces },
+  chamfer: { id: 'chamfer', help: 'chamfer', shortcut: 'S', icon: (_c, size) => <EDGE_ICONS.chamfer size={size} />, enabled: (c) => c.hasObjects, active: (c) => c.edgeTool === 'chamfer', run: (c) => toggleEdgeTool('chamfer', c), menu: true, inMenu: hasFlatFaces },
+  corner: { id: 'corner', help: 'corner', shortcut: 'A', icon: (_c, size) => <CORNER_ICONS.chamfer size={size} />, enabled: (c) => c.hasObjects, active: (c) => c.edgeTool === 'corner', run: (c) => toggleEdgeTool('corner', c), menu: true, inMenu: hasFlatFaces },
   shell: {
     id: 'shell', help: 'shell', shortcut: 'G', icon: (_c, size) => <GROUP_ICONS.shell size={size} />,
     enabled: (c) => c.shellActive || canShell(c.scene, c.selection), active: (c) => c.shellActive, run: () => toggleShell(), menu: true,
@@ -186,8 +206,8 @@ export const COMMANDS: Record<CommandId, Command> = {
     id: 'mirror', help: 'mirror', shortcut: 'Y', icon: (_c, size) => <FlipHorizontal2 size={size} />,
     enabled: (c) => c.unlockedRoots.length >= 1, run: () => useUiStore.getState().setToolbarMenu('mirror'), dropdown: 'mirror', menu: true,
   },
-  layflat: { id: 'layflat', help: 'layflat', shortcut: 'V', icon: (_c, size) => <SquareArrowDown size={size} />, enabled: (c) => c.hasObjects, active: (c) => c.layFlatActive, run: () => toggleLayFlat(), menu: true },
-  drop: { id: 'drop', help: 'drop', shortcut: 'B', icon: (_c, size) => <ArrowDownToLine size={size} />, enabled: (c) => c.rootSelection.length > 0, run: () => dropSelectionToBed(), menu: true },
+  layflat: { id: 'layflat', help: 'layflat', shortcut: 'V', icon: (_c, size) => <SquareArrowDown size={size} />, enabled: (c) => c.hasObjects, active: (c) => c.layFlatActive, run: () => toggleLayFlat(), menu: true, inMenu: hasFlatFaces },
+  drop: { id: 'drop', help: 'drop', shortcut: 'B', icon: (_c, size) => <ArrowDownToLine size={size} />, enabled: (c) => c.rootSelection.length > 0, run: () => dropSelectionToBed(), menu: true, inMenu: someOffBed },
   array: {
     id: 'array', help: 'array', shortcut: 'O', icon: (_c, size) => <GROUP_ICONS.array size={size} />,
     enabled: (c) => c.arrayActive || canArray(c.scene, c.selection), active: (c) => c.arrayActive, run: () => toggleArray(), menu: true,
@@ -215,5 +235,6 @@ export const helpOf = (cmd: Command, c: CommandContext): HelpKey => (typeof cmd.
 
 /** Comandi del menu contestuale: per gruppo, solo quelli che si possono applicare adesso (i gruppi vuoti spariscono). */
 export function applicableGroups(c: CommandContext): { label: string; commands: Command[] }[] {
-  return COMMAND_GROUPS.map(({ label, ids }) => ({ label, commands: ids.map((id) => COMMANDS[id]).filter((cmd) => cmd.menu && cmd.enabled(c)) })).filter((g) => g.commands.length > 0);
+  const shown = (cmd: Command) => cmd.menu && cmd.enabled(c) && (cmd.inMenu?.(c) ?? true) && (!c.allLocked || ALLOWED_WHEN_LOCKED.includes(cmd.id));
+  return COMMAND_GROUPS.map(({ label, ids }) => ({ label, commands: ids.map((id) => COMMANDS[id]).filter(shown) })).filter((g) => g.commands.length > 0);
 }

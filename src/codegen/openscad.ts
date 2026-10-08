@@ -510,7 +510,7 @@ function groupLines(scene: Scene, g: GroupNode, head: string[], depth: number): 
 export function sceneToOpenScad(scene: Scene): string {
   // Un `use <font.ttf>` per ogni font del testo: i file TTF stanno nella stessa cartella del codice (vedi l'export ZIP)
   const fontLines = fontsUsed(scene).map((f) => `use <${f.file}>;`);
-  const header = ['// Generato da WebCAD. Unità: millimetri.', ...(fontLines.length ? ['// I font usati dal testo (file .ttf) devono stare nella stessa cartella di questo file.', ...fontLines] : []), ''];
+  const header = ['// Generato da Construct. Unità: millimetri.', ...(fontLines.length ? ['// I font usati dal testo (file .ttf) devono stare nella stessa cartella di questo file.', ...fontLines] : []), ''];
   const roots = scene.rootIds.map((id) => scene.nodes[id]).filter((nd) => nd.mode === 'solid');
   if (!roots.length) return [...header, '// Scena vuota'].join('\n') + '\n';
   const lines = roots.flatMap((nd) => [...nodeLines(scene, nd, 0), '']);

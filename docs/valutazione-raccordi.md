@@ -1,6 +1,6 @@
 # Valutazione dei raccordi tra due superfici (stile Fusion 360)
 
-Data: 6 ottobre 2026. Domanda: si può offrire in WebCAD un comando "Raccordo" in cui l'utente seleziona due superfici
+Data: 6 ottobre 2026. Domanda: si può offrire in Construct un comando "Raccordo" in cui l'utente seleziona due superfici
 di un solido e l'app arrotonda lo spigolo tra le due con un raggio scelto (come in Fusion 360), mantenendo le quote
 esatte, tempi da editor interattivo (sotto 300 ms) e un codice OpenSCAD coerente?
 

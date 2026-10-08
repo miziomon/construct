@@ -11,10 +11,9 @@ import { isRatioLocked, lockedPatch, scalePatch, scalePercent } from '../../scen
 import { cornerSphere } from '../../scene/cornerProfile';
 import { EDGE_SEGMENTS, maxFilletRadius } from '../../scene/edgeProfile';
 import { CORNER_SPHERE_SEGMENTS, MAX_SEGMENTS, MIN_SEGMENTS, MIN_SPHERE_SEGMENTS, SEGMENT_PRESETS } from '../../scene/defaults';
-import { BED_SIZE } from '../../scene/types';
 import { isScaled, normalizeScale, scaleOf, setGroupScale } from '../../scene/groupScale';
 import { round } from '../../scene/math';
-import { useUiStore } from '../uiStore';
+import { bedReach, useBedReach, useUiStore } from '../uiStore';
 import type { CornerNode, EdgeNode, GroupNode, MeshNode, PrimitiveNode, SceneNode, Shape2DNode, ShellParams, Vec3 } from '../../scene/types';
 import { shellQuality } from '../../scene/shell';
 import { NumberField } from '../NumberField/NumberField';
@@ -61,6 +60,8 @@ export function PropertiesPanel() {
   // Metà piatto su X e Y: i cursori della posizione coprono tutto il piano
   const bedSize = useUiStore((s) => s.bedSize);
   const bedHalf = [bedSize.width / 2, bedSize.depth / 2];
+  // Lato massimo del piano: è il limite morbido dei cursori delle misure e dell'altezza (il piano non ha un'altezza propria)
+  const reach = bedReach(bedSize);
 
   if (selection.length === 0) return <p className="properties__empty">Seleziona un oggetto per modificarne le proprietà.</p>;
   if (!node) return <p className="properties__empty">{selection.length} oggetti selezionati. Ctrl+G li raggruppa (restano separati), U li unisce in un solo solido.</p>;
@@ -158,7 +159,7 @@ export function PropertiesPanel() {
             label={a}
             unit="mm"
             min={i === 2 ? -50 : -bedHalf[i]}
-            max={i === 2 ? BED_SIZE : bedHalf[i]}
+            max={i === 2 ? reach : bedHalf[i]}
             tooltip={[TIPS.posX, TIPS.posY, TIPS.posZ][i]}
             disabled={locked}
             value={node.position[i]}
@@ -232,6 +233,7 @@ export function PropertiesPanel() {
 /** Spessori di un Guscio già creato, modificabili dal vivo (stessi limiti del pannello dello strumento). */
 function ShellFields({ node, shell, patch, locked }: { node: GroupNode; shell: ShellParams; patch: (p: Partial<GroupNode>) => void; locked: boolean }) {
   const { wall, bottom } = shell;
+  const reach = useBedReach();
   const child = useSceneStore((s) => s.scene.nodes[node.children[0]]);
   // Senza cavità esatta (sfera, toro, mesh...) le pareti sono approssimate: lo si dice
   const quality = useSceneStore((s) => (child ? shellQuality(s.scene, child) : undefined));
@@ -246,7 +248,7 @@ function ShellFields({ node, shell, patch, locked }: { node: GroupNode; shell: S
         max={20}
         step={0.1}
         hardMin={0.1}
-        hardMax={BED_SIZE}
+        hardMax={reach}
         tooltip="Spessore delle pareti laterali, in mm."
         disabled={locked}
         value={wall}
@@ -259,7 +261,7 @@ function ShellFields({ node, shell, patch, locked }: { node: GroupNode; shell: S
         max={20}
         step={0.1}
         hardMin={0}
-        hardMax={BED_SIZE}
+        hardMax={reach}
         tooltip="Spessore del fondo, in mm. La cima resta sempre aperta."
         disabled={locked}
         value={bottom}
@@ -434,15 +436,17 @@ function GroupScaleFields({ node, patch, locked }: { node: GroupNode; patch: (p:
   );
 }
 
-/** Slider delle misure in mm: da 0,5 mm fino al lato del piatto, con il campo numerico che accetta anche valori maggiori. */
-const dimSlider = { min: 0.5, max: BED_SIZE, step: 0.5, hardMin: 0.1, hardMax: 2000, unit: 'mm' } as const;
+/** Slider delle misure in mm: da 0,5 mm fino al lato maggiore del piano, con il campo numerico che accetta anche valori maggiori. */
+const dimSlider = (reach: number) => ({ min: 0.5, max: reach, step: 0.5, hardMin: 0.1, hardMax: 2000, unit: 'mm' }) as const;
 
 function PrimitiveFields({ node, patch, locked }: { node: Extract<SceneNode, { type: 'primitive' }>; patch: (p: Partial<PrimitiveNode>) => void; locked: boolean }) {
-  const dim = (label: string, value: number, key: string, tooltip: string, hardMin = 0.1, max: number = BED_SIZE / 2) => (
+  const reach = useBedReach();
+  const dimBase = dimSlider(reach);
+  const dim = (label: string, value: number, key: string, tooltip: string, hardMin = 0.1, max: number = reach / 2) => (
     <SliderField
       key={key}
       label={label}
-      {...dimSlider}
+      {...dimBase}
       min={Math.max(hardMin, 0)}
       max={max}
       hardMin={hardMin}
@@ -457,9 +461,9 @@ function PrimitiveFields({ node, patch, locked }: { node: Extract<SceneNode, { t
     <SliderField
       key={key}
       label={label}
-      {...dimSlider}
+      {...dimBase}
       min={0.5}
-      max={BED_SIZE / 2}
+      max={reach / 2}
       hardMin={0.1}
       tooltip={tooltip}
       disabled={locked}
@@ -503,7 +507,7 @@ function PrimitiveFields({ node, patch, locked }: { node: Extract<SceneNode, { t
             <SliderField
               key={a}
               label={names[i]}
-              {...dimSlider}
+              {...dimBase}
               tooltip={tips[i]}
               disabled={locked}
               value={node.size[i]}
@@ -528,7 +532,7 @@ function PrimitiveFields({ node, patch, locked }: { node: Extract<SceneNode, { t
           {[
             dim('Raggio X', node.radius, 'radius', TIPS.radiusX),
             axisRadius('Raggio Y', node.radiusY ?? node.radius, node.radius, 'radiusY', TIPS.radiusY),
-            dim('Altezza', node.height, 'height', TIPS.height, 0.1, BED_SIZE),
+            dim('Altezza', node.height, 'height', TIPS.height, 0.1, reach),
             segments(node.segments),
           ]}
         </Section>
@@ -540,7 +544,7 @@ function PrimitiveFields({ node, patch, locked }: { node: Extract<SceneNode, { t
             axisRadius('Raggio Y', node.radiusY ?? Math.max(node.radiusBottom, node.radiusTop), Math.max(node.radiusBottom, node.radiusTop), 'radiusY', TIPS.radiusYCone),
             dim('Raggio ↓', node.radiusBottom, 'radiusBottom', TIPS.radiusBottom, 0),
             dim('Raggio ↑', node.radiusTop, 'radiusTop', TIPS.radiusTop, 0),
-            dim('Altezza', node.height, 'height', TIPS.height, 0.1, BED_SIZE),
+            dim('Altezza', node.height, 'height', TIPS.height, 0.1, reach),
             segments(node.segments),
           ]}
         </Section>
@@ -564,7 +568,7 @@ function PrimitiveFields({ node, patch, locked }: { node: Extract<SceneNode, { t
     case 'icosahedron':
       return (
         <Section title="Dimensioni">
-          {[dim('Dimensione', node.size, 'size', TIPS.polySize, 0.1, BED_SIZE), rounding(node.cornerRadius, maxPolyhedronRadius(node.size))]}
+          {[dim('Dimensione', node.size, 'size', TIPS.polySize, 0.1, reach), rounding(node.cornerRadius, maxPolyhedronRadius(node.size))]}
         </Section>
       );
   }
@@ -722,13 +726,14 @@ function fontGroups(current: string): [FontCategory, FontInfo[]][] {
 }
 
 function Shape2DFields({ node, patch, locked }: { node: Shape2DNode; patch: (p: Partial<Shape2DNode>) => void; locked: boolean }) {
+  const reach = useBedReach();
   const ratioLocked = isRatioLocked(node);
   /** Misura modificata: con il lucchetto chiuso le misure legate scalano dello stesso fattore, in un solo passo di Annulla. */
   const edit = (key: string, value: number) => patch((ratioLocked ? lockedPatch(node, key, value) : null) ?? ({ [key]: value } as Partial<Shape2DNode>));
   const slider = (label: string, value: number, key: string, tooltip: string, opts: { unit: string; min: number; max: number; step?: number; hardMin?: number; hardMax?: number }) => (
     <SliderField key={key} label={label} tooltip={tooltip} disabled={locked} value={value} onCommit={(v) => edit(key, v)} {...opts} />
   );
-  const length = { unit: 'mm', min: 0.5, max: BED_SIZE, step: 0.5, hardMin: 0.1, hardMax: 2000 };
+  const length = { unit: 'mm', min: 0.5, max: reach, step: 0.5, hardMin: 0.1, hardMax: 2000 };
   const rotational = isRotational(node);
   const revolve = revolveParams(node);
   /** Cambia il tipo di estrusione: al primo passaggio a Rotazionale scrive i valori calcolati (poi restano anche tornando a Lineare). */
@@ -798,13 +803,13 @@ function Shape2DFields({ node, patch, locked }: { node: Shape2DNode; patch: (p: 
           ]
         ) : node.kind === 'circle' ? (
           [
-              slider('Raggio X', node.radius, 'radius', TIPS.radiusX, { ...length, max: BED_SIZE / 2 }),
+              slider('Raggio X', node.radius, 'radius', TIPS.radiusX, { ...length, max: reach / 2 }),
               <SliderField
                 key="radiusY"
                 label="Raggio Y"
                 unit="mm"
                 min={0.5}
-                max={BED_SIZE / 2}
+                max={reach / 2}
                 step={0.5}
                 hardMin={0.1}
                 hardMax={2000}
@@ -868,7 +873,7 @@ function Shape2DFields({ node, patch, locked }: { node: Shape2DNode; patch: (p: 
         {rotational ? (
           <>
             {slider('Angolo', revolve.angle, 'revolveAngle', TIPS.revolveAngle, { unit: '°', min: 1, max: 360, step: 1, hardMin: 1, hardMax: 360 })}
-            {slider('Raggio', revolve.radius, 'revolveRadius', TIPS.revolveRadius, { unit: 'mm', min: 0, max: BED_SIZE, step: 0.5, hardMin: 0, hardMax: 2000 })}
+            {slider('Raggio', revolve.radius, 'revolveRadius', TIPS.revolveRadius, { unit: 'mm', min: 0, max: reach, step: 0.5, hardMin: 0, hardMax: 2000 })}
             {slider('Segmenti', revolve.segments, 'revolveSegments', TIPS.revolveSegments, { unit: '', min: 8, max: 128, step: 1, hardMin: 3, hardMax: 256 })}
           </>
         ) : (

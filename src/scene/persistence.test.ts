@@ -56,14 +56,21 @@ describe('file di progetto JSON', () => {
 
   it('il file è leggibile: formato, versione, scena e nessun dato di interfaccia', () => {
     const data = JSON.parse(sceneToJson(fullScene()));
-    expect(data.format).toBe('webcad-scene');
+    expect(data.format).toBe('construct-scene');
     expect(data.version).toBeGreaterThanOrEqual(3);
     expect(Object.keys(data).sort()).toEqual(['assets', 'format', 'scene', 'version']);
   });
 
+  it('un progetto salvato quando l\'app si chiamava WebCAD (formato webcad-scene) si apre ancora', () => {
+    const data = JSON.parse(sceneToJson(fullScene()));
+    data.format = 'webcad-scene';
+    const { scene } = sceneFromJson(JSON.stringify(data));
+    expect(scene.rootIds).toEqual(['t', 'u']);
+  });
+
   it('un file che non è un progetto è rifiutato con un messaggio', () => {
-    expect(() => sceneFromJson('{"a":1}')).toThrow('progetto WebCAD');
-    expect(() => sceneFromJson('non json')).toThrow('progetto WebCAD');
+    expect(() => sceneFromJson('{"a":1}')).toThrow('progetto Construct');
+    expect(() => sceneFromJson('non json')).toThrow('progetto Construct');
   });
 
   it('un progetto salvato con il gruppo dei trattamenti all\'origine viene sistemato all\'apertura', () => {

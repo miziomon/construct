@@ -8,7 +8,7 @@
     <script>
       // Applica il tema salvato prima del primo disegno, per evitare il lampo di tema sbagliato
       try {
-        var saved = JSON.parse(localStorage.getItem('webcad:ui') || '{}');
+        var saved = JSON.parse(localStorage.getItem('construct:ui') || localStorage.getItem('webcad:ui') || '{}');
         var theme = saved && saved.state && saved.state.theme === 'dark' ? 'dark' : 'light';
         document.documentElement.dataset.theme = theme;
         if (theme === 'dark') document.querySelector('meta[name="theme-color"]').setAttribute('content', '#14171c');
@@ -16,7 +16,7 @@
         document.documentElement.dataset.theme = 'light';
       }
     </script>
-    <title>WebCAD v%APP_VERSION%</title>
+    <title>Construct v%APP_VERSION%</title>
   </head>
   <body>
     <div id="root"></div>

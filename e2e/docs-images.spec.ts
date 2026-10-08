@@ -42,7 +42,7 @@ async function help(page: Page, name: string) {
 /** Aggiunge una primitiva con posizione e misure e restituisce il suo id. */
 async function add(page: Page, kind: string, patch: Record<string, unknown>): Promise<string> {
   return page.evaluate(([k, p]) => {
-    const store = window.__webcad!.store;
+    const store = window.__construct!.store;
     store.getState().addPrimitive(k as never);
     const id = store.getState().selection[0];
     store.getState().updateNode(id, p as never);
@@ -50,7 +50,7 @@ async function add(page: Page, kind: string, patch: Record<string, unknown>): Pr
   }, [kind, patch] as const);
 }
 
-const select = (page: Page, ids: string[]) => page.evaluate((i) => window.__webcad!.store.getState().select(i), ids);
+const select = (page: Page, ids: string[]) => page.evaluate((i) => window.__construct!.store.getState().select(i), ids);
 const click = async (page: Page, p: Vec) => {
   const at = await project(page, p);
   await page.mouse.move(at.x, at.y);
@@ -65,7 +65,7 @@ test.describe('immagini di esempio', () => {
 
   test('raccordo, smusso e smusso angolare', async ({ page }) => {
     for (const [key, name] of [['f', 'fillet'], ['s', 'chamfer']] as const) {
-      await page.evaluate(() => window.__webcad!.store.getState().clear());
+      await page.evaluate(() => window.__construct!.store.getState().clear());
       await addShape(page, 'Cubo');
       await frame(page, [0, 0, 10], 90);
       await page.keyboard.press(key);
@@ -79,7 +79,7 @@ test.describe('immagini di esempio', () => {
       await help(page, name);
       await page.keyboard.press('Escape');
     }
-    await page.evaluate(() => window.__webcad!.store.getState().clear());
+    await page.evaluate(() => window.__construct!.store.getState().clear());
     await addShape(page, 'Cubo');
     await frame(page, [0, 0, 10], 90);
     await page.keyboard.press('a');
@@ -102,7 +102,7 @@ test.describe('immagini di esempio', () => {
     await help(page, 'array');
     await page.keyboard.press('Escape');
 
-    await page.evaluate(() => window.__webcad!.store.getState().clear());
+    await page.evaluate(() => window.__construct!.store.getState().clear());
     await add(page, 'box', { size: [70, 50, 5], position: [0, 0, 2.5] });
     await frame(page, [28, 0, 2.5], 140);
     await page.keyboard.press('z');
@@ -130,14 +130,14 @@ test.describe('immagini di esempio', () => {
     await page.keyboard.press('Control+z');
 
     await select(page, [a, b]);
-    await page.evaluate(() => window.__webcad!.store.getState().combineSelected('difference'));
+    await page.evaluate(() => window.__construct!.store.getState().combineSelected('difference'));
     await settled(page);
     await page.keyboard.press('x');
     await page.waitForTimeout(300);
     await help(page, 'ghost');
     await page.keyboard.press('x');
 
-    await page.evaluate(() => window.__webcad!.store.getState().clear());
+    await page.evaluate(() => window.__construct!.store.getState().clear());
     await add(page, 'box', { size: [20, 20, 20], position: [0, 0, 10] });
     await frame(page, [0, 0, 10], 90);
     await page.keyboard.press('i');
@@ -146,7 +146,7 @@ test.describe('immagini di esempio', () => {
     await help(page, 'measure');
     await page.keyboard.press('Escape');
 
-    await page.evaluate(() => window.__webcad!.store.getState().clear());
+    await page.evaluate(() => window.__construct!.store.getState().clear());
     await add(page, 'box', { size: [20, 20, 20], position: [0, 0, 20], rotation: [25, 20, 0] });
     await frame(page, [0, 0, 18], 100);
     await page.keyboard.press('v');
@@ -173,7 +173,7 @@ test.describe('immagini di esempio', () => {
     await page.screenshot({ path: 'docs/images/codice-openscad.png' });
     await page.keyboard.press('c');
 
-    await page.evaluate(() => window.__webcad!.store.getState().clear());
+    await page.evaluate(() => window.__construct!.store.getState().clear());
     await add(page, 'box', { size: [20, 20, 20], position: [0, 0, 10] });
     await frame(page, [40, 0, 10], 190);
     await page.keyboard.press('o');

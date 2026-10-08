@@ -21,11 +21,11 @@ export function download(data: BlobPart, filename: string, type: string): void {
 const scene = () => useSceneStore.getState().scene;
 
 export async function exportStl(): Promise<void> {
-  download(await getKernel().exportStl(scene()), 'webcad.stl', 'model/stl');
+  download(await getKernel().exportStl(scene()), 'construct.stl', 'model/stl');
 }
 
 export async function export3mf(): Promise<void> {
-  download(await getKernel().export3mf(scene()), 'webcad.3mf', 'model/3mf');
+  download(await getKernel().export3mf(scene()), 'construct.3mf', 'model/3mf');
 }
 
 /**
@@ -38,24 +38,24 @@ export async function exportScad(): Promise<void> {
   const code = sceneToOpenScad(scene());
   const fonts = fontsUsed(scene());
   if (fonts.length === 0) {
-    download(code, 'webcad.scad', 'text/plain');
+    download(code, 'construct.scad', 'text/plain');
     return;
   }
   try {
-    const files: Record<string, Uint8Array> = { 'webcad.scad': strToU8(code) };
+    const files: Record<string, Uint8Array> = { 'construct.scad': strToU8(code) };
     for (const font of fonts) {
       const response = await fetch(font.url);
       if (!response.ok) throw new Error(`${font.label}: ${response.status}`);
       files[font.file] = new Uint8Array(await response.arrayBuffer());
     }
-    download(zipSync(files), 'webcad.zip', 'application/zip');
+    download(zipSync(files), 'construct.zip', 'application/zip');
   } catch (err) {
     notify.error(err instanceof Error ? `Impossibile scaricare i font per lo ZIP: ${err.message}` : 'Impossibile creare lo ZIP con i font.');
   }
 }
 
 /** Nome predefinito del file di progetto. */
-const DEFAULT_PROJECT_NAME = 'webcad-progetto.json';
+const DEFAULT_PROJECT_NAME = 'construct-progetto.json';
 
 /**
  * File di progetto corrente. L'handle (solo Chrome ed Edge, dal selettore di file) permette a "Salva" di riscrivere lo
@@ -85,7 +85,7 @@ export async function saveProjectAs(): Promise<void> {
     try {
       const handle = await window.showSaveFilePicker({
         suggestedName: projectName,
-        types: [{ description: 'Progetto WebCAD', accept: { 'application/json': ['.json'] } }],
+        types: [{ description: 'Progetto Construct', accept: { 'application/json': ['.json'] } }],
       });
       await writeProject(handle);
       projectHandle = handle;

@@ -12,6 +12,21 @@
   background: color('panel');
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
 
+  // Il menu delle forme è lungo: scorre dentro la finestra
+  &--add {
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
+  }
+
+  &__heading {
+    padding: 6px $space-2 2px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: color('text-muted');
+  }
+
   &__item {
     display: flex;
     align-items: center;

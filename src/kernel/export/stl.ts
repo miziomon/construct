@@ -7,7 +7,7 @@ export function writeStl(positions: Float32Array, indices: Uint32Array): Uint8Ar
   const buffer = new ArrayBuffer(84 + triCount * 50);
   const view = new DataView(buffer);
   // Header testuale (ignorato dagli slicer) e numero di triangoli
-  new TextEncoder().encodeInto('WebCAD binary STL', new Uint8Array(buffer, 0, 80));
+  new TextEncoder().encodeInto('Construct binary STL', new Uint8Array(buffer, 0, 80));
   view.setUint32(80, triCount, true);
 
   let offset = 84;

@@ -80,8 +80,8 @@ function CommandButton({ cmd, ctx }: { cmd: Command; ctx: CommandContext }) {
 function Section({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="toolbar__section" role="group" aria-label={label}>
-      <div className="toolbar__group">{children}</div>
       <span className="toolbar__section-label" aria-hidden="true">{label}</span>
+      <div className="toolbar__group">{children}</div>
     </div>
   );
 }
@@ -94,9 +94,7 @@ export function Toolbar() {
 
   return (
     <header className="toolbar">
-      <div className="toolbar__brand">
-        WebCAD <span className="toolbar__version">v{__APP_VERSION__}</span>
-      </div>
+      <div className="toolbar__brand">Construct</div>
 
       <Section label="File">
         <ToolbarButton help="new" shortcut="N" onClick={() => void newProject()}><FilePlus size={18} /></ToolbarButton>

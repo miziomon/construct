@@ -1,6 +1,6 @@
 # Changelog
 
-Tutte le modifiche rilevanti di WebCAD sono documentate in questo file.
+Tutte le modifiche rilevanti di Construct sono documentate in questo file.
 
 Il formato segue [Keep a Changelog 1.1.0](https://keepachangelog.com/it-IT/1.1.0/) e il progetto
 adotta il [Semantic Versioning](https://semver.org/lang/it/). Finché la versione maggiore è 0, le nuove
@@ -11,12 +11,30 @@ funzionalità incrementano la minor (0.x.0) e le correzioni la patch (0.x.y).
 1. Sposta le voci di `[Non rilasciato]` in una nuova sezione `[x.y.z] - AAAA-MM-GG`.
 2. Aggiorna `version` in `package.json`.
 3. Verifica con `npm run typecheck && npm test && npm run build`.
-4. Commit `chore(release): x.y.z` e tag annotato `vx.y.z` (`git tag -a vx.y.z -m "WebCAD x.y.z"`).
+4. Commit `chore(release): x.y.z` e tag annotato `vx.y.z` (`git tag -a vx.y.z -m "Construct x.y.z"`).
 
 I messaggi di commit seguono i [Conventional Commits](https://www.conventionalcommits.org/it/v1.0.0/)
 (`feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `test:`).
 
 ## [Non rilasciato]
+
+## [0.24.0] - 2026-10-08
+
+### Aggiunto
+- **Schermata di benvenuto** al primo avvio (nessun dato salvato dall'app, né con il nome attuale né con il vecchio, e nessuna scena da ripristinare): marchio, tagline e quattro schede, cioè Nuovo progetto (vuoto), Parti da un cubo, Importa (STL, 3MF, SVG) e Modelli di esempio, quest'ultima visibile ma non ancora selezionabile ("Presto"). Si chiude con la X o con Esc e non ricompare più. Funziona in chiaro e in scuro.
+- **Menu contestuale sul vuoto**: il tasto destro fuori dagli oggetti apre un menu per aggiungere una forma 3D o 2D **nel punto cliccato** sul piano di stampa (il clic deseleziona).
+- **Lucchetto delle quote**: accanto alla quota dell'altezza, chiuso fa scalare tutti gli assi dello stesso fattore. Usa lo stesso campo del pulsante Proporzioni delle proprietà; sui gruppi vale solo qui, sulle mesh è sempre chiuso.
+
+### Modificato
+- **WebCAD si chiama ora Construct**: nome nell'app (titolo, barra, About, aggiornamenti, manifest della PWA), nei file scaricati (`construct.stl`, `.3mf`, `.scad`, `.zip`, `construct-progetto.json`), nell'intestazione del codice OpenSCAD, dell'STL e del 3MF, nel repo GitHub (`miziomon/construct`) e nei documenti. Le voci storiche di questo file restano com'erano.
+- **Migrazione dei dati**: preferenze, ultimi valori usati, scena salvata nel browser e mesh importate passano alle chiavi `construct:*` al primo avvio, senza perdere nulla (le vecchie chiavi restano). I progetti `.json` salvati come `webcad-scene` si aprono ancora; i nuovi hanno formato `construct-scene`.
+- Il **numero di versione non sta più accanto al logo** nella barra (resta nel titolo, nella barra di stato e in About): più spazio per i comandi.
+- I nomi delle sezioni della barra stanno **sopra** i pulsanti.
+- **Piano di stampa**: i preset sono una tendina con la misura per prima e poi le stampanti che la hanno (ad esempio "256 × 256 mm · Bambu Lab A1, P1S, P1P, X1C"), una voce per misura anche tra marche diverse (la Prusa MINI+ sta con la A1 mini); con misure diverse da ogni preset la tendina mostra "Misure personalizzate".
+- **Menu contestuale sull'oggetto più intelligente**: mostra solo ciò che ha senso. Raggruppa, Unisci, Inviluppo e Allinea con due o più oggetti; Separa solo su un gruppo; Raccordo, Smusso, Smusso angolare e Appoggia su una faccia solo con un oggetto singolo che ha facce piane (non sfere, tori, raccordi o smussi); Appoggia sul piatto solo se l'oggetto non ci poggia già; un oggetto bloccato offre solo Sblocca, Duplica e Misura.
+
+### Corretto
+- I cursori delle misure, delle altezze e della posizione Z non hanno più il limite fisso di 256 mm: seguono il lato maggiore del piano di stampa configurato.
 
 ## [0.23.0] - 2026-10-08
 

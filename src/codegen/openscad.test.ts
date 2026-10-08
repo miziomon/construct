@@ -42,7 +42,7 @@ describe('sceneToOpenScad', () => {
 
   it('genera difference() con solid e hole e trasformazioni nell ordine corretto', () => {
     expect(sceneToOpenScad(scene())).toMatchInlineSnapshot(`
-      "// Generato da WebCAD. Unità: millimetri.
+      "// Generato da Construct. Unità: millimetri.
 
       // Gruppo
       translate([5, 0, 0])

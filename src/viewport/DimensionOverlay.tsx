@@ -1,9 +1,11 @@
 import { useMemo, useRef, useState } from 'react';
 import { Html, Line } from '@react-three/drei';
+import { Lock, Unlock } from 'lucide-react';
 import { useResultStore } from '../kernel/useKernel';
 import { queueKeepBase } from '../kernel/placement';
 import { apply, eulerToMatrix, round } from '../scene/math';
 import { MIN_DIMENSION, resizeAxisPatch, sizeOfBox, type Axis } from '../scene/dimensions';
+import { isRatioLocked } from '../scene/resize';
 import { localBounds } from '../scene/shell';
 import { isLocked, useSceneStore, worldTransform } from '../scene/store';
 import type { Vec3 } from '../scene/types';
@@ -93,6 +95,21 @@ function Quote({ axis, value, readOnly, onCommit }: { axis: Axis; value: number;
   );
 }
 
+/** Lucchetto accanto alle quote: chiuso, cambiando una misura anche le altre scalano dello stesso fattore. */
+function RatioLock({ closed, readOnly, forced, onToggle }: { closed: boolean; readOnly: boolean; forced: boolean; onToggle: () => void }) {
+  const Icon = closed ? Lock : Unlock;
+  const title = forced
+    ? 'Proporzioni sempre bloccate: una mesh importata si scala solo in modo uniforme'
+    : closed
+      ? 'Proporzioni bloccate: cambiando una quota cambiano anche le altre. Clic per sbloccare'
+      : 'Proporzioni libere: ogni quota cambia da sola. Clic per bloccare';
+  return (
+    <button type="button" className="dimension-lock" aria-label={closed ? 'Proporzioni bloccate' : 'Proporzioni libere'} aria-pressed={closed} title={title} disabled={readOnly || forced} onClick={onToggle}>
+      <Icon size={13} />
+    </button>
+  );
+}
+
 /**
  * Quote dell'oggetto selezionato: larghezza (X), profondità (Y) e altezza (Z) del suo ingombro nel sistema locale,
  * disegnate accanto allo spigolo. Un clic su una quota permette di digitare la misura in mm: l'oggetto si ridimensiona
@@ -136,11 +153,14 @@ export function DimensionOverlay() {
   };
   const size = sizeOfBox(box);
   const locked = isLocked(scene, id);
+  // Proporzioni: stesso campo del pulsante "Proporzioni" delle proprietà (per i gruppi vale solo qui); una mesh è sempre uniforme
+  const forced = node.type === 'mesh';
+  const ratioClosed = forced || (node.type === 'primitive' || node.type === 'shape2d' ? isRatioLocked(node) : node.lockRatio === true);
 
   const commit = (axis: Axis, value: number) => {
     // Nessuna modifica (e nessun passo di Annulla) se la misura non cambia
     if (Math.abs(value - size[axis]) < 0.005) return;
-    const patch = resizeAxisPatch(node, box, axis, value);
+    const patch = resizeAxisPatch(node, box, axis, value, ratioClosed);
     if (!patch) return;
     // Come dal pannello: la base dell'oggetto resta dov'era (sul piatto o impilata)
     queueKeepBase(id);
@@ -159,7 +179,11 @@ export function DimensionOverlay() {
           <group key={axis}>
             <Line points={[a, b]} color={AXES[axis].color} lineWidth={1.5} depthTest={false} renderOrder={4} raycast={() => null} />
             <Html position={mid} center zIndexRange={[5, 0]} style={{ pointerEvents: 'none' }}>
-              <Quote key={`${id}-${axis}-${size[axis]}`} axis={axis} value={size[axis]} readOnly={locked} onCommit={(v) => commit(axis, v)} />
+              <span className="dimension-row">
+                <Quote key={`${id}-${axis}-${size[axis]}`} axis={axis} value={size[axis]} readOnly={locked} onCommit={(v) => commit(axis, v)} />
+                {/* Un solo lucchetto per tutte le quote, accanto a quella dell'altezza */}
+                {axis === 2 && <RatioLock closed={ratioClosed} readOnly={locked} forced={forced} onToggle={() => updateNode(id, { lockRatio: !ratioClosed } as never)} />}
+              </span>
             </Html>
           </group>
         );

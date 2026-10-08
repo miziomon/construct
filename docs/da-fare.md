@@ -1,6 +1,6 @@
 # Cose da fare
 
-Data: 7 ottobre 2026. Obiettivo: tenere in un solo posto le funzioni ancora da aggiungere a WebCAD, in ordine di priorità
+Data: 7 ottobre 2026. Obiettivo: tenere in un solo posto le funzioni ancora da aggiungere a Construct, in ordine di priorità
 per un uso orientato alla stampa 3D, dal confronto con OpenSCAD, Fusion 360, Blender e Tinkercad.
 Si aggiorna a ogni funzione completata (colonna Stato) e a ogni nuova idea.
 
@@ -77,7 +77,8 @@ Primo passo economico alla Tinkercad: **Duplica e ripeti** (Ctrl+D ripete l'ulti
 ## Idee minori
 
 - Quote tra oggetti (distanza tra due oggetti o tra un oggetto e il piatto, da digitare per spostarli) e quote sulle singole facce o sui fori: oggi le quote sono solo le tre dimensioni dell'ingombro.
-- Menu contestuale anche sul vuoto della vista (Incolla, vista, aggiungi forma) e sulle righe dell'elenco oggetti.
+- Menu contestuale del vuoto con più voci (Incolla, viste, Importa) e menu sulle righe dell'elenco oggetti.
+- Schermata di benvenuto: modelli di esempio (la scheda c'è ma non è ancora selezionabile) e l'elenco dei progetti recenti.
 - Preset del piano: altre stampanti (Anycubic, Elegoo, Voron) e preset salvati dall'utente.
 - Ripetizione: "Rendi indipendenti" (Separa produce N oggetti veri, uno per copia), serie lungo un percorso o una curva, passo diverso per ogni asse nella lineare con angolo, copie che seguono un oggetto di riferimento, Ctrl+D che ripete l'ultimo spostamento (Duplica e ripeti di Tinkercad).
 - Estrusione rotazionale: opzione simmetrica (come Fusion, da -angolo/2 a +angolo/2) e passo elicoidale (come Blender Screw).

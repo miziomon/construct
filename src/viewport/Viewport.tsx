@@ -1,5 +1,6 @@
-import { Suspense, useEffect, useMemo } from 'react';
+import { Suspense, useEffect, useMemo, useRef } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
+import type { RootState } from '@react-three/fiber';
 import { GizmoHelper, GizmoViewport, OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { isLocked, useSceneStore } from '../scene/store';
@@ -21,6 +22,8 @@ import { useArrayTool } from '../ui/Array/arrayToolStore';
 import { usePatternTool } from '../ui/Pattern/patternToolStore';
 import { PatternOverlay } from './PatternOverlay';
 import { PlacementPreview } from './PlacementPreview';
+import { useUiStore } from '../ui/uiStore';
+import { round } from '../scene/math';
 import { DimensionOverlay } from './DimensionOverlay';
 import './Viewport.scss';
 
@@ -45,7 +48,17 @@ function E2EBridge() {
   return null;
 }
 
+/** Passa fuori dal Canvas lo stato di R3F (camera e canvas), che serve per trasformare un clic in un punto del piano. */
+function StateProbe({ target }: { target: { current: RootState | null } }) {
+  const state = useThree();
+  useEffect(() => {
+    target.current = state;
+  });
+  return null;
+}
+
 export function Viewport() {
+  const three = useRef<RootState | null>(null);
   const meshes = useResultStore((s) => s.meshes);
   const selection = useSceneStore((s) => s.selection);
   const select = useSceneStore((s) => s.select);
@@ -76,6 +89,21 @@ export function Viewport() {
   const gizmoId =
     !edgeToolActive && !shellToolActive && !measureActive && !layFlatActive && !arrayActive && !patternActive && gizmoMode !== 'select' && selection.length === 1 && rootIds.includes(selection[0]) && !isLocked(scene, selection[0]) ? selection[0] : undefined;
 
+  /** Tasto destro nel vuoto: apre il menu delle forme, con il punto del piano di stampa (Z = 0) sotto il puntatore. */
+  const openAddMenu = (e: MouseEvent) => {
+    const state = three.current;
+    if (!state) return;
+    const rect = state.gl.domElement.getBoundingClientRect();
+    state.raycaster.setFromCamera(new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1), state.camera);
+    const hit = state.raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), new THREE.Vector3());
+    // La forma sta sempre dentro il piano; se il raggio non lo incontra (vista radente) parte dall'origine
+    const { width, depth } = useUiStore.getState().bedSize;
+    const clamp = (v: number, half: number) => round(Math.max(-half, Math.min(half, v)), 1);
+    const point: [number, number] = hit ? [clamp(hit.x, width / 2), clamp(hit.y, depth / 2)] : [0, 0];
+    select([]);
+    useUiStore.getState().setContextMenu({ x: e.clientX, y: e.clientY, point });
+  };
+
   return (
     <div className="viewport" onContextMenu={(e) => e.preventDefault()}>
       <SelectionActions />
@@ -95,7 +123,11 @@ export function Viewport() {
         gl={{ antialias: true }}
         // Click nel vuoto: deseleziona
         // (con Raccordo o Smusso attivi un clic nel vuoto non deve toccare la selezione)
-        onPointerMissed={(e) => e.button === 0 && !edgeToolActive && !shellToolActive && !measureActive && !layFlatActive && !arrayActive && !patternActive && select([])}
+        onPointerMissed={(e) => {
+          // Tasto destro nel vuoto (con uno strumento aperto l'oggetto è in anteprima: niente menu)
+          if (e.button === 2 && !edgeToolActive && !shellToolActive && !measureActive && !layFlatActive && !arrayActive && !patternActive) openAddMenu(e);
+          else if (e.button === 0 && !edgeToolActive && !shellToolActive && !measureActive && !layFlatActive && !arrayActive && !patternActive) select([]);
+        }}
       >
         <color attach="background" args={[palette.background]} />
         {/* Luci semplici, senza mappe ambiente da scaricare: l'app resta utilizzabile offline */}
@@ -103,6 +135,7 @@ export function Viewport() {
         <directionalLight position={[150, -200, 300]} intensity={1.6} />
         <directionalLight position={[-200, 150, 120]} intensity={0.5} />
 
+        <StateProbe target={three} />
         {import.meta.env.MODE === 'e2e' && <E2EBridge />}
         <Bed />
         <EdgeToolOverlay />

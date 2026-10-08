@@ -39,8 +39,9 @@ const SHORTCUTS: { title: string; rows: [string, string][] }[] = [
       ['J', 'Inviluppo convesso: la forma più piccola e senza concavità che contiene gli oggetti selezionati'],
       ['F2', 'Rinomina l\'oggetto selezionato'],
       ['Alt+clic', 'Seleziona il singolo oggetto di un gruppo'],
-      ['Clic destro', 'Menu con i soli comandi applicabili alla selezione (se l\'oggetto non è selezionato lo seleziona)'],
-      ['Clic su una quota', 'Le quote X, Y e Z dell\'oggetto selezionato: si digita la misura in mm (Invio applica, Esc annulla)'],
+      ['Clic destro su un oggetto', 'Menu con i soli comandi applicabili alla selezione (se l\'oggetto non è selezionato lo seleziona)'],
+      ['Clic destro nel vuoto', 'Menu per aggiungere una forma 3D o 2D nel punto cliccato'],
+      ['Clic su una quota', 'Le quote X, Y e Z dell\'oggetto selezionato: si digita la misura in mm (Invio applica, Esc annulla); il lucchetto accanto fa scalare tutti gli assi insieme'],
       ['Ctrl+Maiusc+G', 'Separa il gruppo o l\'unione'],
       ['H', 'Solido / Foro'],
       ['L', 'Blocca / Sblocca'],
@@ -179,7 +180,7 @@ export default function AppMenuPanels({ panel, run }: { panel: Panel; run: (acti
 
       {panel === 'about' && (
           <>
-            <p><strong>WebCAD</strong> <span data-testid="about-version">v{__APP_VERSION__}</span></p>
+            <p><strong>Construct</strong> <span data-testid="about-version">v{__APP_VERSION__}</span></p>
             <p>Modellazione 3D da primitive con operazioni booleane, pensata per chi stampa in 3D. Piatto di stampa modificabile dalla barra di stato (256 × 256 mm di default), export STL e 3MF.</p>
             <p>Costruito con React, three.js e manifold-3d. Sviluppato da MAVIDA.</p>
           </>

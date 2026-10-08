@@ -1,12 +1,14 @@
 import { expect, type Page } from '@playwright/test';
 
 /** Apre l'app con un database pulito e attende che il kernel sia pronto. */
-export async function openApp(page: Page): Promise<void> {
+export async function openApp(page: Page, options: { welcome?: boolean } = {}): Promise<void> {
   // Il selettore di file del sistema non si può pilotare: si prova il ramo senza API (finestra del nome + download);
   // i test che ne hanno bisogno mettono un finto showSaveFilePicker
   await page.addInitScript(() => {
     (window as { showSaveFilePicker?: unknown }).showSaveFilePicker = undefined;
   });
+  // La schermata di benvenuto compare al primo avvio: le prove la considerano già vista, salvo quelle che la provano
+  if (!options.welcome) await page.addInitScript(() => localStorage.setItem('construct:welcomed', '1'));
   await page.goto('/');
   // Database pulito: la scena salvata da un test precedente non deve influenzare il successivo
   await page.evaluate(async () => {
@@ -16,13 +18,13 @@ export async function openApp(page: Page): Promise<void> {
   });
   await page.reload();
   await expect(page.locator('canvas')).toBeVisible();
-  await page.waitForFunction(() => !!window.__webcad && !!window.__r3f);
+  await page.waitForFunction(() => !!window.__construct && !!window.__r3f);
 }
 
 /** Aspetta che il kernel abbia terminato il calcolo e che i risultati riflettano la scena. */
 export async function settled(page: Page): Promise<void> {
   await page.waitForFunction(() => {
-    const w = window.__webcad!;
+    const w = window.__construct!;
     const roots = w.store.getState().scene.rootIds.length;
     const { meshes, busy } = w.results.getState();
     // Un Raggruppa ha una mesh per figlio: si contano le radici distinte, non le mesh
@@ -44,7 +46,7 @@ export async function addShape(page: Page, label: string): Promise<void> {
   await settled(page);
 }
 
-export const sceneState = (page: Page) => page.evaluate(() => JSON.parse(JSON.stringify(window.__webcad!.store.getState().scene)));
+export const sceneState = (page: Page) => page.evaluate(() => JSON.parse(JSON.stringify(window.__construct!.store.getState().scene)));
 
 /** Punto dello schermo (in pixel di pagina) corrispondente a una posizione del mondo. */
 export function project(page: Page, p: [number, number, number]) {
