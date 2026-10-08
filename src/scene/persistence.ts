@@ -6,6 +6,7 @@ import { platesAreValid } from './plates';
 import { decodeAsset, encodeAsset, getAsset, type MeshAsset } from '../import/assets';
 import { restoreAssets } from '../import/restore';
 import { notify } from '../ui/notify/notifyStore';
+import { useUiStore } from '../ui/uiStore';
 
 const KEY = 'construct:scene';
 /** Chiave e formato dell'app quando si chiamava WebCAD: si leggono ancora, così nessun progetto va perso. */
@@ -14,6 +15,12 @@ const FORMAT = 'construct-scene';
 const LEGACY_FORMAT = 'webcad-scene';
 /** Versione 2: il progetto include le mesh importate; 4: i piatti (`plates`). Le versioni precedenti si leggono ancora (un piatto solo). */
 const VERSION = 4;
+
+/** Vero durante la pulizia dei dati: la scena non deve essere riscritta mentre si cancella. */
+let autosaveSuspended = false;
+export const suspendAutosave = () => {
+  autosaveSuspended = true;
+};
 
 /** Controllo minimo di forma: evita di caricare file che non sono scene Construct. */
 function isScene(value: unknown): value is Scene {
@@ -50,6 +57,8 @@ export async function initPersistence(): Promise<boolean> {
   useSceneStore.subscribe((state, prev) => {
     if (state.scene === prev.scene) return;
     clearTimeout(timer);
+    // Con il salvataggio automatico spento (Impostazioni) la scena resta solo nel progetto salvato a mano
+    if (autosaveSuspended || !useUiStore.getState().autosave) return;
     timer = setTimeout(() => void set(KEY, state.scene).catch(() => undefined), 400);
   });
   return restored;

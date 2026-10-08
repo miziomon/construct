@@ -18,6 +18,19 @@ I messaggi di commit seguono i [Conventional Commits](https://www.conventionalco
 
 ## [Non rilasciato]
 
+## [0.26.0] - 2026-10-08
+
+### Aggiunto
+- **Importazione di file OpenSCAD (.scad)** da Importa (menu, trascinamento o benvenuto): un interprete di un sottoinsieme del linguaggio trasforma il codice in oggetti veri. Capisce `cube`, `sphere`, `cylinder` (anche coni), `translate`, `rotate` (anche asse e angolo), `scale`, `mirror`, `color`, `union`, `difference`, `intersection`, `hull`, `linear_extrude` di `circle`, `square` e `polygon`, variabili, espressioni, funzioni, `for`, `if`, liste per comprensione, moduli con parametri e `children()`. Le trasformazioni si compongono e si assorbono in posizione, rotazione e misure di ogni forma. Quello che non si capisce (`rotate_extrude`, `minkowski`, `offset`, `polyhedron`, `import`, librerie con `use`) si salta con un avviso e il resto si importa; un errore di sintassi dice la riga e non importa nulla. È un solo passo di Annulla e ci sono limiti contro file enormi o cicli infiniti.
+- **Impostazioni** nel menu hamburger: tema, schermata di benvenuto a ogni avvio, visualizzazione e dimensioni del piano, quote sull'oggetto, operandi in trasparenza, passo delle frecce, aggancio di spostamento e di rotazione del gizmo, salvataggio automatico. In fondo **Ripristina le impostazioni** (anche tema e piano) e **Pulisci tutti i dati…**, che cancella con conferma localStorage e IndexedDB (preferenze, scena salvata, mesh importate) e riparte come al primo avvio; i progetti salvati sul computer non si toccano. Il pannello dice quanto spazio usano i dati.
+- **Codice OpenSCAD di tutti i piatti**: con più piatti il codice (modale e file `.scad`) ha un `module piatto_N()` per piatto, con il commento `// === Piatto N: nome ===`, e li richiama affiancati lungo X come nel 3MF. Riletto con l'importazione ricrea i piatti con i loro nomi.
+- **Metadati dei piatti nel 3MF** (`Metadata/model_settings.config`, con oggetti e piatti con i loro nomi) per Bambu Studio e Orca. Non si può provare senza gli slicer: i programmi che non li conoscono li ignorano e leggono i piatti dalla posizione degli oggetti.
+- **About** con il link al repository GitHub e le informazioni sull'autore con il suo sito.
+
+### Modificato
+- La modale **Novità** è grande come quella del codice, l'elenco scorre e le versioni non mostrano più la data.
+- Con il salvataggio automatico spento (Impostazioni) la scena resta solo nel progetto salvato a mano.
+
 ## [0.25.0] - 2026-10-08
 
 ### Aggiunto

@@ -8,6 +8,8 @@ export interface ExportPart {
   indices: Uint32Array;
   /** Spostamento (mm) dell'oggetto nel piano di costruzione: serve a mettere i piatti uno accanto all'altro. */
   offset?: [number, number, number];
+  /** Indice (da 0) del piatto di appartenenza: serve ai metadati dei piatti. */
+  plate?: number;
 }
 
 const escapeXml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -18,11 +20,26 @@ const num = (n: number) => String(Math.round(n * 1e5) / 1e5);
 /** Colore "#rrggbb" nel formato 3MF "#RRGGBBAA" (opaco). */
 const displayColor = (hex: string) => `${/^#[0-9a-f]{6}$/i.test(hex) ? hex.toUpperCase() : '#4DA3FF'}FF`;
 
+/** `Metadata/model_settings.config`: gli oggetti (id come nel modello) e, per ogni piatto, le istanze che contiene. */
+function modelSettings(parts: ExportPart[], plateNames: string[]): string {
+  const meta = (key: string, value: string | number) => `<metadata key="${key}" value="${escapeXml(String(value))}"/>`;
+  const objects = parts.map((p, i) => `<object id="${i + 2}">${meta('name', p.name)}</object>`).join('');
+  const plates = plateNames
+    .map((name, plate) => {
+      const instances = parts
+        .map((p, i) => (p.plate === plate ? `<model_instance>${meta('object_id', i + 2)}${meta('instance_id', 0)}</model_instance>` : ''))
+        .join('');
+      return `<plate>${meta('plater_id', plate + 1)}${meta('plater_name', name)}${meta('locked', 'false')}${instances}</plate>`;
+    })
+    .join('');
+  return `<?xml version="1.0" encoding="UTF-8"?><config>${objects}${plates}</config>`;
+}
+
 /**
  * Crea un pacchetto 3MF (archivio OPC): un oggetto per ogni parte, ciascuna con il proprio materiale,
  * così lo slicer può assegnare un filamento diverso a ogni solido. Unità: millimetri.
  */
-export function write3mf(parts: ExportPart[]): Uint8Array<ArrayBuffer> {
+export function write3mf(parts: ExportPart[], plateNames: string[] = []): Uint8Array<ArrayBuffer> {
   // Materiali: uno per parte, indicizzati da pindex
   const materials = parts.map((p) => `<base name="${escapeXml(p.name)}" displaycolor="${displayColor(p.color)}"/>`).join('');
 
@@ -68,10 +85,14 @@ export function write3mf(parts: ExportPart[]): Uint8Array<ArrayBuffer> {
     `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
     `<Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/></Relationships>`;
 
-  // [Content_Types].xml deve essere la prima voce dell'archivio
-  return zipSync({
+  // Con più piatti si scrivono anche i metadati di Bambu Studio e Orca (Metadata/model_settings.config): oggetti e piatti con
+  // i loro nomi. Gli altri programmi li ignorano e leggono i piatti dalla posizione degli oggetti (vedi `offset`)
+  const files: Record<string, Uint8Array> = {
     '[Content_Types].xml': strToU8(contentTypes),
     '_rels/.rels': strToU8(rels),
     '3D/3dmodel.model': strToU8(model),
-  }) as Uint8Array<ArrayBuffer>;
+  };
+  if (plateNames.length > 1) files['Metadata/model_settings.config'] = strToU8(modelSettings(parts, plateNames));
+  // [Content_Types].xml deve essere la prima voce dell'archivio
+  return zipSync(files) as Uint8Array<ArrayBuffer>;
 }

@@ -75,10 +75,11 @@ const api = {
           color: m.color,
           positions: m.positions,
           indices: m.indices,
+          plate: i,
           ...(plates.length > 1 && i > 0 ? { offset: [i * spacing, 0, 0] as [number, number, number] } : {}),
         };
       });
-    const bytes = write3mf(parts);
+    const bytes = write3mf(parts, plates.map((p) => p.name));
     return Comlink.transfer(bytes, [bytes.buffer]);
   },
 };

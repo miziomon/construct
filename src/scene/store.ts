@@ -2,13 +2,14 @@ import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import { current } from 'immer';
 import { temporal } from 'zundo';
+import type { ScadImport } from '../import/scad/toScene';
 import type { CornerNode, EdgeNode, GroupNode, GroupOp, MeshNode, PrimitiveKind, PrimitiveNode, Scene, SceneNode, Shape2DKind, Shape2DNode, Vec3 } from './types';
 import { randomColor } from './color';
 import { lastShape, rememberShape } from './lastValues';
 import { layFlatPatch } from './layFlat';
 import { DEFAULT_COLOR, PRIMITIVE_LABELS, SHAPE2D_LABELS, halfHeight, primitiveDefaults, shape2dDefaults } from './defaults';
 import { isScaled } from './groupScale';
-import { addPlateScene, moveRootsToPlate, plateName, platesOf, removePlateScene, renamePlateScene, switchPlateScene } from './plates';
+import { addImportedRoots, addPlateScene, moveRootsToPlate, plateName, platesOf, removePlateScene, renamePlateScene, switchPlateScene } from './plates';
 import { composeTransform, conjugate, eulerToMatrix, matrixToEuler, normalizeMirror, round, toLocalTransform } from './math';
 import type { Mirror, Transform } from './math';
 
@@ -62,6 +63,8 @@ interface SceneState {
   loadScene: (scene: Scene) => void;
   clear: () => void;
 
+  /** Inserisce nel progetto gli oggetti letti da un file OpenSCAD (un solo passo di Annulla). Restituisce quante radici ha aggiunto. */
+  importScad: (imported: ScadImport, label: string) => number;
   /** Aggiunge un piatto vuoto e lo rende attivo (un passo di Annulla). Restituisce l'id del nuovo piatto. */
   addPlate: () => string;
   /** Rende attivo un piatto. Non è un passo di Annulla: cambia solo cosa si vede (la selezione si azzera). */
@@ -573,6 +576,18 @@ export const useSceneStore = create<SceneState>()(
           s.scene = emptyScene();
           s.selection = [];
         }),
+
+      importScad: (imported, label) => {
+        const roots = imported.plates.reduce((n, p) => n + p.rootIds.length, 0);
+        if (!roots) return 0;
+        act(`Importa ${label}`, (s) => {
+          // I nomi restano unici nel progetto: i figli vengono prima dei gruppi, come sono stati creati
+          for (const node of Object.values(imported.nodes)) s.scene.nodes[node.id] = { ...node, name: uniqueName(s.scene, node.name) };
+          s.scene = addImportedRoots(current(s.scene), imported.plates, newId);
+          s.selection = imported.plates[0].rootIds;
+        });
+        return roots;
+      },
 
       addPlate: () => {
         const id = newId();

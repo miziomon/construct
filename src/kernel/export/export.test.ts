@@ -68,6 +68,26 @@ describe('export', () => {
     expect(items[1]).toContain('transform="1 0 0 0 1 0 0 0 1 276 0 0"');
   });
 
+  it('3MF con più piatti: aggiunge i metadati dei piatti per Bambu Studio e Orca', () => {
+    const [m] = new Evaluator(wasm).evaluate(boxScene()).meshes;
+    const parts = [
+      { name: 'Piatto 1 – A', color: '#ff0000', positions: m.positions, indices: m.indices, plate: 0 },
+      { name: 'Piatto 2 – B & "C"', color: '#00ff00', positions: m.positions, indices: m.indices, plate: 1, offset: [276, 0, 0] as [number, number, number] },
+    ];
+    const files = unzipSync(write3mf(parts, ['Piatto 1', 'Coperchio']));
+    expect(Object.keys(files)).toEqual(['[Content_Types].xml', '_rels/.rels', '3D/3dmodel.model', 'Metadata/model_settings.config']);
+    const config = strFromU8(files['Metadata/model_settings.config']);
+    expect(config).toContain('<metadata key="plater_name" value="Coperchio"/>');
+    expect(config).toContain('B &amp; &quot;C&quot;');
+    // Ogni piatto elenca la sua istanza: l'oggetto 2 (primo) sul piatto 1 e l'oggetto 3 sul piatto 2
+    const [plate1, plate2] = config.split('<plate>').slice(1);
+    expect(plate1).toContain('<metadata key="object_id" value="2"/>');
+    expect(plate1).not.toContain('value="3"');
+    expect(plate2).toContain('<metadata key="object_id" value="3"/>');
+    // Un piatto solo non scrive metadati
+    expect(Object.keys(unzipSync(write3mf(parts.slice(0, 1), ['Piatto 1'])))).toHaveLength(3);
+  });
+
   it('3MF: contiene i tre file attesi, unità mm, un oggetto e il materiale', () => {
     const [m] = new Evaluator(wasm).evaluate(boxScene()).meshes;
     const zip = write3mf([{ name: 'Scatola & "test"', color: '#ff8800', positions: m.positions, indices: m.indices }]);

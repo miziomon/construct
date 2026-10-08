@@ -16,7 +16,9 @@ if (import.meta.env.MODE === 'e2e') window.__construct = { store: useSceneStore,
 // Al primo avvio, senza una scena da ripristinare, si mostra la schermata di benvenuto
 void initPersistence()
   .then((restored) => {
-    if (isFirstVisit && !restored) useUiStore.getState().setWelcomeOpen(true);
+    // Il benvenuto compare al primo avvio senza una scena da ripristinare, oppure a ogni avvio se l'utente lo ha scelto
+    const always = useUiStore.getState().welcomeAlways;
+    if ((isFirstVisit && !restored) || always) useUiStore.getState().setWelcomeOpen(true);
   })
   .finally(startKernelSync);
 

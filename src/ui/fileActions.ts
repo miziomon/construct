@@ -1,6 +1,6 @@
 import { getKernel } from '../kernel/client';
 import { useSceneStore } from '../scene/store';
-import { allRootIds, hasManyPlates, platesOf } from '../scene/plates';
+import { allRootIds, hasManyPlates, PLATE_GAP, platesOf } from '../scene/plates';
 import { useUiStore } from './uiStore';
 import { sceneFromJson, sceneToJson } from '../scene/persistence';
 import { addAsset } from '../import/assets';
@@ -31,7 +31,7 @@ export async function exportStl(plateId?: string): Promise<void> {
 
 /** 3MF con tutti i piatti, affiancati lungo X (larghezza del piano più 20 mm di distanza). */
 export async function export3mf(): Promise<void> {
-  download(await getKernel().export3mf(scene(), useUiStore.getState().bedSize.width + 20), 'construct.3mf', 'model/3mf');
+  download(await getKernel().export3mf(scene(), useUiStore.getState().bedSize.width + PLATE_GAP), 'construct.3mf', 'model/3mf');
 }
 
 /**
@@ -41,7 +41,7 @@ export async function export3mf(): Promise<void> {
 export async function exportScad(): Promise<void> {
   // Il generatore OpenSCAD si scarica solo quando serve (esportazione o modale del codice)
   const { sceneToOpenScad } = await import('../codegen/openscad');
-  const code = sceneToOpenScad(scene());
+  const code = sceneToOpenScad(scene(), { plateSpacing: useUiStore.getState().bedSize.width + PLATE_GAP });
   const fonts = fontsUsed(scene());
   if (fonts.length === 0) {
     download(code, 'construct.scad', 'text/plain');

@@ -78,7 +78,9 @@ Primo passo economico alla Tinkercad: **Duplica e ripeti** (Ctrl+D ripete l'ulti
 
 - Quote tra oggetti (distanza tra due oggetti o tra un oggetto e il piatto, da digitare per spostarli) e quote sulle singole facce o sui fori: oggi le quote sono solo le tre dimensioni dell'ingombro.
 - Menu contestuale del vuoto con più voci (Incolla, viste, Importa) e menu sulle righe dell'elenco oggetti.
-- Piatti: metadati dei piatti per Bambu Studio e Orca (`Metadata/model_settings.config`, da provare negli slicer veri; oggi il 3MF affianca i piatti con la trasformazione degli item), codice OpenSCAD di tutti i piatti, trascinamento degli oggetti tra i piatti, piatti con misure diverse.
+- Piatti: provare i metadati scritti nel 3MF (`Metadata/model_settings.config`) in Bambu Studio e Orca, perché non si possono verificare senza gli slicer (restano ignorati dai programmi che non li conoscono), trascinamento degli oggetti tra i piatti, piatti con misure diverse.
+- Import OpenSCAD: `rotate_extrude`, `offset`, `minkowski`, `polyhedron`, `text`, forme 2D con fori (`polygon` con `paths`) e booleane 2D, `import()`, `use`/`include` e librerie come BOSL2.
+- Impostazioni: lingua, unità, colori dei nuovi oggetti, qualità predefinita delle curve, scorciatoie personalizzabili.
 - Schermata di benvenuto: modelli di esempio (la scheda c'è ma non è ancora selezionabile) e l'elenco dei progetti recenti.
 - Preset del piano: altre stampanti (Anycubic, Elegoo, Voron) e preset salvati dall'utente.
 - Ripetizione: "Rendi indipendenti" (Separa produce N oggetti veri, uno per copia), serie lungo un percorso o una curva, passo diverso per ogni asse nella lineare con angolo, copie che seguono un oggetto di riferimento, Ctrl+D che ripete l'ultimo spostamento (Duplica e ripeti di Tinkercad).

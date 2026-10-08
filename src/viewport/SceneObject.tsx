@@ -25,8 +25,6 @@ import { snapToMesh } from '../scene/snap';
 import type { Vec3 } from '../scene/types';
 import type { Transform } from '../scene/math';
 
-const SNAP_MOVE = 1; // mm
-const SNAP_ROTATE = THREE.MathUtils.degToRad(15);
 /** Raggio di aggancio dello strumento Misura, in pixel dello schermo. */
 const MEASURE_SNAP_PIXELS = 12;
 
@@ -211,6 +209,9 @@ export function SceneObject({ rootId, meshes, selection, locked, showGizmo }: Pr
   const select = useSceneStore((s) => s.select);
   const setGizmoMode = useSceneStore((s) => s.setGizmoMode);
   const updateNode = useSceneStore((s) => s.updateNode);
+  // Passi di aggancio del gizmo (Impostazioni)
+  const snapMove = useUiStore((s) => s.snapMove);
+  const snapRotate = useUiStore((s) => s.snapRotate);
 
   const wrapper = useRef<THREE.Group>(null);
   // Il proxy è in uno state (ref callback) perché il gizmo deve montarsi dopo che l'oggetto esiste
@@ -389,8 +390,8 @@ export function SceneObject({ rootId, meshes, selection, locked, showGizmo }: Pr
           showX={gizmoMode !== 'extrude'}
           showY={gizmoMode !== 'extrude'}
           size={0.8}
-          translationSnap={shift ? null : SNAP_MOVE}
-          rotationSnap={shift ? null : SNAP_ROTATE}
+          translationSnap={shift ? null : snapMove}
+          rotationSnap={shift ? null : THREE.MathUtils.degToRad(snapRotate)}
           onMouseDown={() => {
             startMatrix.current.copy(nodeMatrix(node.position, node.rotation));
             // Durante il trascinamento le quote nella vista si nascondono

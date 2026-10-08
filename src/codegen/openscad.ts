@@ -13,6 +13,7 @@ import { circularStep, linearStep, normalizeArray } from '../scene/arrayPattern'
 import { cutReach, faceFrame, frameRect, normalizePattern, patternCells } from '../scene/pattern';
 import { isRotational, revolveParams, shapeContours, svgContours } from '../scene/shapes2d';
 import { fontInfo, fontsUsed, scadFontName } from '../scene/fontCatalog';
+import { platesOf } from '../scene/plates';
 import { maxPolyhedronRadius, polygonMaxRadius, polygonShrunkRadius, polyhedronVertices, roundedPolyhedronCenters } from '../scene/polyhedra';
 
 const IND = '  ';
@@ -506,12 +507,31 @@ function groupLines(scene: Scene, g: GroupNode, head: string[], depth: number): 
   return lines;
 }
 
-/** Genera il codice OpenSCAD dell'intera scena. Gli hole alla radice non producono geometria. */
-export function sceneToOpenScad(scene: Scene): string {
+/** Intestazione del modulo di un piatto: l'importazione di un file .scad la riconosce per ritrovare i nomi dei piatti. */
+export const plateComment = (index: number, name: string) => `// === Piatto ${index}: ${name} ===`;
+
+/**
+ * Genera il codice OpenSCAD dell'intera scena. Gli hole alla radice non producono geometria. Con più piatti ognuno è un
+ * `module piatto_N()` e i moduli sono richiamati affiancati lungo X di `plateSpacing` mm, come nell'esportazione 3MF.
+ */
+export function sceneToOpenScad(scene: Scene, options: { plateSpacing?: number } = {}): string {
   // Un `use <font.ttf>` per ogni font del testo: i file TTF stanno nella stessa cartella del codice (vedi l'export ZIP)
   const fontLines = fontsUsed(scene).map((f) => `use <${f.file}>;`);
   const header = ['// Generato da Construct. Unità: millimetri.', ...(fontLines.length ? ['// I font usati dal testo (file .ttf) devono stare nella stessa cartella di questo file.', ...fontLines] : []), ''];
-  const roots = scene.rootIds.map((id) => scene.nodes[id]).filter((nd) => nd.mode === 'solid');
+  const solidsOf = (rootIds: string[]) => rootIds.map((id) => scene.nodes[id]).filter((nd) => nd.mode === 'solid');
+  const plates = platesOf(scene);
+  if (plates.length > 1) {
+    // Un modulo per piatto, poi i richiami: il primo al suo posto, gli altri spostati di `plateSpacing` ciascuno
+    const spacing = options.plateSpacing ?? 276;
+    const modules = plates.flatMap((p, i) => {
+      const roots = solidsOf(p.rootIds);
+      const body = roots.length ? roots.flatMap((nd) => nodeLines(scene, nd, 1)) : [`${IND}// Piatto vuoto`];
+      return [plateComment(i + 1, p.name), `module piatto_${i + 1}() {`, ...body, '}', ''];
+    });
+    const calls = plates.map((_, i) => (i === 0 ? 'piatto_1();' : `translate([${n(i * spacing)}, 0, 0]) piatto_${i + 1}();`));
+    return [...header, ...modules, `// I piatti sono affiancati lungo X di ${n(spacing)} mm, come nel 3MF: per vederne uno solo lascia il suo richiamo.`, ...calls].join('\n') + '\n';
+  }
+  const roots = solidsOf(scene.rootIds);
   if (!roots.length) return [...header, '// Scena vuota'].join('\n') + '\n';
   const lines = roots.flatMap((nd) => [...nodeLines(scene, nd, 0), '']);
   return [...header, ...lines].join('\n').trimEnd() + '\n';

@@ -60,7 +60,7 @@ async function addImported(mesh: ImportedMesh, fileName: string): Promise<boolea
   return true;
 }
 
-/** Importa file STL, 3MF e SVG scelti dall'utente; ogni errore diventa una notifica e non blocca gli altri file. */
+/** Importa file STL, 3MF, SVG e OpenSCAD (.scad) scelti dall'utente; ogni errore diventa una notifica e non blocca gli altri file. */
 export async function importFiles(files: File[]): Promise<void> {
   let added = 0;
   let drawings = 0;
@@ -68,6 +68,20 @@ export async function importFiles(files: File[]): Promise<void> {
     try {
       const ext = file.name.split('.').pop()?.toLowerCase();
       const baseName = file.name.replace(/\.[^.]+$/, '');
+      // Un file OpenSCAD è codice: un interprete di un sottoinsieme lo trasforma in oggetti veri (forme, booleane, piatti)
+      if (ext === 'scad') {
+        const { importScad } = await import('./scad/toScene');
+        const result = importScad(await file.text());
+        const roots = useSceneStore.getState().importScad(result, file.name);
+        if (!roots) {
+          notify.error(result.warnings[0] ?? `"${file.name}" non contiene oggetti che si possano importare.`);
+        } else {
+          notify.info(`${file.name}: importati ${result.count} ${result.count === 1 ? 'oggetto' : 'oggetti'}${result.plates.length > 1 ? ` su ${result.plates.length} piatti` : ''}.`);
+          // Ciò che l'interprete non capisce non blocca l'importazione, ma va detto
+          if (result.warnings.length) notify.error(`Alcune parti di ${file.name} sono state saltate: ${result.warnings.slice(0, 3).join(' ')}${result.warnings.length > 3 ? ` (e altre ${result.warnings.length - 3})` : ''}`);
+        }
+        continue;
+      }
       // Un SVG è un disegno 2D: diventa una forma estrusa, senza passare dal kernel come le mesh
       if (ext === 'svg') {
         // Il lettore SVG (e SVGLoader di three) si scarica solo ora
@@ -81,7 +95,7 @@ export async function importFiles(files: File[]): Promise<void> {
       let meshes: ImportedMesh[];
       if (ext === 'stl') meshes = (await import('./stl')).parseStl(buffer, baseName);
       else if (ext === '3mf') meshes = (await import('./threemf')).parse3mf(buffer, baseName);
-      else throw new ImportError(`Formato non supportato: ${file.name}. Usa file STL, 3MF o SVG.`);
+      else throw new ImportError(`Formato non supportato: ${file.name}. Usa file STL, 3MF, SVG o OpenSCAD (.scad).`);
       for (const mesh of meshes) if (await addImported(mesh, file.name)) added++;
     } catch (err) {
       notify.error(err instanceof ImportError ? err.message : `Impossibile leggere "${file.name}".`);
@@ -91,8 +105,8 @@ export async function importFiles(files: File[]): Promise<void> {
   if (drawings) notify.info(drawings === 1 ? 'Disegno SVG importato come forma 2D.' : `${drawings} disegni SVG importati come forme 2D.`);
 }
 
-/** Apre il selettore file e importa quanto scelto (`accept` limita i formati: mesh 3D oppure disegni SVG). */
-export function pickAndImport(accept = '.stl,.3mf,.svg'): void {
+/** Apre il selettore file e importa quanto scelto (`accept` limita i formati: mesh 3D, disegni SVG o codice OpenSCAD). */
+export function pickAndImport(accept = '.stl,.3mf,.svg,.scad'): void {
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = accept;

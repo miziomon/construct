@@ -2754,3 +2754,186 @@ test('Timeline: indicatori con tooltip del tipo di operazione e icona per svuota
   expect((await sceneState(page)).rootIds).toHaveLength(2);
   await expect(page.getByRole('button', { name: 'Svuota la cronologia' })).toBeDisabled();
 });
+
+test('Novità: modale grande come il codice, elenco che scorre e nessuna data accanto alle versioni', async ({ page }) => {
+  await openMenuItem(page, 'Novità');
+  const dialog = page.getByRole('dialog', { name: 'Novità' });
+  await expect(dialog).toBeVisible();
+  const box = await dialog.boundingBox();
+  const viewport = page.viewportSize()!;
+  expect(box!.width).toBeGreaterThan(viewport.width * 0.78);
+  expect(box!.height).toBeGreaterThan(viewport.height * 0.78);
+  // Le versioni non portano la data (prima c'era scritto 2026-10-08)
+  await expect(dialog.locator('.app-menu__news h3').first()).toBeVisible();
+  const titles = await dialog.locator('.app-menu__news h3').allTextContents();
+  expect(titles.length).toBeGreaterThan(5);
+  for (const title of titles) expect(title).toMatch(/^v\d+\.\d+\.\d+$/);
+  // L'ultima versione, in fondo, si raggiunge scorrendo
+  await dialog.locator('.app-menu__news h3').last().scrollIntoViewIfNeeded();
+  await expect(dialog.locator('.app-menu__news h3').last()).toBeVisible();
+});
+
+test('About: link al repository GitHub e informazioni sull\'autore con il suo sito', async ({ page }) => {
+  await openMenuItem(page, 'About');
+  const dialog = page.getByRole('dialog', { name: 'About' });
+  const repo = dialog.getByRole('link', { name: 'github.com/miziomon/construct' });
+  await expect(repo).toHaveAttribute('href', 'https://github.com/miziomon/construct');
+  await expect(repo).toHaveAttribute('target', '_blank');
+  await expect(repo).toHaveAttribute('rel', /noopener/);
+  await expect(dialog.getByText('Maurizio Pelizzone')).toBeVisible();
+  await expect(dialog.getByRole('link', { name: 'maurizio.mavida.com' })).toHaveAttribute('href', 'https://maurizio.mavida.com');
+});
+
+test('Impostazioni: la voce del menu apre la modale con le sezioni e le opzioni cambiano subito il comportamento', async ({ page }) => {
+  await addShape(page, 'Cubo');
+  const id = (await sceneState(page)).rootIds[0];
+  await openMenuItem(page, 'Impostazioni');
+  const dialog = page.getByRole('dialog', { name: 'Impostazioni' });
+  await expect(dialog).toBeVisible();
+  for (const section of ['Aspetto', 'Piano di stampa', 'Modifica', 'Salvataggio e dati']) await expect(dialog.getByRole('heading', { name: section })).toBeVisible();
+
+  // Tema
+  await dialog.getByRole('button', { name: 'Scuro' }).click();
+  await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe('dark');
+  // Visualizzazione del piano
+  await dialog.getByLabel('Visualizzazione').selectOption('none');
+  expect(await page.evaluate(() => window.__construct!.store.getState().scene.rootIds.length)).toBe(1);
+  // Quote: spente, spariscono dalla vista
+  await expect(page.locator('.dimension-label').first()).toBeVisible();
+  await dialog.getByLabel("Quote sull'oggetto selezionato").uncheck();
+  await expect(page.locator('.dimension-label')).toHaveCount(0);
+  // Passo delle frecce: 5 mm
+  const nudge = dialog.locator('.number-field', { hasText: 'Frecce' }).locator('input');
+  await nudge.fill('5');
+  await nudge.press('Enter');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('ArrowRight');
+  await settled(page);
+  expect((await sceneState(page)).nodes[id].position[0]).toBe(5);
+
+  // Le impostazioni restano dopo il ricaricamento
+  await page.reload();
+  await page.waitForFunction(() => !!window.__construct && !!window.__r3f);
+  await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe('dark');
+  const saved = JSON.parse((await page.evaluate(() => localStorage.getItem('construct:ui'))) ?? '{}').state;
+  expect(saved).toMatchObject({ showDimensions: false, nudgeStep: 5, bedMode: 'none', theme: 'dark' });
+});
+
+test('Impostazioni: il ripristino riporta le opzioni ai valori predefiniti senza toccare la scena', async ({ page }) => {
+  await addShape(page, 'Cubo');
+  await openMenuItem(page, 'Impostazioni');
+  const dialog = page.getByRole('dialog', { name: 'Impostazioni' });
+  await dialog.getByRole('button', { name: 'Scuro' }).click();
+  await dialog.getByLabel("Quote sull'oggetto selezionato").uncheck();
+  await dialog.getByRole('button', { name: 'Ripristina le impostazioni' }).click();
+  await page.locator('.dialog__button--primary', { hasText: 'Ripristina' }).click();
+  await expect(dialog.getByLabel("Quote sull'oggetto selezionato")).toBeChecked();
+  await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe('light');
+  expect((await sceneState(page)).rootIds).toHaveLength(1);
+});
+
+test('Impostazioni: Pulisci tutti i dati chiede conferma, cancella localStorage e IndexedDB e riparte dal benvenuto', async ({ browser }) => {
+  // Contesto nuovo: la pagina di beforeEach ha già segnato il benvenuto come visto
+  const page = await (await browser.newContext()).newPage();
+  await openApp(page, { welcome: true });
+  await page.keyboard.press('Escape');
+  await addShape(page, 'Cubo');
+  await page.waitForTimeout(700);
+  // Qualcosa da cancellare: la scena salvata e le preferenze
+  expect(await page.evaluate(() => localStorage.getItem('construct:welcomed'))).toBe('1');
+  expect(await page.evaluate(async () => (await indexedDB.databases()).length)).toBeGreaterThan(0);
+
+  await openMenuItem(page, 'Impostazioni');
+  const dialog = page.getByRole('dialog', { name: 'Impostazioni' });
+  await dialog.getByRole('button', { name: 'Pulisci tutti i dati…' }).click();
+  // Rifiutando non succede nulla
+  await page.locator('.dialog__button', { hasText: 'Annulla' }).click();
+  expect((await sceneState(page)).rootIds).toHaveLength(1);
+
+  await dialog.getByRole('button', { name: 'Pulisci tutti i dati…' }).click();
+  await page.locator('.dialog__button--primary', { hasText: 'Cancella tutto' }).click();
+  // La pagina si ricarica da sola e riparte come al primo avvio
+  await page.waitForFunction(() => !!window.__construct && !!window.__r3f);
+  await expect(page.getByRole('dialog', { name: 'Benvenuto in Construct' })).toBeVisible();
+  expect((await sceneState(page)).rootIds).toHaveLength(0);
+  // Il benvenuto è di nuovo da vedere e le vecchie chiavi non ci sono più
+  expect(await page.evaluate(() => localStorage.getItem('construct:welcomed'))).toBeNull();
+  expect(await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('webcad:')))).toEqual([]);
+});
+
+test('Importa OpenSCAD: un file .scad diventa oggetti veri, con un solo passo di Annulla e gli avvisi per ciò che salta', async ({ page }) => {
+  await openMenuItem(page, 'Importa');
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('dialog').getByRole('button', { name: 'Importa OpenSCAD…' }).click();
+  const file = await chooser;
+  await file.setFiles({
+    name: 'scatola.scad',
+    mimeType: 'text/plain',
+    buffer: Buffer.from(`
+      $fn = 32;
+      difference() {
+        cube([40, 30, 20]);
+        translate([5, 5, 3]) cube([30, 20, 20]);
+      }
+      translate([60, 0, 0]) cylinder(h = 10, r = 8);
+      rotate_extrude() translate([5, 0, 0]) circle(1);
+    `),
+  });
+  await settled(page);
+  const scene = await sceneState(page);
+  expect(scene.rootIds).toHaveLength(2);
+  const names = scene.rootIds.map((id: string) => scene.nodes[id].name);
+  expect(names).toContain('Differenza');
+  expect(names).toContain('Cilindro');
+  // Un messaggio dice quanti oggetti, e uno ciò che è stato saltato
+  await expect(page.getByText(/scatola\.scad: importati 4 oggetti/)).toBeVisible();
+  await expect(page.getByText(/rotate_extrude\(\) non è supportato/)).toBeVisible();
+  // Il risultato è un solido valido
+  const volume = await page.evaluate(() => window.__construct!.results.getState().meshes.reduce((v, m) => v + m.volume, 0));
+  expect(volume).toBeGreaterThan(40 * 30 * 20 - 30 * 20 * 17 - 1);
+  // Un passo di cronologia
+  await page.keyboard.press('Control+z');
+  await settled(page);
+  expect((await sceneState(page)).rootIds).toHaveLength(0);
+});
+
+test('OpenSCAD con più piatti: il codice li contiene tutti e, riletto, ricrea i piatti', async ({ page }) => {
+  await addShape(page, 'Cubo');
+  await page.getByRole('tab', { name: /Piatti/ }).click();
+  await page.getByRole('button', { name: 'Aggiungi piatto' }).click();
+  await page.getByRole('button', { name: 'Rinomina Piatto 2' }).click();
+  const name = page.getByRole('textbox', { name: /Nome del piatto/ });
+  await name.fill('Coperchio');
+  await name.press('Enter');
+  await addShape(page, 'Cilindro');
+
+  const code = await readCode(page);
+  expect(code).toContain('// === Piatto 1: Piatto 1 ===');
+  expect(code).toContain('// === Piatto 2: Coperchio ===');
+  expect(code).toContain('module piatto_1()');
+  expect(code).toContain('translate([276, 0, 0]) piatto_2();');
+
+  // Si riapre il codice esportato come file .scad in un progetto nuovo: i piatti tornano
+  const { readFileSync } = await import('node:fs');
+  const download = page.waitForEvent('download');
+  await openMenuItem(page, 'Esporta');
+  await page.getByRole('dialog').getByRole('button', { name: 'OpenSCAD' }).click();
+  const path = await (await download).path();
+  const exported = readFileSync(path, 'utf8');
+  await page.reload();
+  await page.waitForFunction(() => !!window.__construct && !!window.__r3f);
+  await page.evaluate(() => window.__construct!.store.getState().clear());
+  await openMenuItem(page, 'Importa');
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('dialog').getByRole('button', { name: 'Importa OpenSCAD…' }).click();
+  await (await chooser).setFiles({ name: 'piatti.scad', mimeType: 'text/plain', buffer: Buffer.from(exported) });
+  await settled(page);
+  const scene = await sceneState(page);
+  expect(scene.plates.map((p: { name: string }) => p.name)).toEqual(['Piatto 1', 'Coperchio']);
+});
+
+test('Menu hamburger: la voce Impostazioni c\'è accanto alle altre e il menu del vuoto non cambia', async ({ page }) => {
+  await page.getByRole('button', { name: 'Menu', exact: true }).click();
+  const menu = page.getByRole('menu');
+  for (const name of ['Importa', 'Esporta', 'Impostazioni', 'Schermata di benvenuto', 'Scorciatoie da tastiera', 'Novità', 'About']) await expect(menu.getByRole('menuitem', { name })).toBeVisible();
+});

@@ -1,5 +1,5 @@
 import { Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
-import { FileDown, FilePlus, FolderOpen, House, Info, Keyboard, Menu, Save, SaveAll, Sparkles, Upload } from 'lucide-react';
+import { FileDown, FilePlus, FolderOpen, House, Info, Keyboard, Menu, Save, SaveAll, Settings, Sparkles, Upload } from 'lucide-react';
 import { useUiStore } from '../uiStore';
 import { newProject, openProject, saveProject, saveProjectAs } from '../fileActions';
 import type { Panel } from './AppMenuPanels';
@@ -27,6 +27,7 @@ const GROUPS: Item[][] = [
     { panel: 'export', label: 'Esporta', icon: <FileDown size={16} /> },
   ],
   [
+    { panel: 'settings', label: 'Impostazioni', icon: <Settings size={16} /> },
     { label: 'Schermata di benvenuto', icon: <House size={16} />, action: () => useUiStore.getState().setWelcomeOpen(true) },
     { panel: 'shortcuts', label: 'Scorciatoie da tastiera', icon: <Keyboard size={16} /> },
     { panel: 'news', label: 'Novità', icon: <Sparkles size={16} /> },
@@ -34,7 +35,7 @@ const GROUPS: Item[][] = [
   ],
 ];
 
-const TITLES: Record<Panel, string> = { import: 'Importa', export: 'Esporta', shortcuts: 'Scorciatoie da tastiera', news: 'Novità', about: 'About' };
+const TITLES: Record<Panel, string> = { import: 'Importa', export: 'Esporta', settings: 'Impostazioni', shortcuts: 'Scorciatoie da tastiera', news: 'Novità', about: 'About' };
 
 /** Ultima versione le cui Novità sono state viste: serve al badge "nuovo". */
 const SEEN_KEY = STORAGE.seen.now;
@@ -140,7 +141,7 @@ export function AppMenu() {
         </div>
       )}
 
-      <Modal open={panel !== null} title={panel ? TITLES[panel] : ''} onClose={close} size={panel === 'shortcuts' ? 'large' : 'default'}>
+      <Modal open={panel !== null} title={panel ? TITLES[panel] : ''} onClose={close} size={panel === 'shortcuts' || panel === 'news' ? 'large' : 'default'}>
         {panel && (
           <Suspense fallback={<p>Caricamento…</p>}>
             <AppMenuPanels panel={panel} run={run} />

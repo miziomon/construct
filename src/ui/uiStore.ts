@@ -21,6 +21,9 @@ export const BED_LIMITS = { min: 20, max: 2000 } as const;
 const cleanBedSide = (value: unknown, fallback: number): number =>
   typeof value === 'number' && Number.isFinite(value) ? Math.round(Math.min(BED_LIMITS.max, Math.max(BED_LIMITS.min, value)) * 10) / 10 : fallback;
 
+/** Le sole impostazioni di uno stato dello store. */
+const pickSettings = (s: Settings): Settings => ({ showDimensions: s.showDimensions, nudgeStep: s.nudgeStep, snapMove: s.snapMove, snapRotate: s.snapRotate, autosave: s.autosave, welcomeAlways: s.welcomeAlways });
+
 /** Lato maggiore del piano (mm): limite morbido dei cursori delle misure. Il piano non ha altezza, quindi vale anche per lo Z. */
 export const bedReach = (bed: BedSize): number => Math.max(bed.width, bed.depth);
 
@@ -30,7 +33,54 @@ const NEXT_BED: Record<BedMode, BedMode> = { full: 'grid', grid: 'none', none: '
 export type ToolbarMenu = 'align' | 'mirror';
 
 /** Pannelli del menu hamburger (Importa, Esporta, ...): il menu del vuoto della vista li apre da fuori, quindi lo stato sta qui. */
-export type AppPanel = 'import' | 'export' | 'shortcuts' | 'news' | 'about';
+export type AppPanel = 'import' | 'export' | 'settings' | 'shortcuts' | 'news' | 'about';
+
+/**
+ * Impostazioni dell'utente (modale Impostazioni), salvate in localStorage con le altre preferenze. I limiti servono anche
+ * a ripulire ciò che arriva dal localStorage, che non è fidato.
+ */
+export interface Settings {
+  /** Mostra le quote X, Y, Z sull'oggetto selezionato. */
+  showDimensions: boolean;
+  /** Passo (mm) delle frecce della tastiera; con Maiusc è dieci volte tanto. */
+  nudgeStep: number;
+  /** Passo (mm) di aggancio quando si trascina il gizmo di spostamento (Maiusc lo disattiva). */
+  snapMove: number;
+  /** Passo (gradi) di aggancio della rotazione con il gizmo (Maiusc lo disattiva). */
+  snapRotate: number;
+  /** Salva la scena nel browser a ogni modifica (altrimenti solo con "Salva progetto"). */
+  autosave: boolean;
+  /** Mostra la schermata di benvenuto a ogni avvio, non solo il primo. */
+  welcomeAlways: boolean;
+}
+
+export const DEFAULT_SETTINGS: Settings = { showDimensions: true, nudgeStep: 1, snapMove: 1, snapRotate: 15, autosave: true, welcomeAlways: false };
+
+/** Limiti dei valori numerici delle impostazioni. */
+export const SETTING_LIMITS = {
+  nudgeStep: { min: 0.1, max: 50 },
+  snapMove: { min: 0.1, max: 50 },
+  snapRotate: { min: 1, max: 90 },
+} as const;
+
+/** Impostazioni valide da un valore qualsiasi (il localStorage può contenere di tutto): il resto torna al predefinito. */
+export function cleanSettings(value: unknown): Settings {
+  const v = (value ?? {}) as Partial<Record<keyof Settings, unknown>>;
+  const num = (key: 'nudgeStep' | 'snapMove' | 'snapRotate') => {
+    const n = v[key];
+    const { min, max } = SETTING_LIMITS[key];
+    return typeof n === 'number' && Number.isFinite(n) ? Math.round(Math.min(max, Math.max(min, n)) * 100) / 100 : DEFAULT_SETTINGS[key];
+  };
+  const bool = (key: 'showDimensions' | 'autosave' | 'welcomeAlways') => (typeof v[key] === 'boolean' ? (v[key] as boolean) : DEFAULT_SETTINGS[key]);
+  return {
+    showDimensions: bool('showDimensions'),
+    nudgeStep: num('nudgeStep'),
+    snapMove: num('snapMove'),
+    snapRotate: num('snapRotate'),
+    autosave: bool('autosave'),
+    welcomeAlways: bool('welcomeAlways'),
+  };
+}
 
 /** Scheda della sezione sotto la libreria: elenco degli oggetti del piatto attivo oppure elenco dei piatti. */
 export type OutlinerTab = 'objects' | 'plates';
@@ -55,7 +105,7 @@ export const MAX_FAVORITES = 200;
 const cleanKeys = (value: unknown, max: number): string[] =>
   Array.isArray(value) ? [...new Set(value.filter((v): v is string => typeof v === 'string' && v.length > 0 && v.length <= 40))].slice(0, max) : [];
 
-interface UiState {
+interface UiState extends Settings {
   /** Modale con il codice OpenSCAD aperta (non si salva: all'avvio è chiusa). */
   codeOpen: boolean;
   /** Menu a tendina dell'header aperto (non si salva). */
@@ -71,6 +121,10 @@ interface UiState {
   /** Dimensioni del piano di stampa (si salvano in localStorage). */
   bedSize: BedSize;
   setBedSize: (size: Partial<BedSize>) => void;
+  /** Cambia una o più impostazioni (i valori fuori limite si riportano nei limiti). */
+  setSettings: (patch: Partial<Settings>) => void;
+  /** Riporta le impostazioni, il tema e il piano di stampa ai valori predefiniti (non tocca preferiti e progetto). */
+  resetSettings: () => void;
   /** Scheda aperta sotto la libreria (non si salva: si parte sempre dagli oggetti). */
   outlinerTab: OutlinerTab;
   setOutlinerTab: (tab: OutlinerTab) => void;
@@ -138,6 +192,9 @@ export const useUiStore = create<UiState>()(
       bedMode: 'full',
       bedSize: DEFAULT_BED,
       setBedSize: (size) => set({ bedSize: { width: cleanBedSide(size.width, get().bedSize.width), depth: cleanBedSide(size.depth, get().bedSize.depth) } }),
+      ...DEFAULT_SETTINGS,
+      setSettings: (patch) => set(cleanSettings({ ...pickSettings(get()), ...patch })),
+      resetSettings: () => set({ ...DEFAULT_SETTINGS, theme: 'light', bedMode: 'full', bedSize: DEFAULT_BED }),
       outlinerTab: 'objects',
       setOutlinerTab: (outlinerTab) => set({ outlinerTab }),
       appPanel: null,
@@ -178,12 +235,13 @@ export const useUiStore = create<UiState>()(
     {
       name: STORAGE.ui.now,
       // La modale del codice non si ripristina all'avvio
-      partialize: (s) => ({ theme: s.theme, bedMode: s.bedMode, bedSize: s.bedSize, libraryTab: s.libraryTab, libraryGroupsOpen: s.libraryGroupsOpen, libraryFavorites: s.libraryFavorites, libraryRecent: s.libraryRecent }),
+      partialize: (s) => ({ ...pickSettings(s), theme: s.theme, bedMode: s.bedMode, bedSize: s.bedSize, libraryTab: s.libraryTab, libraryGroupsOpen: s.libraryGroupsOpen, libraryFavorites: s.libraryFavorites, libraryRecent: s.libraryRecent }),
       // Si accettano solo i campi noti e validi: un valore salvato da una versione precedente (o rovinato) non rompe l'avvio
       merge: (saved, current) => {
         const s = (saved ?? {}) as Partial<UiState>;
         return {
           ...current,
+          ...cleanSettings(s),
           theme: s.theme === 'dark' ? 'dark' : current.theme,
           bedMode: s.bedMode && s.bedMode in NEXT_BED ? s.bedMode : current.bedMode,
           bedSize: { width: cleanBedSide(s.bedSize?.width, DEFAULT_BED.width), depth: cleanBedSide(s.bedSize?.depth, DEFAULT_BED.depth) },

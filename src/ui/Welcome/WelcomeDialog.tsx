@@ -66,8 +66,8 @@ export function WelcomeDialog() {
       id: 'import',
       icon: Upload,
       title: 'Importa',
-      text: 'Apri un file STL, 3MF o SVG e lavoraci sopra.',
-      run: () => pickAndImport('.stl,.3mf,.svg'),
+      text: 'Apri un file STL, 3MF, SVG o OpenSCAD e lavoraci sopra.',
+      run: () => pickAndImport('.stl,.3mf,.svg,.scad'),
     },
     {
       id: 'examples',

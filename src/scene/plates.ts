@@ -12,6 +12,9 @@ import type { Plate, Scene } from './types';
 /** Id del piatto implicito di una scena senza `plates`. */
 export const DEFAULT_PLATE_ID = 'piatto-1';
 
+/** Distanza (mm) tra i piatti affiancati nel codice OpenSCAD e nel 3MF: larghezza del piano più questo margine. */
+export const PLATE_GAP = 20;
+
 /** Nome predefinito del piatto numero `n` (da 1). */
 export const plateName = (n: number) => `Piatto ${n}`;
 
@@ -53,6 +56,20 @@ function materialize(draft: Scene): void {
   if (draft.plates?.length) return;
   draft.plates = [{ id: DEFAULT_PLATE_ID, name: plateName(1), rootIds: [] }];
   draft.activePlateId = DEFAULT_PLATE_ID;
+}
+
+/**
+ * Mette radici già presenti in `nodes` nei piatti indicati: il primo gruppo in cima al piatto attivo, gli altri in piatti
+ * nuovi in fondo (con il loro nome). Serve all'importazione di un file con più piatti.
+ */
+export function addImportedRoots(scene: Scene, groups: { name: string; rootIds: string[] }[], newId: () => string): Scene {
+  return produce(scene, (d) => {
+    if (!groups.length) return;
+    d.rootIds = [...groups[0].rootIds, ...d.rootIds];
+    if (groups.length < 2) return;
+    materialize(d);
+    for (const g of groups.slice(1)) d.plates!.push({ id: newId(), name: g.name.trim() || plateName(d.plates!.length + 1), rootIds: [...g.rootIds] });
+  });
 }
 
 /** Aggiunge un piatto vuoto in fondo (non lo rende attivo). */

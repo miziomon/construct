@@ -121,6 +121,7 @@ export function DimensionOverlay() {
   const updateNode = useSceneStore((s) => s.updateNode);
   const meshes = useResultStore((s) => s.meshes);
   const dragging = useUiStore((s) => s.gizmoDragging);
+  const enabled = useUiStore((s) => s.showDimensions);
   // Con uno strumento aperto l'oggetto è in anteprima: le quote non servono e sarebbero fuorvianti
   const edgeTool = useEdgeTool((s) => s.tool !== null);
   const shell = useShellTool((s) => s.active);
@@ -142,7 +143,7 @@ export function DimensionOverlay() {
     return [...b.min, ...b.max].every(Number.isFinite) ? b : null;
   }, [meshes, scene, id, quotable]);
 
-  if (!id || !node || !box || dragging || edgeTool || shell || measure || layFlat || array || pattern) return null;
+  if (!enabled || !id || !node || !box || dragging || edgeTool || shell || measure || layFlat || array || pattern) return null;
 
   const world = worldTransform(scene, id);
   const rotation = eulerToMatrix(world.rotation);

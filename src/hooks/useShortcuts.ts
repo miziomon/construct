@@ -81,8 +81,9 @@ export function useShortcuts(): void {
       const mod = e.ctrlKey || e.metaKey;
       const key = e.key.toLowerCase();
 
-      // Passo di spostamento con le frecce: 1 mm, 10 mm con Shift
-      const step = e.shiftKey ? 10 : 1;
+      // Passo di spostamento con le frecce (Impostazioni, 1 mm di norma), dieci volte tanto con Maiusc
+      const base = useUiStore.getState().nudgeStep;
+      const step = e.shiftKey ? base * 10 : base;
       const arrows: Record<string, [number, number, number]> = {
         arrowleft: [-step, 0, 0], arrowright: [step, 0, 0],
         // Con Ctrl su/giù spostano in Z, altrimenti in Y

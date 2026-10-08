@@ -6,6 +6,7 @@ import { export3mf, exportScad, exportStl } from '../fileActions';
 import { pickAndImport } from '../../import/importFile';
 import changelogSource from '../../../CHANGELOG.md?raw';
 import { parseChangelog } from './changelog';
+import { SettingsPanel } from '../Settings/SettingsPanel';
 import type { AppPanel } from '../uiStore';
 
 /**
@@ -101,7 +102,7 @@ export default function AppMenuPanels({ panel, run }: { panel: Panel; run: (acti
     <>
       {panel === 'import' && (
           <>
-            <p>Importa file <strong>STL</strong> (binario o ASCII) e <strong>3MF</strong>: le mesh devono essere solidi chiusi. Un file <strong>SVG</strong> diventa invece una forma 2D estrusa (le unità del disegno sono millimetri) e si può ridimensionare dal pannello. Puoi anche trascinare i file direttamente nella finestra.</p>
+            <p>Importa file <strong>STL</strong> (binario o ASCII) e <strong>3MF</strong>: le mesh devono essere solidi chiusi. Un file <strong>SVG</strong> diventa invece una forma 2D estrusa (le unità del disegno sono millimetri) e si può ridimensionare dal pannello. Un file <strong>OpenSCAD</strong> (<code>.scad</code>) si legge come codice: cubi, sfere, cilindri, trasformazioni, booleane, <code>for</code>, moduli e <code>linear_extrude</code> diventano oggetti veri; quello che non si capisce si salta con un avviso. Puoi anche trascinare i file direttamente nella finestra.</p>
             <div className="modal__actions">
               <button type="button" className="modal__button modal__button--primary" onClick={run(() => pickAndImport('.stl,.3mf'))}>
                 <Upload size={14} />
@@ -110,6 +111,10 @@ export default function AppMenuPanels({ panel, run }: { panel: Panel; run: (acti
               <button type="button" className="modal__button modal__button--primary" onClick={run(() => pickAndImport('.svg'))}>
                 <Shapes size={14} />
                 Importa SVG…
+              </button>
+              <button type="button" className="modal__button modal__button--primary" onClick={run(() => pickAndImport('.scad'))}>
+                <FileCode size={14} />
+                Importa OpenSCAD…
               </button>
             </div>
           </>
@@ -167,6 +172,8 @@ export default function AppMenuPanels({ panel, run }: { panel: Panel; run: (acti
           </>
         )}
 
+      {panel === 'settings' && <SettingsPanel run={run} />}
+
       {panel === 'shortcuts' && (
           <div className="app-menu__shortcuts">
             {SHORTCUTS.map((group) => (
@@ -189,9 +196,7 @@ export default function AppMenuPanels({ panel, run }: { panel: Panel; run: (acti
           <div className="app-menu__news">
             {releases.map((r) => (
               <section key={r.version}>
-                <h3>
-                  v{r.version} <small>{r.date}</small>
-                </h3>
+                <h3>v{r.version}</h3>
                 {r.notes.map((n) => (
                   <p key={n}><Inline text={n} /></p>
                 ))}
@@ -214,7 +219,17 @@ export default function AppMenuPanels({ panel, run }: { panel: Panel; run: (acti
           <>
             <p><strong className="brand-name">Construct</strong> <span data-testid="about-version">v{__APP_VERSION__}</span></p>
             <p>Modellazione 3D da primitive con operazioni booleane, pensata per chi stampa in 3D. Piatto di stampa modificabile dalla barra di stato (256 × 256 mm di default), export STL e 3MF.</p>
-            <p>Costruito con React, three.js e manifold-3d. Sviluppato da MAVIDA.</p>
+            <p>Costruito con React, three.js e manifold-3d. Licenza MIT.</p>
+            <h4 className="app-menu__about-title">Il progetto</h4>
+            <p>
+              Il codice è aperto: sorgenti, segnalazioni e novità sono su{' '}
+              <a href="https://github.com/miziomon/construct" target="_blank" rel="noopener noreferrer">github.com/miziomon/construct</a>.
+            </p>
+            <h4 className="app-menu__about-title">L&apos;autore</h4>
+            <p>
+              <strong>Maurizio Pelizzone</strong>, sviluppatore senior PHP e WordPress, con una passione per JavaScript (React, Node, Vite) e Python, fondatore di MAVIDA. Su{' '}
+              <a href="https://maurizio.mavida.com" target="_blank" rel="noopener noreferrer">maurizio.mavida.com</a> scrive di sviluppo web e dei suoi progetti.
+            </p>
           </>
         )}
     </>

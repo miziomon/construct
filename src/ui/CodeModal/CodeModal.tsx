@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Check, Copy, Download } from 'lucide-react';
 import { useSceneStore } from '../../scene/store';
 import { sceneToOpenScad } from '../../codegen/openscad';
+import { PLATE_GAP } from '../../scene/plates';
 import { exportScad } from '../fileActions';
 import { Modal } from '../Modal/Modal';
 import { useUiStore } from '../uiStore';
@@ -12,7 +13,8 @@ import './CodeModal.scss';
 export default function CodeModal() {
   const setCodeOpen = useUiStore((s) => s.setCodeOpen);
   const scene = useSceneStore((s) => s.scene);
-  const code = useMemo(() => sceneToOpenScad(scene), [scene]);
+  const spacing = useUiStore((s) => s.bedSize.width + PLATE_GAP);
+  const code = useMemo(() => sceneToOpenScad(scene, { plateSpacing: spacing }), [scene, spacing]);
   // Righe già scomposte in segmenti: si ricalcolano solo quando cambia il codice
   const lines = useMemo(() => code.replace(/\n$/, '').split('\n').map(tokenizeLine), [code]);
   const [copied, setCopied] = useState(false);
