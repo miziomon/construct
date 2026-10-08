@@ -1,0 +1,113 @@
+name: Deploy su construct.mavida.com
+
+# Deploy automatico ad ogni push su main: build di produzione con Vite e
+# sincronizzazione via rsync su SSH del contenuto di dist/ dentro public_html.
+# Al termine invia una mail di esito (riuscito/fallito) tramite l'API di Resend.
+#
+# Le variabili VITE_* sono inlinate da Vite a compile-time, quindi vanno
+# fornite ALLA BUILD. VITE_API_BASE_URL oggi non e' usata dall'app (non e'
+# ancora agganciata ad hub) ma il secret e' gia' pronto per quando lo sara'.
+#
+# Tutte le credenziali/config arrivano dai GitHub Secrets, mai dal file (che e'
+# versionato): SSH_HOST, SSH_USERNAME, SSH_PASSWORD, RESEND_API_KEY,
+# VITE_API_BASE_URL.
+
+on:
+  push:
+    branches: [main]
+  # Consente anche l'avvio manuale dalla tab "Actions" di GitHub.
+  workflow_dispatch: {}
+
+# Il workflow non scrive nel repository: solo lettura del codice.
+permissions:
+  contents: read
+
+# Evita deploy concorrenti (due push ravvicinati): si accodano ed eseguono in
+# ordine, cosi' vince l'ultimo push senza mai interrompere un rsync a meta'.
+concurrency:
+  group: deploy-construct
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del codice
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22' # Vite 8 richiede Node 20.19+ / 22.12+
+          cache: npm
+
+      - name: Installazione dipendenze
+        run: npm ci
+
+      - name: Build di produzione
+        env:
+          # VITE_* inlinate nel bundle a compile-time (vedi nota in testa).
+          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
+        run: npm run build
+
+      - name: Deploy via rsync su SSH in public_html
+        env:
+          # sshpass -e legge la password da questa variabile: non compare mai
+          # nella riga di comando (ne' quindi nei log del processo).
+          SSHPASS: ${{ secrets.SSH_PASSWORD }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
+        run: |
+          sudo apt-get update && sudo apt-get install -y sshpass
+          # Flag pensati per hosting condiviso (cPanel): NON si tenta di
+          # preservare permessi/proprietario/gruppo/orari delle cartelle, che
+          # darebbero "operation not permitted". --delete tiene public_html
+          # allineato a dist/ (rimuove i vecchi bundle con hash obsoleto).
+          sshpass -e rsync -rltvz --delete \
+            --no-perms --no-owner --no-group --omit-dir-times \
+            -e "ssh -p 22 -o StrictHostKeyChecking=accept-new" \
+            ./dist/ "$SSH_USERNAME@$SSH_HOST:public_html/"
+
+      # Un solo invio email di esito, sia in caso di successo sia di errore:
+      # if: always() fa girare lo step anche se un passo precedente e' fallito;
+      # job.status ("success"/"failure") decide oggetto e testo. Il JSON e'
+      # costruito con jq (non per concatenazione di stringhe) cosi' il messaggio
+      # di commit e' sempre correttamente escapato.
+      - name: Notifica email di esito
+        if: always()
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          JOB_STATUS: ${{ job.status }}
+          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+          ACTOR: ${{ github.actor }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ "$JOB_STATUS" = "success" ]; then
+            SUBJECT="Deploy construct.mavida.com riuscito"
+            HEADLINE="Il deploy su <strong>construct.mavida.com</strong> e' stato completato con successo."
+          else
+            SUBJECT="Deploy construct.mavida.com FALLITO"
+            HEADLINE="Il deploy su <strong>construct.mavida.com</strong> e' fallito. Controlla il log del workflow."
+          fi
+          BODY="$(jq -n \
+            --arg headline "$HEADLINE" \
+            --arg sha "$COMMIT_SHA" \
+            --arg msg "${COMMIT_MSG:-(avvio manuale, nessun commit)}" \
+            --arg actor "$ACTOR" \
+            --arg url "$RUN_URL" \
+            --arg subject "$SUBJECT" \
+            '{
+              from: "[Mavida] Claud.ia <api@mavida.com>",
+              to: "maurizio@mavida.com",
+              subject: $subject,
+              html: ("<p>" + $headline + "</p><ul>"
+                + "<li><strong>Commit:</strong> " + $sha + "</li>"
+                + "<li><strong>Messaggio:</strong> " + $msg + "</li>"
+                + "<li><strong>Autore:</strong> " + $actor + "</li>"
+                + "</ul><p><a href=\"" + $url + "\">Apri il log del workflow</a></p>")
+            }')"
+          curl -sS --fail-with-body -X POST 'https://api.resend.com/emails' \
+            -H "Authorization: Bearer $RESEND_API_KEY" \
+            -H 'Content-Type: application/json' \
+            --data "$BODY"

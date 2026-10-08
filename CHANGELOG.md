@@ -18,6 +18,12 @@ I messaggi di commit seguono i [Conventional Commits](https://www.conventionalco
 
 ## [Non rilasciato]
 
+## [0.26.1] - 2026-10-08
+
+### Aggiunto
+
+- Deploy automatico su construct.mavida.com: la GitHub Action `.github/workflows/deploy.yml` costruisce l'app e la pubblica via rsync su SSH ad ogni push su `main`, con mail di esito.
+
 ## [0.26.0] - 2026-10-08
 
 ### Aggiunto

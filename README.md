@@ -55,6 +55,10 @@ Le immagini dei tooltip e del README si rigenerano con:
 DOC_IMAGES=1 npx playwright test e2e/docs-images.spec.ts
 ```
 
+## Pubblicazione
+
+Ogni push su `main` avvia la GitHub Action `.github/workflows/deploy.yml`: build di produzione e sincronizzazione via rsync su SSH in `public_html/` di [construct.mavida.com](https://construct.mavida.com), con mail di esito. Servono i secret del repo `SSH_HOST`, `SSH_USERNAME`, `SSH_PASSWORD`, `RESEND_API_KEY` e `VITE_API_BASE_URL` (quest'ultimo non è ancora usato dall'app).
+
 ## Scorciatoie
 
 Le principali: `Q` Seleziona, `W` Sposta, `E` Ruota, `R` Ridimensiona, `T` Estrudi, `U` Unisci, `J` Inviluppo, `H` Foro, `F` Raccordo, `S` Smusso, `A` Smusso angolare, `G` Guscio, `K` Allinea, `Y` Specchia, `I` Misura, `O` Serie, `Z` Pattern, `V` Appoggia su una faccia, `B` Appoggia sul piatto, `C` Codice OpenSCAD. L'elenco completo è nel menu dell'app e nel tooltip di ogni pulsante.
