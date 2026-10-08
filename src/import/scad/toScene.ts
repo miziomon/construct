@@ -1,4 +1,5 @@
 import { randomColor } from '../../scene/color';
+import { FONTS } from '../../scene/fontCatalog';
 import { DEFAULT_SEGMENTS, MAX_SEGMENTS, MIN_SEGMENTS, MIN_SPHERE_SEGMENTS, PRIMITIVE_LABELS, SHAPE2D_LABELS, primitiveDefaults, shape2dDefaults } from '../../scene/defaults';
 import { matrixToEuler, round } from '../../scene/math';
 import type { Mat3 } from '../../scene/math';
@@ -65,6 +66,19 @@ function decompose(M: Mat, localCenter: Vec3): { scale: Vec3; rotation: Vec3; po
 
 /** Raggi uguali (entro la tolleranza)? Serve a tenere cilindri e sfere tondi dopo la scala. */
 const same = (a: number, b: number) => Math.abs(a - b) < 1e-6 * Math.max(1, Math.abs(a), Math.abs(b));
+
+/** Contorni di un poligono (i `paths` di OpenSCAD, oppure tutti i punti in ordine) centrati su `c`. */
+function contoursOf(paths: number[][] | undefined, points: [number, number][], c: [number, number]): [number, number][][] {
+  const lists = paths ?? [points.map((_, i) => i)];
+  return lists.map((path) => path.map((i) => [r3(points[i][0] - c[0]), r3(points[i][1] - c[1])] as [number, number]));
+}
+
+/** Font del catalogo che corrisponde al nome di OpenSCAD (`Famiglia:style=Stile`); senza corrispondenza, quello predefinito. */
+function fontIdOf(name: string): string {
+  const [family, style] = name.split(':style=').map((part) => part.trim().toLowerCase());
+  const candidates = FONTS.filter((f) => f.family.toLowerCase() === family);
+  return (candidates.find((f) => f.style.toLowerCase() === style) ?? candidates[0] ?? FONTS[0]).id;
+}
 
 /**
  * Legge un file OpenSCAD e lo trasforma in oggetti di Construct. Le trasformazioni (translate, rotate, scale, mirror) si
@@ -137,13 +151,70 @@ export function importScad(source: string): ScadImport {
       } as PrimitiveNode;
     }
 
-    // Forme 2D estruse (linear_extrude)
+    // Forme 2D: estruse in linea retta (linear_extrude) oppure fatte girare attorno all'asse Z (rotate_extrude)
     const ext = sh.ext;
+    const linear = !sh.rev;
     const heightOf = (scale: number) => r3(Math.max(MIN, Math.abs(ext.h * scale)));
-    const twist = ext.twist ? { twist: r3(ext.twist) } : {};
-    const scaleTop = ext.scale !== 1 ? { scaleTop: r3(ext.scale) } : {};
-    if (ext.twist || ext.scale !== 1) warnings.add('La torsione e la scala della cima di linear_extrude sono importate come parametri della forma.');
+    // OpenSCAD torce in senso orario e manifold in senso antiorario: il segno si inverte (come fa il codice esportato)
+    const twist = linear && ext.twist ? { twist: r3(-ext.twist) } : {};
+    const scaleTop = linear && ext.scale !== 1 ? { scaleTop: r3(ext.scale) } : {};
+    if (linear && (ext.twist || ext.scale !== 1)) warnings.add('La torsione e la scala della cima di linear_extrude sono importate come parametri della forma.');
+    /** Contorno (offset 2D) del profilo, nelle misure del profilo: segue la scala dell'oggetto. */
+    const offsetOf = (k: number) => (sh.off ? { offset: r3(sh.off.v * k), ...(sh.off.join === 'sharp' ? { offsetJoin: 'sharp' as const } : {}) } : {});
     const base = { ...placeholder(), color } as const;
+
+    if (sh.rev && sh.s !== 'text') {
+      // Profilo di rotate_extrude: la X del profilo è il raggio, la Y diventa l'altezza (Z) del solido
+      const P = sh.rev.profile;
+      const sx = Math.hypot(P[0], P[4]);
+      const sy = Math.hypot(P[1], P[5]);
+      if (sh.s !== 'polygon' && (Math.abs(P[1]) > 1e-9 || Math.abs(P[4]) > 1e-9)) warnings.add('Una rotazione del profilo dentro rotate_extrude() è stata ignorata.');
+      const at = (x: number, y: number): [number, number] => [P[0] * x + P[1] * y + P[3], P[4] * x + P[5] * y + P[7]];
+      let c: [number, number];
+      let width: number;
+      let depth: number;
+      let pts: [number, number][] = [];
+      if (sh.s === 'circle') {
+        c = at(0, 0);
+        [width, depth] = [2 * sh.r * sx, 2 * sh.r * sy];
+      } else if (sh.s === 'square') {
+        c = sh.center ? at(0, 0) : at(sh.size[0] / 2, sh.size[1] / 2);
+        [width, depth] = [sh.size[0] * sx, sh.size[1] * sy];
+      } else {
+        pts = sh.points.map(([x, y]) => at(x, y));
+        const xs = pts.map((q) => q[0]);
+        const ys = pts.map((q) => q[1]);
+        c = [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2];
+        [width, depth] = [Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)];
+      }
+      const d = decompose(item.M, [0, 0, c[1]]);
+      note(d.skewed);
+      if (!same(d.scale[0], d.scale[1])) warnings.add('Una scala diversa in X e in Y attorno a rotate_extrude() è stata approssimata.');
+      if (c[0] < -1e-9) warnings.add('rotate_extrude(): una parte del profilo sta oltre l\'asse (X negativa) e si perde.');
+      const [kx, kz] = [d.scale[0], d.scale[2]];
+      const revolve = {
+        extrusion: 'rotate' as const,
+        ...(sh.rev.angle < 360 ? { revolveAngle: r3(sh.rev.angle) } : {}),
+        revolveRadius: r3(Math.max(0, c[0]) * kx),
+        ...(sh.rev.fn ? { revolveSegments: Math.min(256, Math.max(3, sh.rev.fn)) } : {}),
+        ...offsetOf(kx),
+        position: d.position,
+        rotation: d.rotation,
+      };
+      if (sh.s === 'circle') {
+        const radius = r3(Math.max(MIN, (width / 2) * kx));
+        const radiusY = r3(Math.max(MIN, (depth / 2) * kz));
+        return { ...shape2dDefaults('circle'), ...base, name: SHAPE2D_LABELS.circle, radius, ...(same(radius, radiusY) ? {} : { radiusY }), segments: segmentsOf(sh.fn), ...revolve } as Shape2DNode;
+      }
+      if (sh.s === 'square') {
+        return { ...shape2dDefaults('square'), ...base, name: SHAPE2D_LABELS.square, width: r3(Math.max(MIN, width * kx)), depth: r3(Math.max(MIN, depth * kz)), cornerRadius: 0, ...revolve } as Shape2DNode;
+      }
+      return {
+        ...shape2dDefaults('svg'), ...base, name: 'Poligono', kind: 'svg', fileName: 'OpenSCAD', contours: contoursOf(sh.paths, pts, c),
+        width: r3(Math.max(MIN, width * kx)), depth: r3(Math.max(MIN, depth * kz)), ...revolve,
+      } as Shape2DNode;
+    }
+
     if (sh.s === 'circle') {
       const d = decompose(item.M, [0, 0, ext.center ? 0 : ext.h / 2]);
       note(d.skewed);
@@ -151,7 +222,7 @@ export function importScad(source: string): ScadImport {
       const radiusY = r3(Math.max(MIN, Math.abs(sh.r * d.scale[1])));
       return {
         ...shape2dDefaults('circle'), ...base, name: SHAPE2D_LABELS.circle, radius, ...(same(radius, radiusY) ? {} : { radiusY }), segments: segmentsOf(sh.fn), height: heightOf(d.scale[2]), ...twist, ...scaleTop,
-        position: d.position, rotation: d.rotation,
+        ...offsetOf(d.scale[0]), position: d.position, rotation: d.rotation,
       } as Shape2DNode;
     }
     if (sh.s === 'square') {
@@ -159,12 +230,28 @@ export function importScad(source: string): ScadImport {
       note(d.skewed);
       return {
         ...shape2dDefaults('square'), ...base, name: SHAPE2D_LABELS.square, width: r3(Math.max(MIN, Math.abs(sh.size[0] * d.scale[0]))), depth: r3(Math.max(MIN, Math.abs(sh.size[1] * d.scale[1]))),
-        cornerRadius: 0, height: heightOf(d.scale[2]), ...twist, ...scaleTop, position: d.position, rotation: d.rotation,
+        cornerRadius: 0, height: heightOf(d.scale[2]), ...twist, ...scaleTop, ...offsetOf(d.scale[0]), position: d.position, rotation: d.rotation,
       } as Shape2DNode;
     }
-    // Poligono: diventa un disegno (contorno centrato nell'origine, come un SVG importato)
-    const xs = sh.points.map((p) => p[0]);
-    const ys = sh.points.map((p) => p[1]);
+    if (sh.s === 'text') {
+      // Il font di OpenSCAD si cerca nel catalogo di Construct; la posizione è stimata perché i font non sono disponibili qui
+      // (Construct centra il testo, OpenSCAD lo allinea a sinistra e sulla linea di base)
+      const font = fontIdOf(sh.font);
+      const advance = [...sh.text].length * sh.size * 0.6;
+      const cx = sh.halign === 'center' ? 0 : sh.halign === 'right' ? -advance / 2 : advance / 2;
+      const cy = sh.valign === 'top' ? -sh.size / 2 : sh.valign === 'center' ? 0 : sh.size / 2;
+      const d = decompose(item.M, [cx, cy, ext.center ? 0 : ext.h / 2]);
+      note(d.skewed);
+      if (!same(d.scale[0], d.scale[1])) warnings.add('Un testo scalato in modo diverso in X e in Y è stato approssimato.');
+      warnings.add('Testo: la posizione è stimata, perché il font di Construct può avere misure diverse da quello di OpenSCAD.');
+      return {
+        ...shape2dDefaults('text'), ...base, name: SHAPE2D_LABELS.text, kind: 'text', text: sh.text, font, size: r3(Math.max(MIN, sh.size * d.scale[1])), height: heightOf(d.scale[2]),
+        ...twist, ...scaleTop, ...offsetOf(d.scale[0]), position: d.position, rotation: d.rotation,
+      } as Shape2DNode;
+    }
+    // Poligono (anche con fori): diventa un disegno (contorni centrati nell'origine, come un SVG importato)
+    const xs = sh.points.map((q) => q[0]);
+    const ys = sh.points.map((q) => q[1]);
     const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
     const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
     const width = r3(Math.max(MIN, Math.max(...xs) - Math.min(...xs)));
@@ -172,8 +259,8 @@ export function importScad(source: string): ScadImport {
     const d = decompose(item.M, [cx, cy, ext.center ? 0 : ext.h / 2]);
     note(d.skewed);
     return {
-      ...shape2dDefaults('svg'), ...base, name: 'Poligono', kind: 'svg', fileName: 'OpenSCAD', contours: [sh.points.map(([x, y]) => [r3(x - cx), r3(y - cy)] as [number, number])],
-      width: r3(width * d.scale[0]), depth: r3(depth * d.scale[1]), height: heightOf(d.scale[2]), ...twist, ...scaleTop, position: d.position, rotation: d.rotation,
+      ...shape2dDefaults('svg'), ...base, name: 'Poligono', kind: 'svg', fileName: 'OpenSCAD', contours: contoursOf(sh.paths, sh.points, [cx, cy]),
+      width: r3(width * d.scale[0]), depth: r3(depth * d.scale[1]), height: heightOf(d.scale[2]), ...twist, ...scaleTop, ...offsetOf(d.scale[0]), position: d.position, rotation: d.rotation,
     } as Shape2DNode;
   }
 

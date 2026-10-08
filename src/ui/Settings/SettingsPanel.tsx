@@ -67,7 +67,7 @@ export function SettingsPanel({ run }: { run: (action: () => void | Promise<void
             ))}
           </div>
         </div>
-        <Toggle id="set-welcome" label="Schermata di benvenuto a ogni avvio" hint="Altrimenti compare solo la prima volta (si riapre sempre dal menu)." checked={ui.welcomeAlways} onChange={set('welcomeAlways')} />
+        <Toggle id="set-welcome" label="Schermata di benvenuto a ogni avvio" hint="Se la togli compare solo la prima volta (si riapre sempre dal menu)." checked={ui.welcomeAlways} onChange={set('welcomeAlways')} />
       </section>
 
       <section>

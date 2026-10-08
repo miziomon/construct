@@ -92,3 +92,22 @@ Primo passo economico alla Tinkercad: **Duplica e ripeti** (Ctrl+D ripete l'ulti
 - Lucchetto delle proporzioni e Scala per le altre primitive (cilindro, cono, sfera, toro).
 - Controllo automatico del peso dei chunk in build (`size-limit`).
 - Nomi in italiano e ricerca per le emoji (scartati per ora).
+
+## Importa OpenSCAD: cosa non si legge ancora (aggiornato alla 0.27.0)
+
+Dalla 0.27.0 l'importazione legge anche `let`/`assign`, le liste per comprensione complete (`for` annidati, `if`/`else`, `each`, `let`, forma del C), `^`, le funzioni anonime, `children(i)`, `$children`, `$fa`/`$fs`, `multmatrix`, `polygon` con `paths`, `offset`, `rotate_extrude`, `text`, `resize` e molte funzioni (`lookup`, `search`, `rands`, `cross`, `chr`, `ord`, `is_string`, `is_bool`, `is_function`). Quello che resta è più difficile e va valutato insieme.
+
+| Comando | Difficoltà | Cosa servirebbe |
+|---|---|---|
+| `polyhedron` | Media-alta | Non c'è un nodo di poliedro generico (i dadi sono solidi fissi). La via è una mesh importata (`MeshNode`), che richiede la registrazione asincrona dell'asset nel worker, un solido chiuso e a tenuta, e l'inversione dell'ordine delle facce (OpenSCAD le vuole in senso orario). Oggi `importScad` e lo store sono sincroni: andrebbe reso asincrono il percorso di importazione. |
+| `import("file.stl")` | Alta | Il file sta accanto al `.scad`: bisogna far scegliere più file insieme (o una cartella), registrare ogni mesh e collegarla ai nodi. Come il `polyhedron`, richiede un flusso asincrono. |
+| `minkowski` generico | Alta | manifold-3d 3.5 ha `minkowskiSum`, mai usato in Construct. Servirebbero un nuovo tipo di gruppo nel kernel e nel generatore di codice, e attenzione ai tempi di calcolo (cresce con le facce dei due solidi). Il caso più comune, `minkowski()` di un cubo e una sfera, equivale a un box con spigoli arrotondati (`cornerRadius`) e si potrebbe riconoscere da solo. |
+| `projection` | Alta | Nessun corrispettivo: servirebbe una forma 2D ottenuta dalla sezione o dall'ombra di un solido (`slice` esiste nel kernel, usata solo dal Guscio). |
+| `surface` | Alta | Legge un file di dati o un'immagine: stesso problema dei file esterni di `import`. |
+| `roof` | Molto alta | È poco usato e richiede lo scheletro del poligono (straight skeleton). |
+| `color` con trasparenza (alpha) | Non rappresentabile | La scena non ha trasparenza per oggetto. |
+| `linear_extrude` con `scale` diversa per X e Y | Non rappresentabile | Il parametro `scaleTop` è un solo numero. |
+| `offset(chamfer = true)` | Non rappresentabile | Gli angoli sono arrotondati o vivi, non smussati. |
+| `rotate_extrude` con angolo negativo o profilo oltre l'asse | Media | Oggi la parte con X negativa si perde, mentre OpenSCAD segnala un errore. |
+| Esporta e reimporta un solido rotazionale | Media | Il codice di Construct per `rotate_extrude` contiene un `intersection()` che ritaglia la parte oltre l'asse: riletto diventa un gruppo di tre oggetti invece della forma originale. Si potrebbe riconoscere lo schema. |
+| `text` | Media | La posizione è stimata (il font di OpenSCAD non è nel catalogo e le misure dei glifi non sono disponibili in modo sincrono). Con le misure vere dei font si potrebbe calcolare l'allineamento esatto. |

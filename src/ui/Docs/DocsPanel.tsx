@@ -1,0 +1,205 @@
+import type { MouseEvent, ReactNode } from 'react';
+import { TOOLBAR_HELP, type HelpKey } from '../Toolbar/toolbarHelp';
+import { useUiStore } from '../uiStore';
+import './DocsPanel.scss';
+
+/**
+ * Documentazione di Construct: manuale per sezioni con indice a ancore e FAQ in fondo. I testi dei comandi vengono da
+ * `toolbarHelp.ts` (gli stessi dei tooltip) e le immagini da `public/help`, per non duplicarli.
+ */
+
+/** Sezioni del manuale: l'indice e le ancore nascono da qui. */
+const SECTIONS = [
+  { id: 'primi-passi', title: 'Primi passi' },
+  { id: 'trasformare', title: 'Trasformare' },
+  { id: 'combinare', title: 'Combinare e forare' },
+  { id: 'modificare', title: 'Modificare' },
+  { id: 'ripetizioni', title: 'Ripetizioni' },
+  { id: 'piatti', title: 'Piatti e piano di stampa' },
+  { id: 'openscad', title: 'Codice OpenSCAD' },
+  { id: 'import-export', title: 'Importare ed esportare' },
+  { id: 'salvataggio', title: 'Salvataggio e progetti' },
+  { id: 'scorciatoie', title: 'Scorciatoie' },
+  { id: 'faq', title: 'Domande frequenti' },
+] as const;
+
+/** Scheda di un comando: nome, cosa fa, come si usa e, se c'è, l'immagine di esempio. */
+function Command({ id }: { id: HelpKey }) {
+  const { name, what, how, image } = TOOLBAR_HELP[id];
+  return (
+    <div className="docs__command">
+      <h4>{name}</h4>
+      <p>{what}</p>
+      <p className="docs__how">{how}</p>
+      {image && (
+        <img
+          className="docs__image"
+          src={`${import.meta.env.BASE_URL}help/${image}.webp`}
+          alt={`Esempio: ${name}`}
+          loading="lazy"
+          onError={(e) => (e.currentTarget.style.display = 'none')}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Sezione del manuale con il suo titolo ancorabile. */
+function Section({ id, title, children }: { id: string; title: string; children: ReactNode }) {
+  return (
+    <section id={`docs-${id}`} className="docs__section">
+      <h3>{title}</h3>
+      {children}
+    </section>
+  );
+}
+
+/** Domanda con risposta a scomparsa. */
+function Faq({ q, children }: { q: string; children: ReactNode }) {
+  return (
+    <details className="docs__faq">
+      <summary>{q}</summary>
+      <div>{children}</div>
+    </details>
+  );
+}
+
+export default function DocsPanel() {
+  const setPanel = useUiStore((s) => s.setAppPanel);
+
+  /** Scorre fino alla sezione dentro il pannello, senza toccare l'URL della pagina. */
+  const jump = (id: string) => (e: MouseEvent) => {
+    e.preventDefault();
+    document.getElementById(`docs-${id}`)?.scrollIntoView({ block: 'start' });
+  };
+
+  return (
+    <div className="docs">
+      <nav className="docs__index" aria-label="Indice della documentazione">
+        <ul>
+          {SECTIONS.map((s) => (
+            <li key={s.id}>
+              <a href={`#docs-${s.id}`} onClick={jump(s.id)}>{s.title}</a>
+            </li>
+          ))}
+        </ul>
+      </nav>
+
+      <Section id="primi-passi" title="Primi passi">
+        <p>Construct è diviso in quattro aree. A sinistra la <strong>libreria</strong> con le forme 3D e 2D, i simboli e le emoji: un clic aggiunge la forma al centro del piatto. Al centro la <strong>vista 3D</strong>, dove si selezionano e si spostano gli oggetti. In alto la <strong>barra strumenti</strong> con i comandi, e a destra l&apos;<strong>elenco degli oggetti</strong> e le <strong>proprietà</strong> dell&apos;oggetto selezionato (nome, posizione, rotazione, misure, colore).</p>
+        <p>Si seleziona con un clic (Maiusc+clic per aggiungerne altri, Alt+clic per scegliere un singolo oggetto dentro un gruppo). Le unità sono i millimetri, l&apos;asse Z va verso l&apos;alto. La vista si ruota trascinando e si ingrandisce con la rotella.</p>
+        <Command id="select" />
+        <Command id="duplicate" />
+        <Command id="delete" />
+        <Command id="undo" />
+        <Command id="redo" />
+      </Section>
+
+      <Section id="trasformare" title="Trasformare">
+        <p>Ogni oggetto si sposta, ruota e ridimensiona con i gizmo della vista oppure digitando i valori esatti nelle proprietà. Le quote X, Y e Z sull&apos;oggetto selezionato sono cliccabili: si scrive la misura in millimetri.</p>
+        <Command id="translate" />
+        <Command id="rotate" />
+        <Command id="resize" />
+        <Command id="extrude" />
+      </Section>
+
+      <Section id="combinare" title="Combinare e forare">
+        <p>Più oggetti si combinano in gruppi: Raggruppa li muove insieme senza fonderli, Unisci ne fa un solo solido. Un oggetto impostato come Foro toglie materiale a ciò con cui si sovrappone.</p>
+        <Command id="group" />
+        <Command id="union" />
+        <Command id="hull" />
+        <Command id="ungroup" />
+        <Command id="hole" />
+        <Command id="ghost" />
+        <Command id="lock" />
+      </Section>
+
+      <Section id="modificare" title="Modificare">
+        <p>Rifiniture pensate per la stampa: raccordi e smussi sugli spigoli, guscio per svuotare, specchiatura e allineamento, e due comandi per mettere il pezzo nel verso giusto sul piatto.</p>
+        <Command id="fillet" />
+        <Command id="chamfer" />
+        <Command id="corner" />
+        <Command id="shell" />
+        <Command id="mirror" />
+        <Command id="align" />
+        <Command id="measure" />
+        <Command id="drop" />
+        <Command id="layflat" />
+      </Section>
+
+      <Section id="ripetizioni" title="Ripetizioni">
+        <p>Serie e Pattern creano gruppi modificabili: si cambiano i parametri, non le singole copie.</p>
+        <Command id="array" />
+        <Command id="pattern" />
+      </Section>
+
+      <Section id="piatti" title="Piatti e piano di stampa">
+        <p>Un progetto può avere più <strong>piatti</strong>, ciascuno con i suoi oggetti: si vede un piatto alla volta e si gestiscono dalla scheda Piatti sotto la libreria. Il 3MF esporta tutti i piatti affiancati, l&apos;STL ne chiede uno.</p>
+        <p>Le dimensioni del <strong>piano di stampa</strong> (256 × 256 mm all&apos;inizio) si cambiano dalla barra di stato o dal menu del clic destro nel vuoto, anche con i preset delle stampanti. Il comando Piatto cambia come si vede: completo, solo griglia e bordo, nascosto.</p>
+        <Command id="bed" />
+      </Section>
+
+      <Section id="openscad" title="Codice OpenSCAD">
+        <p>Il comando <strong>Codice</strong> (tasto C) mostra il codice OpenSCAD generato dalla scena. Si aggiorna a ogni modifica e si può copiare o scaricare. Dal menu Esporta si ottiene un file <code>.scad</code> (con il testo, uno ZIP con i font).</p>
+        <Command id="code" />
+        <h4>Importare un file .scad</h4>
+        <p>Il file si legge come codice, si valuta e diventa oggetti veri della scena, in un solo passo di Annulla. Quello che non si capisce viene saltato con un avviso.</p>
+        <h5>Supportato</h5>
+        <ul>
+          <li>Primitive: <code>cube</code>, <code>sphere</code>, <code>cylinder</code>, <code>circle</code>, <code>square</code>, <code>polygon</code> (anche con <code>paths</code>).</li>
+          <li>Da 2D a 3D: <code>linear_extrude</code>, <code>rotate_extrude</code>, <code>offset</code>, <code>text</code>.</li>
+          <li>Trasformazioni: <code>translate</code>, <code>rotate</code>, <code>scale</code>, <code>mirror</code>, <code>resize</code>, <code>multmatrix</code>, <code>color</code>.</li>
+          <li>Booleane e inviluppo: <code>union</code>, <code>difference</code>, <code>intersection</code>, <code>hull</code>.</li>
+          <li>Linguaggio: <code>for</code>, <code>if</code>, <code>let</code>, list comprehension, moduli e funzioni, variabili e operatori matematici.</li>
+        </ul>
+        <h5>Non ancora supportato</h5>
+        <ul>
+          <li><code>polyhedron</code> e <code>import()</code> di altri file.</li>
+          <li><code>minkowski</code>, <code>projection</code>, <code>surface</code> e <code>roof</code>.</li>
+        </ul>
+      </Section>
+
+      <Section id="import-export" title="Importare ed esportare">
+        <p>Dal menu <strong>Importa</strong> (o trascinando i file nella finestra) si aprono file <strong>STL</strong> e <strong>3MF</strong> (solidi chiusi), <strong>SVG</strong> (diventano forme 2D estruse, con unità in millimetri) e <strong>OpenSCAD</strong>. Dal menu <strong>Esporta</strong> si ottengono STL, 3MF e OpenSCAD.</p>
+        <p>L&apos;STL è una mesh unica, il formato più diffuso per gli slicer. Il 3MF conserva i colori, con un oggetto per ogni colore, e contiene tutti i piatti.</p>
+      </Section>
+
+      <Section id="salvataggio" title="Salvataggio e progetti">
+        <p>Con il <strong>salvataggio automatico</strong> (attivo di default) la scena si salva nel browser a ogni modifica e si ritrova alla riapertura. Dal menu si può anche salvare il progetto in un file da conservare o condividere, e riaprirlo con Apri progetto. Nelle Impostazioni si regolano salvataggio, quote, passi di spostamento e aggancio, e si possono cancellare tutti i dati salvati.</p>
+        <Command id="new" />
+      </Section>
+
+      <Section id="scorciatoie" title="Scorciatoie">
+        <p>Quasi ogni comando ha una scorciatoia da tastiera, indicata anche nei tooltip della barra. L&apos;elenco completo è nel pannello dedicato.</p>
+        <p><button type="button" className="docs__link" onClick={() => setPanel('shortcuts')}>Apri le scorciatoie da tastiera</button></p>
+      </Section>
+
+      <Section id="faq" title="Domande frequenti">
+        <Faq q="Dove sono salvati i miei dati?">
+          Solo nel tuo browser (localStorage e IndexedDB): nulla viene inviato a un server. Cambiando browser o dispositivo il progetto non c&apos;è, quindi per spostarlo salvalo in un file dal menu. Dalle Impostazioni puoi cancellare tutti i dati.
+        </Faq>
+        <Faq q="Funziona offline?">
+          Sì: dopo il primo caricamento Construct è una PWA e si usa anche senza connessione. Puoi installarla dal browser.
+        </Faq>
+        <Faq q="Perché un file .scad non si importa del tutto?">
+          L&apos;import legge un sottoinsieme di OpenSCAD. Gli elementi non supportati (per esempio <code>polyhedron</code>, <code>minkowski</code>, <code>import()</code>) vengono saltati e un avviso li elenca. Controlla l&apos;elenco nella sezione Codice OpenSCAD.
+        </Faq>
+        <Faq q="STL o 3MF?">
+          L&apos;STL contiene solo la forma di un piatto. Il 3MF conserva anche i colori e tutti i piatti: usalo se il tuo slicer lo supporta, altrimenti l&apos;STL va sempre bene.
+        </Faq>
+        <Faq q="Come si annulla un errore?">
+          Con Ctrl+Z (Ctrl+Y per ripetere) o con i pulsanti della barra. Ogni operazione conta un solo passo, anche quelle con anteprima; la linea del tempo mostra la cronologia.
+        </Faq>
+        <Faq q="Come stampo più piatti?">
+          Crea i piatti dalla scheda Piatti e metti su ciascuno i suoi oggetti. L&apos;STL esporta un piatto alla volta (te lo chiede), il 3MF li esporta tutti affiancati.
+        </Faq>
+        <Faq q="Come faccio un foro o una cavità?">
+          Imposta un oggetto come Foro e uniscilo a un solido, oppure usa Guscio per svuotare un pezzo mantenendo pareti di spessore costante.
+        </Faq>
+        <Faq q="Il benvenuto compare a ogni avvio: come lo tolgo?">
+          Togli la spunta da &quot;Mostra ogni volta&quot; nella schermata di benvenuto o nelle Impostazioni. Dal menu la schermata si riapre sempre.
+        </Faq>
+      </Section>
+    </div>
+  );
+}

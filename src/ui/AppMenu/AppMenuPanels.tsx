@@ -7,7 +7,7 @@ import { pickAndImport } from '../../import/importFile';
 import changelogSource from '../../../CHANGELOG.md?raw';
 import { parseChangelog } from './changelog';
 import { SettingsPanel } from '../Settings/SettingsPanel';
-import type { AppPanel } from '../uiStore';
+import { useUiStore, type AppPanel } from '../uiStore';
 
 /**
  * Corpo delle modali del menu (Importa, Esporta, Scorciatoie, Novità, About). Sta in un modulo a parte, caricato solo
@@ -93,6 +93,7 @@ function Inline({ text }: { text: string }) {
 
 export default function AppMenuPanels({ panel, run }: { panel: Panel; run: (action: () => void | Promise<void>) => () => void }) {
   const scene = useSceneStore((s) => s.scene);
+  const setPanel = useUiStore((s) => s.setAppPanel);
   // Con più piatti si esporta anche se il piatto in vista è vuoto: conta ogni piatto
   const hasObjects = allRootIds(scene).length > 0;
   const plates = platesOf(scene);
@@ -216,21 +217,47 @@ export default function AppMenuPanels({ panel, run }: { panel: Panel; run: (acti
         )}
 
       {panel === 'about' && (
-          <>
-            <p><strong className="brand-name">Construct</strong> <span data-testid="about-version">v{__APP_VERSION__}</span></p>
-            <p>Modellazione 3D da primitive con operazioni booleane, pensata per chi stampa in 3D. Piatto di stampa modificabile dalla barra di stato (256 × 256 mm di default), export STL e 3MF.</p>
-            <p>Costruito con React, three.js e manifold-3d. Licenza MIT.</p>
+          <div className="app-menu__about">
+            {/* Intestazione: nome e versione */}
+            <header className="app-menu__about-head">
+              <strong className="brand-name">Construct</strong> <span data-testid="about-version">v{__APP_VERSION__}</span>
+            </header>
+            <p>Un editor CAD 3D nel browser, pensato per chi stampa in 3D: si costruisce da forme semplici con operazioni booleane, raccordi e ripetizioni, e il risultato si esporta pronto per lo slicer o come codice OpenSCAD.</p>
+
+            <h4 className="app-menu__about-title">Cosa puoi fare</h4>
+            <ul>
+              <li>Comporre solidi da forme 3D e 2D, simboli, emoji e testo, e trasformarli con le quote in millimetri.</li>
+              <li>Unire, sottrarre, intersecare e forare con le booleane, anche con l&apos;inviluppo convesso.</li>
+              <li>Arrotondare e smussare spigoli e angoli, svuotare un solido con il guscio, specchiare e allineare.</li>
+              <li>Ripetere un oggetto con serie e pattern (Voronoi, esagoni, cerchi, rombi, triangoli).</li>
+              <li>Organizzare più piatti di stampa nello stesso progetto, sul piano della tua stampante.</li>
+              <li>Generare il codice OpenSCAD dalla scena e importare file <code>.scad</code>, STL, 3MF e SVG.</li>
+              <li>Esportare in STL e 3MF, con i colori e tutti i piatti.</li>
+            </ul>
+
+            <h4 className="app-menu__about-title">I tuoi dati</h4>
+            <p>Tutto resta sul tuo dispositivo: progetti, preferenze e file importati sono salvati nel browser e non vengono mai inviati a un server. Come app installabile (PWA) Construct funziona anche offline.</p>
+
+            <h4 className="app-menu__about-title">Tecnologie</h4>
+            <p>Interfaccia in <strong>React</strong>, vista 3D con <strong>React Three Fiber</strong> e <strong>three.js</strong>, geometria calcolata da <strong>manifold-3d</strong> (WebAssembly) in un Web Worker.</p>
+
             <h4 className="app-menu__about-title">Il progetto</h4>
             <p>
-              Il codice è aperto: sorgenti, segnalazioni e novità sono su{' '}
+              Il codice è aperto, con licenza MIT: sorgenti, segnalazioni e novità sono su{' '}
               <a href="https://github.com/miziomon/construct" target="_blank" rel="noopener noreferrer">github.com/miziomon/construct</a>.
             </p>
+
             <h4 className="app-menu__about-title">L&apos;autore</h4>
             <p>
               <strong>Maurizio Pelizzone</strong>, sviluppatore senior PHP e WordPress, con una passione per JavaScript (React, Node, Vite) e Python, fondatore di MAVIDA. Su{' '}
               <a href="https://maurizio.mavida.com" target="_blank" rel="noopener noreferrer">maurizio.mavida.com</a> scrive di sviluppo web e dei suoi progetti.
             </p>
-          </>
+
+            <p className="app-menu__about-links">
+              <button type="button" className="app-menu__about-link" onClick={() => setPanel('docs')}>Documentazione</button>
+              <button type="button" className="app-menu__about-link" onClick={() => setPanel('news')}>Novità</button>
+            </p>
+          </div>
         )}
     </>
   );

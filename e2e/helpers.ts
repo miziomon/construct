@@ -8,7 +8,14 @@ export async function openApp(page: Page, options: { welcome?: boolean } = {}): 
     (window as { showSaveFilePicker?: unknown }).showSaveFilePicker = undefined;
   });
   // La schermata di benvenuto compare al primo avvio: le prove la considerano già vista, salvo quelle che la provano
-  if (!options.welcome) await page.addInitScript(() => localStorage.setItem('construct:welcomed', '1'));
+  // Il benvenuto ora compare a ogni avvio (welcomeAlways predefinito): le prove lo spengono anche nelle preferenze salvate
+  if (!options.welcome) {
+    await page.addInitScript(() => {
+      localStorage.setItem('construct:welcomed', '1');
+      // Solo se mancano: un test che ricarica la pagina non deve perdere le preferenze che ha cambiato (formato persist di zustand)
+      if (localStorage.getItem('construct:ui') === null) localStorage.setItem('construct:ui', JSON.stringify({ state: { welcomeAlways: false }, version: 0 }));
+    });
+  }
   await page.goto('/');
   // Database pulito: la scena salvata da un test precedente non deve influenzare il successivo
   await page.evaluate(async () => {

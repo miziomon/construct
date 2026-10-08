@@ -33,7 +33,7 @@ const NEXT_BED: Record<BedMode, BedMode> = { full: 'grid', grid: 'none', none: '
 export type ToolbarMenu = 'align' | 'mirror';
 
 /** Pannelli del menu hamburger (Importa, Esporta, ...): il menu del vuoto della vista li apre da fuori, quindi lo stato sta qui. */
-export type AppPanel = 'import' | 'export' | 'settings' | 'shortcuts' | 'news' | 'about';
+export type AppPanel = 'import' | 'export' | 'settings' | 'shortcuts' | 'news' | 'about' | 'docs';
 
 /**
  * Impostazioni dell'utente (modale Impostazioni), salvate in localStorage con le altre preferenze. I limiti servono anche
@@ -50,11 +50,11 @@ export interface Settings {
   snapRotate: number;
   /** Salva la scena nel browser a ogni modifica (altrimenti solo con "Salva progetto"). */
   autosave: boolean;
-  /** Mostra la schermata di benvenuto a ogni avvio, non solo il primo. */
+  /** Mostra la schermata di benvenuto a ogni avvio (predefinito), non solo il primo. */
   welcomeAlways: boolean;
 }
 
-export const DEFAULT_SETTINGS: Settings = { showDimensions: true, nudgeStep: 1, snapMove: 1, snapRotate: 15, autosave: true, welcomeAlways: false };
+export const DEFAULT_SETTINGS: Settings = { showDimensions: true, nudgeStep: 1, snapMove: 1, snapRotate: 15, autosave: true, welcomeAlways: true };
 
 /** Limiti dei valori numerici delle impostazioni. */
 export const SETTING_LIMITS = {

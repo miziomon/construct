@@ -18,6 +18,24 @@ I messaggi di commit seguono i [Conventional Commits](https://www.conventionalco
 
 ## [Non rilasciato]
 
+## [0.27.0] - 2026-10-08
+
+### Aggiunto
+- **Importa OpenSCAD molto più completo.** Ora si leggono anche `rotate_extrude` (angolo, `$fn`, profili di cerchio, quadrato e poligono, con le trasformazioni di dentro e di fuori), `offset` (`r` arrotonda, `delta` lascia gli angoli vivi), `text` (font cercato nel catalogo, posizione stimata), `resize` (anche con `auto`), `multmatrix` e `polygon` con `paths` (il secondo contorno è un foro). Nel linguaggio: `let` (istruzione, espressione e `assign`), liste per comprensione complete (`for` annidati, `if`/`else`, `each`, `let`, forma del C, elementi misti), operatore `^`, funzioni anonime, `echo` e `assert` dentro le espressioni, `children(i)` e `children([...])`, `$children`, `$preview`, `$fa` e `$fs` (quando il file li imposta). Nuove funzioni: `lookup`, `search`, `rands` (sequenza ripetibile ma diversa da quella di OpenSCAD), `cross`, `chr`, `ord`, `is_string`, `is_bool`, `is_function`, `version`, `version_num`, `log` con due argomenti, prodotto tra vettori e matrici e confronto tra stringhe.
+- **Benvenuto**: casella "Mostra ogni volta" (spuntata di default, come l'impostazione già presente in Impostazioni) e collegamenti ad About e Documentazione.
+- **Documentazione** nel menu: manuale d'uso in una modale grande come quella del codice, con indice, sezioni per ogni gruppo di strumenti, cosa legge l'importazione OpenSCAD e in fondo le FAQ.
+- **About** più ricco e meglio organizzato: cosa si può fare, dove stanno i dati, tecnologie, progetto e autore.
+
+### Corretto
+- **Torsione di `linear_extrude`**: importando il codice, il verso era opposto a quello che scrive l'esportazione; ora il giro esporta e importa lascia la torsione com'era.
+- **Variabili assegnate più volte**: come in OpenSCAD vale l'ultima assegnazione (`x = 1; cube(x); x = 2;` fa un cubo di lato 2), con un avviso.
+- **Modificatore `%` davanti a `for`, `if` e blocchi**: ora disattiva l'istruzione intera, come `*`. Il modificatore `!` ("solo questo") importa soltanto gli oggetti marcati.
+- `round()` arrotonda la metà allontanandosi dallo zero (`round(-2.5)` vale -3), come OpenSCAD.
+
+### Modificato
+- La schermata di benvenuto compare a ogni avvio finché non si toglie la spunta (chi aveva già salvato l'impostazione spenta la mantiene).
+- Restano da leggere `polyhedron`, `import`, `minkowski`, `projection`, `surface` e `roof`: il piano è in `docs/da-fare.md`.
+
 ## [0.26.1] - 2026-10-08
 
 ### Aggiunto

@@ -1483,6 +1483,12 @@ test('Lazy loading: i pannelli degli strumenti e le modali del menu si scaricano
   await openMenuItem(page, 'Scorciatoie da tastiera');
   await expect(page.getByRole('dialog')).toContainText('Misura');
   expect(had('AppMenuPanels')).toBe(true);
+  // Il manuale è un modulo a parte: si scarica solo aprendo la Documentazione
+  expect(had('DocsPanel')).toBe(false);
+  await page.keyboard.press('Escape');
+  await openMenuItem(page, 'Documentazione');
+  await expect(page.getByRole('dialog', { name: 'Documentazione' })).toBeVisible();
+  expect(had('DocsPanel')).toBe(true);
   // Il lettore SVG (SVGLoader di three) serve solo importando un SVG
   expect(had('three-loaders')).toBe(false);
 });
@@ -2466,13 +2472,13 @@ test('Benvenuto: al primo avvio propone da dove cominciare, la quarta scelta non
   expect(scene.rootIds).toHaveLength(1);
   expect(scene.nodes[scene.rootIds[0]].kind).toBe('box');
 
-  // Non ricompare al ricaricamento
+  // "Mostra ogni volta" è spuntata di default: dopo il ricaricamento la schermata ricompare
   await page.reload();
   await page.waitForFunction(() => !!window.__construct && !!window.__r3f);
-  await expect(page.getByRole('dialog', { name: 'Benvenuto in Construct' })).toHaveCount(0);
+  await expect(dialog).toBeVisible();
 });
 
-test('Benvenuto: Esc lo chiude senza toccare la scena e non ricompare', async ({ browser }) => {
+test('Benvenuto: Esc lo chiude senza toccare la scena e, tolta la spunta a "Mostra ogni volta", non ricompare', async ({ browser }) => {
   // Contesto nuovo (localStorage separato): la pagina di beforeEach ha già segnato il benvenuto come visto
   const page = await (await browser.newContext()).newPage();
   await openApp(page, { welcome: true });
@@ -2481,9 +2487,33 @@ test('Benvenuto: Esc lo chiude senza toccare la scena e non ricompare', async ({
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
   expect((await sceneState(page)).rootIds).toHaveLength(0);
+  // Spuntata di default: ricompare al ricaricamento
+  await page.reload();
+  await page.waitForFunction(() => !!window.__construct && !!window.__r3f);
+  await expect(dialog).toBeVisible();
+  // Tolta la spunta non ricompare più
+  const always = dialog.getByRole('checkbox', { name: 'Mostra ogni volta' });
+  await expect(always).toBeChecked();
+  await always.uncheck();
+  await page.keyboard.press('Escape');
   await page.reload();
   await page.waitForFunction(() => !!window.__construct && !!window.__r3f);
   await expect(page.getByRole('dialog', { name: 'Benvenuto in Construct' })).toHaveCount(0);
+});
+
+test('Benvenuto: i link Documentazione e About chiudono la schermata e aprono la relativa modale', async ({ browser }) => {
+  const page = await (await browser.newContext()).newPage();
+  await openApp(page, { welcome: true });
+  const dialog = page.getByRole('dialog', { name: 'Benvenuto in Construct' });
+  await dialog.getByRole('button', { name: 'Documentazione' }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByRole('dialog', { name: 'Documentazione' })).toBeVisible();
+  await page.keyboard.press('Escape');
+
+  await openMenuItem(page, 'Schermata di benvenuto');
+  await dialog.getByRole('button', { name: 'About' }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByRole('dialog', { name: 'About' })).toBeVisible();
 });
 
 test('Migrazione: le preferenze salvate con il vecchio nome (webcad:ui) passano a construct:ui e il benvenuto non compare', async ({ browser }) => {
@@ -2492,7 +2522,7 @@ test('Migrazione: le preferenze salvate con il vecchio nome (webcad:ui) passano 
   await openApp(page, { welcome: true });
   await page.evaluate(() => {
     localStorage.clear();
-    localStorage.setItem('webcad:ui', JSON.stringify({ state: { theme: 'dark', bedMode: 'full', bedSize: { width: 300, depth: 200 } }, version: 0 }));
+    localStorage.setItem('webcad:ui', JSON.stringify({ state: { theme: 'dark', bedMode: 'full', bedSize: { width: 300, depth: 200 }, welcomeAlways: false }, version: 0 }));
   });
   await page.reload();
   await page.waitForFunction(() => !!window.__construct && !!window.__r3f);
@@ -2784,6 +2814,54 @@ test('About: link al repository GitHub e informazioni sull\'autore con il suo si
   await expect(dialog.getByRole('link', { name: 'maurizio.mavida.com' })).toHaveAttribute('href', 'https://maurizio.mavida.com');
 });
 
+test('About: ha le sezioni descrittive e i link a Documentazione e Novità', async ({ page }) => {
+  await openMenuItem(page, 'About');
+  const dialog = page.getByRole('dialog', { name: 'About' });
+  await expect(dialog.getByTestId('about-version')).toHaveText(/^v\d+\.\d+\.\d+/);
+  for (const title of ['Cosa puoi fare', 'I tuoi dati', 'Tecnologie', 'Il progetto', "L'autore"]) await expect(dialog.getByRole('heading', { name: title })).toBeVisible();
+  await expect(dialog.getByText('manifold-3d').first()).toBeVisible();
+  await dialog.getByRole('button', { name: 'Novità' }).click();
+  await expect(page.getByRole('dialog', { name: 'Novità' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await openMenuItem(page, 'About');
+  await page.getByRole('dialog', { name: 'About' }).getByRole('button', { name: 'Documentazione' }).click();
+  await expect(page.getByRole('dialog', { name: 'Documentazione' })).toBeVisible();
+});
+
+test('Documentazione: modale grande come il codice, con indice a ancore e FAQ', async ({ page }) => {
+  await openMenuItem(page, 'Documentazione');
+  const dialog = page.getByRole('dialog', { name: 'Documentazione' });
+  await expect(dialog).toBeVisible();
+  const viewport = page.viewportSize()!;
+  const box = await dialog.boundingBox();
+  expect(box!.width).toBeGreaterThan(viewport.width * 0.78);
+  expect(box!.height).toBeGreaterThan(viewport.height * 0.78);
+
+  // L'indice scorre dentro il pannello e non cambia l'URL
+  const url = page.url();
+  const index = dialog.getByRole('navigation', { name: 'Indice della documentazione' });
+  await index.getByRole('link', { name: 'Codice OpenSCAD' }).click();
+  await expect(dialog.getByRole('heading', { name: 'Codice OpenSCAD', level: 3 })).toBeInViewport();
+  expect(page.url()).toBe(url);
+  await expect(dialog.getByText('rotate_extrude').first()).toBeVisible();
+  await expect(dialog.getByText('polyhedron').first()).toBeVisible();
+
+  // I testi dei comandi sono quelli dei tooltip
+  await index.getByRole('link', { name: 'Modificare' }).click();
+  await expect(dialog.getByRole('heading', { name: 'Raccordo' })).toBeVisible();
+
+  // FAQ: risposte a scomparsa
+  await index.getByRole('link', { name: 'Domande frequenti' }).click();
+  const faq = dialog.locator('details', { hasText: 'Funziona offline?' });
+  await expect(faq).toBeVisible();
+  await faq.locator('summary').click();
+  await expect(faq).toContainText('PWA');
+
+  // Il rimando alle scorciatoie apre il loro pannello
+  await dialog.getByRole('button', { name: 'Apri le scorciatoie da tastiera' }).click();
+  await expect(page.getByRole('dialog', { name: 'Scorciatoie da tastiera' })).toBeVisible();
+});
+
 test('Impostazioni: la voce del menu apre la modale con le sezioni e le opzioni cambiano subito il comportamento', async ({ page }) => {
   await addShape(page, 'Cubo');
   const id = (await sceneState(page)).rootIds[0];
@@ -2876,7 +2954,7 @@ test('Importa OpenSCAD: un file .scad diventa oggetti veri, con un solo passo di
         translate([5, 5, 3]) cube([30, 20, 20]);
       }
       translate([60, 0, 0]) cylinder(h = 10, r = 8);
-      rotate_extrude() translate([5, 0, 0]) circle(1);
+      minkowski() { cube(2); sphere(1); }
     `),
   });
   await settled(page);
@@ -2887,7 +2965,7 @@ test('Importa OpenSCAD: un file .scad diventa oggetti veri, con un solo passo di
   expect(names).toContain('Cilindro');
   // Un messaggio dice quanti oggetti, e uno ciò che è stato saltato
   await expect(page.getByText(/scatola\.scad: importati 4 oggetti/)).toBeVisible();
-  await expect(page.getByText(/rotate_extrude\(\) non è supportato/)).toBeVisible();
+  await expect(page.getByText(/minkowski\(\) non è supportato/)).toBeVisible();
   // Il risultato è un solido valido
   const volume = await page.evaluate(() => window.__construct!.results.getState().meshes.reduce((v, m) => v + m.volume, 0));
   expect(volume).toBeGreaterThan(40 * 30 * 20 - 30 * 20 * 17 - 1);
@@ -2895,6 +2973,32 @@ test('Importa OpenSCAD: un file .scad diventa oggetti veri, con un solo passo di
   await page.keyboard.press('Control+z');
   await settled(page);
   expect((await sceneState(page)).rootIds).toHaveLength(0);
+});
+
+test('Importa OpenSCAD: rotate_extrude, offset, multmatrix e resize diventano forme vere e il solido è quello atteso', async ({ page }) => {
+  await openApp(page);
+  await openMenuItem(page, 'Importa');
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('dialog').getByRole('button', { name: 'Importa OpenSCAD…' }).click();
+  const file = await chooser;
+  await file.setFiles({
+    name: 'toro.scad',
+    mimeType: 'text/plain',
+    buffer: Buffer.from(`
+      $fn = 64;
+      rotate_extrude() translate([5, 0, 0]) circle(1);
+      translate([30, 0, 0]) multmatrix([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]) resize([10, 0, 0], auto = true) cube(5);
+    `),
+  });
+  await settled(page);
+  const scene = await sceneState(page);
+  expect(scene.rootIds).toHaveLength(2);
+  const torus = scene.nodes[scene.rootIds[0]];
+  expect(torus).toMatchObject({ type: 'shape2d', kind: 'circle', extrusion: 'rotate', revolveRadius: 5, radius: 1 });
+  // Toro: 2 π² · R · r² (con i lati dei poligoni un po' meno), e il cubo ridimensionato a 10 mm
+  const volumes = await page.evaluate(() => window.__construct!.results.getState().meshes.map((m) => m.volume));
+  expect(volumes.some((v) => Math.abs(v - 98.7) < 4)).toBe(true);
+  expect(volumes.some((v) => Math.abs(v - 1000) < 1)).toBe(true);
 });
 
 test('OpenSCAD con più piatti: il codice li contiene tutti e, riletto, ricrea i piatti', async ({ page }) => {
@@ -2935,5 +3039,5 @@ test('OpenSCAD con più piatti: il codice li contiene tutti e, riletto, ricrea i
 test('Menu hamburger: la voce Impostazioni c\'è accanto alle altre e il menu del vuoto non cambia', async ({ page }) => {
   await page.getByRole('button', { name: 'Menu', exact: true }).click();
   const menu = page.getByRole('menu');
-  for (const name of ['Importa', 'Esporta', 'Impostazioni', 'Schermata di benvenuto', 'Scorciatoie da tastiera', 'Novità', 'About']) await expect(menu.getByRole('menuitem', { name })).toBeVisible();
+  for (const name of ['Importa', 'Esporta', 'Impostazioni', 'Schermata di benvenuto', 'Documentazione', 'Scorciatoie da tastiera', 'Novità', 'About']) await expect(menu.getByRole('menuitem', { name })).toBeVisible();
 });

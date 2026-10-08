@@ -36,10 +36,19 @@ function Mark() {
 export function WelcomeDialog() {
   const open = useUiStore((s) => s.welcomeOpen);
   const setOpen = useUiStore((s) => s.setWelcomeOpen);
+  const always = useUiStore((s) => s.welcomeAlways);
+  const setSettings = useUiStore((s) => s.setSettings);
+  const setAppPanel = useUiStore((s) => s.setAppPanel);
 
   const close = () => {
     markWelcomed();
     setOpen(false);
+  };
+
+  /** Chiude il benvenuto e apre una modale del menu (Documentazione, About). */
+  const openPanel = (panel: 'docs' | 'about') => {
+    close();
+    setAppPanel(panel);
   };
 
   const choices: Choice[] = [
@@ -115,6 +124,18 @@ export function WelcomeDialog() {
         </div>
 
         <p className="welcome__foot">Tutto resta sul tuo dispositivo e Construct funziona anche offline.</p>
+
+        <div className="welcome__bar">
+          {/* Stessa impostazione del pannello Impostazioni */}
+          <label className="welcome__always">
+            <input type="checkbox" checked={always} onChange={(e) => setSettings({ welcomeAlways: e.target.checked })} />
+            Mostra ogni volta
+          </label>
+          <span className="welcome__links">
+            <button type="button" className="welcome__link" onClick={() => openPanel('docs')}>Documentazione</button>
+            <button type="button" className="welcome__link" onClick={() => openPanel('about')}>About</button>
+          </span>
+        </div>
       </div>
     </Modal>
   );

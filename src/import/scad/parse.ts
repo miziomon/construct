@@ -24,7 +24,16 @@ export type Expr =
   | { t: 'id'; name: string }
   | { t: 'vec'; items: Expr[] }
   | { t: 'range'; a: Expr; b: Expr; c?: Expr }
-  | { t: 'lc'; vars: [string, Expr][]; body: Expr }
+  /** `let (a = 1, b = a + 1) espressione` */
+  | { t: 'let'; assigns: [string, Expr][]; body: Expr }
+  /** `function (x) espressione`: funzione anonima, un valore che si può passare e richiamare */
+  | { t: 'lambda'; params: Param[]; body: Expr }
+  // Generatori di una lista per comprensione: ogni elemento di `[...]` può essere un'espressione o uno di questi
+  | { t: 'gfor'; vars: [string, Expr][]; body: Expr }
+  | { t: 'gforc'; init: [string, Expr][]; cond: Expr; step: [string, Expr][]; body: Expr }
+  | { t: 'gif'; c: Expr; a: Expr; b?: Expr }
+  | { t: 'geach'; e: Expr }
+  | { t: 'glet'; assigns: [string, Expr][]; body: Expr }
   | { t: 'un'; op: string; e: Expr }
   | { t: 'bin'; op: string; l: Expr; r: Expr }
   | { t: 'tern'; c: Expr; a: Expr; b: Expr }
@@ -47,6 +56,10 @@ export type Stmt =
   | { t: 'for'; vars: [string, Expr][]; body: Stmt }
   | { t: 'if'; c: Expr; a: Stmt; b?: Stmt }
   | { t: 'block'; body: Stmt[] }
+  /** `let (...) istruzione` e `assign (...) istruzione` */
+  | { t: 'let'; assigns: [string, Expr][]; body: Stmt }
+  /** Modificatore davanti a un `for`, un `if` o un blocco: `*` disattiva, `%` sfondo, `!` solo questo, `#` evidenzia. */
+  | { t: 'mod'; mod: string; body: Stmt }
   | { t: 'module'; name: string; params: Param[]; body: Stmt[] }
   | { t: 'function'; name: string; params: Param[]; body: Expr };
 
@@ -196,7 +209,15 @@ export function parse(tokens: Token[]): Stmt[] {
       const op = next().v;
       return { t: 'un', op, e: unary() };
     }
-    return postfix();
+    return power();
+  }
+
+  /** `a ^ b`: associativa a destra e più forte del meno unario (`-2 ^ 2` vale -4). */
+  function power(): Expr {
+    const base = postfix();
+    if (!isP('^')) return base;
+    next();
+    return { t: 'bin', op: '^', l: base, r: unary() };
   }
 
   function postfix(): Expr {
@@ -241,7 +262,22 @@ export function parse(tokens: Token[]): Stmt[] {
       next();
       if (tok.v === 'true' || tok.v === 'false') return { t: 'bool', v: tok.v === 'true' };
       if (tok.v === 'undef') return { t: 'undef' };
-      if (isP('(')) return { t: 'call', name: tok.v, args: args() };
+      if (tok.v === 'function' && isP('(')) {
+        const ps = params();
+        return { t: 'lambda', params: ps, body: expr() };
+      }
+      if (tok.v === 'let' && isP('(')) {
+        next();
+        const assigns = assignments();
+        expectP(')');
+        return { t: 'let', assigns, body: expr() };
+      }
+      if (isP('(')) {
+        const call: Expr = { t: 'call', name: tok.v, args: args() };
+        // `echo(...) valore` e `assert(...) valore`: il valore è quello dell'espressione che segue
+        if ((tok.v === 'echo' || tok.v === 'assert') && startsExpression()) return expr();
+        return call;
+      }
       return { t: 'id', name: tok.v };
     }
     if (isP('(')) {
@@ -252,17 +288,18 @@ export function parse(tokens: Token[]): Stmt[] {
     }
     if (isP('[')) {
       next();
-      // Lista per comprensione: [for (i = intervallo) valore]
-      if (isId('for')) {
-        next();
-        expectP('(');
-        const vars = assignments();
-        expectP(')');
-        const body = expr();
-        expectP(']');
-        return { t: 'lc', vars, body };
-      }
       if (isP(']')) return next(), { t: 'vec', items: [] };
+      // Un elemento che inizia con for, if, each o let è un generatore: la lista si costruisce elemento per elemento
+      if (isGenerator()) {
+        const items = [element()];
+        while (isP(',')) {
+          next();
+          if (isP(']')) break;
+          items.push(element());
+        }
+        expectP(']');
+        return { t: 'vec', items };
+      }
       const first = expr();
       if (isP(':')) {
         next();
@@ -280,7 +317,7 @@ export function parse(tokens: Token[]): Stmt[] {
       while (isP(',')) {
         next();
         if (isP(']')) break;
-        items.push(expr());
+        items.push(element());
       }
       expectP(']');
       return { t: 'vec', items };
@@ -288,15 +325,82 @@ export function parse(tokens: Token[]): Stmt[] {
     return fail(`Espressione non valida vicino a "${tok.v || 'fine del file'}"`);
   }
 
+  /** Vero se il token seguente può iniziare un'espressione (serve a `echo(...) valore`). */
+  function startsExpression(): boolean {
+    const tok = peek();
+    if (tok.t === 'num' || tok.t === 'str') return true;
+    if (tok.t === 'id') return tok.v !== 'else';
+    return tok.t === 'p' && ['(', '[', '-', '+', '!'].includes(tok.v);
+  }
+
+  /** Vero se qui comincia un generatore di lista (`for`, `if`, `each`, oppure `let` seguito da un generatore). */
+  function isGenerator(): boolean {
+    if (isId('for') || isId('if') || isId('each')) return true;
+    if (!isId('let') || !isP('(', 1)) return false;
+    // let (...) for/if/each: si guarda oltre la parentesi di chiusura
+    let k = 2;
+    for (let level = 1; level > 0 && peek(k).t !== 'eof'; k++) {
+      if (isP('(', k)) level++;
+      else if (isP(')', k)) level--;
+    }
+    return isId('for', k) || isId('if', k) || isId('each', k) || isId('let', k);
+  }
+
+  /** Elemento di una lista: un'espressione oppure un generatore (annidabile). */
+  function element(): Expr {
+    return nest(() => {
+      if (isId('for')) {
+        next();
+        expectP('(');
+        const vars = assignments();
+        // Forma del C: for (i = 0; i < 5; i = i + 1)
+        if (isP(';')) {
+          next();
+          const cond = expr();
+          expectP(';');
+          const step = assignments();
+          expectP(')');
+          return { t: 'gforc', init: vars, cond, step, body: element() } as Expr;
+        }
+        expectP(')');
+        return { t: 'gfor', vars, body: element() } as Expr;
+      }
+      if (isId('if')) {
+        next();
+        expectP('(');
+        const c = expr();
+        expectP(')');
+        const a = element();
+        if (isId('else')) {
+          next();
+          return { t: 'gif', c, a, b: element() } as Expr;
+        }
+        return { t: 'gif', c, a } as Expr;
+      }
+      if (isId('each')) {
+        next();
+        return { t: 'geach', e: element() } as Expr;
+      }
+      if (isId('let') && isP('(', 1) && isGenerator()) {
+        next();
+        expectP('(');
+        const assigns = assignments();
+        expectP(')');
+        return { t: 'glet', assigns, body: element() } as Expr;
+      }
+      return expr();
+    });
+  }
+
   /** `i = espressione, j = espressione` (dentro `for (...)`). */
   function assignments(): [string, Expr][] {
     const list: [string, Expr][] = [];
-    while (!isP(')')) {
+    while (!isP(')') && !isP(';')) {
       if (peek().t !== 'id') fail('Atteso il nome di una variabile');
       const name = next().v;
       expectP('=');
       list.push([name, expr()]);
-      if (!isP(')')) expectP(',');
+      if (!isP(')') && !isP(';')) expectP(',');
     }
     return list;
   }
@@ -371,9 +475,19 @@ export function parse(tokens: Token[]): Stmt[] {
         }
         return { t: 'if', c, a, b };
       }
+      // let (...) istruzione e il vecchio assign (...) istruzione: variabili valide solo per l'istruzione che segue
+      if ((isId('let') || isId('assign')) && isP('(', 1)) {
+        next();
+        next();
+        const assigns = assignments();
+        expectP(')');
+        return { t: 'let', assigns, body: statement() ?? { t: 'block', body: [] } } as Stmt;
+      }
       // Modificatori di una chiamata: * (disattiva), ! (solo questo), # (evidenzia), % (sfondo)
       let mod = '';
       while (peek().t === 'p' && ['*', '!', '#', '%'].includes(peek().v)) mod += next().v;
+      // Dopo un modificatore può comparire anche un for, un if o un blocco: il modificatore vale per tutta l'istruzione
+      if (mod && (isId('for') || isId('if') || isP('{'))) return { t: 'mod', mod, body: statement() ?? { t: 'block', body: [] } } as Stmt;
       const tok = peek();
       if (tok.t !== 'id') return fail(`Istruzione non valida vicino a "${tok.v || 'fine del file'}"`);
       if (!mod && isP('=', 1)) {
@@ -382,11 +496,6 @@ export function parse(tokens: Token[]): Stmt[] {
         const e = expr();
         expectP(';');
         return { t: 'assign', name: tok.v, e, line: tok.line };
-      }
-      // Dopo un modificatore può comparire anche un for, un if o un blocco: si ripassa dall'inizio e si tiene il modificatore
-      if (mod && (isId('for') || isId('if'))) {
-        const inner = statement();
-        return mod.includes('*') ? null : inner;
       }
       next();
       const callArgs = args();

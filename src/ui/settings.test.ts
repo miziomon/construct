@@ -20,6 +20,12 @@ describe('impostazioni', () => {
     expect(clamped.snapRotate).toBe(SETTING_LIMITS.snapRotate.max);
   });
 
+  it('il benvenuto compare a ogni avvio di default, ma chi ha salvato false lo mantiene', () => {
+    expect(DEFAULT_SETTINGS.welcomeAlways).toBe(true);
+    expect(cleanSettings({}).welcomeAlways).toBe(true);
+    expect(cleanSettings({ welcomeAlways: false }).welcomeAlways).toBe(false);
+  });
+
   it('setSettings cambia solo quanto richiesto e rispetta i limiti', () => {
     useUiStore.getState().setSettings({ nudgeStep: 2.5, autosave: false });
     const s = useUiStore.getState();
@@ -32,7 +38,7 @@ describe('impostazioni', () => {
 
   it('resetSettings riporta impostazioni, tema e piano ai valori iniziali', () => {
     const ui = useUiStore.getState();
-    ui.setSettings({ nudgeStep: 5, showDimensions: false, welcomeAlways: true });
+    ui.setSettings({ nudgeStep: 5, showDimensions: false, welcomeAlways: false });
     useUiStore.setState({ theme: 'dark', bedMode: 'none', bedSize: { width: 400, depth: 300 } });
     useUiStore.getState().resetSettings();
     const s = useUiStore.getState();

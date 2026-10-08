@@ -1,5 +1,5 @@
 import { Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
-import { FileDown, FilePlus, FolderOpen, House, Info, Keyboard, Menu, Save, SaveAll, Settings, Sparkles, Upload } from 'lucide-react';
+import { BookOpen, FileDown, FilePlus, FolderOpen, House, Info, Keyboard, Menu, Save, SaveAll, Settings, Sparkles, Upload } from 'lucide-react';
 import { useUiStore } from '../uiStore';
 import { newProject, openProject, saveProject, saveProjectAs } from '../fileActions';
 import type { Panel } from './AppMenuPanels';
@@ -8,6 +8,8 @@ import { lazyLoad } from '../lazyLoad';
 import { migrateLocalKey, STORAGE } from '../../storageMigration';
 // Il corpo delle modali (scorciatoie, changelog, esportazione) si scarica solo alla prima apertura
 const AppMenuPanels = lazyLoad(() => import('./AppMenuPanels'));
+// La documentazione è un modulo a parte: il manuale e le sue immagini si scaricano solo aprendola
+const DocsPanel = lazyLoad(() => import('../Docs/DocsPanel'));
 import './AppMenu.scss';
 
 
@@ -29,13 +31,14 @@ const GROUPS: Item[][] = [
   [
     { panel: 'settings', label: 'Impostazioni', icon: <Settings size={16} /> },
     { label: 'Schermata di benvenuto', icon: <House size={16} />, action: () => useUiStore.getState().setWelcomeOpen(true) },
+    { panel: 'docs', label: 'Documentazione', icon: <BookOpen size={16} /> },
     { panel: 'shortcuts', label: 'Scorciatoie da tastiera', icon: <Keyboard size={16} /> },
     { panel: 'news', label: 'Novità', icon: <Sparkles size={16} /> },
     { panel: 'about', label: 'About', icon: <Info size={16} /> },
   ],
 ];
 
-const TITLES: Record<Panel, string> = { import: 'Importa', export: 'Esporta', settings: 'Impostazioni', shortcuts: 'Scorciatoie da tastiera', news: 'Novità', about: 'About' };
+const TITLES: Record<Panel, string> = { import: 'Importa', export: 'Esporta', settings: 'Impostazioni', shortcuts: 'Scorciatoie da tastiera', news: 'Novità', about: 'About', docs: 'Documentazione' };
 
 /** Ultima versione le cui Novità sono state viste: serve al badge "nuovo". */
 const SEEN_KEY = STORAGE.seen.now;
@@ -141,10 +144,10 @@ export function AppMenu() {
         </div>
       )}
 
-      <Modal open={panel !== null} title={panel ? TITLES[panel] : ''} onClose={close} size={panel === 'shortcuts' || panel === 'news' ? 'large' : 'default'}>
+      <Modal open={panel !== null} title={panel ? TITLES[panel] : ''} onClose={close} size={panel === 'shortcuts' || panel === 'news' || panel === 'docs' ? 'large' : 'default'}>
         {panel && (
           <Suspense fallback={<p>Caricamento…</p>}>
-            <AppMenuPanels panel={panel} run={run} />
+            {panel === 'docs' ? <DocsPanel /> : <AppMenuPanels panel={panel} run={run} />}
           </Suspense>
         )}
       </Modal>

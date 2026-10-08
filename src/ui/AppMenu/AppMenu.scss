@@ -200,4 +200,39 @@
     text-transform: uppercase;
     color: color('accent');
   }
+
+  // Pannello About: testo scorrevole, elenco e link alle altre modali
+  &__about {
+    ul {
+      margin: 0 0 $space-2;
+      padding-left: $space-5;
+    }
+
+    li {
+      margin-bottom: $space-1;
+    }
+
+    p {
+      margin: 0 0 $space-2;
+    }
+  }
+
+  &__about-head {
+    font-size: 18px;
+  }
+
+  &__about-links {
+    display: flex;
+    gap: $space-4;
+    margin-top: $space-4;
+  }
+
+  &__about-link {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: color('accent');
+    text-decoration: underline;
+    @include focus-ring;
+  }
 }

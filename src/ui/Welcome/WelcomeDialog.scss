@@ -157,4 +157,40 @@
     text-align: center;
     color: color('text-muted');
   }
+
+  // Piede: checkbox "Mostra ogni volta" a sinistra, link a Documentazione e About a destra
+  &__bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: $space-3;
+    margin-top: $space-3;
+    padding-top: $space-3;
+    border-top: 1px solid color('border');
+    font-size: 12px;
+  }
+
+  &__always {
+    display: inline-flex;
+    align-items: center;
+    gap: $space-2;
+    cursor: pointer;
+    color: color('text-muted');
+  }
+
+  &__links {
+    display: inline-flex;
+    gap: $space-4;
+  }
+
+  &__link {
+    padding: 2px 0;
+    border: 0;
+    background: transparent;
+    font-size: 12px;
+    color: color('accent');
+    text-decoration: underline;
+    @include focus-ring;
+  }
 }
