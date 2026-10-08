@@ -958,7 +958,9 @@ test('la timeline elenca le operazioni e un clic riporta la scena a quel punto',
   await addShape(page, 'Cubo');
   await addShape(page, 'Cilindro');
   const steps = page.locator('.timeline__step');
-  await expect(steps).toHaveText([/Inizio/, /Aggiungi Cubo/, /Aggiungi Cilindro/]);
+  // Gli indicatori non hanno testo: il nome dell'operazione sta nel nome accessibile (e nel tooltip)
+  const names = () => steps.evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')));
+  expect(await names()).toEqual(['Vai a: Inizio', 'Vai a: Aggiungi Cubo', 'Aggiungi Cilindro (stato corrente)']);
   await expect(steps.nth(2)).toHaveAttribute('aria-current', 'step');
 
   // Salto indietro di due passi: la scena è vuota e i passi successivi restano disponibili
@@ -973,7 +975,7 @@ test('la timeline elenca le operazioni e un clic riporta la scena a quel punto',
   await steps.nth(1).click();
   await expect(page.locator('.outliner__row')).toHaveCount(1);
   await addShape(page, 'Sfera');
-  await expect(steps).toHaveText([/Inizio/, /Aggiungi Cubo/, /Aggiungi Sfera/]);
+  expect(await names()).toEqual(['Vai a: Inizio', 'Vai a: Aggiungi Cubo', 'Aggiungi Sfera (stato corrente)']);
 });
 
 test('Smusso angolare: Maiusc+clic aggiunge e toglie vertici con anteprima sempre viva e valori modificabili', async ({ page }) => {
@@ -1308,7 +1310,7 @@ test('Importa SVG: il disegno con un foro diventa una forma 2D estrusa con volum
 });
 
 test('la libreria ha quattro tab (Forme 3D, Forme 2D, Simboli, Emoji), si usano anche con le frecce e la scelta resta dopo il ricaricamento', async ({ page }) => {
-  const tabs = page.getByRole('tab');
+  const tabs = page.getByRole('tablist', { name: 'Libreria' }).getByRole('tab');
   await expect(tabs).toHaveText(['Forme 3D', 'Forme 2D', 'Simboli', 'Emoji']);
   await expect(page.getByRole('tab', { name: 'Forme 3D' })).toHaveAttribute('aria-selected', 'true');
   await expect(page.locator('button[title^="Aggiungi: Cubo"]')).toBeVisible();
@@ -1452,11 +1454,11 @@ test('Allinea: passando sopra un pulsante compare l\'anteprima del risultato e E
   await expect.poll(() => previewLines(page)).toBe(0);
 });
 
-test('Testo: venti font in cinque gruppi, uno nuovo si applica e la mesh resta valida', async ({ page }) => {
+test('Testo: ventuno font in cinque gruppi, uno nuovo si applica e la mesh resta valida', async ({ page }) => {
   await addShape(page, 'Testo');
   const select = page.locator('select.properties__text');
   await expect(select.locator('optgroup')).toHaveCount(5);
-  await expect(select.locator('option')).toHaveCount(20);
+  await expect(select.locator('option')).toHaveCount(21);
   await select.selectOption('stardos-stencil-bold');
   await settled(page);
   const scene = await sceneState(page);
@@ -1507,7 +1509,7 @@ test('Simboli: i gruppi sono accordion (solo il primo aperto), si aprono con un 
 });
 
 test('Emoji: quarta tab con le categorie, un clic crea un Testo estruso valido con quell\'emoji', async ({ page }) => {
-  await expect(page.getByRole('tab')).toHaveText(['Forme 3D', 'Forme 2D', 'Simboli', 'Emoji']);
+  await expect(page.getByRole('tablist', { name: 'Libreria' }).getByRole('tab')).toHaveText(['Forme 3D', 'Forme 2D', 'Simboli', 'Emoji']);
   await page.getByRole('tab', { name: 'Emoji' }).click();
   const facce = page.getByRole('button', { name: /^Facce e gesti/ });
   await expect(facce).toHaveAttribute('aria-expanded', 'true');
@@ -2337,13 +2339,14 @@ test('Piano di stampa: la tendina delle stampanti ha la misura per prima e compi
   const labels = await select.locator('option').allTextContents();
   expect(labels.length).toBeGreaterThan(5);
   for (const label of labels) expect(label).toMatch(/^\d+ × \d+ mm · /);
-  expect(labels).toContain('180 × 180 mm · Bambu Lab A1 mini, Prusa MINI+');
-  expect(labels).toContain('256 × 256 mm · Bambu Lab A1, Bambu Lab P1S, Bambu Lab P1P, Bambu Lab X1C');
+  // La marca compare una volta sola, seguita dai modelli
+  expect(labels).toContain('180 × 180 mm · Bambu Lab: A1 mini · Prusa: MINI+');
+  expect(labels).toContain('256 × 256 mm · Bambu Lab: A1, P1S, P1P, X1C');
   expect(labels.some((l) => l.startsWith('350 × 320 mm') && l.includes('H2D'))).toBe(true);
   // Con le misure attuali (256 × 256) è scelta la voce giusta
   await expect(select.locator('option:checked')).toHaveText(/^256 × 256 mm/);
 
-  await select.selectOption({ label: '180 × 180 mm · Bambu Lab A1 mini, Prusa MINI+' });
+  await select.selectOption({ label: '180 × 180 mm · Bambu Lab: A1 mini · Prusa: MINI+' });
   await expect(dialog.locator('.number-field', { hasText: 'Larghezza X' }).locator('input')).toHaveValue('180');
   // Non cambia nulla finché non si applica
   await expect(page.locator('.status-bar__bed')).toHaveText('Piano 256 × 256 mm');
@@ -2377,11 +2380,14 @@ test('Menu contestuale sul vuoto: propone le forme e la crea nel punto cliccato'
   const empty = await project(page, [where[0], where[1], 0]);
   await page.mouse.click(empty.x, empty.y, { button: 'right' });
   await expect(menu).toBeVisible();
-  // Il menu elenca le forme 3D e 2D, non i comandi della selezione
-  for (const name of ['Cubo', 'Cilindro', 'Sfera', 'Cerchio', 'Cuore']) await expect(menu.getByRole('menuitem', { name, exact: true })).toBeVisible();
+  // Il menu elenca le categorie di forme (sottomenu), non i comandi della selezione
   await expect(menu.getByRole('menuitem', { name: 'Duplica', exact: true })).toHaveCount(0);
+  await menu.getByRole('menuitem', { name: 'Forme 2D', exact: true }).hover();
+  for (const name of ['Cerchio', 'Cuore']) await expect(menu.getByRole('menu', { name: 'Forme 2D' }).getByRole('menuitem', { name, exact: true })).toBeVisible();
+  await menu.getByRole('menuitem', { name: 'Forme 3D', exact: true }).hover();
+  for (const name of ['Cubo', 'Cilindro', 'Sfera']) await expect(menu.getByRole('menu', { name: 'Forme 3D' }).getByRole('menuitem', { name, exact: true })).toBeVisible();
 
-  await menu.getByRole('menuitem', { name: 'Sfera', exact: true }).click();
+  await menu.getByRole('menu', { name: 'Forme 3D' }).getByRole('menuitem', { name: 'Sfera', exact: true }).click();
   await settled(page);
   await expect(menu).toBeHidden();
   const scene = await sceneState(page);
@@ -2418,7 +2424,9 @@ test('Menu contestuale: niente raccordi sulla sfera, Appoggia sul piatto solo se
 test('Quote: il lucchetto fa scalare tutti gli assi insieme', async ({ page }) => {
   await addShape(page, 'Cubo');
   const id = (await sceneState(page)).rootIds[0];
-  const lock = page.locator('.dimension-lock');
+  // Un lucchetto accanto a ognuna delle tre quote, tutti sullo stesso interruttore
+  await expect(page.locator('.dimension-lock')).toHaveCount(3);
+  const lock = page.locator('.dimension-lock').first();
   await expect(lock).toHaveAttribute('aria-pressed', 'false');
   // Libero: cambia solo X
   await page.locator('.dimension-label[data-axis="x"]').click();
@@ -2431,6 +2439,7 @@ test('Quote: il lucchetto fa scalare tutti gli assi insieme', async ({ page }) =
   await lock.click();
   await expect(lock).toHaveAttribute('aria-pressed', 'true');
   expect((await sceneState(page)).nodes[id].lockRatio).toBe(true);
+  for (const l of await page.locator('.dimension-lock').all()) await expect(l).toHaveAttribute('aria-pressed', 'true');
   await page.locator('.dimension-label[data-axis="x"]').click();
   await page.locator('.dimension-input[data-axis="x"]').fill('60');
   await page.locator('.dimension-input[data-axis="x"]').press('Enter');
@@ -2491,4 +2500,257 @@ test('Migrazione: le preferenze salvate con il vecchio nome (webcad:ui) passano 
   await expect(page.locator('.status-bar__bed')).toHaveText('Piano 300 × 200 mm');
   expect(await page.evaluate(() => localStorage.getItem('construct:ui'))).toContain('"width":300');
   expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe('dark');
+});
+
+test('Piatti: la scheda elenca i piatti, ognuno ha i suoi oggetti e se ne vede uno alla volta', async ({ page }) => {
+  await addShape(page, 'Cubo');
+  const tab = page.getByRole('tab', { name: /Piatti/ });
+  await tab.click();
+  const cards = page.locator('.plates__card');
+  await expect(cards).toHaveCount(1);
+  await expect(cards.first()).toContainText('Piatto 1');
+  await expect(cards.first()).toContainText('1 oggetto');
+
+  // Un secondo piatto, subito attivo e vuoto: gli oggetti del primo non si vedono
+  await page.getByRole('button', { name: 'Aggiungi piatto' }).click();
+  await expect(cards).toHaveCount(2);
+  await expect(cards.nth(1)).toHaveClass(/plates__card--active/);
+  await expect(cards.nth(1)).toContainText('vuoto');
+  expect((await sceneState(page)).rootIds).toHaveLength(0);
+  await page.getByRole('tab', { name: 'Oggetti' }).click();
+  await expect(page.locator('.outliner__row')).toHaveCount(0);
+  await expect(page.locator('.outliner__plate')).toHaveText('Piatto 2');
+
+  // Il coperchio sta sul piatto 2
+  await addShape(page, 'Cilindro');
+  await tab.click();
+  await expect(cards.nth(1)).toContainText('Cilindro');
+  await expect(cards.nth(0)).toContainText('Cubo');
+
+  // Tornando al piatto 1 si vede solo la scatola; la vista ricalcola solo il suo contenuto
+  await page.getByRole('button', { name: 'Attiva Piatto 1' }).click();
+  await settled(page);
+  const scene = await sceneState(page);
+  expect(scene.rootIds).toHaveLength(1);
+  expect(scene.nodes[scene.rootIds[0]].name).toBe('Cubo');
+  const meshes = await page.evaluate(() => window.__construct!.results.getState().meshes.map((m) => m.rootId));
+  expect(meshes).toEqual([scene.rootIds[0]]);
+});
+
+test('Piatti: rinominare, spostare la selezione in un altro piatto, eliminare con conferma, e annullare', async ({ page }) => {
+  await addShape(page, 'Cubo');
+  await addShape(page, 'Sfera');
+  await page.getByRole('tab', { name: /Piatti/ }).click();
+  await page.getByRole('button', { name: 'Aggiungi piatto' }).click();
+  // Rinomina con la matita
+  await page.getByRole('button', { name: 'Rinomina Piatto 2' }).click();
+  const name = page.getByRole('textbox', { name: /Nome del piatto/ });
+  await name.fill('Coperchio');
+  await name.press('Enter');
+  await expect(page.locator('.plates__card').nth(1)).toContainText('Coperchio');
+
+  // Si torna al piatto 1, si seleziona la sfera e la si sposta nel coperchio
+  await page.getByRole('button', { name: 'Attiva Piatto 1' }).click();
+  await page.getByRole('tab', { name: 'Oggetti' }).click();
+  await page.locator('.outliner__row', { hasText: 'Sfera' }).click();
+  await page.getByRole('tab', { name: /Piatti/ }).click();
+  await page.getByRole('button', { name: 'Sposta qui la selezione in Coperchio' }).click();
+  await settled(page);
+  let scene = await sceneState(page);
+  expect(scene.rootIds.map((id: string) => scene.nodes[id].name)).toEqual(['Cubo']);
+  expect(scene.plates.find((p: { name: string }) => p.name === 'Coperchio').rootIds).toHaveLength(1);
+  // Un solo passo di Annulla riporta la sfera
+  await page.keyboard.press('Control+z');
+  await settled(page);
+  scene = await sceneState(page);
+  expect(scene.rootIds).toHaveLength(2);
+  await page.keyboard.press('Control+y');
+  await settled(page);
+
+  // Eliminare un piatto con oggetti chiede conferma e toglie gli oggetti
+  await page.getByRole('button', { name: 'Elimina Coperchio' }).click();
+  await page.locator('.dialog__button--primary', { hasText: 'Elimina' }).click();
+  await expect(page.locator('.plates__card')).toHaveCount(1);
+  scene = await sceneState(page);
+  expect(Object.values(scene.nodes).map((n) => (n as { name: string }).name)).toEqual(['Cubo']);
+  // L'ultimo piatto non si elimina
+  await expect(page.getByRole('button', { name: 'Elimina Piatto 1' })).toBeDisabled();
+});
+
+test('Piatti: il menu contestuale sposta nel piatto e i piatti sopravvivono al ricaricamento', async ({ page }) => {
+  await addShape(page, 'Cubo');
+  await page.getByRole('tab', { name: /Piatti/ }).click();
+  await page.getByRole('button', { name: 'Aggiungi piatto' }).click();
+  await page.getByRole('button', { name: 'Attiva Piatto 1' }).click();
+  await page.getByRole('tab', { name: 'Oggetti' }).click();
+  await page.locator('.outliner__row', { hasText: 'Cubo' }).click();
+  const at = await project(page, [0, 0, 10]);
+  await page.mouse.click(at.x, at.y, { button: 'right' });
+  const menu = page.getByRole('menu', { name: 'Comandi per la selezione' });
+  await menu.getByRole('menuitem', { name: 'Sposta nel piatto', exact: true }).hover();
+  await menu.getByRole('menu', { name: 'Sposta nel piatto' }).getByRole('menuitem', { name: 'Piatto 2' }).click();
+  await settled(page);
+  expect((await sceneState(page)).rootIds).toHaveLength(0);
+
+  // Il salvataggio automatico conserva i piatti
+  await page.waitForTimeout(700);
+  await page.reload();
+  await page.waitForFunction(() => !!window.__construct && !!window.__r3f);
+  const scene = await sceneState(page);
+  expect(scene.plates).toHaveLength(2);
+  expect(scene.plates.map((p: { rootIds: string[] }) => p.rootIds.length).sort()).toEqual([0, 1]);
+});
+
+test('Esporta: il 3MF contiene tutti i piatti affiancati e l\'STL chiede quale piatto esportare', async ({ page }) => {
+  await addShape(page, 'Cubo');
+  await page.getByRole('tab', { name: /Piatti/ }).click();
+  await page.getByRole('button', { name: 'Aggiungi piatto' }).click();
+  await addShape(page, 'Cilindro');
+  const { readFileSync, statSync } = await import('node:fs');
+  const { unzipSync, strFromU8 } = await import('fflate');
+
+  // 3MF: tutti i piatti, il secondo spostato di larghezza del piano + 20 mm (256 + 20)
+  let download = page.waitForEvent('download');
+  await openMenuItem(page, 'Esporta');
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('button', { name: '3MF' }).click();
+  let file = await download;
+  expect(file.suggestedFilename()).toBe('construct.3mf');
+  const xml = strFromU8(unzipSync(new Uint8Array(readFileSync(await file.path())))['3D/3dmodel.model']);
+  expect((xml.match(/<item /g) ?? []).length).toBe(2);
+  expect(xml).toContain('Piatto 1 – Cubo');
+  expect(xml).toContain('Piatto 2 – Cilindro');
+  expect(xml).toContain('transform="1 0 0 0 1 0 0 0 1 276 0 0"');
+
+  // STL: con più piatti si sceglie quale; il cubo ha 12 triangoli
+  await openMenuItem(page, 'Esporta');
+  await dialog.getByRole('button', { name: 'STL' }).click();
+  await expect(dialog.getByText('Quale vuoi esportare?')).toBeVisible();
+  download = page.waitForEvent('download');
+  await dialog.getByRole('button', { name: 'Piatto 1' }).click();
+  file = await download;
+  expect(file.suggestedFilename()).toBe('construct-piatto-1.stl');
+  expect(statSync(await file.path()).size).toBe(84 + 50 * 12);
+});
+
+test('Esporta: con un piatto solo l\'STL parte subito, senza chiedere il piatto', async ({ page }) => {
+  await addShape(page, 'Cubo');
+  const download = page.waitForEvent('download');
+  await openMenuItem(page, 'Esporta');
+  await page.getByRole('dialog').getByRole('button', { name: 'STL' }).click();
+  expect((await download).suggestedFilename()).toBe('construct.stl');
+});
+
+test('Menu contestuale sul vuoto: sottomenu a destra con forme, simboli ed emoji, e voci di servizio', async ({ page }) => {
+  await addShape(page, 'Cubo');
+  const menu = page.getByRole('menu', { name: 'Aggiungi una forma' });
+  const spot = await project(page, [-90, 80, 0]);
+  await page.mouse.click(spot.x, spot.y, { button: 'right' });
+  await expect(menu).toBeVisible();
+  // Voci principali: quattro sottomenu e quattro voci di servizio
+  for (const name of ['Forme 3D', 'Forme 2D', 'Simboli', 'Emoji']) await expect(menu.getByRole('menuitem', { name, exact: true })).toHaveAttribute('aria-haspopup', 'menu');
+  for (const name of ['Importa…', 'Esporta…', 'Dimensioni del piano…', 'Schermata di benvenuto']) await expect(menu.getByRole('menuitem', { name, exact: true })).toBeVisible();
+
+  // Il sottomenu delle forme 3D si apre sulla destra della voce
+  const entry = menu.getByRole('menuitem', { name: 'Forme 3D', exact: true });
+  await entry.hover();
+  const flyout = menu.getByRole('menu', { name: 'Forme 3D' });
+  await expect(flyout).toBeVisible();
+  const [a, b] = await Promise.all([entry.boundingBox(), flyout.boundingBox()]);
+  expect(b!.x).toBeGreaterThanOrEqual(a!.x + a!.width - 1);
+  await expect(flyout.getByRole('menuitem', { name: 'Cubo', exact: true })).toBeVisible();
+
+  // Un simbolo si crea nel punto cliccato
+  await menu.getByRole('menuitem', { name: 'Simboli', exact: true }).hover();
+  const symbols = menu.getByRole('menu', { name: 'Simboli' });
+  await expect(symbols).toBeVisible();
+  await symbols.getByRole('menuitem', { name: 'Stella piena' }).first().click();
+  await settled(page);
+  let scene = await sceneState(page);
+  const symbol = scene.nodes[scene.rootIds[0]];
+  expect(symbol.origin).toBe('symbol');
+  expect(Math.abs(symbol.position[0] + 90)).toBeLessThan(3);
+  expect(Math.abs(symbol.position[1] - 80)).toBeLessThan(3);
+
+  // Un'emoji, dallo stesso menu
+  const spot2 = await project(page, [90, 80, 0]);
+  await page.mouse.click(spot2.x, spot2.y, { button: 'right' });
+  await menu.getByRole('menuitem', { name: 'Emoji', exact: true }).hover();
+  await menu.getByRole('menu', { name: 'Emoji' }).getByRole('menuitem').first().click();
+  await settled(page);
+  scene = await sceneState(page);
+  expect(scene.nodes[scene.rootIds[0]].origin).toBe('emoji');
+});
+
+test('Menu contestuale sul vuoto: le voci di servizio aprono Esporta, Dimensioni del piano e il benvenuto', async ({ page }) => {
+  await addShape(page, 'Cubo');
+  const menu = page.getByRole('menu', { name: 'Aggiungi una forma' });
+  const spot = await project(page, [-90, 80, 0]);
+  const open = async () => {
+    await page.mouse.click(spot.x, spot.y, { button: 'right' });
+    await expect(menu).toBeVisible();
+  };
+  await open();
+  await menu.getByRole('menuitem', { name: 'Esporta…', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Esporta' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await open();
+  await menu.getByRole('menuitem', { name: 'Dimensioni del piano…', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Dimensioni del piano' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await open();
+  await menu.getByRole('menuitem', { name: 'Schermata di benvenuto', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Benvenuto in Construct' })).toBeVisible();
+});
+
+test('Menu hamburger: la voce Schermata di benvenuto riapre il benvenuto, e le scorciatoie hanno la modale grande', async ({ page }) => {
+  await openMenuItem(page, 'Schermata di benvenuto');
+  await expect(page.getByRole('dialog', { name: 'Benvenuto in Construct' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog', { name: 'Benvenuto in Construct' })).toBeHidden();
+
+  await openMenuItem(page, 'Scorciatoie da tastiera');
+  const dialog = page.getByRole('dialog', { name: 'Scorciatoie da tastiera' });
+  await expect(dialog).toBeVisible();
+  const box = await dialog.boundingBox();
+  const viewport = page.viewportSize()!;
+  // Grande come la modale del codice: 80% della finestra in larghezza e in altezza
+  expect(box!.width).toBeGreaterThan(viewport.width * 0.78);
+  expect(box!.height).toBeGreaterThan(viewport.height * 0.78);
+  // E l'elenco scorre: l'ultima scorciatoia si raggiunge
+  await dialog.getByText('Durante il trascinamento nella vista 3D: disattiva lo snap').scrollIntoViewIfNeeded();
+  await expect(dialog.getByText('Durante il trascinamento nella vista 3D: disattiva lo snap')).toBeVisible();
+});
+
+test('Il nome dell\'app è in maiuscolo con Orbitron e il font è tra quelli del Testo', async ({ page }) => {
+  const brand = page.locator('.toolbar__brand');
+  expect(await brand.evaluate((el) => getComputedStyle(el).textTransform)).toBe('uppercase');
+  expect(await brand.evaluate((el) => getComputedStyle(el).fontFamily)).toContain('Orbitron');
+  // Il file del font è stato caricato (@font-face)
+  await page.waitForFunction(() => document.fonts.check('700 14px Orbitron'));
+  await addShape(page, 'Testo');
+  const fonts = await page.evaluate(() => window.__construct!.store.getState().scene.rootIds.length);
+  expect(fonts).toBe(1);
+  await expect(page.getByRole('option', { name: 'Orbitron Bold' })).toHaveCount(1);
+});
+
+test('Timeline: indicatori con tooltip del tipo di operazione e icona per svuotare la cronologia', async ({ page }) => {
+  await addShape(page, 'Cubo');
+  await addShape(page, 'Sfera');
+  const steps = page.locator('.timeline__step');
+  await expect(steps).toHaveCount(3);
+  // Solo indicatori grafici, senza testo
+  expect(await steps.nth(1).innerText()).toBe('');
+  await steps.nth(1).hover();
+  const tip = page.getByRole('tooltip');
+  await expect(tip).toHaveText('2 · Aggiungi Cubo');
+  await steps.nth(2).hover();
+  await expect(tip).toHaveText('3 · Aggiungi Sfera (stato corrente)');
+
+  // Svuotare la cronologia chiede conferma, lascia la scena e riparte da un solo passo
+  await page.getByRole('button', { name: 'Svuota la cronologia' }).click();
+  await page.getByRole('button', { name: 'Svuota', exact: true }).click();
+  await expect(steps).toHaveCount(1);
+  expect((await sceneState(page)).rootIds).toHaveLength(2);
+  await expect(page.getByRole('button', { name: 'Svuota la cronologia' })).toBeDisabled();
 });

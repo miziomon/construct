@@ -55,6 +55,19 @@ describe('export', () => {
     expect(back.volume()).toBeCloseTo(8000, 1);
   });
 
+  it("3MF: un offset sposta l'oggetto con la trasformazione dell'item (piatti affiancati), senza toccare i vertici", () => {
+    const [m] = new Evaluator(wasm).evaluate(boxScene()).meshes;
+    const xml = strFromU8(unzipSync(write3mf([
+      { name: 'A', color: '#ff0000', positions: m.positions, indices: m.indices },
+      { name: 'B', color: '#00ff00', positions: m.positions, indices: m.indices, offset: [276, 0, 0] },
+    ]))['3D/3dmodel.model']);
+    const items = xml.match(/<item [^>]*>/g)!;
+    expect(items).toHaveLength(2);
+    // Il primo non si sposta: nessuna trasformazione; il secondo trasla di 276 mm lungo X
+    expect(items[0]).not.toContain('transform');
+    expect(items[1]).toContain('transform="1 0 0 0 1 0 0 0 1 276 0 0"');
+  });
+
   it('3MF: contiene i tre file attesi, unità mm, un oggetto e il materiale', () => {
     const [m] = new Evaluator(wasm).evaluate(boxScene()).meshes;
     const zip = write3mf([{ name: 'Scatola & "test"', color: '#ff8800', positions: m.positions, indices: m.indices }]);

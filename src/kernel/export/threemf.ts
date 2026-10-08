@@ -6,6 +6,8 @@ export interface ExportPart {
   color: string;
   positions: Float32Array;
   indices: Uint32Array;
+  /** Spostamento (mm) dell'oggetto nel piano di costruzione: serve a mettere i piatti uno accanto all'altro. */
+  offset?: [number, number, number];
 }
 
 const escapeXml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -39,7 +41,14 @@ export function write3mf(parts: ExportPart[]): Uint8Array<ArrayBuffer> {
     })
     .join('');
 
-  const items = parts.map((_, i) => `<item objectid="${i + 2}"/>`).join('');
+  // Con un offset l'oggetto si sposta con una trasformazione dell'item (matrice 3×4: rotazione unitaria e traslazione)
+  const items = parts
+    .map((p, i) => {
+      const [dx, dy, dz] = p.offset ?? [0, 0, 0];
+      const moved = dx !== 0 || dy !== 0 || dz !== 0;
+      return `<item objectid="${i + 2}"${moved ? ` transform="1 0 0 0 1 0 0 0 1 ${num(dx)} ${num(dy)} ${num(dz)}"` : ''}/>`;
+    })
+    .join('');
 
   const model =
     `<?xml version="1.0" encoding="UTF-8"?>` +

@@ -65,6 +65,12 @@
   }
 
   &__shortcuts {
+    // Nella modale grande il corpo non scorre da sé: l'elenco delle scorciatoie sì
+    flex: 1;
+    min-height: 0;
+    padding: $space-5;
+    overflow-y: auto;
+
     h3 {
       margin: $space-4 0 $space-2;
       font-size: 13px;

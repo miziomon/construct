@@ -9,6 +9,8 @@ function prune(scene: Scene, doomed: Set<string>): Scene {
   return produce(scene, (draft) => {
     for (const id of doomed) delete draft.nodes[id];
     draft.rootIds = draft.rootIds.filter((id) => !doomed.has(id));
+    // Anche i piatti parcheggiati: nessuna radice deve restare senza nodo
+    for (const plate of draft.plates ?? []) plate.rootIds = plate.rootIds.filter((id) => !doomed.has(id));
     for (const n of Object.values(draft.nodes)) {
       if (n.type === 'group') n.children = n.children.filter((c) => !doomed.has(c));
     }

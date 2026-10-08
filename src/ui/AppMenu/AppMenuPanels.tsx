@@ -1,15 +1,18 @@
-import { FileBox, FileCode, FileDown, Shapes, Upload } from 'lucide-react';
+import { useState } from 'react';
+import { ChevronLeft, FileBox, FileCode, FileDown, Shapes, Upload } from 'lucide-react';
 import { useSceneStore } from '../../scene/store';
+import { allRootIds, platesOf } from '../../scene/plates';
 import { export3mf, exportScad, exportStl } from '../fileActions';
 import { pickAndImport } from '../../import/importFile';
 import changelogSource from '../../../CHANGELOG.md?raw';
 import { parseChangelog } from './changelog';
+import type { AppPanel } from '../uiStore';
 
 /**
  * Corpo delle modali del menu (Importa, Esporta, Scorciatoie, Novità, About). Sta in un modulo a parte, caricato solo
  * quando si apre una modale: la tabella delle scorciatoie e il changelog incorporato non pesano sull'avvio dell'app.
  */
-export type Panel = 'import' | 'export' | 'shortcuts' | 'news' | 'about';
+export type Panel = AppPanel;
 
 /** Scorciatoie da tastiera (le stesse di src/hooks/useShortcuts.ts), raggruppate per argomento. */
 const SHORTCUTS: { title: string; rows: [string, string][] }[] = [
@@ -40,7 +43,8 @@ const SHORTCUTS: { title: string; rows: [string, string][] }[] = [
       ['F2', 'Rinomina l\'oggetto selezionato'],
       ['Alt+clic', 'Seleziona il singolo oggetto di un gruppo'],
       ['Clic destro su un oggetto', 'Menu con i soli comandi applicabili alla selezione (se l\'oggetto non è selezionato lo seleziona)'],
-      ['Clic destro nel vuoto', 'Menu per aggiungere una forma 3D o 2D nel punto cliccato'],
+      ['Clic destro nel vuoto', 'Menu con sottomenu per aggiungere una forma 3D, 2D, un simbolo o un\'emoji nel punto cliccato, più Importa, Esporta, Dimensioni del piano e Benvenuto'],
+      ['Scheda Piatti', 'Un progetto può avere più piatti, ciascuno con i suoi oggetti: si vede un piatto alla volta; 3MF esporta tutti i piatti, STL chiede quale'],
       ['Clic su una quota', 'Le quote X, Y e Z dell\'oggetto selezionato: si digita la misura in mm (Invio applica, Esc annulla); il lucchetto accanto fa scalare tutti gli assi insieme'],
       ['Ctrl+Maiusc+G', 'Separa il gruppo o l\'unione'],
       ['H', 'Solido / Foro'],
@@ -87,7 +91,12 @@ function Inline({ text }: { text: string }) {
 }
 
 export default function AppMenuPanels({ panel, run }: { panel: Panel; run: (action: () => void | Promise<void>) => () => void }) {
-  const hasObjects = useSceneStore((s) => s.scene.rootIds.length > 0);
+  const scene = useSceneStore((s) => s.scene);
+  // Con più piatti si esporta anche se il piatto in vista è vuoto: conta ogni piatto
+  const hasObjects = allRootIds(scene).length > 0;
+  const plates = platesOf(scene);
+  // Passo "Quale piatto?" dell'STL: serve solo con più di un piatto
+  const [choosingPlate, setChoosingPlate] = useState(false);
   return (
     <>
       {panel === 'import' && (
@@ -106,23 +115,46 @@ export default function AppMenuPanels({ panel, run }: { panel: Panel; run: (acti
           </>
         )}
 
-      {panel === 'export' && (
+      {panel === 'export' && choosingPlate && (
+          <>
+            <p>L'STL contiene un solo piatto. Quale vuoi esportare?</p>
+            <ul className="app-menu__formats" aria-label="Piatti da esportare">
+              {plates.map((p) => (
+                <li key={p.id}>
+                  <button type="button" className="modal__button modal__button--primary" disabled={p.rootIds.length === 0} onClick={run(() => exportStl(p.id))}>
+                    <FileDown size={14} />
+                    {p.name}
+                  </button>
+                  <span>{p.rootIds.length === 0 ? 'Vuoto' : p.rootIds.length === 1 ? '1 oggetto' : `${p.rootIds.length} oggetti`}</span>
+                </li>
+              ))}
+            </ul>
+            <div className="modal__actions">
+              <button type="button" className="modal__button" onClick={() => setChoosingPlate(false)}>
+                <ChevronLeft size={14} />
+                Indietro
+              </button>
+            </div>
+          </>
+        )}
+
+      {panel === 'export' && !choosingPlate && (
           <>
             {!hasObjects && <p>La scena è vuota: aggiungi almeno un oggetto per poter esportare.</p>}
             <ul className="app-menu__formats">
               <li>
-                <button type="button" className="modal__button" disabled={!hasObjects} onClick={run(exportStl)}>
+                <button type="button" className="modal__button" disabled={!hasObjects} onClick={plates.length > 1 ? () => setChoosingPlate(true) : run(() => exportStl())}>
                   <FileDown size={14} />
                   STL
                 </button>
-                <span>Mesh binaria unica, il formato più diffuso per gli slicer.</span>
+                <span>{plates.length > 1 ? 'Mesh binaria unica di un piatto, a tua scelta: il formato più diffuso per gli slicer.' : 'Mesh binaria unica, il formato più diffuso per gli slicer.'}</span>
               </li>
               <li>
                 <button type="button" className="modal__button" disabled={!hasObjects} onClick={run(export3mf)}>
                   <FileBox size={14} />
                   3MF
                 </button>
-                <span>Un oggetto per ogni colore, con i colori conservati.</span>
+                <span>{plates.length > 1 ? 'Tutti i piatti, affiancati, con un oggetto per ogni colore.' : 'Un oggetto per ogni colore, con i colori conservati.'}</span>
               </li>
               <li>
                 <button type="button" className="modal__button" disabled={!hasObjects} onClick={run(exportScad)}>
@@ -180,7 +212,7 @@ export default function AppMenuPanels({ panel, run }: { panel: Panel; run: (acti
 
       {panel === 'about' && (
           <>
-            <p><strong>Construct</strong> <span data-testid="about-version">v{__APP_VERSION__}</span></p>
+            <p><strong className="brand-name">Construct</strong> <span data-testid="about-version">v{__APP_VERSION__}</span></p>
             <p>Modellazione 3D da primitive con operazioni booleane, pensata per chi stampa in 3D. Piatto di stampa modificabile dalla barra di stato (256 × 256 mm di default), export STL e 3MF.</p>
             <p>Costruito con React, three.js e manifold-3d. Sviluppato da MAVIDA.</p>
           </>

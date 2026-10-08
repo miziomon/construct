@@ -29,6 +29,12 @@ const NEXT_BED: Record<BedMode, BedMode> = { full: 'grid', grid: 'none', none: '
 /** Tendine della barra strumenti che si possono aprire anche da tastiera. */
 export type ToolbarMenu = 'align' | 'mirror';
 
+/** Pannelli del menu hamburger (Importa, Esporta, ...): il menu del vuoto della vista li apre da fuori, quindi lo stato sta qui. */
+export type AppPanel = 'import' | 'export' | 'shortcuts' | 'news' | 'about';
+
+/** Scheda della sezione sotto la libreria: elenco degli oggetti del piatto attivo oppure elenco dei piatti. */
+export type OutlinerTab = 'objects' | 'plates';
+
 /** Tab della libreria nella barra laterale sinistra. */
 export type LibraryTab = 'shapes3d' | 'shapes2d' | 'symbols' | 'emoji';
 
@@ -65,6 +71,12 @@ interface UiState {
   /** Dimensioni del piano di stampa (si salvano in localStorage). */
   bedSize: BedSize;
   setBedSize: (size: Partial<BedSize>) => void;
+  /** Scheda aperta sotto la libreria (non si salva: si parte sempre dagli oggetti). */
+  outlinerTab: OutlinerTab;
+  setOutlinerTab: (tab: OutlinerTab) => void;
+  /** Pannello del menu hamburger aperto in una modale (non si salva). */
+  appPanel: AppPanel | null;
+  setAppPanel: (panel: AppPanel | null) => void;
   /** Schermata di benvenuto del primo avvio aperta (non si salva: la decide `firstVisit` all'avvio). */
   welcomeOpen: boolean;
   setWelcomeOpen: (open: boolean) => void;
@@ -126,6 +138,10 @@ export const useUiStore = create<UiState>()(
       bedMode: 'full',
       bedSize: DEFAULT_BED,
       setBedSize: (size) => set({ bedSize: { width: cleanBedSide(size.width, get().bedSize.width), depth: cleanBedSide(size.depth, get().bedSize.depth) } }),
+      outlinerTab: 'objects',
+      setOutlinerTab: (outlinerTab) => set({ outlinerTab }),
+      appPanel: null,
+      setAppPanel: (appPanel) => set({ appPanel }),
       welcomeOpen: false,
       setWelcomeOpen: (welcomeOpen) => set({ welcomeOpen }),
       bedDialogOpen: false,

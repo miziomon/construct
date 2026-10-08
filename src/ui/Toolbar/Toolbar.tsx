@@ -94,7 +94,7 @@ export function Toolbar() {
 
   return (
     <header className="toolbar">
-      <div className="toolbar__brand">Construct</div>
+      <div className="toolbar__brand brand-name">Construct</div>
 
       <Section label="File">
         <ToolbarButton help="new" shortcut="N" onClick={() => void newProject()}><FilePlus size={18} /></ToolbarButton>

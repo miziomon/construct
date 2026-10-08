@@ -83,7 +83,7 @@ export function WelcomeDialog() {
       <div className="welcome">
         <header className="welcome__hero">
           <Mark />
-          <h1 className="welcome__title">Construct</h1>
+          <h1 className="welcome__title brand-name">Construct</h1>
           <p className="welcome__tagline">Modellazione 3D per la stampa 3D, direttamente nel tuo browser.</p>
         </header>
 

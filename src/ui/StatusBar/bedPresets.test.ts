@@ -21,15 +21,16 @@ describe('preset del piano di stampa', () => {
   });
 
   it('le stampanti Bambu Lab richieste ci sono, e il piano predefinito è tra i preset', () => {
-    const all = BED_PRESETS.flatMap((p) => p.printers).join(' | ');
-    for (const model of ['A1 mini', 'Bambu Lab A1', 'P1S', 'H2D']) expect(all).toContain(model);
+    const all = BED_PRESETS.flatMap((p) => p.printers.flatMap((b) => b.models.map((m) => `${b.brand} ${m}`))).join(' | ');
+    for (const model of ['Bambu Lab A1 mini', 'Bambu Lab A1', 'Bambu Lab P1S', 'Bambu Lab P1P', 'Bambu Lab X1C', 'Bambu Lab H2D']) expect(all).toContain(model);
     expect(findPreset(DEFAULT_BED.width, DEFAULT_BED.depth)).toBeDefined();
   });
 
-  it('l\'etichetta comincia dalla misura, poi elenca le stampanti', () => {
-    const label = presetLabel(findPreset(256, 256)!);
-    expect(label.startsWith('256 × 256 mm · ')).toBe(true);
-    expect(label).toContain('Bambu Lab A1, Bambu Lab P1S');
+  it('l\'etichetta comincia dalla misura e nomina la marca una volta sola', () => {
+    expect(presetLabel(findPreset(256, 256)!)).toBe('256 × 256 mm · Bambu Lab: A1, P1S, P1P, X1C');
+    // Marche diverse sulla stessa misura: ognuna con i suoi modelli
+    expect(presetLabel(findPreset(180, 180)!)).toBe('180 × 180 mm · Bambu Lab: A1 mini · Prusa: MINI+');
+    for (const p of BED_PRESETS) expect(presetLabel(p).split('Bambu Lab').length).toBeLessThanOrEqual(2);
   });
 
   it('findPreset non trova misure personalizzate', () => {

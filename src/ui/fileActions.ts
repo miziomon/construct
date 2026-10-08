@@ -1,5 +1,7 @@
 import { getKernel } from '../kernel/client';
 import { useSceneStore } from '../scene/store';
+import { allRootIds, hasManyPlates, platesOf } from '../scene/plates';
+import { useUiStore } from './uiStore';
 import { sceneFromJson, sceneToJson } from '../scene/persistence';
 import { addAsset } from '../import/assets';
 import { restoreAssets } from '../import/restore';
@@ -20,12 +22,16 @@ export function download(data: BlobPart, filename: string, type: string): void {
 
 const scene = () => useSceneStore.getState().scene;
 
-export async function exportStl(): Promise<void> {
-  download(await getKernel().exportStl(scene()), 'construct.stl', 'model/stl');
+/** STL del piatto indicato (il piatto attivo se non si dice): con più piatti il nome del file porta il piatto. */
+export async function exportStl(plateId?: string): Promise<void> {
+  const plate = plateId ? platesOf(scene()).find((p) => p.id === plateId) : undefined;
+  const suffix = plate && hasManyPlates(scene()) ? `-${plate.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}` : '';
+  download(await getKernel().exportStl(scene(), plateId), `construct${suffix}.stl`, 'model/stl');
 }
 
+/** 3MF con tutti i piatti, affiancati lungo X (larghezza del piano più 20 mm di distanza). */
 export async function export3mf(): Promise<void> {
-  download(await getKernel().export3mf(scene()), 'construct.3mf', 'model/3mf');
+  download(await getKernel().export3mf(scene(), useUiStore.getState().bedSize.width + 20), 'construct.3mf', 'model/3mf');
 }
 
 /**
@@ -143,7 +149,8 @@ export function openProject(): void {
 
 /** Svuota la scena; se non è vuota chiede conferma (l'azione resta annullabile con Ctrl+Z). */
 export async function newProject(): Promise<void> {
-  const hasObjects = scene().rootIds.length > 0;
+  // Con più piatti conta ogni piatto, non solo quello in vista
+  const hasObjects = allRootIds(scene()).length > 0;
   // Con la scena vuota non si chiede nulla; altrimenti la casella permette di azzerare anche la timeline
   const answer = hasObjects
     ? await confirmWithOption('Svuotare la scena? Potrai annullare con Ctrl+Z.', 'Svuota', 'Svuota anche la cronologia (la timeline riparte da zero e non si potrà annullare)')

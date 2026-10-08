@@ -2,6 +2,7 @@ import { get, set } from 'idb-keyval';
 import type { Scene } from './types';
 import { useSceneStore } from './store';
 import { normalizeTreatmentGroups } from './treatment';
+import { platesAreValid } from './plates';
 import { decodeAsset, encodeAsset, getAsset, type MeshAsset } from '../import/assets';
 import { restoreAssets } from '../import/restore';
 import { notify } from '../ui/notify/notifyStore';
@@ -11,13 +12,13 @@ const KEY = 'construct:scene';
 const LEGACY_KEY = 'webcad:scene';
 const FORMAT = 'construct-scene';
 const LEGACY_FORMAT = 'webcad-scene';
-/** Versione 2: il progetto include le mesh importate. Le versioni 1 (senza mesh) si leggono ancora. */
-const VERSION = 3;
+/** Versione 2: il progetto include le mesh importate; 4: i piatti (`plates`). Le versioni precedenti si leggono ancora (un piatto solo). */
+const VERSION = 4;
 
 /** Controllo minimo di forma: evita di caricare file che non sono scene Construct. */
 function isScene(value: unknown): value is Scene {
   const s = value as Scene | undefined;
-  return !!s && typeof s.nodes === 'object' && Array.isArray(s.rootIds) && s.rootIds.every((id) => s.nodes[id]);
+  return !!s && typeof s.nodes === 'object' && Array.isArray(s.rootIds) && s.rootIds.every((id) => s.nodes[id]) && platesAreValid(s);
 }
 
 /**

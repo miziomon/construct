@@ -18,6 +18,7 @@ Sono TTF **statici** (senza tabella `fvar`: opentype.js legge solo l'istanza pre
 | `BebasNeue-Regular.ttf` | Bebas Neue | Regular | Display |
 | `Anton-Regular.ttf` | Anton | Regular | Display |
 | `Oswald-Bold.ttf` | Oswald | Bold | Display |
+| `Orbitron-Bold.ttf` | Orbitron | Bold | Display |
 | `Righteous-Regular.ttf` | Righteous | Regular | Display |
 | `StardosStencil-Bold.ttf` | Stardos Stencil | Bold | Display |
 | `Pacifico-Regular.ttf` | Pacifico | Regular | Corsivo e a mano |

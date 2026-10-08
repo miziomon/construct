@@ -44,44 +44,74 @@
     @include thin-scrollbar;
   }
 
+  // Un indicatore per passo: la zona cliccabile è più grande del segno, che è un piccolo pallino
   &__step {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    justify-content: center;
+    width: 18px;
     height: 26px;
-    padding: 0 $space-2;
-    border: 1px solid color('border');
-    border-radius: $radius-md;
+    padding: 0;
+    border: 0;
+    border-radius: $radius-sm;
     background: transparent;
-    font-size: 12px;
-    white-space: nowrap;
+    color: color('text-muted');
     @include focus-ring;
 
     &:hover:not(:disabled) {
-      background: color('panel-raised');
+      color: color('accent');
+
+      .timeline__dot {
+        transform: scale(1.35);
+      }
     }
 
     &:disabled {
       cursor: default;
     }
 
-    // Passo corrente: stesso stile dei pulsanti attivi della barra strumenti
+    // Passo corrente: il pallino è pieno, più grande e con un anello
     &--current {
-      border-color: color('accent');
-      background: color('accent-soft');
       color: color('accent');
+
+      .timeline__dot {
+        width: 12px;
+        height: 12px;
+        background: currentColor;
+        box-shadow: 0 0 0 3px color('accent-soft');
+      }
     }
 
-    // Passi annullati, ancora ripristinabili
-    &--future {
-      color: color('text-muted');
-      border-style: dashed;
+    // Passi annullati, ancora ripristinabili: pallino vuoto con il bordo tratteggiato
+    &--future .timeline__dot {
+      background: transparent;
+      border: 1.5px dashed currentColor;
+    }
+
+    // Il primo passo ("Inizio") è un rombo, per ritrovarlo a colpo d'occhio
+    &--start .timeline__dot {
+      border-radius: 2px;
+      transform: rotate(45deg);
+    }
+
+    &--start:hover:not(:disabled) .timeline__dot {
+      transform: rotate(45deg) scale(1.35);
     }
   }
 
-  &__number {
-    font-size: 10px;
-    font-weight: 600;
-    color: color('text-muted');
+  &__dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: currentColor;
+    transition: transform 0.12s ease;
+
+    @media (prefers-reduced-motion: reduce) {
+      transition: none;
+    }
+  }
+
+  &__clear {
+    margin-left: $space-1;
   }
 }

@@ -316,8 +316,20 @@ export type CornerNode = BaseNode & {
 
 export type SceneNode = PrimitiveNode | Shape2DNode | MeshNode | GroupNode | EdgeNode | CornerNode;
 
+/** Piatto di stampa: un gruppo di oggetti alla radice (vedi plates.ts). */
+export interface Plate {
+  id: string;
+  name: string;
+  /** Oggetti alla radice del piatto. Per il piatto attivo è vuoto: la sua lista è `Scene.rootIds`. */
+  rootIds: string[];
+}
+
 export interface Scene {
   nodes: Record<string, SceneNode>;
-  /** Ordine di presentazione degli oggetti alla radice. */
+  /** Ordine di presentazione degli oggetti alla radice **del piatto attivo**. */
   rootIds: string[];
+  /** Piatti del progetto. Assente = un solo piatto (implicito). */
+  plates?: Plate[];
+  /** Id del piatto attivo, il cui elenco di oggetti è `rootIds`. */
+  activePlateId?: string;
 }

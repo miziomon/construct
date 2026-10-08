@@ -181,8 +181,8 @@ export function DimensionOverlay() {
             <Html position={mid} center zIndexRange={[5, 0]} style={{ pointerEvents: 'none' }}>
               <span className="dimension-row">
                 <Quote key={`${id}-${axis}-${size[axis]}`} axis={axis} value={size[axis]} readOnly={locked} onCommit={(v) => commit(axis, v)} />
-                {/* Un solo lucchetto per tutte le quote, accanto a quella dell'altezza */}
-                {axis === 2 && <RatioLock closed={ratioClosed} readOnly={locked} forced={forced} onToggle={() => updateNode(id, { lockRatio: !ratioClosed } as never)} />}
+                {/* Un lucchetto per ogni quota: sono lo stesso interruttore, cambiarne uno cambia tutti */}
+                <RatioLock closed={ratioClosed} readOnly={locked} forced={forced} onToggle={() => updateNode(id, { lockRatio: !ratioClosed } as never)} />
               </span>
             </Html>
           </group>

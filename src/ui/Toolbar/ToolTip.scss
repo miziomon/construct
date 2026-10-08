@@ -25,6 +25,16 @@
   line-height: 1.45;
   pointer-events: none;
 
+  // Tooltip di una riga (HoverTip): sopra il controllo, largo quanto il testo
+  &--compact {
+    display: block;
+    padding: 4px 8px;
+    font-size: 11.5px;
+    font-weight: 600;
+    white-space: nowrap;
+    transform: translate(-50%, -100%);
+  }
+
   &__title {
     display: flex;
     align-items: center;

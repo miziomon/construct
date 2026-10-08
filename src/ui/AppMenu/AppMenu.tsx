@@ -1,5 +1,5 @@
 import { Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
-import { FileDown, FilePlus, FolderOpen, Info, Keyboard, Menu, Save, SaveAll, Sparkles, Upload } from 'lucide-react';
+import { FileDown, FilePlus, FolderOpen, House, Info, Keyboard, Menu, Save, SaveAll, Sparkles, Upload } from 'lucide-react';
 import { useUiStore } from '../uiStore';
 import { newProject, openProject, saveProject, saveProjectAs } from '../fileActions';
 import type { Panel } from './AppMenuPanels';
@@ -27,6 +27,7 @@ const GROUPS: Item[][] = [
     { panel: 'export', label: 'Esporta', icon: <FileDown size={16} /> },
   ],
   [
+    { label: 'Schermata di benvenuto', icon: <House size={16} />, action: () => useUiStore.getState().setWelcomeOpen(true) },
     { panel: 'shortcuts', label: 'Scorciatoie da tastiera', icon: <Keyboard size={16} /> },
     { panel: 'news', label: 'Novità', icon: <Sparkles size={16} /> },
     { panel: 'about', label: 'About', icon: <Info size={16} /> },
@@ -65,7 +66,9 @@ function markNewsSeen(): void {
 export function AppMenu() {
   const open = useUiStore((s) => s.menuOpen);
   const setOpen = useUiStore((s) => s.setMenuOpen);
-  const [panel, setPanel] = useState<Panel | null>(null);
+  // Il pannello aperto sta nello store: il menu contestuale della vista apre Importa ed Esporta da fuori
+  const panel = useUiStore((s) => s.appPanel);
+  const setPanel = useUiStore((s) => s.setAppPanel);
   const [news, setNews] = useState(hasUnseenNews);
   const root = useRef<HTMLDivElement>(null);
 
@@ -137,7 +140,7 @@ export function AppMenu() {
         </div>
       )}
 
-      <Modal open={panel !== null} title={panel ? TITLES[panel] : ''} onClose={close}>
+      <Modal open={panel !== null} title={panel ? TITLES[panel] : ''} onClose={close} size={panel === 'shortcuts' ? 'large' : 'default'}>
         {panel && (
           <Suspense fallback={<p>Caricamento…</p>}>
             <AppMenuPanels panel={panel} run={run} />

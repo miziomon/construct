@@ -6,8 +6,65 @@
   flex-direction: column;
   min-height: 0;
 
-  &__title {
-    @include section-title;
+  // Schede Oggetti | Piatti al posto del vecchio titolo
+  &__tabs {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: $space-2 $space-2 0;
+    border-bottom: 1px solid color('border');
+  }
+
+  &__tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px $space-3;
+    border: 1px solid transparent;
+    border-bottom: 0;
+    border-radius: $radius-sm $radius-sm 0 0;
+    background: transparent;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: color('text-muted');
+    cursor: pointer;
+    @include focus-ring;
+
+    &:hover {
+      color: color('text');
+    }
+
+    &--active {
+      border-color: color('border');
+      background: color('panel-raised');
+      color: color('accent');
+    }
+  }
+
+  &__badge {
+    padding: 0 5px;
+    border-radius: 999px;
+    background: color('accent-soft');
+    font-size: 10px;
+    color: color('accent');
+  }
+
+  // Nome del piatto di cui si vedono gli oggetti (solo con più piatti)
+  &__plate {
+    margin-left: auto;
+    padding-right: $space-2;
+    font-size: 11px;
+    color: color('text-muted');
+  }
+
+  &__panel {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+    padding-top: $space-2;
   }
 
   &__empty {

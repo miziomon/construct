@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
+import { current } from 'immer';
 import { temporal } from 'zundo';
 import type { CornerNode, EdgeNode, GroupNode, GroupOp, MeshNode, PrimitiveKind, PrimitiveNode, Scene, SceneNode, Shape2DKind, Shape2DNode, Vec3 } from './types';
 import { randomColor } from './color';
@@ -7,6 +8,7 @@ import { lastShape, rememberShape } from './lastValues';
 import { layFlatPatch } from './layFlat';
 import { DEFAULT_COLOR, PRIMITIVE_LABELS, SHAPE2D_LABELS, halfHeight, primitiveDefaults, shape2dDefaults } from './defaults';
 import { isScaled } from './groupScale';
+import { addPlateScene, moveRootsToPlate, plateName, platesOf, removePlateScene, renamePlateScene, switchPlateScene } from './plates';
 import { composeTransform, conjugate, eulerToMatrix, matrixToEuler, normalizeMirror, round, toLocalTransform } from './math';
 import type { Mirror, Transform } from './math';
 
@@ -24,7 +26,7 @@ interface SceneState {
   addPrimitive: (kind: PrimitiveKind, at?: [number, number]) => void;
   addShape2D: (kind: Shape2DKind, at?: [number, number]) => void;
   /** Aggiunge una forma Testo con il testo e il font dati (usata dalla tab Simboli), appoggiata sul piatto. */
-  addText: (input: { text: string; font: string; origin?: 'symbol' | 'emoji'; label?: string }) => void;
+  addText: (input: { text: string; font: string; origin?: 'symbol' | 'emoji'; label?: string; at?: [number, number] }) => void;
   /** Aggiunge un disegno SVG importato come forma 2D estrusa (contorni in mm, centrati), appoggiata sul piatto. */
   addSvg: (input: { name: string; fileName: string; contours: [number, number][][]; width: number; depth: number }) => string;
   /** Aggiunge una mesh importata, appoggiata sul piatto e centrata in XY. */
@@ -59,6 +61,16 @@ interface SceneState {
   setGizmoMode: (mode: GizmoMode) => void;
   loadScene: (scene: Scene) => void;
   clear: () => void;
+
+  /** Aggiunge un piatto vuoto e lo rende attivo (un passo di Annulla). Restituisce l'id del nuovo piatto. */
+  addPlate: () => string;
+  /** Rende attivo un piatto. Non è un passo di Annulla: cambia solo cosa si vede (la selezione si azzera). */
+  switchPlate: (id: string) => void;
+  renamePlate: (id: string, name: string) => void;
+  /** Elimina un piatto con i suoi oggetti (l'ultimo non si elimina). */
+  removePlate: (id: string) => void;
+  /** Sposta gli oggetti selezionati (alla radice, non bloccati) in un altro piatto. */
+  moveSelectionToPlate: (plateId: string) => void;
 }
 
 /** Nome base del gruppo creato da ogni operazione. */
@@ -245,7 +257,7 @@ export const useSceneStore = create<SceneState>()(
         return id;
       },
 
-      addText: ({ text, font, origin, label }) => {
+      addText: ({ text, font, origin, label, at }) => {
         // Un simbolo o un'emoji non si chiama "Testo": il nome dice cos'è (es. "Simbolo: Stella piena", "Emoji 😂")
         const baseName = origin === 'symbol' ? `Simbolo: ${label ?? text}` : origin === 'emoji' ? `Emoji ${text}` : SHAPE2D_LABELS.text;
         act(origin === 'symbol' ? 'Aggiungi simbolo' : origin === 'emoji' ? 'Aggiungi emoji' : `Aggiungi ${SHAPE2D_LABELS.text}`, (s) => {
@@ -260,7 +272,7 @@ export const useSceneStore = create<SceneState>()(
             name: uniqueName(s.scene, baseName),
             position: [0, 0, 0] as Vec3,
           } as Shape2DNode;
-          node.position = [0, 0, halfHeight(node)];
+          node.position = [at?.[0] ?? 0, at?.[1] ?? 0, halfHeight(node)];
           node.color = randomColor();
           s.scene.nodes[id] = node;
           s.scene.rootIds.unshift(id);
@@ -561,6 +573,54 @@ export const useSceneStore = create<SceneState>()(
           s.scene = emptyScene();
           s.selection = [];
         }),
+
+      addPlate: () => {
+        const id = newId();
+        act('Aggiungi piatto', (s) => {
+          s.scene = switchPlateScene(addPlateScene(current(s.scene), id), id);
+          s.selection = [];
+        });
+        return id;
+      },
+
+      switchPlate: (id) => {
+        // Senza un passo di cronologia: cambiare piatto non modifica il progetto. Lo stato resta coerente (contiene il
+        // piatto attivo), quindi annullando un passo fatto su un altro piatto si torna a vederlo
+        const temporal = useSceneStore.temporal.getState();
+        temporal.pause();
+        try {
+          useSceneStore.setState((s) => {
+            s.scene = switchPlateScene(current(s.scene), id);
+            s.selection = [];
+          });
+        } finally {
+          temporal.resume();
+        }
+      },
+
+      renamePlate: (id, name) =>
+        act('Rinomina piatto', (s) => {
+          s.scene = renamePlateScene(current(s.scene), id, name);
+        }),
+
+      removePlate: (id) =>
+        act('Elimina piatto', (s) => {
+          const base = current(s.scene);
+          const next = removePlateScene(base, id);
+          if (next === base) return;
+          s.scene = next;
+          s.selection = s.selection.filter((n) => next.nodes[n]);
+        }),
+
+      moveSelectionToPlate: (plateId) => {
+        const name = platesOf(get().scene).find((p) => p.id === plateId)?.name ?? plateName(1);
+        act(`Sposta nel ${name}`, (s) => {
+          const ids = selectedRoots(s.scene, s.selection).filter((id) => !isLocked(s.scene, id));
+          if (!ids.length) return;
+          s.scene = moveRootsToPlate(current(s.scene), ids, plateId);
+          s.selection = [];
+        });
+      },
     })),
     {
       // Nella cronologia di undo/redo entrano la scena e il nome dell'operazione: selezione e gizmo no

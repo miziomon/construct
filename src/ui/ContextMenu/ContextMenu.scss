@@ -12,10 +12,67 @@
   background: color('panel');
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
 
-  // Il menu delle forme è lungo: scorre dentro la finestra
-  &--add {
-    max-height: calc(100vh - 32px);
+  // Voce che apre un sottomenu: il pannello compare sulla destra, ancorato alla voce
+  &__sub {
+    position: relative;
+  }
+
+  &__item--open {
+    background: color('accent-soft');
+    color: color('accent');
+  }
+
+  &__flyout {
+    position: absolute;
+    top: 0;
+    left: calc(100% + 2px);
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 200px;
+    max-height: min(70vh, 520px);
+    padding: $space-1;
     overflow-y: auto;
+    border: 1px solid color('border');
+    border-radius: $radius-lg;
+    background: color('panel');
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+    @include thin-scrollbar;
+
+    // Senza spazio a destra il sottomenu si apre a sinistra
+    &--left {
+      left: auto;
+      right: calc(100% + 2px);
+    }
+  }
+
+  // Griglia di simboli o emoji dentro un sottomenu
+  &__glyphs {
+    display: grid;
+    gap: 2px;
+    padding: 0 2px 2px;
+  }
+
+  &__glyph {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border: 1px solid transparent;
+    border-radius: $radius-sm;
+    background: transparent;
+    font-size: 20px;
+    line-height: 1;
+    color: color('text');
+    cursor: pointer;
+    @include focus-ring;
+
+    &:hover,
+    &:focus-visible {
+      border-color: color('accent');
+      background: color('accent-soft');
+    }
   }
 
   &__heading {
@@ -58,6 +115,7 @@
 
   &__name {
     flex: 1;
+    white-space: nowrap;
   }
 
   &__shortcut {

@@ -18,6 +18,25 @@ I messaggi di commit seguono i [Conventional Commits](https://www.conventionalco
 
 ## [Non rilasciato]
 
+## [0.25.0] - 2026-10-08
+
+### Aggiunto
+- **Piatti**: un progetto può avere più piatti di stampa, ciascuno con i suoi oggetti (per esempio "Piatto 1: scatola", "Piatto 2: coperchio"). Nuova scheda **Piatti** accanto a **Oggetti** nella barra laterale sinistra: elenco dei piatti con nome (doppio clic o matita per rinominare), numero di oggetti e primi nomi, piatto attivo evidenziato, "Aggiungi piatto", cestino (con conferma se contiene oggetti, l'ultimo non si elimina) e, per ogni altro piatto, "Sposta qui" gli oggetti selezionati. Nel menu contestuale di un oggetto compare "Sposta nel piatto ▸". Si vede e si modifica un piatto alla volta: vista, elenco Oggetti, barra di stato e codice OpenSCAD riguardano il piatto attivo. Cambiare piatto non è un passo di Annulla; aggiungere, spostare, rinominare ed eliminare sì.
+- **Esportazione con i piatti**: il **3MF** contiene tutti i piatti, affiancati lungo X (larghezza del piano più 20 mm) con la trasformazione degli item, e i nomi portano il piatto ("Piatto 2 – Coperchio"); l'**STL** chiede quale piatto esportare quando ce n'è più di uno (il file si chiama per esempio `construct-piatto-2.stl`) e con un piatto solo parte subito.
+- **Menu del vuoto con sottomenu a destra**: *Forme 3D*, *Forme 2D*, *Simboli* ed *Emoji* (le ultime due con griglia di glifi scorrevole, Preferiti e Recenti in cima; tutto si crea nel punto cliccato), poi Importa…, Esporta…, Dimensioni del piano… e Schermata di benvenuto. I sottomenu si aprono con il mouse, il clic o la freccia destra e si chiudono con la sinistra.
+- Voce **Schermata di benvenuto** nel menu hamburger, per riaprirla in qualsiasi momento.
+- **Orbitron Bold** tra i font del Testo.
+- **Icona "Svuota la cronologia"** nella timeline (chiede conferma; la scena resta com'è).
+
+### Modificato
+- **Il nome dell'app è in maiuscolo con Orbitron** (barra strumenti, benvenuto, About): testo vero con `@font-face`, quindi segue il tema e non richiede immagini.
+- **Timeline più leggera**: ogni passo è un piccolo indicatore (rombo per l'inizio, pallino pieno con anello per il passo corrente, pallino tratteggiato per i passi annullati) e il nome dell'operazione sta nel tooltip sopra l'indicatore. Con Serie e Pattern aperti i salti sono disattivati, come già con Raccordo, Smusso e Guscio.
+- **Quote**: il lucchetto delle proporzioni compare accanto a tutte e tre le quote (X, Y, Z), che sono lo stesso interruttore.
+- **Scorciatoie da tastiera**: la modale è grande come quella del codice e l'elenco scorre.
+- **Tendina delle stampanti**: la marca compare una volta sola, seguita dai modelli ("256 × 256 mm · Bambu Lab: A1, P1S, P1P, X1C"; con marche diverse sulla stessa misura "180 × 180 mm · Bambu Lab: A1 mini · Prusa: MINI+").
+- **Barra strumenti** un po' più compatta (spazi e margini dei pulsanti) per far posto al nome più largo.
+- Il formato dei progetti passa alla versione 4 (i piatti); i file delle versioni precedenti si aprono come progetti con un piatto solo.
+
 ## [0.24.0] - 2026-10-08
 
 ### Aggiunto

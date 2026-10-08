@@ -15,6 +15,7 @@ import varelaRound from '../assets/fonts/VarelaRound-Regular.ttf?url';
 import caveatBold from '../assets/fonts/Caveat-Bold.ttf?url';
 import stardosStencilBold from '../assets/fonts/StardosStencil-Bold.ttf?url';
 import pressStart2P from '../assets/fonts/PressStart2P-Regular.ttf?url';
+import orbitronBold from '../assets/fonts/Orbitron-Bold.ttf?url';
 import unifraktur from '../assets/fonts/UnifrakturMaguntia-Regular.ttf?url';
 import bangers from '../assets/fonts/Bangers-Regular.ttf?url';
 import righteous from '../assets/fonts/Righteous-Regular.ttf?url';
@@ -69,6 +70,7 @@ export const FONTS: FontInfo[] = [
   font('pt-serif-bold', 'PT Serif Bold', 'PTSerif-Bold.ttf', 'PT Serif', 'Bold', ptSerifBold, 'Serif'),
   font('roboto-slab-bold', 'Roboto Slab Bold', 'RobotoSlab-Bold.ttf', 'Roboto Slab', 'Bold', robotoSlabBold, 'Serif'),
   font('unifraktur', 'UnifrakturMaguntia', 'UnifrakturMaguntia-Regular.ttf', 'UnifrakturMaguntia', 'Book', unifraktur, 'Serif'),
+  font('orbitron-bold', 'Orbitron Bold', 'Orbitron-Bold.ttf', 'Orbitron', 'Bold', orbitronBold, 'Display'),
   font('righteous', 'Righteous', 'Righteous-Regular.ttf', 'Righteous', 'Regular', righteous, 'Display'),
   font('stardos-stencil-bold', 'Stardos Stencil Bold', 'StardosStencil-Bold.ttf', 'Stardos Stencil', 'Bold', stardosStencilBold, 'Display'),
   font('caveat-bold', 'Caveat Bold', 'Caveat-Bold.ttf', 'Caveat', 'Bold', caveatBold, 'Corsivo e a mano'),

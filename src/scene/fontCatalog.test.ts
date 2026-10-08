@@ -20,8 +20,8 @@ function hasFontTable(data: ArrayBuffer, tag: string): boolean {
 }
 
 describe('catalogo dei font', () => {
-  it('sono venti di testo e quattro di simboli, con id e file unici', () => {
-    expect(FONTS.filter((f) => f.category !== 'Simboli')).toHaveLength(20);
+  it('sono ventuno di testo e quattro di simboli, con id e file unici', () => {
+    expect(FONTS.filter((f) => f.category !== 'Simboli')).toHaveLength(21);
     expect(FONTS.filter((f) => f.category === 'Simboli')).toHaveLength(4);
     expect(new Set(FONTS.map((f) => f.id)).size).toBe(FONTS.length);
     expect(new Set(FONTS.map((f) => f.file)).size).toBe(FONTS.length);

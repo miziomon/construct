@@ -19,6 +19,22 @@
   }
 }
 
+// Orbitron Bold (OFL), solo per il nome dell'app: lo stesso file del catalogo font del Testo
+@font-face {
+  font-family: 'Orbitron';
+  font-weight: 700;
+  font-display: swap;
+  src: url('../../assets/fonts/Orbitron-Bold.ttf') format('truetype');
+}
+
+// Il nome dell'app si scrive sempre in maiuscolo con Orbitron (il testo resta "Construct" per accessibilità)
+.brand-name {
+  font-family: $font-brand;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
 body {
   font-family: $font-sans;
   font-size: 13px;

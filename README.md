@@ -16,8 +16,10 @@ Tutto gira nel browser: il calcolo geometrico usa [manifold-3d](https://github.c
 - **Codice OpenSCAD** sempre aggiornato, con `for()`, `offset()`, `hull()`, `rotate_extrude()` e le celle dei pattern già calcolate, così il risultato coincide con quello dell'app.
 - **Piano di stampa** configurabile (256 × 256 mm di default) dalla barra di stato, con una tendina delle stampanti (misura per prima, poi le stampanti che la hanno: Bambu Lab A1 mini, A1, P1S, P1P, X1C e H2D, Prusa, Creality) e **Ridimensiona** su qualsiasi gruppo (unione, guscio, serie, pattern...) con il gizmo o dalle proprietà.
 - **Quote cliccabili**: l'oggetto selezionato mostra le misure X, Y e Z nella vista; un clic su una quota permette di digitare il valore in mm, senza passare dal pannello laterale, e il lucchetto accanto le fa scalare tutte in proporzione.
-- **Menu contestuale** con il tasto destro: su un oggetto elenca solo i comandi che hanno senso per lui (Raggruppa con due o più oggetti, Separa su un gruppo, niente raccordi su una sfera...); nel vuoto propone di aggiungere una forma nel punto cliccato.
-- **Schermata di benvenuto** al primo avvio: progetto vuoto, partire da un cubo, importare un file (i modelli di esempio arriveranno).
+- **Menu contestuale** con il tasto destro: su un oggetto elenca solo i comandi che hanno senso per lui (Raggruppa con due o più oggetti, Separa su un gruppo, niente raccordi su una sfera...); nel vuoto ha sottomenu a destra per aggiungere nel punto cliccato una forma 3D o 2D, un simbolo o un'emoji, più le voci Importa, Esporta, Dimensioni del piano e Schermata di benvenuto.
+- **Piatti**: un progetto può avere più piatti di stampa (scheda **Piatti** accanto a **Oggetti**), ciascuno con i suoi oggetti, per esempio la scatola sul primo e il coperchio sul secondo. Si vede un piatto alla volta; il 3MF esporta tutti i piatti affiancati e l'STL chiede quale piatto esportare.
+- **Schermata di benvenuto** al primo avvio (e dal menu): progetto vuoto, partire da un cubo, importare un file (i modelli di esempio arriveranno).
+- **Timeline** a indicatori con il nome dell'operazione nel tooltip e un'icona per svuotare la cronologia.
 - **Barra strumenti a sezioni** (File, Trasforma, Combina, Modifica, Disponi, Oggetto, Vista), con il nome del gruppo sopra i pulsanti.
 - **Cronologia** con Annulla e Ripeti (un solo passo per operazione) e linea del tempo.
 - **Tooltip dettagliati** su ogni comando della barra: cosa fa, come si applica e, per i comandi più complessi, un'immagine di esempio.

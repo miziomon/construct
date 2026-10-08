@@ -5,6 +5,10 @@ import { useUiStore } from '../uiStore';
 import { PRIMITIVE_ICONS, SHAPE2D_ICONS } from '../ShapeLibrary/ShapeLibrary';
 import { CORNER_ICONS, CORNER_NAMES, EDGE_ICONS, GROUP_ICONS, GROUP_NAMES } from '../groupIcons';
 import { dropTarget, zoneAt, type DropZone } from './dnd';
+import { PlatesPanel } from '../Plates/PlatesPanel';
+import { activePlateOf, hasManyPlates } from '../../scene/plates';
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
+import type { OutlinerTab } from '../uiStore';
 import './Outliner.scss';
 
 /** Icona e nome degli oggetti nati dalle tab Simboli ed Emoji (non si presentano come "Testo"). */
@@ -193,8 +197,18 @@ function Row({ id, depth, collapsed, toggle, hint, setHint }: RowProps) {
   );
 }
 
+const TABS: { id: OutlinerTab; label: string }[] = [
+  { id: 'objects', label: 'Oggetti' },
+  { id: 'plates', label: 'Piatti' },
+];
+
 export function Outliner() {
   const rootIds = useSceneStore((s) => s.scene.rootIds);
+  const tab = useUiStore((s) => s.outlinerTab);
+  const setTab = useUiStore((s) => s.setOutlinerTab);
+  // Con più piatti l'elenco dice di quale piatto sono gli oggetti
+  const plateLabel = useSceneStore((s) => (hasManyPlates(s.scene) ? activePlateOf(s.scene).name : null));
+  const plateCount = useSceneStore((s) => (hasManyPlates(s.scene) ? s.scene.plates!.length : 0));
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [hint, setHint] = useState<Hint | null>(null);
   const toggle = (id: string) =>
@@ -212,10 +226,41 @@ export function Outliner() {
     return dropTarget(scene, draggedId, scene.rootIds[scene.rootIds.length - 1], 'after') && target;
   };
 
+  /** Frecce sinistra e destra passano da una scheda all'altra (schema ARIA delle tab). */
+  const onTabKeys = (e: ReactKeyboardEvent) => {
+    const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+    if (!step) return;
+    e.preventDefault();
+    const next = TABS[(TABS.findIndex((t) => t.id === tab) + step + TABS.length) % TABS.length].id;
+    setTab(next);
+    document.getElementById(`outliner-tab-${next}`)?.focus();
+  };
+
   return (
-    <section className="outliner">
-      <h2 className="outliner__title">Oggetti</h2>
-      {rootIds.length === 0 ? (
+    <section className="outliner" aria-label="Oggetti e piatti">
+      <div className="outliner__tabs" role="tablist" aria-label="Oggetti e piatti" onKeyDown={onTabKeys}>
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            id={`outliner-tab-${t.id}`}
+            type="button"
+            role="tab"
+            className={`outliner__tab${t.id === tab ? ' outliner__tab--active' : ''}`}
+            aria-selected={t.id === tab}
+            aria-controls="outliner-panel"
+            tabIndex={t.id === tab ? 0 : -1}
+            onClick={() => setTab(t.id)}
+          >
+            {t.label}
+            {t.id === 'plates' && plateCount > 1 && <span className="outliner__badge">{plateCount}</span>}
+          </button>
+        ))}
+        {tab === 'objects' && plateLabel && <span className="outliner__plate" title="Piatto attivo">{plateLabel}</span>}
+      </div>
+      <div id="outliner-panel" className="outliner__panel" role="tabpanel" aria-labelledby={`outliner-tab-${tab}`}>
+      {tab === 'plates' ? (
+        <PlatesPanel />
+      ) : rootIds.length === 0 ? (
         <p className="outliner__empty">La scena è vuota. Aggiungi una forma dalla libreria.</p>
       ) : (
         <ul
@@ -240,6 +285,7 @@ export function Outliner() {
           ))}
         </ul>
       )}
+      </div>
     </section>
   );
 }
