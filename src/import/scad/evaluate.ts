@@ -1,5 +1,6 @@
 import { parse, ScadError, tokenize } from './parse';
 import type { Arg, Expr, Param, Stmt } from './parse';
+import { NAMED_COLORS } from './colors';
 
 /**
  * Valutatore di un sottoinsieme di OpenSCAD: esegue il programma (variabili, funzioni, moduli, `for`, `if`, `let`) e
@@ -186,9 +187,19 @@ export type Shape =
   | ({ s: 'polygon'; points: [number, number][]; paths?: number[][] } & Flat)
   | ({ s: 'text'; text: string; font: string; size: number; halign: string; valign: string } & Flat);
 
+/** Un problema trovato leggendo il codice: `error` = parte saltata o non capita, `note` = approssimazione o informazione. */
+export interface ScadIssue {
+  message: string;
+  /** Riga del codice a cui si riferisce (null se non si sa o riguarda tutto il file). */
+  line: number | null;
+  level: 'error' | 'note';
+}
+
 export interface PrimItem {
   kind: 'prim';
   shape: Shape;
+  /** Riga del codice che ha creato la forma (serve a indicare i problemi dell'importazione). */
+  line?: number;
   /** Trasformazione composta dal mondo al sistema locale dell'oggetto. */
   M: Mat;
   color?: string;
@@ -210,7 +221,10 @@ export interface ScadResult {
   items: Item[];
   /** Piatti riconosciuti (moduli `piatto_N` richiamati affiancati), in ordine di numero. */
   plates: { index: number; name: string; items: Item[] }[];
+  /** Messaggi dei problemi, senza ripetizioni (compatibile con chi non serve la riga). */
   warnings: string[];
+  /** Problemi con la riga e il livello. */
+  issues: ScadIssue[];
 }
 
 /** Applica una trasformazione a tutti gli oggetti (moltiplicandola a sinistra della loro). */
@@ -323,14 +337,6 @@ interface Ctx {
 /** Limiti: un file enorme o ricorsivo non deve bloccare l'app. */
 const LIMITS = { steps: 400_000, leaves: 3000, loop: 20_000, depth: 48 };
 
-const NAMED_COLORS: Record<string, string> = {
-  red: '#ff0000', green: '#008000', blue: '#0000ff', yellow: '#ffff00', orange: '#ffa500', purple: '#800080', black: '#000000',
-  white: '#ffffff', gray: '#808080', grey: '#808080', cyan: '#00ffff', magenta: '#ff00ff', pink: '#ffc0cb', brown: '#a52a2a',
-  gold: '#ffd700', silver: '#c0c0c0', lime: '#00ff00', navy: '#000080', teal: '#008080', maroon: '#800000', olive: '#808000',
-  salmon: '#fa8072', coral: '#ff7f50', crimson: '#dc143c', indigo: '#4b0082', violet: '#ee82ee', tan: '#d2b48c', beige: '#f5f5dc',
-  khaki: '#f0e68c', turquoise: '#40e0d0', orchid: '#da70d6', chocolate: '#d2691e', darkgreen: '#006400', darkblue: '#00008b', darkred: '#8b0000',
-};
-
 const hex2 = (n: number) => Math.round(Math.max(0, Math.min(1, n)) * 255).toString(16).padStart(2, '0');
 
 /** Istruzioni che producono geometria (le altre definiscono solo variabili, moduli e funzioni): contano come figli. */
@@ -340,8 +346,16 @@ export function evaluateScad(source: string): ScadResult {
   const { tokens, plateNames, uses } = tokenize(source);
   const program = parse(tokens);
 
-  const warnings = new Set<string>();
-  const warn = (msg: string) => warnings.add(msg);
+  /** Problemi trovati, senza ripetizioni (stesso messaggio sulla stessa riga). */
+  const issues = new Map<string, ScadIssue>();
+  /** Riga dell'istruzione in esecuzione: i problemi si riferiscono ad essa. */
+  let curLine: number | null = null;
+  const warn = (message: string, level: ScadIssue['level'] = 'error') => {
+    const key = `${level}|${curLine}|${message}`;
+    if (!issues.has(key)) issues.set(key, { message, line: curLine, level });
+  };
+  /** Informazione o approssimazione: non è una parte saltata. */
+  const note = (message: string) => warn(message, 'note');
   const modules = new Map<string, ModuleDef>();
   const functions = new Map<string, FunctionDef>();
   /** Oggetti marcati con `!` ("solo questo"): se ce ne sono, sono gli unici importati. */
@@ -442,7 +456,7 @@ export function evaluateScad(source: string): ScadResult {
       }
       case 'rands': {
         // rands(minimo, massimo, quanti, seme): la sequenza è ripetibile ma NON uguale a quella di OpenSCAD
-        warn('rands() produce numeri casuali ripetibili ma diversi da quelli di OpenSCAD.');
+        note('rands() produce numeri casuali ripetibili ma diversi da quelli di OpenSCAD.');
         const next = seeded(a[3] === undefined ? 1 : n(3));
         const [lo, hi] = [n(0), n(1)];
         return Array.from({ length: Math.min(LIMITS.loop, Math.max(0, Math.floor(n(2)) || 0)) }, () => lo + next() * (hi - lo));
@@ -678,8 +692,9 @@ export function evaluateScad(source: string): ScadResult {
 
   const colorOf = (v: Value): string | undefined => {
     if (typeof v === 'string') {
-      if (/^#[0-9a-f]{6}$/i.test(v)) return v.toLowerCase();
-      if (/^#[0-9a-f]{3}$/i.test(v)) return `#${[...v.slice(1)].map((c) => c + c).join('')}`.toLowerCase();
+      // #rgb, #rgba, #rrggbb e #rrggbbaa: l'alfa si scarta
+      if (/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(v)) return v.slice(0, 7).toLowerCase();
+      if (/^#[0-9a-f]{3,4}$/i.test(v)) return `#${[...v.slice(1, 4)].map((c) => c + c).join('')}`.toLowerCase();
       return NAMED_COLORS[v.toLowerCase()];
     }
     if (Array.isArray(v) && v.length >= 3) return `#${hex2(asNum(v[0], 0))}${hex2(asNum(v[1], 0))}${hex2(asNum(v[2], 0))}`;
@@ -700,7 +715,7 @@ export function evaluateScad(source: string): ScadResult {
 
   const push = (shape: Shape, M: Mat, ctx: Ctx): Item[] => {
     if (++leaves > LIMITS.leaves) throw new ScadError(`Troppi oggetti: l'importazione si ferma a ${LIMITS.leaves}`, 0);
-    return [{ kind: 'prim', shape, M, color: ctx.color }];
+    return [{ kind: 'prim', shape, M, color: ctx.color, line: curLine ?? undefined }];
   };
 
   /** Forma 3D. Dentro `rotate_extrude` non ha senso (OpenSCAD lo rifiuta): si salta. */
@@ -744,7 +759,8 @@ export function evaluateScad(source: string): ScadResult {
     const seen = new Set<string>();
     for (const s of stmts) {
       if (s.t !== 'assign') continue;
-      if (seen.has(s.name) && !s.name.startsWith('$')) warn(`La variabile ${s.name} è assegnata più volte: vale l'ultima assegnazione.`);
+      curLine = s.line;
+      if (seen.has(s.name) && !s.name.startsWith('$')) note(`La variabile ${s.name} è assegnata più volte: vale l'ultima assegnazione.`);
       seen.add(s.name);
       env.set(s.name, ev(s.e, env));
     }
@@ -820,7 +836,7 @@ export function evaluateScad(source: string): ScadResult {
           return [];
         }
         const text = typeof p.text === 'string' ? p.text : p.text === undefined || p.text === null ? '' : strOf(p.text);
-        if (p.spacing !== undefined && asNum(p.spacing, 1) !== 1) warn('text(): la spaziatura (spacing) non si importa.');
+        if (p.spacing !== undefined && asNum(p.spacing, 1) !== 1) note('text(): la spaziatura (spacing) non si importa.');
         return leaf2d(
           { s: 'text', text, font: typeof p.font === 'string' ? p.font : '', size: asNum(p.size, 10), halign: typeof p.halign === 'string' ? p.halign : 'left', valign: typeof p.valign === 'string' ? p.valign : 'baseline' },
           ctx,
@@ -837,7 +853,7 @@ export function evaluateScad(source: string): ScadResult {
         const p = a(['angle', 'convexity']);
         let angle = p.angle === undefined ? 360 : asNum(p.angle, 360);
         if (!(angle > 0 && angle <= 360)) {
-          warn('rotate_extrude(): l\'angolo non è tra 0 e 360 gradi: si usa il giro intero.');
+          note('rotate_extrude(): l\'angolo non è tra 0 e 360 gradi: si usa il giro intero.');
           angle = 360;
         }
         // Dentro, `M` è la trasformazione 2D del profilo: parte dall'identità, quella di fuori si applica al solido
@@ -849,10 +865,10 @@ export function evaluateScad(source: string): ScadResult {
           warn('offset() è un\'operazione 2D: si importa solo dentro linear_extrude() o rotate_extrude() (saltata).');
           return [];
         }
-        if (truthy(p.chamfer ?? false)) warn('offset(): lo smusso (chamfer) non esiste in Construct, gli angoli restano vivi.');
+        if (truthy(p.chamfer ?? false)) note('offset(): lo smusso (chamfer) non esiste in Construct, gli angoli restano vivi.');
         const sharp = p.delta !== undefined && p.r === undefined;
         const v = asNum(sharp ? p.delta : p.r, 0);
-        if (ctx.off) warn('offset() annidati: i contorni si sommano.');
+        if (ctx.off) note('offset() annidati: i contorni si sommano.');
         return runAll(kids, new Env(env), { ...ctx, off: { v: v + (ctx.off?.v ?? 0), join: ctx.off?.join ?? (sharp ? 'sharp' : 'round') } });
       }
       case 'translate': {
@@ -910,7 +926,7 @@ export function evaluateScad(source: string): ScadResult {
       case 'color': {
         const p = a(['c', 'alpha']);
         const color = colorOf(p.c ?? null);
-        if (!color) warn('color(): colore non riconosciuto (ignorato).');
+        if (!color) note('color(): colore non riconosciuto (ignorato).');
         return runAll(kids, new Env(env), { ...ctx, color: color ?? ctx.color });
       }
       case 'union': case 'render': case 'group': {
@@ -931,8 +947,31 @@ export function evaluateScad(source: string): ScadResult {
         const which = p.index instanceof Range ? p.index.values(LIMITS.loop) : Array.isArray(p.index) ? p.index.filter(isNum) : isNum(p.index) ? [p.index] : null;
         return ctx.children(ctx, which);
       }
+      case 'intersection_for': {
+        // intersection_for(i = [...], j = [...]): intersezione dei risultati di ogni combinazione
+        const lists = s.args.filter((arg) => arg.name).map((arg) => [arg.name!, [...iterate(ev(arg.e, env))]] as const);
+        const scopes: Env[] = [];
+        const loop = (k: number, scope: Env) => {
+          if (k === lists.length) {
+            if (scopes.length >= LIMITS.loop) throw new ScadError(`Un ciclo intersection_for supera ${LIMITS.loop} iterazioni`, s.line);
+            scopes.push(scope);
+            return;
+          }
+          for (const v of lists[k][1]) {
+            const inner = new Env(scope);
+            inner.set(lists[k][0], v);
+            loop(k + 1, inner);
+          }
+        };
+        loop(0, new Env(env));
+        const parts = scopes.flatMap((scope) => {
+          const its = groupedChildren(kids, new Env(scope), ctx);
+          return its.length > 1 ? [{ kind: 'group', op: 'union', children: its } as GroupItem] : its;
+        });
+        return parts.length > 1 ? [{ kind: 'group', op: 'intersection', children: parts }] : parts;
+      }
       case 'echo': case 'assert': return [];
-      case 'minkowski': case 'projection': case 'polyhedron': case 'surface': case 'import': case 'roof':
+      case 'fill': case 'minkowski': case 'projection': case 'polyhedron': case 'surface': case 'import': case 'roof':
         warn(`${s.name}() non è supportato: saltato.`);
         return [];
       default: return undefined;
@@ -941,6 +980,7 @@ export function evaluateScad(source: string): ScadResult {
 
   function run(s: Stmt, env: Env, ctx: Ctx): Item[] {
     tick();
+    if (s.t === 'call' || s.t === 'assign') curLine = s.line;
     switch (s.t) {
       // Le assegnazioni sono già state valutate da `prepass`
       case 'assign': case 'module': case 'function': return [];
@@ -1032,9 +1072,10 @@ export function evaluateScad(source: string): ScadResult {
   let plates = [...platesByIndex].sort((x, y) => x[0] - y[0]).map(([index, list]) => ({ index, name: plateNames.get(index) ?? `Piatto ${index}`, items: list }));
   // Con il modificatore ! ("solo questo") OpenSCAD mostra soltanto gli oggetti marcati
   if (rooted.length) {
-    warn('Nel file c\'è il modificatore ! (solo questo): si importano soltanto gli oggetti marcati.');
+    note('Nel file c\'è il modificatore ! (solo questo): si importano soltanto gli oggetti marcati.');
     items = rooted;
     plates = [];
   }
-  return { items, plates, warnings: [...warnings] };
+  const all = [...issues.values()];
+  return { items, plates, warnings: [...new Set(all.map((i) => i.message))], issues: all };
 }

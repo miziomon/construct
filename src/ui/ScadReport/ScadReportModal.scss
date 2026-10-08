@@ -1,0 +1,119 @@
+@use '../../styles/abstracts' as *;
+
+// Rapporto dell'importazione OpenSCAD: elenco di problemi, ciascuno con il frammento del codice originale
+.scad-report {
+  display: flex;
+  flex-direction: column;
+  gap: $space-3;
+  height: 100%;
+  min-height: 0;
+
+  &__summary {
+    margin: 0;
+    font-weight: 600;
+  }
+
+  &__list {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: $space-3;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    overflow-y: auto;
+    list-style: none;
+    @include thin-scrollbar;
+  }
+
+  &__item {
+    border: 1px solid color('border');
+    border-left-width: 3px;
+    border-radius: $radius-md;
+    background: color('panel');
+
+    &--error {
+      border-left-color: color('danger');
+    }
+
+    &--note {
+      border-left-color: color('warn');
+    }
+  }
+
+  &__head {
+    display: flex;
+    align-items: center;
+    gap: $space-2;
+    padding: $space-2 $space-3;
+
+    svg {
+      flex: none;
+    }
+  }
+
+  &__item--error &__head svg {
+    color: color('danger');
+  }
+
+  &__item--note &__head svg {
+    color: color('warn');
+  }
+
+  &__message {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  &__line {
+    flex: none;
+    font-size: 12px;
+    color: color('text-muted');
+  }
+
+  &__code {
+    margin: 0;
+    padding: $space-2 0;
+    overflow-x: auto;
+    border-top: 1px solid color('border');
+    background: color('code-bg');
+    font-family: $font-mono;
+    font-size: 13px;
+    line-height: 1.6;
+    user-select: text;
+    @include thin-scrollbar;
+  }
+
+  &__row {
+    display: flex;
+    min-width: max-content;
+
+    code {
+      padding-left: $space-3;
+      white-space: pre;
+      color: color('text');
+    }
+
+    // La riga del problema, evidenziata
+    &--hit {
+      background: color('accent-soft');
+      box-shadow: inset 3px 0 0 color('danger');
+    }
+  }
+
+  &__number {
+    flex: none;
+    width: 3.5em;
+    padding-right: $space-3;
+    color: color('syn-comment');
+    text-align: right;
+    user-select: none;
+  }
+
+  &__foot {
+    margin: 0;
+    font-size: 12px;
+    color: color('text-muted');
+  }
+}

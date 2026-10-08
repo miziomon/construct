@@ -107,15 +107,15 @@ export default function AppMenuPanels({ panel, run }: { panel: Panel; run: (acti
             <div className="modal__actions">
               <button type="button" className="modal__button modal__button--primary" onClick={run(() => pickAndImport('.stl,.3mf'))}>
                 <Upload size={14} />
-                Scegli file STL o 3MF…
+                STL e 3MF
               </button>
               <button type="button" className="modal__button modal__button--primary" onClick={run(() => pickAndImport('.svg'))}>
                 <Shapes size={14} />
-                Importa SVG…
+                SVG
               </button>
               <button type="button" className="modal__button modal__button--primary" onClick={run(() => pickAndImport('.scad'))}>
                 <FileCode size={14} />
-                Importa OpenSCAD…
+                OpenSCAD
               </button>
             </div>
           </>
@@ -224,7 +224,10 @@ export default function AppMenuPanels({ panel, run }: { panel: Panel; run: (acti
             </header>
             <p>Un editor CAD 3D nel browser, pensato per chi stampa in 3D: si costruisce da forme semplici con operazioni booleane, raccordi e ripetizioni, e il risultato si esporta pronto per lo slicer o come codice OpenSCAD.</p>
 
-            <h4 className="app-menu__about-title">Cosa puoi fare</h4>
+            {/* Su finestre larghe le sezioni stanno su due colonne: elenco a sinistra, il resto a destra */}
+            <div className="app-menu__about-cols">
+              <div>
+                <h4 className="app-menu__about-title">Cosa puoi fare</h4>
             <ul>
               <li>Comporre solidi da forme 3D e 2D, simboli, emoji e testo, e trasformarli con le quote in millimetri.</li>
               <li>Unire, sottrarre, intersecare e forare con le booleane, anche con l&apos;inviluppo convesso.</li>
@@ -234,8 +237,9 @@ export default function AppMenuPanels({ panel, run }: { panel: Panel; run: (acti
               <li>Generare il codice OpenSCAD dalla scena e importare file <code>.scad</code>, STL, 3MF e SVG.</li>
               <li>Esportare in STL e 3MF, con i colori e tutti i piatti.</li>
             </ul>
-
-            <h4 className="app-menu__about-title">I tuoi dati</h4>
+              </div>
+              <div>
+                <h4 className="app-menu__about-title">I tuoi dati</h4>
             <p>Tutto resta sul tuo dispositivo: progetti, preferenze e file importati sono salvati nel browser e non vengono mai inviati a un server. Come app installabile (PWA) Construct funziona anche offline.</p>
 
             <h4 className="app-menu__about-title">Tecnologie</h4>
@@ -252,6 +256,8 @@ export default function AppMenuPanels({ panel, run }: { panel: Panel; run: (acti
               <strong>Maurizio Pelizzone</strong>, sviluppatore senior PHP e WordPress, con una passione per JavaScript (React, Node, Vite) e Python, fondatore di MAVIDA. Su{' '}
               <a href="https://maurizio.mavida.com" target="_blank" rel="noopener noreferrer">maurizio.mavida.com</a> scrive di sviluppo web e dei suoi progetti.
             </p>
+              </div>
+            </div>
 
             <p className="app-menu__about-links">
               <button type="button" className="app-menu__about-link" onClick={() => setPanel('docs')}>Documentazione</button>

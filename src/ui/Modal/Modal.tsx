@@ -9,8 +9,8 @@ interface Props {
   children: ReactNode;
   /** Se false Esc, la X e il click sullo sfondo non chiudono la finestra (es. aggiornamento obbligatorio). */
   dismissable?: boolean;
-  /** "large": 80% della larghezza e dell'altezza della finestra (es. codice OpenSCAD). */
-  size?: 'default' | 'large';
+  /** "large": 80% della larghezza e dell'altezza della finestra (es. codice OpenSCAD); "wide": 60% della larghezza, altezza del contenuto (es. About). */
+  size?: 'default' | 'large' | 'wide';
   /** "welcome": senza intestazione né margini del corpo, con la X in alto a destra (schermata di benvenuto). */
   variant?: 'default' | 'welcome';
 }
@@ -31,7 +31,7 @@ export function Modal({ open, title, onClose, children, dismissable = true, size
   return (
     <dialog
       ref={dialog}
-      className={`modal${size === 'large' ? ' modal--large' : ''}${welcome ? ' modal--welcome' : ''}`}
+      className={`modal${size === 'large' ? ' modal--large' : ''}${size === 'wide' ? ' modal--wide' : ''}${welcome ? ' modal--welcome' : ''}`}
       // Senza intestazione visibile il nome accessibile è il titolo stesso
       {...(welcome ? { 'aria-label': title } : { 'aria-labelledby': 'modal-title' })}
       // Esc: chiude solo se consentito

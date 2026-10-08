@@ -18,6 +18,20 @@ I messaggi di commit seguono i [Conventional Commits](https://www.conventionalco
 
 ## [Non rilasciato]
 
+## [0.28.0] - 2026-10-08
+
+### Aggiunto
+- **Rapporto dell'importazione OpenSCAD**: quando un file ha parti saltate, comandi non gestiti, errori di sintassi o non produce nulla, si apre una modale con ogni problema, la riga e un frammento del codice originale (due righe prima e dopo, con la riga evidenziata e il codice colorato). Le approssimazioni (come la posizione stimata di un testo) compaiono come note nello stesso elenco; se ci sono solo note basta un messaggio.
+- **Colori OpenSCAD**: ora si riconoscono tutti i nomi CSS (`color("tomato")`, `"RebeccaPurple"`, ...) e gli esadecimali con trasparenza (`#rgba`, `#rrggbbaa`: l'alfa si scarta, perché le forme non hanno trasparenza).
+- **`intersection_for`** nell'importazione OpenSCAD.
+- **Documentazione**: indice in una sidebar a sinistra con la voce attiva evidenziata, e nuova sezione "Cos'è Construct" prima dei Primi passi.
+
+### Modificato
+- Benvenuto: Documentazione e About sono due pulsanti ben visibili sotto le schede.
+- La modale About è larga il 60% della finestra, con le sezioni su due colonne.
+- Nel pannello Importa i pulsanti si chiamano "STL e 3MF", "SVG" e "OpenSCAD".
+- Piano delle parti ancora da leggere aggiornato in `docs/da-fare.md` (aggiunti `fill`, `use`/`include` locali, `parent_module` e dizionari).
+
 ## [0.27.0] - 2026-10-08
 
 ### Aggiunto

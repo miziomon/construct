@@ -14,10 +14,13 @@ import { useUiStore } from './ui/uiStore';
 import { lazyLoad } from './ui/lazyLoad';
 import { useShortcuts } from './hooks/useShortcuts';
 import { importFiles } from './import/importFile';
+import { useScadReport } from './import/scad/reportStore';
 import './App.scss';
 
 // La modale del codice (e il generatore OpenSCAD) si scarica solo quando serve
 const CodeModal = lazyLoad(() => import('./ui/CodeModal/CodeModal'));
+// Il rapporto dell'importazione OpenSCAD si scarica solo quando un file ha dei problemi
+const ScadReportModal = lazyLoad(() => import('./ui/ScadReport/ScadReportModal'));
 
 /** Colore di sfondo della pagina per la barra del browser (stessi valori del token "bg"). */
 const THEME_COLORS = { light: '#e9eff6', dark: '#14171c' };
@@ -26,6 +29,7 @@ export default function App() {
   useShortcuts();
   const theme = useUiStore((s) => s.theme);
   const codeOpen = useUiStore((s) => s.codeOpen);
+  const scadReport = useScadReport((s) => s.report);
 
   // Il tema è un attributo sulla radice: le variabili CSS cambiano di conseguenza
   useEffect(() => {
@@ -60,6 +64,11 @@ export default function App() {
       {codeOpen && (
         <Suspense fallback={null}>
           <CodeModal />
+        </Suspense>
+      )}
+      {scadReport && (
+        <Suspense fallback={null}>
+          <ScadReportModal />
         </Suspense>
       )}
       <UpdatePrompt />

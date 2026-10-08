@@ -158,7 +158,7 @@
     color: color('text-muted');
   }
 
-  // Piede: checkbox "Mostra ogni volta" a sinistra, link a Documentazione e About a destra
+  // Piede: checkbox "Mostra ogni volta"
   &__bar {
     display: flex;
     flex-wrap: wrap;
@@ -179,18 +179,43 @@
     color: color('text-muted');
   }
 
-  &__links {
-    display: inline-flex;
-    gap: $space-4;
+  // Pulsanti secondari (Documentazione, About) affiancati sotto le schede
+  &__secondary {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: $space-3;
+    margin-top: $space-3;
+
+    @media (max-width: 560px) {
+      grid-template-columns: minmax(0, 1fr);
+    }
   }
 
-  &__link {
-    padding: 2px 0;
-    border: 0;
-    background: transparent;
-    font-size: 12px;
-    color: color('accent');
-    text-decoration: underline;
+  &__button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: $space-2;
+    padding: $space-3 $space-4;
+    border: 1px solid color('border');
+    border-radius: $radius-lg;
+    background: color('panel-raised');
+    font-size: 14px;
+    font-weight: 600;
+    color: color('text');
+    transition: border-color 0.15s ease, color 0.15s ease;
     @include focus-ring;
+
+    svg {
+      color: color('accent');
+    }
+
+    &:hover {
+      border-color: color('accent');
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      transition: none;
+    }
   }
 }

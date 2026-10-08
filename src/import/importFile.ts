@@ -3,6 +3,7 @@ import { useSceneStore } from '../scene/store';
 import type { Vec3 } from '../scene/types';
 import { notify } from '../ui/notify/notifyStore';
 import { addAsset, removeAsset } from './assets';
+import { useScadReport } from './scad/reportStore';
 import { ImportError, type ImportedMesh } from './types';
 
 /** Oltre questa soglia l'editor diventa troppo lento: il file viene rifiutato con un messaggio. */
@@ -70,15 +71,21 @@ export async function importFiles(files: File[]): Promise<void> {
       const baseName = file.name.replace(/\.[^.]+$/, '');
       // Un file OpenSCAD è codice: un interprete di un sottoinsieme lo trasforma in oggetti veri (forme, booleane, piatti)
       if (ext === 'scad') {
+        const source = await file.text();
         const { importScad } = await import('./scad/toScene');
-        const result = importScad(await file.text());
+        const result = importScad(source);
         const roots = useSceneStore.getState().importScad(result, file.name);
-        if (!roots) {
-          notify.error(result.warnings[0] ?? `"${file.name}" non contiene oggetti che si possano importare.`);
-        } else {
-          notify.info(`${file.name}: importati ${result.count} ${result.count === 1 ? 'oggetto' : 'oggetti'}${result.plates.length > 1 ? ` su ${result.plates.length} piatti` : ''}.`);
-          // Ciò che l'interprete non capisce non blocca l'importazione, ma va detto
-          if (result.warnings.length) notify.error(`Alcune parti di ${file.name} sono state saltate: ${result.warnings.slice(0, 3).join(' ')}${result.warnings.length > 3 ? ` (e altre ${result.warnings.length - 3})` : ''}`);
+        if (roots) notify.info(`${file.name}: importati ${result.count} ${result.count === 1 ? 'oggetto' : 'oggetti'}${result.plates.length > 1 ? ` su ${result.plates.length} piatti` : ''}.`);
+        // Una parte saltata o un file che non produce nulla non passano in silenzio: una modale mostra ogni problema con il suo frammento di codice
+        const failed = result.issues.some((i) => i.level === 'error') || !roots;
+        if (failed) {
+          const issues = result.issues.length ? result.issues : [{ message: `"${file.name}" non contiene oggetti che si possano importare.`, line: null, level: 'error' as const }];
+          useScadReport.getState().show({ fileName: file.name, source, issues, imported: roots ? result.count : 0 });
+          if (!roots) notify.error(`Importazione di ${file.name} non riuscita: i dettagli sono nella finestra.`);
+        } else if (result.issues.length) {
+          // Solo approssimazioni: bastano due righe
+          const notes = result.issues.map((i) => i.message);
+          notify.info(`${file.name}: ${notes.slice(0, 2).join(' ')}${notes.length > 2 ? ` (e altre ${notes.length - 2})` : ''}`);
         }
         continue;
       }

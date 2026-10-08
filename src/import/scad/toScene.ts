@@ -6,7 +6,7 @@ import type { Mat3 } from '../../scene/math';
 import { newId } from '../../scene/store';
 import type { GroupNode, PrimitiveNode, SceneNode, Shape2DNode, Vec3 } from '../../scene/types';
 import { evaluateScad } from './evaluate';
-import type { GroupOp, Item, Mat, PrimItem } from './evaluate';
+import type { GroupOp, Item, Mat, PrimItem, ScadIssue } from './evaluate';
 import { ScadError } from './parse';
 
 /** Piatto del risultato: nome e radici (id dei nodi creati). */
@@ -21,6 +21,8 @@ export interface ScadImport {
   /** Almeno un piatto; con un solo piatto non ha nome (finisce nel piatto in uso). */
   plates: ImportedPlate[];
   warnings: string[];
+  /** Problemi con la riga del codice e il livello (errore = parte saltata, nota = approssimazione). */
+  issues: ScadIssue[];
   /** Quanti oggetti (primitive, forme e gruppi) sono stati creati. */
   count: number;
 }
@@ -91,13 +93,18 @@ export function importScad(source: string): ScadImport {
     result = evaluateScad(source);
   } catch (e) {
     if (e instanceof ScadError) {
-      return { nodes: {}, plates: [{ name: '', rootIds: [] }], warnings: [e.line ? `Errore alla riga ${e.line}: ${e.message}` : e.message], count: 0 };
+      return { nodes: {}, plates: [{ name: '', rootIds: [] }], warnings: [e.line ? `Errore alla riga ${e.line}: ${e.message}` : e.message], issues: [{ message: e.message, line: e.line || null, level: 'error' }], count: 0 };
     }
     throw e;
   }
 
   const nodes: Record<string, SceneNode> = {};
-  const warnings = new Set(result.warnings);
+  const issues: ScadIssue[] = [...result.issues];
+  /** Riga della forma che si sta convertendo: le note che nascono qui si riferiscono ad essa. */
+  let currentLine: number | null = null;
+  const addNote = (message: string) => {
+    if (!issues.some((i) => i.message === message && i.line === currentLine)) issues.push({ message, line: currentLine, level: 'note' });
+  };
   let count = 0;
 
   const placeholder = (): Pick<PrimitiveNode, 'id' | 'name'> => ({ id: newId(), name: '' });
@@ -105,8 +112,9 @@ export function importScad(source: string): ScadImport {
   /** Crea il nodo di una forma e lo restituisce (con la sua trasformazione assorbita). */
   function primNode(item: PrimItem): SceneNode | null {
     const sh = item.shape;
+    currentLine = item.line ?? null;
     const color = item.color ?? randomColor();
-    const note = (skewed: boolean) => skewed && warnings.add('Una scala non uniforme dopo una rotazione è stata approssimata.');
+    const note = (skewed: boolean) => skewed && addNote('Una scala non uniforme dopo una rotazione è stata approssimata.');
 
     if (sh.s === 'cube') {
       const c: Vec3 = sh.center ? [0, 0, 0] : [sh.size[0] / 2, sh.size[1] / 2, sh.size[2] / 2];
@@ -158,7 +166,7 @@ export function importScad(source: string): ScadImport {
     // OpenSCAD torce in senso orario e manifold in senso antiorario: il segno si inverte (come fa il codice esportato)
     const twist = linear && ext.twist ? { twist: r3(-ext.twist) } : {};
     const scaleTop = linear && ext.scale !== 1 ? { scaleTop: r3(ext.scale) } : {};
-    if (linear && (ext.twist || ext.scale !== 1)) warnings.add('La torsione e la scala della cima di linear_extrude sono importate come parametri della forma.');
+    if (linear && (ext.twist || ext.scale !== 1)) addNote('La torsione e la scala della cima di linear_extrude sono importate come parametri della forma.');
     /** Contorno (offset 2D) del profilo, nelle misure del profilo: segue la scala dell'oggetto. */
     const offsetOf = (k: number) => (sh.off ? { offset: r3(sh.off.v * k), ...(sh.off.join === 'sharp' ? { offsetJoin: 'sharp' as const } : {}) } : {});
     const base = { ...placeholder(), color } as const;
@@ -168,7 +176,7 @@ export function importScad(source: string): ScadImport {
       const P = sh.rev.profile;
       const sx = Math.hypot(P[0], P[4]);
       const sy = Math.hypot(P[1], P[5]);
-      if (sh.s !== 'polygon' && (Math.abs(P[1]) > 1e-9 || Math.abs(P[4]) > 1e-9)) warnings.add('Una rotazione del profilo dentro rotate_extrude() è stata ignorata.');
+      if (sh.s !== 'polygon' && (Math.abs(P[1]) > 1e-9 || Math.abs(P[4]) > 1e-9)) addNote('Una rotazione del profilo dentro rotate_extrude() è stata ignorata.');
       const at = (x: number, y: number): [number, number] => [P[0] * x + P[1] * y + P[3], P[4] * x + P[5] * y + P[7]];
       let c: [number, number];
       let width: number;
@@ -189,8 +197,8 @@ export function importScad(source: string): ScadImport {
       }
       const d = decompose(item.M, [0, 0, c[1]]);
       note(d.skewed);
-      if (!same(d.scale[0], d.scale[1])) warnings.add('Una scala diversa in X e in Y attorno a rotate_extrude() è stata approssimata.');
-      if (c[0] < -1e-9) warnings.add('rotate_extrude(): una parte del profilo sta oltre l\'asse (X negativa) e si perde.');
+      if (!same(d.scale[0], d.scale[1])) addNote('Una scala diversa in X e in Y attorno a rotate_extrude() è stata approssimata.');
+      if (c[0] < -1e-9) addNote('rotate_extrude(): una parte del profilo sta oltre l\'asse (X negativa) e si perde.');
       const [kx, kz] = [d.scale[0], d.scale[2]];
       const revolve = {
         extrusion: 'rotate' as const,
@@ -242,8 +250,8 @@ export function importScad(source: string): ScadImport {
       const cy = sh.valign === 'top' ? -sh.size / 2 : sh.valign === 'center' ? 0 : sh.size / 2;
       const d = decompose(item.M, [cx, cy, ext.center ? 0 : ext.h / 2]);
       note(d.skewed);
-      if (!same(d.scale[0], d.scale[1])) warnings.add('Un testo scalato in modo diverso in X e in Y è stato approssimato.');
-      warnings.add('Testo: la posizione è stimata, perché il font di Construct può avere misure diverse da quello di OpenSCAD.');
+      if (!same(d.scale[0], d.scale[1])) addNote('Un testo scalato in modo diverso in X e in Y è stato approssimato.');
+      addNote('Testo: la posizione è stimata, perché il font di Construct può avere misure diverse da quello di OpenSCAD.');
       return {
         ...shape2dDefaults('text'), ...base, name: SHAPE2D_LABELS.text, kind: 'text', text: sh.text, font, size: r3(Math.max(MIN, sh.size * d.scale[1])), height: heightOf(d.scale[2]),
         ...twist, ...scaleTop, ...offsetOf(d.scale[0]), position: d.position, rotation: d.rotation,
@@ -298,5 +306,5 @@ export function importScad(source: string): ScadImport {
   } else {
     plates = [{ name: '', rootIds: rest }];
   }
-  return { nodes, plates, warnings: [...warnings], count };
+  return { nodes, plates, warnings: [...new Set(issues.map((i) => i.message))], issues, count };
 }

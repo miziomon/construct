@@ -93,7 +93,7 @@ function cubeStl(): Buffer {
 test('importa un STL: nodo mesh centrato sul piatto, che sopravvive al ricaricamento', async ({ page }) => {
   const chooser = page.waitForEvent('filechooser');
   await openMenuItem(page, 'Importa');
-  await page.getByRole('button', { name: /Scegli file STL o 3MF/ }).click();
+  await page.getByRole('dialog', { name: 'Importa' }).getByRole('button', { name: 'STL e 3MF', exact: true }).click();
   await (await chooser).setFiles({ name: 'cubo.stl', mimeType: 'model/stl', buffer: cubeStl() });
   await expect(page.locator('.toast--info')).toContainText('Mesh importata');
   await settled(page);
@@ -119,7 +119,7 @@ test('un file che non è un solido chiuso viene rifiutato con un messaggio', asy
   const stl = Buffer.from(writeStl(p, new Uint32Array([0, 1, 2])));
   const chooser = page.waitForEvent('filechooser');
   await openMenuItem(page, 'Importa');
-  await page.getByRole('button', { name: /Scegli file STL o 3MF/ }).click();
+  await page.getByRole('dialog', { name: 'Importa' }).getByRole('button', { name: 'STL e 3MF', exact: true }).click();
   await (await chooser).setFiles({ name: 'aperto.stl', mimeType: 'model/stl', buffer: stl });
   await expect(page.locator('.toast--error')).toContainText('non è un solido chiuso');
   expect((await sceneState(page)).rootIds).toHaveLength(0);
@@ -1294,7 +1294,7 @@ test('Importa SVG: il disegno con un foro diventa una forma 2D estrusa con volum
   const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path fill-rule="evenodd" d="M10 10 H50 V30 H10 Z M20 15 H30 V25 H20 Z"/></svg>';
   const chooser = page.waitForEvent('filechooser');
   await openMenuItem(page, 'Importa');
-  await page.getByRole('button', { name: /Importa SVG/ }).click();
+  await page.getByRole('dialog', { name: 'Importa' }).getByRole('button', { name: 'SVG', exact: true }).click();
   await (await chooser).setFiles({ name: 'sagoma.svg', mimeType: 'image/svg+xml', buffer: Buffer.from(svg) });
   await expect(page.locator('.toast--info')).toContainText('SVG importato');
   await settled(page);
@@ -1549,7 +1549,7 @@ test('SVG: il lucchetto mantiene le proporzioni di larghezza e profondità, lo s
   const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path d="M10 10 H50 V30 H10 Z"/></svg>';
   const chooser = page.waitForEvent('filechooser');
   await openMenuItem(page, 'Importa');
-  await page.getByRole('button', { name: /Importa SVG/ }).click();
+  await page.getByRole('dialog', { name: 'Importa' }).getByRole('button', { name: 'SVG', exact: true }).click();
   await (await chooser).setFiles({ name: 'barra.svg', mimeType: 'image/svg+xml', buffer: Buffer.from(svg) });
   await settled(page);
   const id = (await sceneState(page)).rootIds[0];
@@ -2817,6 +2817,9 @@ test('About: link al repository GitHub e informazioni sull\'autore con il suo si
 test('About: ha le sezioni descrittive e i link a Documentazione e Novità', async ({ page }) => {
   await openMenuItem(page, 'About');
   const dialog = page.getByRole('dialog', { name: 'About' });
+  // Modale larga il 60% della finestra
+  const box = await dialog.boundingBox();
+  expect(Math.abs(box!.width - page.viewportSize()!.width * 0.6)).toBeLessThan(4);
   await expect(dialog.getByTestId('about-version')).toHaveText(/^v\d+\.\d+\.\d+/);
   for (const title of ['Cosa puoi fare', 'I tuoi dati', 'Tecnologie', 'Il progetto', "L'autore"]) await expect(dialog.getByRole('heading', { name: title })).toBeVisible();
   await expect(dialog.getByText('manifold-3d').first()).toBeVisible();
@@ -2849,6 +2852,20 @@ test('Documentazione: modale grande come il codice, con indice a ancore e FAQ', 
   // I testi dei comandi sono quelli dei tooltip
   await index.getByRole('link', { name: 'Modificare' }).click();
   await expect(dialog.getByRole('heading', { name: 'Raccordo' })).toBeVisible();
+
+  // Sidebar a sinistra del contenuto e voce attiva evidenziata durante lo scorrimento
+  const indexBox = await index.boundingBox();
+  const contentBox = await dialog.locator('.docs__content').boundingBox();
+  expect(indexBox!.x + indexBox!.width).toBeLessThanOrEqual(contentBox!.x + 1);
+  await expect(index.getByRole('link', { name: 'Modificare' })).toHaveAttribute('aria-current', 'true');
+
+  // Sezione introduttiva: prima di Primi passi, anche nell'indice
+  await index.getByRole('link', { name: "Cos'è Construct" }).click();
+  await expect(dialog.getByRole('heading', { name: "Cos'è Construct", level: 3 })).toBeInViewport();
+  await expect(index.getByRole('link', { name: "Cos'è Construct" })).toHaveAttribute('aria-current', 'true');
+  await expect(dialog.getByRole('heading', { name: 'Per chi è' })).toBeVisible();
+  await expect(dialog.getByRole('heading', { name: 'Cosa non è' })).toBeVisible();
+  await expect(dialog.locator('#docs-cose').getByRole('link', { name: 'github.com/miziomon/construct' })).toHaveAttribute('href', 'https://github.com/miziomon/construct');
 
   // FAQ: risposte a scomparsa
   await index.getByRole('link', { name: 'Domande frequenti' }).click();
@@ -2942,7 +2959,7 @@ test('Impostazioni: Pulisci tutti i dati chiede conferma, cancella localStorage 
 test('Importa OpenSCAD: un file .scad diventa oggetti veri, con un solo passo di Annulla e gli avvisi per ciò che salta', async ({ page }) => {
   await openMenuItem(page, 'Importa');
   const chooser = page.waitForEvent('filechooser');
-  await page.getByRole('dialog').getByRole('button', { name: 'Importa OpenSCAD…' }).click();
+  await page.getByRole('dialog', { name: 'Importa' }).getByRole('button', { name: 'OpenSCAD', exact: true }).click();
   const file = await chooser;
   await file.setFiles({
     name: 'scatola.scad',
@@ -2963,9 +2980,13 @@ test('Importa OpenSCAD: un file .scad diventa oggetti veri, con un solo passo di
   const names = scene.rootIds.map((id: string) => scene.nodes[id].name);
   expect(names).toContain('Differenza');
   expect(names).toContain('Cilindro');
-  // Un messaggio dice quanti oggetti, e uno ciò che è stato saltato
+  // Un messaggio dice quanti oggetti; ciò che è stato saltato si legge in una modale, con la riga e il codice originale
   await expect(page.getByText(/scatola\.scad: importati 4 oggetti/)).toBeVisible();
-  await expect(page.getByText(/minkowski\(\) non è supportato/)).toBeVisible();
+  const report = page.getByRole('dialog', { name: 'Importazione di scatola.scad' });
+  await expect(report.getByText(/minkowski\(\) non è supportato/)).toBeVisible();
+  await expect(report.getByLabel(/Codice vicino alla riga 8/)).toContainText('minkowski() { cube(2); sphere(1); }');
+  await page.keyboard.press('Escape');
+  await expect(report).toBeHidden();
   // Il risultato è un solido valido
   const volume = await page.evaluate(() => window.__construct!.results.getState().meshes.reduce((v, m) => v + m.volume, 0));
   expect(volume).toBeGreaterThan(40 * 30 * 20 - 30 * 20 * 17 - 1);
@@ -2979,7 +3000,7 @@ test('Importa OpenSCAD: rotate_extrude, offset, multmatrix e resize diventano fo
   await openApp(page);
   await openMenuItem(page, 'Importa');
   const chooser = page.waitForEvent('filechooser');
-  await page.getByRole('dialog').getByRole('button', { name: 'Importa OpenSCAD…' }).click();
+  await page.getByRole('dialog', { name: 'Importa' }).getByRole('button', { name: 'OpenSCAD', exact: true }).click();
   const file = await chooser;
   await file.setFiles({
     name: 'toro.scad',
@@ -3029,7 +3050,7 @@ test('OpenSCAD con più piatti: il codice li contiene tutti e, riletto, ricrea i
   await page.evaluate(() => window.__construct!.store.getState().clear());
   await openMenuItem(page, 'Importa');
   const chooser = page.waitForEvent('filechooser');
-  await page.getByRole('dialog').getByRole('button', { name: 'Importa OpenSCAD…' }).click();
+  await page.getByRole('dialog', { name: 'Importa' }).getByRole('button', { name: 'OpenSCAD', exact: true }).click();
   await (await chooser).setFiles({ name: 'piatti.scad', mimeType: 'text/plain', buffer: Buffer.from(exported) });
   await settled(page);
   const scene = await sceneState(page);

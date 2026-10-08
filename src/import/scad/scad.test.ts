@@ -328,3 +328,39 @@ describe('import di file OpenSCAD: nuove forme e operazioni', () => {
     expect(first('resize([0, 6, 0]) cube(3);').node).toMatchObject({ size: [3, 6, 3] });
   });
 });
+
+describe('import di file OpenSCAD: colori, intersection_for e rapporto dei problemi', () => {
+  it('color: nomi CSS completi e alfa scartato', () => {
+    expect(first('color("tomato") cube(1);').node.color).toBe('#ff6347');
+    expect(first('color("RebeccaPurple") cube(1);').node.color).toBe('#663399');
+    expect(first('color("#ff000080") cube(1);').node.color).toBe('#ff0000');
+    expect(first('color("#f008") cube(1);').node.color).toBe('#ff0000');
+    expect(first('color([0, 1, 0, 0.5]) cube(1);').node.color).toBe('#00ff00');
+    expect(importScad('color("inesistente") cube(1);').warnings.join(' ')).toMatch(/colore non riconosciuto/);
+  });
+
+  it('intersection_for: intersezione dei risultati di ogni iterazione', () => {
+    const { r, node } = first('intersection_for (i = [0 : 1]) translate([i * 2, 0, 0]) cube(4);');
+    expect(node).toMatchObject({ type: 'group', op: 'intersection' });
+    expect((node as GroupNode).children).toHaveLength(2);
+    expect(r.count).toBe(3);
+  });
+
+  it('ogni problema porta la riga del codice e il livello', () => {
+    const r = importScad('cube(1);\n\nminkowski() { cube(2); sphere(1); }\nb = foo(2);\nx = 1;\nx = 2;');
+    const at = (text: RegExp) => r.issues.find((i) => text.test(i.message));
+    expect(at(/minkowski/)).toMatchObject({ line: 3, level: 'error' });
+    expect(at(/foo\(\)/)).toMatchObject({ line: 4, level: 'error' });
+    expect(at(/più volte/)).toMatchObject({ line: 6, level: 'note' });
+  });
+
+  it('le note nate nella conversione si riferiscono alla riga della forma', () => {
+    const r = importScad('cube(1);\nlinear_extrude(height = 2, twist = 10) square(3);');
+    expect(r.issues.find((i) => /torsione/.test(i.message))).toMatchObject({ line: 2, level: 'note' });
+  });
+
+  it('un errore di sintassi è un problema con la sua riga', () => {
+    const r = importScad('cube(10);\ncube(;');
+    expect(r.issues).toEqual([expect.objectContaining({ line: 2, level: 'error' })]);
+  });
+});

@@ -93,7 +93,7 @@ Primo passo economico alla Tinkercad: **Duplica e ripeti** (Ctrl+D ripete l'ulti
 - Controllo automatico del peso dei chunk in build (`size-limit`).
 - Nomi in italiano e ricerca per le emoji (scartati per ora).
 
-## Importa OpenSCAD: cosa non si legge ancora (aggiornato alla 0.27.0)
+## Importa OpenSCAD: cosa non si legge ancora (aggiornato alla 0.28.0)
 
 Dalla 0.27.0 l'importazione legge anche `let`/`assign`, le liste per comprensione complete (`for` annidati, `if`/`else`, `each`, `let`, forma del C), `^`, le funzioni anonime, `children(i)`, `$children`, `$fa`/`$fs`, `multmatrix`, `polygon` con `paths`, `offset`, `rotate_extrude`, `text`, `resize` e molte funzioni (`lookup`, `search`, `rands`, `cross`, `chr`, `ord`, `is_string`, `is_bool`, `is_function`). Quello che resta è più difficile e va valutato insieme.
 
@@ -105,6 +105,9 @@ Dalla 0.27.0 l'importazione legge anche `let`/`assign`, le liste per comprension
 | `projection` | Alta | Nessun corrispettivo: servirebbe una forma 2D ottenuta dalla sezione o dall'ombra di un solido (`slice` esiste nel kernel, usata solo dal Guscio). |
 | `surface` | Alta | Legge un file di dati o un'immagine: stesso problema dei file esterni di `import`. |
 | `roof` | Molto alta | È poco usato e richiede lo scheletro del poligono (straight skeleton). |
+| `fill` | Media | Riempie i fori di una forma 2D: per un poligono singolo basta tenere solo il contorno esterno, per un'unione di forme serve un'operazione 2D vera. |
+| `use` e `include` di file locali | Alta | Come `import`: servirebbe far scegliere più file insieme e leggere anche i loro moduli e funzioni. Oggi si avvisa e i moduli richiamati risultano sconosciuti. |
+| `parent_module`, `is_object`, `object`, `has_key`, `textmetrics` | Bassa | Funzioni poco usate; i dizionari (`object`) sono recenti e richiedono un nuovo tipo di valore nell'interprete. |
 | `color` con trasparenza (alpha) | Non rappresentabile | La scena non ha trasparenza per oggetto. |
 | `linear_extrude` con `scale` diversa per X e Y | Non rappresentabile | Il parametro `scaleTop` è un solo numero. |
 | `offset(chamfer = true)` | Non rappresentabile | Gli angoli sono arrotondati o vivi, non smussati. |

@@ -1,4 +1,4 @@
-import type { MouseEvent, ReactNode } from 'react';
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { TOOLBAR_HELP, type HelpKey } from '../Toolbar/toolbarHelp';
 import { useUiStore } from '../uiStore';
 import './DocsPanel.scss';
@@ -10,6 +10,7 @@ import './DocsPanel.scss';
 
 /** Sezioni del manuale: l'indice e le ancore nascono da qui. */
 const SECTIONS = [
+  { id: 'cose', title: "Cos'è Construct" },
   { id: 'primi-passi', title: 'Primi passi' },
   { id: 'trasformare', title: 'Trasformare' },
   { id: 'combinare', title: 'Combinare e forare' },
@@ -66,24 +67,56 @@ function Faq({ q, children }: { q: string; children: ReactNode }) {
 
 export default function DocsPanel() {
   const setPanel = useUiStore((s) => s.setAppPanel);
+  // Contenitore che scorre e sezione attualmente in vista (evidenziata nell'indice)
+  const content = useRef<HTMLDivElement>(null);
+  const [active, setActive] = useState<string>(SECTIONS[0].id);
+
+  // Evidenzia la voce dell'indice mentre si scorre: vale la sezione che attraversa la fascia alta del contenuto
+  useEffect(() => {
+    const root = content.current;
+    if (!root) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        // Tra le sezioni appena entrate nella fascia sceglie la più in alto
+        const hit = entries.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+        if (hit) setActive(hit.target.id.replace('docs-', ''));
+      },
+      { root, rootMargin: '0px 0px -75% 0px' },
+    );
+    root.querySelectorAll('section.docs__section').forEach((el) => observer.observe(el));
+    return () => observer.disconnect();
+  }, []);
 
   /** Scorre fino alla sezione dentro il pannello, senza toccare l'URL della pagina. */
   const jump = (id: string) => (e: MouseEvent) => {
     e.preventDefault();
+    setActive(id);
     document.getElementById(`docs-${id}`)?.scrollIntoView({ block: 'start' });
   };
 
   return (
     <div className="docs">
+      {/* Sidebar fissa a sinistra (riga in alto su schermi stretti): non scorre con il contenuto */}
       <nav className="docs__index" aria-label="Indice della documentazione">
         <ul>
           {SECTIONS.map((s) => (
             <li key={s.id}>
-              <a href={`#docs-${s.id}`} onClick={jump(s.id)}>{s.title}</a>
+              <a href={`#docs-${s.id}`} className={active === s.id ? 'is-active' : undefined} aria-current={active === s.id ? 'true' : undefined} onClick={jump(s.id)}>{s.title}</a>
             </li>
           ))}
         </ul>
       </nav>
+
+      <div className="docs__content" ref={content}>
+      <Section id="cose" title="Cos'è Construct">
+        <p><strong>Construct</strong> è un editor CAD 3D che funziona nel browser, pensato per la stampa 3D. Si costruisce a partire da forme semplici (solidi 3D, forme 2D, simboli, emoji e testo), che si combinano con le operazioni booleane (unione, differenza, intersezione, fori) e si rifiniscono con raccordi, smussi, guscio, serie e pattern.</p>
+        <p>Il risultato si esporta in <strong>STL</strong> e <strong>3MF</strong>, pronti per lo slicer, oppure come <strong>codice OpenSCAD</strong> equivalente. Si possono importare file STL, 3MF, SVG e OpenSCAD.</p>
+        <p>Tutto resta sul tuo dispositivo: nulla viene inviato a un server, e Construct funziona anche offline come PWA. Il progetto è open source (licenza MIT) su <a href="https://github.com/miziomon/construct" target="_blank" rel="noopener noreferrer">github.com/miziomon/construct</a>, realizzato da Maurizio Pelizzone / MAVIDA.</p>
+        <h4>Per chi è</h4>
+        <p>Per chi stampa in 3D e vuole modellare rapidamente i propri pezzi: supporti, scatole, adattatori, ricambi e piccoli oggetti, con misure esatte in millimetri.</p>
+        <h4>Cosa non è</h4>
+        <p>Non è un programma di scultura né di disegno tecnico quotato: non ci sono pennelli per modellare in modo organico e non si producono tavole con quote e viste normalizzate.</p>
+      </Section>
 
       <Section id="primi-passi" title="Primi passi">
         <p>Construct è diviso in quattro aree. A sinistra la <strong>libreria</strong> con le forme 3D e 2D, i simboli e le emoji: un clic aggiunge la forma al centro del piatto. Al centro la <strong>vista 3D</strong>, dove si selezionano e si spostano gli oggetti. In alto la <strong>barra strumenti</strong> con i comandi, e a destra l&apos;<strong>elenco degli oggetti</strong> e le <strong>proprietà</strong> dell&apos;oggetto selezionato (nome, posizione, rotazione, misure, colore).</p>
@@ -143,13 +176,13 @@ export default function DocsPanel() {
         <p>Il comando <strong>Codice</strong> (tasto C) mostra il codice OpenSCAD generato dalla scena. Si aggiorna a ogni modifica e si può copiare o scaricare. Dal menu Esporta si ottiene un file <code>.scad</code> (con il testo, uno ZIP con i font).</p>
         <Command id="code" />
         <h4>Importare un file .scad</h4>
-        <p>Il file si legge come codice, si valuta e diventa oggetti veri della scena, in un solo passo di Annulla. Quello che non si capisce viene saltato con un avviso.</p>
+        <p>Il file si legge come codice, si valuta e diventa oggetti veri della scena, in un solo passo di Annulla. Quello che non si capisce viene saltato e, se manca qualcosa, si apre una finestra con ogni problema, la riga e un frammento del codice originale.</p>
         <h5>Supportato</h5>
         <ul>
           <li>Primitive: <code>cube</code>, <code>sphere</code>, <code>cylinder</code>, <code>circle</code>, <code>square</code>, <code>polygon</code> (anche con <code>paths</code>).</li>
           <li>Da 2D a 3D: <code>linear_extrude</code>, <code>rotate_extrude</code>, <code>offset</code>, <code>text</code>.</li>
-          <li>Trasformazioni: <code>translate</code>, <code>rotate</code>, <code>scale</code>, <code>mirror</code>, <code>resize</code>, <code>multmatrix</code>, <code>color</code>.</li>
-          <li>Booleane e inviluppo: <code>union</code>, <code>difference</code>, <code>intersection</code>, <code>hull</code>.</li>
+          <li>Trasformazioni: <code>translate</code>, <code>rotate</code>, <code>scale</code>, <code>mirror</code>, <code>resize</code>, <code>multmatrix</code>, <code>color</code> (nomi CSS, esadecimali e terne; la trasparenza si scarta).</li>
+          <li>Booleane e inviluppo: <code>union</code>, <code>difference</code>, <code>intersection</code>, <code>hull</code>, <code>intersection_for</code>.</li>
           <li>Linguaggio: <code>for</code>, <code>if</code>, <code>let</code>, list comprehension, moduli e funzioni, variabili e operatori matematici.</li>
         </ul>
         <h5>Non ancora supportato</h5>
@@ -200,6 +233,7 @@ export default function DocsPanel() {
           Togli la spunta da &quot;Mostra ogni volta&quot; nella schermata di benvenuto o nelle Impostazioni. Dal menu la schermata si riapre sempre.
         </Faq>
       </Section>
+      </div>
     </div>
   );
 }

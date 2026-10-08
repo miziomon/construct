@@ -35,6 +35,12 @@
     }
   }
 
+  // Versione larga: 60% della finestra (entro lo schermo sulle finestre strette), altezza del contenuto
+  &--wide {
+    width: min(60vw, calc(100vw - #{$space-5 * 2}));
+    max-width: calc(100vw - #{$space-5 * 2});
+  }
+
   // Benvenuto: più largo, senza intestazione, il contenuto disegna da sé lo sfondo
   &--welcome {
     width: min(640px, calc(100vw - #{$space-5 * 2}));

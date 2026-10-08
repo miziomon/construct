@@ -1,4 +1,4 @@
-import { Box, FilePlus, FolderOpen, Upload } from 'lucide-react';
+import { BookOpen, Box, FilePlus, FolderOpen, Info, Upload } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { pickAndImport } from '../../import/importFile';
 import { useSceneStore } from '../../scene/store';
@@ -123,6 +123,18 @@ export function WelcomeDialog() {
           ))}
         </div>
 
+        {/* Documentazione e About: due pulsanti ben visibili sotto le schede */}
+        <div className="welcome__secondary">
+          <button type="button" className="welcome__button" onClick={() => openPanel('docs')}>
+            <BookOpen size={16} strokeWidth={1.75} />
+            Documentazione
+          </button>
+          <button type="button" className="welcome__button" onClick={() => openPanel('about')}>
+            <Info size={16} strokeWidth={1.75} />
+            About
+          </button>
+        </div>
+
         <p className="welcome__foot">Tutto resta sul tuo dispositivo e Construct funziona anche offline.</p>
 
         <div className="welcome__bar">
@@ -131,10 +143,6 @@ export function WelcomeDialog() {
             <input type="checkbox" checked={always} onChange={(e) => setSettings({ welcomeAlways: e.target.checked })} />
             Mostra ogni volta
           </label>
-          <span className="welcome__links">
-            <button type="button" className="welcome__link" onClick={() => openPanel('docs')}>Documentazione</button>
-            <button type="button" className="welcome__link" onClick={() => openPanel('about')}>About</button>
-          </span>
         </div>
       </div>
     </Modal>

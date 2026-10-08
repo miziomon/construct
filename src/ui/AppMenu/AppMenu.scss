@@ -217,6 +217,22 @@
     }
   }
 
+  // Due colonne se la modale è larga, una sola su schermi stretti
+  &__about-cols {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 $space-5;
+
+    @media (max-width: 700px) {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    // Il primo titolo di ogni colonna non ha il margine superiore doppio
+    > div > .app-menu__about-title:first-child {
+      margin-top: $space-2;
+    }
+  }
+
   &__about-head {
     font-size: 18px;
   }
