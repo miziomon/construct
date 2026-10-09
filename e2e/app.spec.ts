@@ -1178,7 +1178,19 @@ test('profilati a L, T e H: nella tab Forme 3D, pannello dedicato con spessori e
   await root.press('Enter');
   await settled(page);
   // Il raccordo interno aggiunge materiale negli angoli tra ali e anima
-  expect((await readH()).volume).toBeGreaterThan(before.volume);
+  const withRoot = await readH();
+  expect(withRoot.volume).toBeGreaterThan(before.volume);
+  // Le punte smussate tolgono materiale; lo stile compare solo con una misura
+  await expect(page.locator('.properties__segmented[aria-label="Stile delle punte"]')).toHaveCount(0);
+  const tips = page.locator('.slider-field', { hasText: 'Punte' }).locator('.number-field__input');
+  await tips.fill('1');
+  await tips.press('Enter');
+  await settled(page);
+  const roundedTips = await readH();
+  expect(roundedTips.volume).toBeLessThan(withRoot.volume);
+  await page.getByRole('button', { name: 'Smussate' }).click();
+  await settled(page);
+  expect((await readH()).volume).toBeLessThan(roundedTips.volume);
   type ProfileFields = { kind?: string; rootRadius?: number; flange?: number };
   const profileH = async () => Object.values((await sceneState(page)).nodes as Record<string, ProfileFields>).find((n) => n.kind === 'profileH')!;
   expect((await profileH()).rootRadius).toBe(2);

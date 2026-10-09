@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BAR_KINDS, clampProfile, maxRootRadius, PROFILE_KINDS, profileArea, profileContours, thicknessAxes, type BarShape, type ProfileShape } from './profiles';
+import { BAR_KINDS, clampProfile, maxRootRadius, maxTipSize, PROFILE_KINDS, profileArea, profileContours, thicknessAxes, type BarShape, type ProfileShape } from './profiles';
 import { shape2dDefaults } from './defaults';
 import type { ProfileKind } from './types';
 
@@ -98,6 +98,36 @@ describe('profilati con ali e anima', () => {
       // Ogni angolo concavo diventa 9 punti al posto di 1
       expect(rounded).toHaveLength(sharp.length + corners[kind] * 8);
     }
+  });
+
+  it('punte: lo smusso toglie s²/2 per punta, il raccordo circa (1 − π/4)·s², l\'ingombro non cambia', () => {
+    const tips = { profileL: 4, profileT: 6, profileH: 8, profileU: 4 } as const;
+    const dims = { width: 30, depth: 20, flange: 4, web: 4 };
+    for (const kind of BAR_KINDS) {
+      const sharp = profileContours(bar(kind, dims))[0];
+      const chamfered = profileContours(bar(kind, { ...dims, tipSize: 1, tipStyle: 'chamfer' }))[0];
+      expect(area(sharp) - area(chamfered)).toBeCloseTo(tips[kind] * 0.5, 6);
+      expect(chamfered).toHaveLength(sharp.length + tips[kind]);
+      const rounded = profileContours(bar(kind, { ...dims, tipSize: 1 }))[0];
+      const removed = area(sharp) - area(rounded);
+      const ideal = tips[kind] * (1 - Math.PI / 4);
+      // L'arco è un poligono inscritto nel cerchio: resta un po' meno materiale del raccordo ideale
+      expect(removed).toBeGreaterThanOrEqual(ideal - 1e-6);
+      expect(removed).toBeLessThan(ideal * 1.1);
+      expect(rounded).toHaveLength(sharp.length + tips[kind] * 8);
+      const b = bounds([rounded]);
+      expect(b.maxX - b.minX).toBeCloseTo(30, 4);
+      expect(b.maxY - b.minY).toBeCloseTo(20, 4);
+      // Punte e raccordo interno insieme: contorno ancora valido (area positiva)
+      expect(area(profileContours(bar(kind, { ...dims, tipSize: 1, rootRadius: 2 }))[0])).toBeGreaterThan(0);
+    }
+  });
+
+  it('maxTipSize: metà dello spessore più sottile, e non oltre la parte dritta libera accanto al raccordo interno', () => {
+    expect(maxTipSize(bar('profileL', { width: 30, depth: 20, flange: 4, web: 6 }))).toBeCloseTo(1.99, 3);
+    // Raccordo interno grande: resta poca parte dritta (L: min(w − t, d − f) − r = 14 − 0,01 − 13)
+    expect(maxTipSize(bar('profileL', { width: 30, depth: 20, flange: 6, web: 16, rootRadius: 13 }))).toBeCloseTo(0.99, 3);
+    expect(clampProfile(bar('profileT', { width: 30, depth: 20, flange: 4, web: 4, tipSize: 50 })).tipSize).toBeCloseTo(1.99, 3);
   });
 
   it('clampProfile: spessori dentro l\'ingombro e raccordo entro il massimo', () => {

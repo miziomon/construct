@@ -7,7 +7,7 @@ import { FONTS, FONT_CATEGORIES, fontInfo } from '../../scene/fontCatalog';
 import type { FontCategory, FontInfo } from '../../scene/fontCatalog';
 import { Lock, Unlock } from 'lucide-react';
 import { isPolygonShape, isRotational, RATIO_INFO, revolveParams } from '../../scene/shapes2d';
-import { clampProfile, isBarShape, isProfileShape, maxRootRadius, PROFILE_INFO } from '../../scene/profiles';
+import { clampProfile, isBarShape, isProfileShape, maxRootRadius, maxTipSize, PROFILE_INFO } from '../../scene/profiles';
 import { isRatioLocked, lockedPatch, scalePatch, scalePercent } from '../../scene/resize';
 import { cornerSphere } from '../../scene/cornerProfile';
 import { EDGE_SEGMENTS, maxFilletRadius } from '../../scene/edgeProfile';
@@ -764,8 +764,8 @@ function Shape2DFields({ node, patch, locked }: { node: Shape2DNode; patch: (p: 
    * Profilati: ogni modifica passa da `clampProfile`, così uno spessore non supera mai l'ingombro e il raccordo resta
    * entro il massimo; si scrivono solo i campi cambiati, in un solo passo di Annulla.
    */
-  type ProfileKey = 'width' | 'depth' | 'flange' | 'web' | 'rootRadius' | 'wall' | 'cornerRadius' | 'radius';
-  const PROFILE_KEYS: ProfileKey[] = ['width', 'depth', 'flange', 'web', 'rootRadius', 'wall', 'cornerRadius', 'radius'];
+  type ProfileKey = 'width' | 'depth' | 'flange' | 'web' | 'rootRadius' | 'tipSize' | 'wall' | 'cornerRadius' | 'radius';
+  const PROFILE_KEYS: ProfileKey[] = ['width', 'depth', 'flange', 'web', 'rootRadius', 'tipSize', 'wall', 'cornerRadius', 'radius'];
   const editProfile = (key: ProfileKey, value: number) => {
     if (!isProfileShape(node)) return;
     const locked = key === 'width' || key === 'depth' ? lockedPatch(node, key, value) : null;
@@ -795,6 +795,27 @@ function Shape2DFields({ node, patch, locked }: { node: Shape2DNode; patch: (p: 
             thickness(PROFILE_INFO[node.kind].flangeLabel, node.flange, 'flange', PROFILE_INFO[node.kind].flangeTip, Math.min(node.width, node.depth) / 2),
             thickness(PROFILE_INFO[node.kind].webLabel, node.web, 'web', PROFILE_INFO[node.kind].webTip, Math.min(node.width, node.depth) / 2),
             profileSlider('Raccordo interno', node.rootRadius ?? 0, 'rootRadius', TIPS.rootRadius, { min: 0, max: Math.max(0.5, maxRootRadius(node)), step: 0.5, hardMin: 0, hardMax: Math.max(0, maxRootRadius(node)) }),
+            profileSlider('Punte', node.tipSize ?? 0, 'tipSize', TIPS.tipSize, { min: 0, max: Math.max(0.5, maxTipSize(node)), step: 0.25, hardMin: 0, hardMax: Math.max(0, maxTipSize(node)) }),
+            // Lo stile delle punte ha senso solo con una misura: come gli Angoli del Contorno
+            (node.tipSize ?? 0) > 0 && (
+              <div key="tipStyle" className="properties__row" title={TIPS.tipStyle}>
+                <span className="properties__label">Stile punte</span>
+                <div className="properties__segmented" role="group" aria-label="Stile delle punte">
+                  {([['round', 'Arrotondate'], ['chamfer', 'Smussate']] as const).map(([style, label]) => (
+                    <button
+                      key={style}
+                      type="button"
+                      className={`properties__segment${(node.tipStyle ?? 'round') === style ? ' properties__segment--active' : ''}`}
+                      aria-pressed={(node.tipStyle ?? 'round') === style}
+                      disabled={locked}
+                      onClick={() => patch({ tipStyle: style } as Partial<Shape2DNode>)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ),
           ]
         ) : node.kind === 'tubeRect' ? (
           // Tubolare rettangolare: ingombro, parete e raggio degli angoli esterni

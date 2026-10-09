@@ -82,6 +82,15 @@ export function maxRootRadius(p: Pick<BarShape, 'kind' | 'width' | 'depth' | 'fl
   return Math.max(0, Math.round((limit - 0.01) * 1e3) / 1e3);
 }
 
+/**
+ * Misura massima dello smusso o del raccordo delle punte: metà dello spessore più sottile (due punte per ogni
+ * estremità) e non oltre la parte dritta che resta libera accanto al raccordo interno.
+ */
+export function maxTipSize(p: Pick<BarShape, 'kind' | 'width' | 'depth' | 'flange' | 'web' | 'rootRadius'>): number {
+  const limit = Math.min(Math.min(p.flange, p.web) / 2 - 0.01, maxRootRadius(p) - (p.rootRadius ?? 0));
+  return Math.max(0, Math.round(limit * 1e3) / 1e3);
+}
+
 /** Valore tra MIN_WALL e `max` (che a sua volta non scende sotto MIN_WALL). */
 const wall = (v: number, max: number) => Math.min(Math.max(MIN_WALL, v), Math.max(MIN_WALL, max));
 
@@ -106,16 +115,21 @@ export function clampProfile<T extends ProfileShape>(p: T): T {
   const web = vertical ? wall(bar.web, d - MIN_WALL) : wall(bar.web, w - MIN_WALL);
   const next: BarShape = { ...bar, width: w, depth: d, flange, web };
   const rootRadius = Math.min(Math.max(0, bar.rootRadius ?? 0), maxRootRadius(next));
-  return { ...next, rootRadius } as T;
+  const tipSize = Math.min(Math.max(0, bar.tipSize ?? 0), maxTipSize({ ...next, rootRadius }));
+  return { ...next, rootRadius, tipSize } as T;
 }
 
 /** Passi di un quarto di cerchio dei raccordi (interni e degli angoli dei tubolari). */
 const ARC_STEPS = 8;
 
-/** Vertice del contorno: `concave` segna gli angoli tra ala e anima, dove va il raccordo. */
+/**
+ * Vertice del contorno: `concave` segna gli angoli tra ala e anima, dove va il raccordo interno; `tip` le punte, cioè
+ * i due angoli di ogni estremità libera di un'ala o dell'anima, dove vanno smusso o raccordo esterno.
+ */
 interface Corner {
   p: Vec2;
   concave?: boolean;
+  tip?: boolean;
 }
 
 /** Vertici della sezione con ali e anima, in senso antiorario, con le misure già valide. */
@@ -127,46 +141,46 @@ function corners(p: BarShape): Corner[] {
   switch (p.kind) {
     case 'profileL':
       // Angolo esterno in basso a sinistra: ala orizzontale sul fondo, ala verticale a sinistra
-      return [{ p: [-w, -d] }, { p: [w, -d] }, { p: [w, -d + f] }, { p: [-w + t, -d + f], concave: true }, { p: [-w + t, d] }, { p: [-w, d] }];
+      return [{ p: [-w, -d] }, { p: [w, -d], tip: true }, { p: [w, -d + f], tip: true }, { p: [-w + t, -d + f], concave: true }, { p: [-w + t, d], tip: true }, { p: [-w, d], tip: true }];
     case 'profileT':
       // Ala in cima, anima al centro
       return [
-        { p: [-w, d] },
-        { p: [-w, d - f] },
+        { p: [-w, d], tip: true },
+        { p: [-w, d - f], tip: true },
         { p: [-t / 2, d - f], concave: true },
-        { p: [-t / 2, -d] },
-        { p: [t / 2, -d] },
+        { p: [-t / 2, -d], tip: true },
+        { p: [t / 2, -d], tip: true },
         { p: [t / 2, d - f], concave: true },
-        { p: [w, d - f] },
-        { p: [w, d] },
+        { p: [w, d - f], tip: true },
+        { p: [w, d], tip: true },
       ];
     case 'profileH':
       // Due ali verticali ai lati, anima orizzontale al centro
       return [
-        { p: [-w, -d] },
-        { p: [-w + f, -d] },
+        { p: [-w, -d], tip: true },
+        { p: [-w + f, -d], tip: true },
         { p: [-w + f, -t / 2], concave: true },
         { p: [w - f, -t / 2], concave: true },
-        { p: [w - f, -d] },
-        { p: [w, -d] },
-        { p: [w, d] },
-        { p: [w - f, d] },
+        { p: [w - f, -d], tip: true },
+        { p: [w, -d], tip: true },
+        { p: [w, d], tip: true },
+        { p: [w - f, d], tip: true },
         { p: [w - f, t / 2], concave: true },
         { p: [-w + f, t / 2], concave: true },
-        { p: [-w + f, d] },
-        { p: [-w, d] },
+        { p: [-w + f, d], tip: true },
+        { p: [-w, d], tip: true },
       ];
     case 'profileU':
-      // Fondo in basso, due ali verticali ai lati
+      // Fondo in basso, due ali verticali ai lati: le punte sono in cima alle ali
       return [
         { p: [-w, -d] },
         { p: [w, -d] },
-        { p: [w, d] },
-        { p: [w - f, d] },
+        { p: [w, d], tip: true },
+        { p: [w - f, d], tip: true },
         { p: [w - f, -d + t], concave: true },
         { p: [-w + f, -d + t], concave: true },
-        { p: [-w + f, d] },
-        { p: [-w, d] },
+        { p: [-w + f, d], tip: true },
+        { p: [-w, d], tip: true },
       ];
   }
 }
@@ -190,16 +204,26 @@ function cornerArc(corner: Vec2, u: Vec2, v: Vec2, r: number): Vec2[] {
 /** Direzione unitaria da `a` a `b` (i lati sono tutti paralleli agli assi). */
 const direction = (a: Vec2, b: Vec2): Vec2 => [Math.sign(b[0] - a[0]), Math.sign(b[1] - a[1])];
 
-/** Contorno con ali e anima: vertici, con gli angoli concavi raccordati se `rootRadius > 0`. */
+/**
+ * Contorno con ali e anima: vertici, con gli angoli concavi raccordati se `rootRadius > 0` e le punte smussate o
+ * arrotondate se `tipSize > 0`.
+ */
 function barContour(p: BarShape): Vec2[] {
   const list = corners(p);
   const r = p.rootRadius ?? 0;
+  const s = p.tipSize ?? 0;
   const points: Vec2[] = [];
   list.forEach((c, i) => {
+    const prev = list[(i + list.length - 1) % list.length].p;
+    const next = list[(i + 1) % list.length].p;
     if (c.concave && r > 0) {
-      const prev = list[(i + list.length - 1) % list.length].p;
-      const next = list[(i + 1) % list.length].p;
       points.push(...cornerArc(c.p, direction(prev, c.p), direction(c.p, next), r));
+    } else if (c.tip && s > 0) {
+      const u = direction(prev, c.p);
+      const v = direction(c.p, next);
+      // Smusso: il vertice diventa i due punti a distanza s sui due lati; raccordo: l'arco tangente tra quei due punti
+      if (p.tipStyle === 'chamfer') points.push([c.p[0] - u[0] * s, c.p[1] - u[1] * s], [c.p[0] + v[0] * s, c.p[1] + v[1] * s]);
+      else points.push(...cornerArc(c.p, u, v, s));
     } else {
       points.push(c.p);
     }

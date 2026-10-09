@@ -18,6 +18,11 @@ I messaggi di commit seguono i [Conventional Commits](https://www.conventionalco
 
 ## [Non rilasciato]
 
+## [0.35.0] - 2026-10-09
+
+### Aggiunto
+- **Punte delle ali smussate o arrotondate** nei profilati a L, T, H e U: il campo Punte nelle Proprietà (mm, 0 = vive) lavora sui due angoli di ogni estremità libera delle ali e dell'anima, con lo stile Arrotondate (arco tangente) o Smussate (taglio a 45°). Il massimo è metà dello spessore più sottile e la parte dritta che resta accanto al raccordo interno. Stessi vertici nel kernel e nel `polygon` del codice OpenSCAD; il valore si ricorda per la forma successiva e si limita da solo quando la sezione si restringe.
+
 ## [0.34.0] - 2026-10-09
 
 ### Aggiunto

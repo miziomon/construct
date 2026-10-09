@@ -28,6 +28,8 @@ export const TIPS = {
   profileWidth: 'Larghezza: ingombro della sezione del profilato lungo X, in mm.',
   profileDepth: 'Profondità: ingombro della sezione del profilato lungo Y, in mm.',
   rootRadius: "Raccordo interno: raggio con cui si arrotonda l'angolo tra ala e anima, come nei profilati laminati, in mm. 0 lascia lo spigolo vivo.",
+  tipSize: 'Punte: smusso o raccordo sui due angoli di ogni estremità libera delle ali (e dell\'anima), in mm. 0 lascia le punte vive. Il massimo è metà dello spessore più sottile.',
+  tipStyle: 'Stile delle punte: arrotondate (un arco tangente ai due lati) oppure smussate (un taglio a 45°).',
   tubeWall: 'Parete: spessore della parete del tubolare, in mm. Il foro interno è quello che resta.',
   tubeCorner: 'Raccordo angoli: raggio degli angoli esterni del tubolare, in mm. 0 lascia gli angoli vivi; quelli interni seguono con il raggio ridotto della parete.',
   tubeRadius: 'Raggio: raggio esterno del tubolare tondo, in mm. Il diametro è il doppio.',

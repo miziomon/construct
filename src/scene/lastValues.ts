@@ -37,10 +37,10 @@ const SHAPE_FIELDS: Record<string, readonly string[]> = {
   drop: ['width', 'depth', 'height', 'twist', 'scaleTop'],
   crescent: ['width', 'depth', 'ratio', 'height', 'twist', 'scaleTop'],
   text: ['font', 'size', 'height', 'twist', 'scaleTop'],
-  profileL: ['width', 'depth', 'flange', 'web', 'rootRadius', 'height', 'twist', 'scaleTop'],
-  profileT: ['width', 'depth', 'flange', 'web', 'rootRadius', 'height', 'twist', 'scaleTop'],
-  profileH: ['width', 'depth', 'flange', 'web', 'rootRadius', 'height', 'twist', 'scaleTop'],
-  profileU: ['width', 'depth', 'flange', 'web', 'rootRadius', 'height', 'twist', 'scaleTop'],
+  profileL: ['width', 'depth', 'flange', 'web', 'rootRadius', 'tipSize', 'tipStyle', 'height', 'twist', 'scaleTop'],
+  profileT: ['width', 'depth', 'flange', 'web', 'rootRadius', 'tipSize', 'tipStyle', 'height', 'twist', 'scaleTop'],
+  profileH: ['width', 'depth', 'flange', 'web', 'rootRadius', 'tipSize', 'tipStyle', 'height', 'twist', 'scaleTop'],
+  profileU: ['width', 'depth', 'flange', 'web', 'rootRadius', 'tipSize', 'tipStyle', 'height', 'twist', 'scaleTop'],
   tubeRect: ['width', 'depth', 'wall', 'cornerRadius', 'height', 'twist', 'scaleTop'],
   tubeRound: ['radius', 'wall', 'segments', 'height', 'twist', 'scaleTop'],
 };
@@ -68,8 +68,11 @@ function isValid(field: string, value: unknown): boolean {
       return Number.isInteger(value) && between(value, 8, 256) && (value as number) % 4 === 0;
     case 'cornerRadius':
     case 'rootRadius':
+    case 'tipSize':
     case 'bottom':
       return between(value, 0, 5000);
+    case 'tipStyle':
+      return value === 'round' || value === 'chamfer';
     case 'twist':
       return between(value, -3600, 3600);
     case 'scaleTop':

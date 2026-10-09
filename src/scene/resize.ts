@@ -87,7 +87,7 @@ export function applyScale(node: Resizable, scale: Vec3, step = 0.5): ResizePatc
       const axes = thicknessAxes(node.kind);
       const factor = (axis: 0 | 1) => (axis === 0 ? fx : fy);
       const next = clampProfile({ ...node, width, depth, flange: q(node.flange, factor(axes.flange)), web: q(node.web, factor(axes.web)) });
-      return { ...common, width, depth, flange: next.flange, web: next.web, rootRadius: next.rootRadius };
+      return { ...common, width, depth, flange: next.flange, web: next.web, rootRadius: next.rootRadius, tipSize: next.tipSize };
     }
     if (node.kind === 'tubeRect') {
       // Tubo rettangolare: la parete segue il fattore minore (così non supera mai metà del lato), il raggio idem

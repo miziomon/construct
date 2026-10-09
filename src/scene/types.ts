@@ -126,6 +126,10 @@ export type Shape2DNode = BaseNode & {
       web: number;
       /** Raggio del raccordo interno tra ala e anima in mm (0 o assente = spigolo vivo). */
       rootRadius?: number;
+      /** Misura dello smusso o del raccordo sulle punte delle ali, in mm (0 o assente = punte vive). */
+      tipSize?: number;
+      /** Punte arrotondate (assente) o smussate. */
+      tipStyle?: 'round' | 'chamfer';
     }
   | {
       /** Tubolare rettangolare (scatolato): ingombro `width × depth` mm, parete `wall`, angoli esterni arrotondati di `cornerRadius`. */
