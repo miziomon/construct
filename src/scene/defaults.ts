@@ -51,6 +51,9 @@ export const SHAPE2D_LABELS: Record<Shape2DKind, string> = {
   crescent: 'Mezzaluna',
   text: 'Testo',
   svg: 'SVG',
+  profileL: 'Profilato a L',
+  profileT: 'Profilato a T',
+  profileH: 'Profilato a H',
 };
 
 /**
@@ -63,6 +66,8 @@ export function twistDivisions(twist: number): number {
 
 /** Altezza iniziale dell'estrusione delle forme 2D (mm). */
 export const DEFAULT_EXTRUDE_HEIGHT = 10;
+/** Lunghezza iniziale dei profilati (mm). */
+export const PROFILE_LENGTH = 40;
 
 export const DEFAULT_COLOR = '#4da3ff';
 
@@ -125,6 +130,10 @@ export function shape2dDefaults(kind: Shape2DKind): DistributiveOmit<Shape2DNode
     case 'trapezoid': return { ...base, kind, width: 24, depth: 16, ratio: RATIO_INFO.trapezoid!.default };
     case 'heart': return { ...base, kind, width: 20, depth: 20, ratio: 0 };
     case 'drop': return { ...base, kind, width: 16, depth: 24, ratio: 0 };
+    // Profilati: sezione 20 × 20 con pareti di 3 mm, più lunghi delle altre estrusioni perché sono travi
+    case 'profileL':
+    case 'profileT':
+    case 'profileH': return { ...base, kind, width: 20, depth: 20, flange: 3, web: 3, rootRadius: 0, height: PROFILE_LENGTH };
     default: return { ...base, kind, width: 20, depth: 20, ratio: RATIO_INFO[kind]!.default };
   }
 }

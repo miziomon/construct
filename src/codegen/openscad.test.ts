@@ -85,6 +85,16 @@ describe('sceneToOpenScad', () => {
     expect(code).toContain('offset(r = 4, $fn = 32)\nsquare([22, 12], center = true);');
   });
 
+  it('profilati: linear_extrude della lunghezza e polygon con i vertici della sezione, righe corte', () => {
+    const l = { ...shape2dDefaults('profileL'), id: 'l', name: 'L', position: [0, 0, 20], width: 30, depth: 20, flange: 2, web: 3 } as Shape2DNode;
+    const h = { ...shape2dDefaults('profileH'), id: 'h', name: 'H', position: [0, 0, 20], rootRadius: 2 } as Shape2DNode;
+    const code = sceneToOpenScad({ nodes: { l, h }, rootIds: ['l', 'h'] });
+    expect(code).toContain('linear_extrude(height = 40, center = true, twist = 0, scale = 1, slices = 1)\npolygon([');
+    // I sei vertici della L, in senso antiorario dall'angolo esterno
+    expect(code).toContain('[-15, -10], [15, -10], [15, -8]');
+    for (const line of code.split('\n')) expect(line.length, line).toBeLessThanOrEqual(100);
+  });
+
   it('scatola arrotondata: hull() di otto sfere', () => {
     const box = { ...primitiveDefaults('box'), id: 'b', name: 'Cubo', position: [0, 0, 10], size: [20, 20, 20], cornerRadius: 2 } as PrimitiveNode;
     const code = sceneToOpenScad({ nodes: { b: box }, rootIds: ['b'] });

@@ -12,6 +12,7 @@ import { isScaled, scaleOf } from '../scene/groupScale';
 import { circularStep, linearStep, normalizeArray } from '../scene/arrayPattern';
 import { cutReach, faceFrame, frameRect, normalizePattern, patternCells } from '../scene/pattern';
 import { isRotational, revolveParams, shapeContours, svgContours } from '../scene/shapes2d';
+import { isProfileShape, profileContours } from '../scene/profiles';
 import { fontInfo, fontsUsed, scadFontName } from '../scene/fontCatalog';
 import { platesOf } from '../scene/plates';
 import { maxPolyhedronRadius, polygonMaxRadius, polygonShrunkRadius, polyhedronVertices, roundedPolyhedronCenters } from '../scene/polyhedra';
@@ -151,8 +152,9 @@ function linearShape2dLines(p: Shape2DNode): string[] {
     return [extrude, `text("${text}", size = ${n(p.size)}${spacing}, font = "${scadFontName(fontInfo(p.font))}", halign = "center", valign = "center");`];
   }
   if (p.kind !== 'square') {
-    // Forme poligonali e disegni SVG: un contorno, oppure più contorni (il foro dell'anello) con `paths`; punti su più righe
-    const contours = p.kind === 'svg' ? svgContours(p) : shapeContours(p);
+    // Forme poligonali, profilati e disegni SVG: un contorno, oppure più contorni (il foro dell'anello) con `paths`;
+    // punti su più righe
+    const contours = p.kind === 'svg' ? svgContours(p) : isProfileShape(p) ? profileContours(p) : shapeContours(p);
     // Un SVG senza tracciati (file svuotato) non produce nulla
     if (contours.length === 0) return [extrude, 'square(0.01, center = true);'];
     const points = contours.flat();

@@ -95,7 +95,7 @@ describe('cavità esatta', () => {
 });
 
 describe('Guscio sulle nuove forme 2D', () => {
-  it.each(['ring', 'heart', 'star5', 'egg', 'cross'] as const)('%s: usa la cavità scalata e il solido resta valido', (kind) => {
+  it.each(['ring', 'heart', 'star5', 'egg', 'cross', 'profileH'] as const)('%s: usa la cavità scalata e il solido resta valido', (kind) => {
     const node = { ...shape2dDefaults(kind), id: 'p', name: 'p', position: [0, 0, 5] as Vec3, width: 40, depth: 40, height: 12 } as Shape2DNode;
     expect(shellQuality(sceneOf([node], ['p']), node)).not.toBe('exact');
     const full = volumeOf(sceneOf([node], ['p']));

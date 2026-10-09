@@ -1142,6 +1142,53 @@ test('le dodici forme 2D si aggiungono dalla libreria e danno un solido valido',
   await expect(page.locator('.slider-field', { hasText: 'Foro' })).toBeVisible();
 });
 
+test('profilati a L, T e H: nella tab Forme 3D, pannello dedicato con spessori e raccordo interno, polygon nel codice', async ({ page }) => {
+  // Stanno con le forme 3D (non nella tab Forme 2D) e sono anche nel menu contestuale
+  const labels = ['Profilato a L', 'Profilato a T', 'Profilato a H'];
+  for (const label of labels) await expect(page.locator(`button[title="Aggiungi: ${label}"]`)).toBeVisible();
+  const read = () => page.evaluate(() => window.__construct!.results.getState().meshes[0]);
+  for (const label of labels) {
+    await addShape(page, label);
+    await expect(page.locator('.status-bar')).toContainText('Mesh valida');
+    const m = await read();
+    expect(m.bbox.max[0] - m.bbox.min[0]).toBeCloseTo(20, 3);
+    expect(m.bbox.max[1] - m.bbox.min[1]).toBeCloseTo(20, 3);
+    // Lunghezza iniziale 40 mm, appoggiato sul piatto
+    expect(m.bbox.min[2]).toBeCloseTo(0, 3);
+    expect(m.bbox.max[2]).toBeCloseTo(40, 3);
+  }
+  await expect(page.locator('.outliner__row')).toHaveCount(3);
+
+  // Pannello dedicato: sezione "Profilato" con i due spessori (etichette della H) e il raccordo interno; "Lunghezza" nell'estrusione
+  await page.locator('.outliner__row', { hasText: 'Profilato a H' }).click();
+  await expect(page.locator('.properties__section-title', { hasText: 'Profilato' })).toBeVisible();
+  for (const label of ['Spessore ali', 'Spessore anima', 'Raccordo interno', 'Lunghezza']) {
+    await expect(page.locator('.slider-field', { hasText: label })).toBeVisible();
+  }
+  const before = await read();
+  const root = page.locator('.slider-field', { hasText: 'Raccordo interno' }).locator('.number-field__input');
+  await root.fill('2');
+  await root.press('Enter');
+  await settled(page);
+  // Il raccordo interno aggiunge materiale negli angoli tra ali e anima
+  expect((await read()).volume).toBeGreaterThan(before.volume);
+  type ProfileFields = { kind?: string; rootRadius?: number; flange?: number };
+  const profileH = async () => Object.values((await sceneState(page)).nodes as Record<string, ProfileFields>).find((n) => n.kind === 'profileH')!;
+  expect((await profileH()).rootRadius).toBe(2);
+  // Uno spessore oltre l'ingombro viene ridotto: due ali da 50 mm non stanno in 20 mm di larghezza
+  const flange = page.locator('.slider-field', { hasText: 'Spessore ali' }).locator('.number-field__input');
+  await flange.fill('50');
+  await flange.press('Enter');
+  await settled(page);
+  expect((await profileH()).flange).toBeLessThan(10);
+  await expect(page.locator('.status-bar')).toContainText('Mesh valida');
+
+  // Codice OpenSCAD: estrusione lineare di un polygon
+  const code = await readCode(page);
+  expect(code).toContain('polygon([');
+  expect(code).toContain('linear_extrude(height = 40');
+});
+
 test('Testo: scritta e font dal pannello, un passo di Annulla per ogni modifica, Esc annulla la bozza', async ({ page }) => {
   await addShape(page, 'Testo');
   await settled(page);

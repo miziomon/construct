@@ -2,6 +2,7 @@ import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
 import { Box, ChevronRight, FileDown, Grid3x3, House, Layers, Sigma, Smile, Square, Upload } from 'lucide-react';
 import { PRIMITIVE_LABELS, SHAPE2D_LABELS } from '../../scene/defaults';
+import { isProfileKind, PROFILE_KINDS } from '../../scene/profiles';
 import { EMOJI_FONT, EMOJI_GROUPS } from '../../scene/emojiCatalog';
 import { fontInfo } from '../../scene/fontCatalog';
 import { activePlateId, hasManyPlates, platesOf } from '../../scene/plates';
@@ -23,8 +24,8 @@ const MARGIN = 8;
 const GLYPH_COLUMNS = 8;
 
 const KINDS_3D = Object.keys(PRIMITIVE_LABELS) as PrimitiveKind[];
-// L'SVG nasce dall'importazione di un file, non dal menu
-const KINDS_2D = (Object.keys(SHAPE2D_LABELS) as Shape2DKind[]).filter((kind) => kind !== 'svg');
+// L'SVG nasce dall'importazione di un file, non dal menu; i profilati stanno nel sottomenu delle forme 3D
+const KINDS_2D = (Object.keys(SHAPE2D_LABELS) as Shape2DKind[]).filter((kind) => kind !== 'svg' && !isProfileKind(kind));
 
 /** Un carattere di una griglia (simbolo o emoji) con ciò che serve a mostrarlo e ad aggiungerlo. */
 interface Glyph {
@@ -272,10 +273,17 @@ export function ContextMenu() {
     >
       {at ? (
         <>
-          {submenu('3d', 'Forme 3D', <Box size={16} />, KINDS_3D.map((kind) => {
-            const Icon = PRIMITIVE_ICONS[kind];
-            return item(kind, PRIMITIVE_LABELS[kind], <Icon size={16} />, () => st().addPrimitive(kind, at), { nested: true });
-          }))}
+          {submenu('3d', 'Forme 3D', <Box size={16} />, [
+            ...KINDS_3D.map((kind) => {
+              const Icon = PRIMITIVE_ICONS[kind];
+              return item(kind, PRIMITIVE_LABELS[kind], <Icon size={16} />, () => st().addPrimitive(kind, at), { nested: true });
+            }),
+            // Profilati: sezioni estruse, ma si usano come solidi
+            ...PROFILE_KINDS.map((kind) => {
+              const Icon = SHAPE2D_ICONS[kind];
+              return item(kind, SHAPE2D_LABELS[kind], <Icon size={16} />, () => st().addShape2D(kind, at), { nested: true });
+            }),
+          ])}
           {submenu('2d', 'Forme 2D', <Square size={16} />, KINDS_2D.map((kind) => {
             const Icon = SHAPE2D_ICONS[kind];
             return item(`2d-${kind}`, SHAPE2D_LABELS[kind], <Icon size={16} />, () => st().addShape2D(kind, at), { nested: true });

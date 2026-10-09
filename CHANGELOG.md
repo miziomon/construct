@@ -18,6 +18,14 @@ I messaggi di commit seguono i [Conventional Commits](https://www.conventionalco
 
 ## [Non rilasciato]
 
+## [0.33.0] - 2026-10-09
+
+### Aggiunto
+- **Profilati strutturali a L, a T e a H.** Tre nuove forme nella tab Forme 3D della libreria (dopo i solidi dei dadi) e nel sottomenu Forme 3D del menu contestuale. Sono sezioni estruse (come le forme 2D, con torsione, scala della cima, contorno ed estrusione rotazionale), ma si usano come solidi: nascono in piedi, con la sezione sul piano XY e la lunghezza lungo Z (40 mm iniziali, sezione 20 × 20 mm con pareti di 3 mm). La L ha l'ala orizzontale in basso e quella verticale a sinistra; la T l'ala in cima e l'anima al centro; la H le due ali verticali ai lati e l'anima orizzontale al centro, come la lettera (per un profilo a I basta ruotarla di 90° su Z).
+- **Pannello Profilato** nelle Proprietà: Larghezza e Profondità della sezione, i due spessori con etichette diverse per tipo (ala X e ala Y nella L, ala e anima nella T, ali e anima nella H), **Raccordo interno** (raggio dell'arco tra ala e anima, come nei profilati laminati, 0 = spigolo vivo) e la **Lunghezza** al posto dell'altezza nell'estrusione. Gli spessori non superano mai l'ingombro (un valore troppo grande si riduce da solo) e il raccordo si ferma alla parte dritta più corta.
+- Il gizmo Ridimensiona e la Scala in percentuale scalano anche gli spessori lungo l'asse in cui si misurano, così la sezione non si deforma. Le misure si ricordano per la forma successiva come per le altre forme.
+- Il codice OpenSCAD scrive `linear_extrude` di un `polygon` con gli stessi vertici del kernel (raccordo compreso); un profilato reimportato da `.scad` diventa un poligono generico, come le altre forme poligonali. Il Guscio usa la cavità scalata, come per croce e anello.
+
 ## [0.32.0] - 2026-10-09
 
 ### Modificato

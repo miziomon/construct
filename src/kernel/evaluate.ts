@@ -9,6 +9,7 @@ import { brushSegments, minkowskiOf } from './minkowski';
 import { arrayCopies } from '../scene/arrayPattern';
 import type { CopyTransform } from '../scene/arrayPattern';
 import { isRotational, revolveParams, shapeContours, svgContours } from '../scene/shapes2d';
+import { isProfileShape, profileContours } from '../scene/profiles';
 import { textContours } from '../scene/fontOutline';
 import { fontInfo } from '../scene/fontCatalog';
 import { cavityOf, SHELL_OPEN_MARGIN } from '../scene/shell';
@@ -393,6 +394,9 @@ export class Evaluator {
       // Disegno importato: contorni scalati a width × depth, riempimento pari-dispari (i tracciati interni sono fori)
       const contours = svgContours(p);
       section = contours.length ? new CrossSection(contours, 'EvenOdd') : CrossSection.compose([]);
+    } else if (isProfileShape(p)) {
+      // Profilati (L, T, H): un solo contorno con le misure già rese valide (spessori dentro l'ingombro)
+      section = new CrossSection(profileContours(p), 'EvenOdd');
     } else if (p.kind !== 'square') {
       // Forme poligonali (anello, cuore, stelle, ...): il foro dell'anello è un secondo contorno, quindi regola pari-dispari
       section = new CrossSection(shapeContours(p), 'EvenOdd');

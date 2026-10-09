@@ -2,6 +2,7 @@ import type { PrimitiveNode, Shape2DNode, Vec3 } from './types';
 import { round } from './math';
 import { primitiveDefaults, shape2dDefaults } from './defaults';
 import { svgNaturalSize } from './shapes2d';
+import { clampProfile, isProfileShape, thicknessAxes } from './profiles';
 import { maxPolyhedronRadius, polygonMaxRadius } from './polyhedra';
 
 /** Dimensione minima di una misura (mm): sotto il kernel produrrebbe geometrie degeneri. */
@@ -76,6 +77,13 @@ export function applyScale(node: Resizable, scale: Vec3, step = 0.5): ResizePatc
     if (node.kind === 'text') return { ...common, size: q(node.size, (fx + fy) / 2) };
     const width = q(node.width, fx);
     const depth = locked && fx !== 1 ? Math.max(MIN_SIZE, round(node.depth * (width / node.width), 3)) : q(node.depth, fy);
+    if (isProfileShape(node)) {
+      // Profilati: anche gli spessori seguono l'asse lungo cui si misurano, così la sezione si scala senza deformarsi
+      const axes = thicknessAxes(node.kind);
+      const factor = (axis: 0 | 1) => (axis === 0 ? fx : fy);
+      const next = clampProfile({ ...node, width, depth, flange: q(node.flange, factor(axes.flange)), web: q(node.web, factor(axes.web)) });
+      return { ...common, width, depth, flange: next.flange, web: next.web, rootRadius: next.rootRadius };
+    }
     // Forme poligonali e SVG: solo l'ingombro (il parametro `ratio` è una proporzione e non cambia)
     if (node.kind !== 'square') return { ...common, width, depth };
     return { ...common, width, depth, cornerRadius: Math.min(node.cornerRadius, Math.max(0, Math.min(width, depth) / 2 - 0.01)) };

@@ -25,6 +25,10 @@ export const TIPS = {
 
   width: 'Larghezza: dimensione del profilo 2D lungo X, in mm.',
   depth: 'Profondità: dimensione del profilo 2D lungo Y, in mm.',
+  profileWidth: 'Larghezza: ingombro della sezione del profilato lungo X, in mm.',
+  profileDepth: 'Profondità: ingombro della sezione del profilato lungo Y, in mm.',
+  rootRadius: "Raccordo interno: raggio con cui si arrotonda l'angolo tra ala e anima, come nei profilati laminati, in mm. 0 lascia lo spigolo vivo.",
+  profileLength: 'Lunghezza: quanto è lungo il profilato lungo Z, in mm. Per sdraiarlo sul piatto ruotalo di 90° su X o Y.',
   ratioLocked: 'Proporzioni bloccate: le misure e la maniglia Ridimensiona cambiano insieme, la forma non si deforma. Clic per sbloccare.',
   ratioUnlocked: 'Proporzioni libere: ogni misura si cambia da sola (la forma si deforma). Clic per bloccare.',
   scale: 'Scala: dimensione della forma rispetto a quella iniziale (per gli SVG, a quella del file), in %. Ridimensiona sempre in proporzione.',

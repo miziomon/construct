@@ -2,8 +2,10 @@ import { Box, Circle, CircleDot, Cone, Cylinder, Diamond, Donut, Droplet, Egg, H
 import type { LucideIcon } from 'lucide-react';
 import { Decagon } from '../icons/Decagon';
 import { Ring, Star6, Trapezoid } from '../icons/Shapes2D';
+import { ProfileH, ProfileL, ProfileT } from '../icons/Profiles';
 import { useSceneStore } from '../../scene/store';
 import { PRIMITIVE_LABELS, SHAPE2D_LABELS } from '../../scene/defaults';
+import { isProfileKind, PROFILE_KINDS } from '../../scene/profiles';
 import type { PrimitiveKind, Shape2DKind } from '../../scene/types';
 import './ShapeLibrary.scss';
 
@@ -35,15 +37,19 @@ export const SHAPE2D_ICONS: Record<Shape2DKind, LucideIcon> = {
   crescent: Moon,
   text: Type,
   svg: Shapes,
+  profileL: ProfileL,
+  profileT: ProfileT,
+  profileH: ProfileH,
 };
 
 const KINDS = Object.keys(PRIMITIVE_LABELS) as PrimitiveKind[];
-// L'SVG non si aggiunge dalla libreria: nasce dall'importazione di un file (menu Importa)
-const KINDS_2D = (Object.keys(SHAPE2D_LABELS) as Shape2DKind[]).filter((kind) => kind !== 'svg');
+// L'SVG non si aggiunge dalla libreria: nasce dall'importazione di un file (menu Importa); i profilati stanno con le forme 3D
+const KINDS_2D = (Object.keys(SHAPE2D_LABELS) as Shape2DKind[]).filter((kind) => kind !== 'svg' && !isProfileKind(kind));
 
-/** Griglia delle primitive 3D (prima tab della libreria). */
+/** Griglia delle primitive 3D e dei profilati (prima tab della libreria). */
 export function Shapes3DGrid() {
   const addPrimitive = useSceneStore((s) => s.addPrimitive);
+  const addShape2D = useSceneStore((s) => s.addShape2D);
   return (
     <div className="shape-library__grid">
       {KINDS.map((kind) => {
@@ -52,6 +58,16 @@ export function Shapes3DGrid() {
           <button key={kind} type="button" className="shape-library__item" onClick={() => addPrimitive(kind)} title={`Aggiungi: ${PRIMITIVE_LABELS[kind]}`}>
             <Icon size={24} strokeWidth={1.6} />
             <span className="shape-library__label">{PRIMITIVE_LABELS[kind]}</span>
+          </button>
+        );
+      })}
+      {/* I profilati sono sezioni estruse (forme 2D), ma si usano come solidi: stanno qui, dopo le primitive */}
+      {PROFILE_KINDS.map((kind) => {
+        const Icon = SHAPE2D_ICONS[kind];
+        return (
+          <button key={kind} type="button" className="shape-library__item" onClick={() => addShape2D(kind)} title={`Aggiungi: ${SHAPE2D_LABELS[kind]}`}>
+            <Icon size={24} strokeWidth={1.6} />
+            <span className="shape-library__label">{SHAPE2D_LABELS[kind]}</span>
           </button>
         );
       })}

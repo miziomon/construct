@@ -37,6 +37,9 @@ const SHAPE_FIELDS: Record<string, readonly string[]> = {
   drop: ['width', 'depth', 'height', 'twist', 'scaleTop'],
   crescent: ['width', 'depth', 'ratio', 'height', 'twist', 'scaleTop'],
   text: ['font', 'size', 'height', 'twist', 'scaleTop'],
+  profileL: ['width', 'depth', 'flange', 'web', 'rootRadius', 'height', 'twist', 'scaleTop'],
+  profileT: ['width', 'depth', 'flange', 'web', 'rootRadius', 'height', 'twist', 'scaleTop'],
+  profileH: ['width', 'depth', 'flange', 'web', 'rootRadius', 'height', 'twist', 'scaleTop'],
 };
 
 /** Campi ricordati degli strumenti: Raccordo/Smusso/Smusso angolare (`edge`) e Guscio (`shell`). */
@@ -61,6 +64,7 @@ function isValid(field: string, value: unknown): boolean {
     case 'cornerSegments':
       return Number.isInteger(value) && between(value, 8, 256) && (value as number) % 4 === 0;
     case 'cornerRadius':
+    case 'rootRadius':
     case 'bottom':
       return between(value, 0, 5000);
     case 'twist':

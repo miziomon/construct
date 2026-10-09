@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { applyScale, hasScale, isRatioLocked, lockedPatch, scalePatch, scalePercent } from './resize';
 import { halfHeight, primitiveDefaults, shape2dDefaults } from './defaults';
+import { maxRootRadius } from './profiles';
 import type { PrimitiveNode, Shape2DNode } from './types';
 
 const prim = (kind: Parameters<typeof primitiveDefaults>[0], patch: Partial<PrimitiveNode> = {}) =>
@@ -51,6 +52,17 @@ describe('applyScale', () => {
   it('toro e solidi dei dadi: scala uniforme sul fattore più lontano da 1', () => {
     expect(applyScale(prim('icosahedron'), [1, 1, 2]).size).toBe(40);
     expect(applyScale(prim('torus'), [1, 1.5, 1.2]).majorRadius).toBe(18);
+  });
+
+  it('profilati: gli spessori seguono l\'asse lungo cui si misurano e il raccordo resta entro il massimo', () => {
+    // L: l'ala verticale (web) si misura lungo X, quella orizzontale (flange) lungo Y
+    expect(applyScale(shape('profileL'), [2, 1, 1])).toMatchObject({ width: 40, depth: 20, flange: 3, web: 6, height: 10 * 4 });
+    expect(applyScale(shape('profileL'), [1, 2, 3])).toMatchObject({ width: 20, depth: 40, flange: 6, web: 3, height: 120 });
+    // H: le ali sono verticali, quindi si misurano lungo X
+    expect(applyScale(shape('profileH'), [2, 1, 1])).toMatchObject({ flange: 6, web: 3 });
+    // Un raccordo grande si riduce se la sezione si restringe
+    const r = applyScale(shape('profileT', { rootRadius: 8 } as Partial<Shape2DNode>), [0.5, 0.5, 1]);
+    expect(r.rootRadius).toBeLessThanOrEqual(maxRootRadius({ kind: 'profileT', width: 10, depth: 10, flange: 1.5, web: 1.5 }));
   });
 
   it('arrotonda al passo e rispetta il minimo', () => {

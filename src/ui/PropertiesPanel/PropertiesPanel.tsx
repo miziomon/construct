@@ -7,6 +7,7 @@ import { FONTS, FONT_CATEGORIES, fontInfo } from '../../scene/fontCatalog';
 import type { FontCategory, FontInfo } from '../../scene/fontCatalog';
 import { Lock, Unlock } from 'lucide-react';
 import { isPolygonShape, isRotational, RATIO_INFO, revolveParams } from '../../scene/shapes2d';
+import { clampProfile, isProfileShape, maxRootRadius, PROFILE_INFO } from '../../scene/profiles';
 import { isRatioLocked, lockedPatch, scalePatch, scalePercent } from '../../scene/resize';
 import { cornerSphere } from '../../scene/cornerProfile';
 import { EDGE_SEGMENTS, maxFilletRadius } from '../../scene/edgeProfile';
@@ -758,10 +759,37 @@ function Shape2DFields({ node, patch, locked }: { node: Shape2DNode; patch: (p: 
     : null;
   // Forme poligonali: Larghezza, Profondità e (se la forma ne ha uno) il parametro con la sua etichetta
   const ratioInfo = isPolygonShape(node) ? RATIO_INFO[node.kind] : null;
+  const profile = isProfileShape(node);
+  /**
+   * Profilati: ogni modifica passa da `clampProfile`, così uno spessore non supera mai l'ingombro e il raccordo resta
+   * entro il massimo; si scrivono solo i campi cambiati, in un solo passo di Annulla.
+   */
+  const editProfile = (key: 'width' | 'depth' | 'flange' | 'web' | 'rootRadius', value: number) => {
+    if (!isProfileShape(node)) return;
+    const locked = key === 'width' || key === 'depth' ? lockedPatch(node, key, value) : null;
+    const next = clampProfile({ ...node, ...(locked ?? { [key]: value }) });
+    const changed: Partial<Shape2DNode> = {};
+    for (const k of ['width', 'depth', 'flange', 'web', 'rootRadius'] as const) {
+      if (next[k] !== (node[k] ?? 0)) (changed as Record<string, number | undefined>)[k] = next[k];
+    }
+    if (Object.keys(changed).length > 0) patch(changed);
+  };
+  const profileSlider = (label: string, value: number, key: 'width' | 'depth' | 'flange' | 'web' | 'rootRadius', tooltip: string, opts: { min: number; max: number; step?: number; hardMin?: number; hardMax?: number }) => (
+    <SliderField key={key} label={label} unit="mm" tooltip={tooltip} disabled={locked} value={value} onCommit={(v) => editProfile(key, v)} {...opts} />
+  );
   return (
     <>
-      <Section title={node.kind === 'text' ? (node.origin === 'symbol' ? 'Simbolo' : node.origin === 'emoji' ? 'Emoji' : 'Testo') : 'Profilo 2D'}>
-        {node.kind === 'text' ? (
+      <Section title={node.kind === 'text' ? (node.origin === 'symbol' ? 'Simbolo' : node.origin === 'emoji' ? 'Emoji' : 'Testo') : profile ? 'Profilato' : 'Profilo 2D'}>
+        {isProfileShape(node) ? (
+          // Profilato: ingombro della sezione, i due spessori (etichette diverse per tipo) e il raccordo interno
+          [
+            profileSlider('Larghezza', node.width, 'width', TIPS.profileWidth, length),
+            profileSlider('Profondità', node.depth, 'depth', TIPS.profileDepth, length),
+            profileSlider(PROFILE_INFO[node.kind].flangeLabel, node.flange, 'flange', PROFILE_INFO[node.kind].flangeTip, { min: 0.5, max: Math.max(0.5, Math.min(node.width, node.depth) / 2), step: 0.5, hardMin: 0.1, hardMax: 2000 }),
+            profileSlider(PROFILE_INFO[node.kind].webLabel, node.web, 'web', PROFILE_INFO[node.kind].webTip, { min: 0.5, max: Math.max(0.5, Math.min(node.width, node.depth) / 2), step: 0.5, hardMin: 0.1, hardMax: 2000 }),
+            profileSlider('Raccordo interno', node.rootRadius ?? 0, 'rootRadius', TIPS.rootRadius, { min: 0, max: Math.max(0.5, maxRootRadius(node)), step: 0.5, hardMin: 0, hardMax: Math.max(0, maxRootRadius(node)) }),
+          ]
+        ) : node.kind === 'text' ? (
           [
             <TextField key="text" label={node.origin ? 'Carattere' : 'Testo'} tooltip={TIPS.text} value={node.text} disabled={locked} onCommit={(v) => patch({ text: v } as Partial<Shape2DNode>)} />,
             <label key="font" className="properties__row" title={TIPS.font}>
@@ -880,7 +908,8 @@ function Shape2DFields({ node, patch, locked }: { node: Shape2DNode; patch: (p: 
           </>
         ) : (
           <>
-            {slider('Altezza', node.height, 'height', TIPS.extrudeHeight, length)}
+            {/* Per un profilato l'estrusione è la lunghezza della trave */}
+            {profile ? slider('Lunghezza', node.height, 'height', TIPS.profileLength, length) : slider('Altezza', node.height, 'height', TIPS.extrudeHeight, length)}
             {slider('Torsione', node.twist, 'twist', TIPS.twist, { unit: '°', min: -360, max: 360, step: 5, hardMin: -3600, hardMax: 3600 })}
             <SliderField
               label="Scala cima"

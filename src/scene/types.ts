@@ -51,7 +51,10 @@ export type PrimitiveNode = BaseNode & { type: 'primitive' } & (
   | { kind: 'torus'; majorRadius: number; minorRadius: number; segments: number }
 );
 
-export type Shape2DKind = 'circle' | 'square' | 'ring' | 'heart' | 'star5' | 'star6' | 'egg' | 'trapezoid' | 'cross' | 'drop' | 'crescent' | 'text' | 'svg';
+/** Profilati strutturali: sezione a L, a T e a H (contorni in src/scene/profiles.ts). */
+export type ProfileKind = 'profileL' | 'profileT' | 'profileH';
+
+export type Shape2DKind = 'circle' | 'square' | 'ring' | 'heart' | 'star5' | 'star6' | 'egg' | 'trapezoid' | 'cross' | 'drop' | 'crescent' | 'text' | 'svg' | ProfileKind;
 
 /**
  * Forma 2D estrusa (come linear_extrude di OpenSCAD): il profilo sta sul piano XY e si estrude
@@ -102,6 +105,22 @@ export type Shape2DNode = BaseNode & {
       depth: number;
       /** Parametro della forma (foro dell'anello, raggio interno della stella, ...): significato e limiti in `RATIO_INFO`. */
       ratio: number;
+    }
+  | {
+      /**
+       * Profilato strutturale: sezione di ingombro `width × depth` mm centrata nell'origine, estrusa per la sua lunghezza.
+       * L: ala orizzontale in basso e ala verticale a sinistra; T: ala in alto e anima verticale al centro;
+       * H: due ali verticali ai lati e anima orizzontale al centro (come la lettera).
+       */
+      kind: ProfileKind;
+      width: number;
+      depth: number;
+      /** Spessore delle ali in mm (L: dell'ala orizzontale). */
+      flange: number;
+      /** Spessore dell'anima in mm (L: dell'ala verticale). */
+      web: number;
+      /** Raggio del raccordo interno tra ala e anima in mm (0 o assente = spigolo vivo). */
+      rootRadius?: number;
     }
   | {
       /** Testo con un font del catalogo (src/scene/fontCatalog.ts). `size` è come in OpenSCAD: maiuscole alte circa `size` mm. */
