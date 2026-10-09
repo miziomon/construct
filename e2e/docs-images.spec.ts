@@ -1,5 +1,5 @@
 import { mkdirSync } from 'node:fs';
-import { test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import sharp from 'sharp';
 import { addShape, openApp, openMenuItem, project, settled } from './helpers';
 
@@ -169,22 +169,68 @@ test.describe('immagini di esempio', () => {
   });
 
   test('anteprime dei modelli di esempio', async ({ page }) => {
-    // Ogni esempio si apre dalla sua scheda, si inquadra (Home) e si fotografa la vista 3D in proporzione 8:5
-    await page.setViewportSize({ width: 1400, height: 900 });
-    for (const id of ['business-card', 'baby-toy', 'bauble']) {
+    // Ogni esempio si apre dalla sua scheda e si fotografa in prospettiva, a tre quarti, con il piatto nascosto.
+    // Finestra larga: tolti i pannelli laterali la vista 3D deve restare più larga di 8:5
+    await page.setViewportSize({ width: 1900, height: 760 });
+    // Direzione della camera rispetto al centro dell'oggetto: il biglietto si guarda da -X così il testo si legge dritto
+    // `roots`: oggetti alla radice dell'esempio, per aspettare che la scena sia davvero cambiata. `near`: quanto
+    // avvicinare la camera rispetto alla distanza che fa entrare la sfera dell'ingombro (gli oggetti piatti ne
+    // occupano una piccola parte, quindi si avvicina di più)
+    const EXAMPLES: Record<string, { dir: Vec; roots: number; near: number }> = {
+      'business-card': { dir: [-0.72, -0.25, 0.65], roots: 10, near: 0.8 },
+      'baby-toy': { dir: [0.55, -0.7, 0.5], roots: 2, near: 0.82 },
+      bauble: { dir: [0.6, -0.7, 0.35], roots: 1, near: 0.82 },
+    };
+    // Piatto nascosto (P cicla: visibile, senza base, nascosto): lo sfondo resta pulito
+    await page.keyboard.press('p');
+    await page.keyboard.press('p');
+    for (const [id, { dir, roots, near }] of Object.entries(EXAMPLES)) {
       await openMenuItem(page, 'Modelli di esempio…');
       await page.locator(`.examples__card[data-example="${id}"]`).click();
+      await expect.poll(() => page.evaluate(() => window.__construct!.store.getState().scene.rootIds.length)).toBe(roots);
       await settled(page);
-      await page.keyboard.press('Home');
-      // Il biglietto si legge dall'alto: dal punto di vista predefinito il testo si vedrebbe al rovescio
-      if (id === 'business-card') await page.keyboard.press('7');
+      // Sfera che contiene tutte le mesh calcolate: centro e raggio dell'ingombro
+      const { center, radius } = await page.evaluate(() => {
+        const min = [Infinity, Infinity, Infinity];
+        const max = [-Infinity, -Infinity, -Infinity];
+        for (const m of window.__construct!.results.getState().meshes as { bbox: { min: number[]; max: number[] } }[]) {
+          for (let k = 0; k < 3; k++) {
+            min[k] = Math.min(min[k], m.bbox.min[k]);
+            max[k] = Math.max(max[k], m.bbox.max[k]);
+          }
+        }
+        const center = [0, 1, 2].map((k) => (min[k] + max[k]) / 2) as [number, number, number];
+        return { center, radius: Math.hypot(max[0] - min[0], max[1] - min[1], max[2] - min[2]) / 2 };
+      });
+      // Distanza che fa entrare la sfera nell'altezza della vista (fov 38°), ridotta del fattore dell'esempio
+      const distance = (radius / Math.sin((38 / 2) * (Math.PI / 180))) * near;
+      await page.evaluate(([c, d, dist]) => {
+        const s = window.__r3f! as unknown as {
+          camera: { position: { set: (x: number, y: number, z: number) => void }; updateProjectionMatrix: () => void };
+          controls?: { target: { set: (x: number, y: number, z: number) => void }; update: () => void };
+          invalidate: () => void;
+        };
+        const len = Math.hypot(d[0], d[1], d[2]);
+        s.camera.position.set(c[0] + (d[0] / len) * dist, c[1] + (d[1] / len) * dist, c[2] + (d[2] / len) * dist);
+        s.controls?.target.set(c[0], c[1], c[2]);
+        s.controls?.update();
+        s.camera.updateProjectionMatrix();
+        s.invalidate();
+      }, [center, dir, distance] as const);
       await page.waitForTimeout(400);
+      // Le notifiche in basso a sinistra non devono finire nella foto
+      await page.addStyleTag({ content: '.toast-list { display: none !important; }' });
+      // Ritaglio 8:5 alto quanto la vista, centrato in orizzontale sull'oggetto ma senza arrivare agli ultimi 130 px
+      // a destra, dove sta la terna degli assi
       const png = await page.locator('.viewport').screenshot();
+      const box = (await page.locator('.viewport').boundingBox())!;
+      const at = await project(page, center);
       const meta = await sharp(png).metadata();
-      // Ritaglio centrale 8:5 e riduzione a 480 px di larghezza
-      const width = meta.width!;
-      const height = Math.min(meta.height!, Math.round((width * 5) / 8));
-      await sharp(png).extract({ left: 0, top: Math.round((meta.height! - height) / 2), width, height }).resize({ width: 480 }).webp({ quality: 80 }).toFile(`public/examples/${id}.webp`);
+      const height = meta.height!;
+      const width = Math.min(meta.width! - 130, Math.round((height * 8) / 5));
+      const left = Math.round(Math.min(Math.max(at.x - box.x - width / 2, 0), meta.width! - 130 - width));
+      const top = 0;
+      await sharp(png).extract({ left, top, width, height }).resize({ width: 480 }).webp({ quality: 80 }).toFile(`public/examples/${id}.webp`);
     }
   });
 

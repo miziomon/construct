@@ -18,6 +18,11 @@ I messaggi di commit seguono i [Conventional Commits](https://www.conventionalco
 
 ## [Non rilasciato]
 
+## [0.41.1] - 2026-10-09
+
+### Corretto
+- **Anteprime dei modelli di esempio.** Le immagini della galleria erano piccole e poco leggibili (inquadratura generica con il piatto in vista, il biglietto fotografato dall'alto). Ora lo script delle immagini calcola la sfera dell'ingombro delle mesh, mette la camera in prospettiva a tre quarti a una distanza scelta per ogni modello (il biglietto da un lato in cui il testo si legge dritto), nasconde piatto e notifiche e ritaglia la vista in 8:5 attorno all'oggetto, fuori dalla terna degli assi.
+
 ## [0.41.0] - 2026-10-09
 
 ### Aggiunto
