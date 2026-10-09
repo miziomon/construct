@@ -17,7 +17,7 @@ export type HelpKey =
   | 'new' | 'undo' | 'redo' | 'select' | 'translate' | 'rotate' | 'resize' | 'extrude'
   | 'group' | 'union' | 'hull' | 'minkowski' | 'ungroup' | 'hole' | 'lock' | 'unlock'
   | 'fillet' | 'chamfer' | 'corner' | 'shell' | 'align' | 'mirror' | 'measure' | 'array' | 'pattern'
-  | 'layflat' | 'lay' | 'drop' | 'duplicate' | 'delete' | 'ghost' | 'bed' | 'theme' | 'code';
+  | 'layflat' | 'lay' | 'drop' | 'duplicate' | 'delete' | 'views' | 'ortho' | 'ghost' | 'bed' | 'theme' | 'code';
 
 export const TOOLBAR_HELP: Record<HelpKey, ToolbarHelp> = {
   new: { name: 'Nuovo progetto', what: 'Svuota la scena per ricominciare da zero.', how: 'Chiede conferma e, se vuoi, svuota anche la cronologia. Il progetto attuale si può salvare prima dal menu.' },
@@ -50,6 +50,8 @@ export const TOOLBAR_HELP: Record<HelpKey, ToolbarHelp> = {
   drop: { name: 'Appoggia sul piatto', what: 'Porta gli oggetti selezionati a toccare il piano di stampa.', how: 'Seleziona uno o più oggetti alla radice e premi il pulsante: si spostano in verticale fino a z = 0.' },
   duplicate: { name: 'Duplica', what: 'Crea una copia dell\'oggetto selezionato.', how: 'Seleziona uno o più oggetti alla radice e premi il pulsante: la copia compare accanto all\'originale e si seleziona.' },
   delete: { name: 'Elimina', what: 'Toglie dalla scena gli oggetti selezionati.', how: 'Seleziona e premi il pulsante (o Canc). Si può sempre annullare con Ctrl+Z.' },
+  views: { name: 'Viste', what: 'Preset di vista (alto, fronte, lato, isometrica) e Inquadra la selezione o tutta la scena.', how: 'Apri la tendina e scegli una vista: il centro inquadrato e la distanza restano. Inquadra sposta il centro sugli oggetti selezionati (o su tutta la scena). Tasti: 7 alto, 1 fronte, 3 lato, 0 isometrica, . inquadra la selezione, Home inquadra tutto.' },
+  ortho: { name: 'Ortografica', what: 'Passa dalla vista prospettica a quella ortografica, senza deformazione di prospettiva: le misure parallele restano parallele.', how: 'Un clic (o il tasto 5) alterna le due proiezioni mantenendo la stessa inquadratura; la scelta resta salvata nel browser. Utile con le viste dall\'alto, dal fronte e di lato per allineare e misurare.' },
   ghost: { name: 'Operandi in trasparenza', what: 'Mostra in trasparenza ciò che una booleana sottrae o interseca, come il # di OpenSCAD.', how: 'Attivalo e guarda i gruppi Differenza e Intersezione: i pezzi tolti compaiono come fantasmi, utili per capire un modello.', image: 'ghost' },
   bed: { name: 'Piatto', what: 'Cambia come si vede il piatto di stampa: completo, solo griglia e bordo, nascosto.', how: 'Ogni clic passa allo stato successivo; il tooltip dice quello attuale.' },
   theme: { name: 'Tema', what: 'Passa dal tema chiaro a quello scuro.', how: 'Un clic cambia tema; la scelta resta salvata nel browser.' },

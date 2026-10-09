@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
-import { Box, ChevronRight, FileDown, Grid3x3, House, Layers, Sigma, Smile, Square, Upload } from 'lucide-react';
+import { Box, Camera, ChevronRight, FileDown, Grid3x3, House, Layers, Sigma, Smile, Square, Upload } from 'lucide-react';
+import { fitView } from '../../viewport/cameraControl';
 import { PRIMITIVE_LABELS, SHAPE2D_LABELS } from '../../scene/defaults';
 import { isProfileKind, PROFILE_KINDS } from '../../scene/profiles';
 import { EMOJI_FONT, EMOJI_GROUPS } from '../../scene/emojiCatalog';
@@ -303,6 +304,7 @@ export function ContextMenu() {
             GLYPH_COLUMNS,
           )}
           <div className="context-menu__separator" role="separator" />
+          {item('fit', 'Inquadra tutto', <Camera size={16} />, () => fitView(false), { shortcut: 'Home' })}
           {item('import', 'Importa…', <Upload size={16} />, () => ui().setAppPanel('import'))}
           {item('export', 'Esporta…', <FileDown size={16} />, () => ui().setAppPanel('export'))}
           {item('bed', 'Dimensioni del piano…', <Grid3x3 size={16} />, () => ui().setBedDialogOpen(true))}

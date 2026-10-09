@@ -124,7 +124,7 @@ export interface Command {
   active?: (c: CommandContext) => boolean;
   run: (c: CommandContext) => void;
   /** Tendina della barra aperta dal comando (Allinea e Specchia), al posto di un'azione diretta. */
-  dropdown?: ToolbarMenu;
+  dropdown?: Extract<ToolbarMenu, 'align' | 'mirror'>;
   /** Il menu contestuale lo mostra. Le modalità del gizmo restano solo sulla barra. */
   menu: boolean;
   /** Condizione in più per il menu (la barra usa solo `enabled`): nasconde i comandi che per questo oggetto non hanno senso. */

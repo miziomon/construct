@@ -1208,6 +1208,56 @@ test('profilati a L, T e H: nella tab Forme 3D, pannello dedicato con spessori e
   expect(code).toContain('linear_extrude(height = 40');
 });
 
+test('Viste: 5 alterna ortografica e prospettica senza spostare il centro, 7 guarda dall\'alto, . inquadra la selezione, la proiezione resta dopo il ricaricamento', async ({ page }) => {
+  const camera = () => page.evaluate(() => {
+    const s = window.__r3f!;
+    const c = s.camera as { type: string; position: { x: number; y: number; z: number }; zoom: number };
+    const t = (s.controls as { target: { x: number; y: number; z: number } } | null)?.target;
+    return { type: c.type, position: [c.position.x, c.position.y, c.position.z], zoom: c.zoom, target: t ? [t.x, t.y, t.z] : null };
+  });
+  const start = await camera();
+  expect(start.type).toBe('PerspectiveCamera');
+  expect(start.target).toEqual([0, 0, 20]);
+
+  // Ortografica: stessa posizione e stesso centro, pulsante attivo; 5 di nuovo torna prospettica
+  await page.keyboard.press('5');
+  const ortho = await camera();
+  expect(ortho.type).toBe('OrthographicCamera');
+  expect(ortho.position.map((v) => Math.round(v))).toEqual(start.position.map((v) => Math.round(v)));
+  expect(ortho.target!.map((v) => Math.round(v))).toEqual([0, 0, 20]);
+  expect(ortho.zoom).toBeGreaterThan(0.1);
+  await expect(page.locator('header.toolbar').getByRole('button', { name: 'Ortografica', exact: true })).toHaveAttribute('aria-pressed', 'true');
+
+  // Dall'alto: la camera sta sopra il centro, alla stessa distanza (in ortografica la distanza è quella equivalente allo zoom)
+  await page.keyboard.press('7');
+  const top = await camera();
+  expect(Math.abs(top.position[0])).toBeLessThan(0.01);
+  expect(top.position[2]).toBeGreaterThan(100);
+
+  // Inquadra la selezione: il centro va sul cubo spostato
+  await addShape(page, 'Cubo');
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowRight');
+  await settled(page);
+  await page.keyboard.press('.');
+  const fit = await camera();
+  expect(fit.target!.map((v) => Math.round(v))).toEqual([2, 0, 10]);
+
+  // La proiezione resta dopo il ricaricamento, poi 5 torna prospettica con lo stesso centro
+  await page.reload();
+  await page.waitForFunction(() => !!window.__construct && !!window.__r3f);
+  expect((await camera()).type).toBe('OrthographicCamera');
+  await page.keyboard.press('5');
+  const back = await camera();
+  expect(back.type).toBe('PerspectiveCamera');
+  // Dalla tendina Viste: Fronte mette la camera davanti (Y negativo) e alla stessa altezza del centro
+  await page.locator('header.toolbar').getByRole('button', { name: 'Viste', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Fronte' }).click();
+  const front = await camera();
+  expect(front.position[1]).toBeLessThan(-50);
+  expect(Math.abs(front.position[2] - front.target![2])).toBeLessThan(0.01);
+});
+
 test('Sdraia (Maiusc+V): la trave si stende lungo X, poi lungo Y, poi torna in piedi, sempre appoggiata, un passo di Annulla per volta', async ({ page }) => {
   await addShape(page, 'Profilato a L');
   const read = () => page.evaluate(() => window.__construct!.results.getState().meshes[0].bbox);
@@ -2483,7 +2533,7 @@ test('Barra strumenti: i comandi sono in gruppi con il nome della sezione', asyn
     ['Modifica', ['Raccordo', 'Smusso', 'Smusso angolare', 'Guscio', 'Pattern']],
     ['Disponi', ['Allinea', 'Specchia', 'Sdraia', 'Serie']],
     ['Oggetto', ['Duplica', 'Elimina', 'Misura']],
-    ['Vista', ['Codice OpenSCAD', 'Tema']],
+    ['Vista', ['Viste', 'Ortografica', 'Codice OpenSCAD', 'Tema']],
   ] as const) {
     const group = toolbar.getByRole('group', { name });
     await expect(group, `sezione "${name}"`).toBeVisible();

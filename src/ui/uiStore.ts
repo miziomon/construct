@@ -30,7 +30,10 @@ export const bedReach = (bed: BedSize): number => Math.max(bed.width, bed.depth)
 const NEXT_BED: Record<BedMode, BedMode> = { full: 'grid', grid: 'none', none: 'full' };
 
 /** Tendine della barra strumenti che si possono aprire anche da tastiera. */
-export type ToolbarMenu = 'align' | 'mirror';
+export type ToolbarMenu = 'align' | 'mirror' | 'views';
+
+/** Proiezione della vista 3D: prospettica (predefinita) o ortografica (misure e allineamenti senza deformazione). */
+export type Projection = 'perspective' | 'orthographic';
 
 /** Pannelli del menu hamburger (Importa, Esporta, ...): il menu del vuoto della vista li apre da fuori, quindi lo stato sta qui. */
 export type AppPanel = 'import' | 'export' | 'settings' | 'shortcuts' | 'news' | 'about' | 'docs';
@@ -118,6 +121,9 @@ interface UiState extends Settings {
   ghostOps: boolean;
   theme: Theme;
   bedMode: BedMode;
+  /** Proiezione della vista 3D (si salva in localStorage). */
+  projection: Projection;
+  toggleProjection: () => void;
   /** Dimensioni del piano di stampa (si salvano in localStorage). */
   bedSize: BedSize;
   setBedSize: (size: Partial<BedSize>) => void;
@@ -190,11 +196,13 @@ export const useUiStore = create<UiState>()(
       ghostOps: false,
       theme: 'light',
       bedMode: 'full',
+      projection: 'perspective',
+      toggleProjection: () => set({ projection: get().projection === 'perspective' ? 'orthographic' : 'perspective' }),
       bedSize: DEFAULT_BED,
       setBedSize: (size) => set({ bedSize: { width: cleanBedSide(size.width, get().bedSize.width), depth: cleanBedSide(size.depth, get().bedSize.depth) } }),
       ...DEFAULT_SETTINGS,
       setSettings: (patch) => set(cleanSettings({ ...pickSettings(get()), ...patch })),
-      resetSettings: () => set({ ...DEFAULT_SETTINGS, theme: 'light', bedMode: 'full', bedSize: DEFAULT_BED }),
+      resetSettings: () => set({ ...DEFAULT_SETTINGS, theme: 'light', bedMode: 'full', projection: 'perspective', bedSize: DEFAULT_BED }),
       outlinerTab: 'objects',
       setOutlinerTab: (outlinerTab) => set({ outlinerTab }),
       appPanel: null,
@@ -235,7 +243,7 @@ export const useUiStore = create<UiState>()(
     {
       name: STORAGE.ui.now,
       // La modale del codice non si ripristina all'avvio
-      partialize: (s) => ({ ...pickSettings(s), theme: s.theme, bedMode: s.bedMode, bedSize: s.bedSize, libraryTab: s.libraryTab, libraryGroupsOpen: s.libraryGroupsOpen, libraryFavorites: s.libraryFavorites, libraryRecent: s.libraryRecent }),
+      partialize: (s) => ({ ...pickSettings(s), theme: s.theme, bedMode: s.bedMode, projection: s.projection, bedSize: s.bedSize, libraryTab: s.libraryTab, libraryGroupsOpen: s.libraryGroupsOpen, libraryFavorites: s.libraryFavorites, libraryRecent: s.libraryRecent }),
       // Si accettano solo i campi noti e validi: un valore salvato da una versione precedente (o rovinato) non rompe l'avvio
       merge: (saved, current) => {
         const s = (saved ?? {}) as Partial<UiState>;
@@ -244,6 +252,7 @@ export const useUiStore = create<UiState>()(
           ...cleanSettings(s),
           theme: s.theme === 'dark' ? 'dark' : current.theme,
           bedMode: s.bedMode && s.bedMode in NEXT_BED ? s.bedMode : current.bedMode,
+          projection: s.projection === 'orthographic' ? 'orthographic' : current.projection,
           bedSize: { width: cleanBedSide(s.bedSize?.width, DEFAULT_BED.width), depth: cleanBedSide(s.bedSize?.depth, DEFAULT_BED.depth) },
           libraryTab: s.libraryTab && LIBRARY_TABS.includes(s.libraryTab) ? s.libraryTab : current.libraryTab,
           // Solo valori booleani: il resto del localStorage non è fidato

@@ -11,6 +11,8 @@ import { useViewportPalette } from './palette';
 export function Bed() {
   const mode = useUiStore((s) => s.bedMode);
   const { width, depth } = useUiStore((s) => s.bedSize);
+  // In ortografica la camera può stare molto lontana senza che la vista cambi: la griglia non deve dissolversi
+  const orthographic = useUiStore((s) => s.projection === 'orthographic');
   const halfX = width / 2;
   const halfY = depth / 2;
   const palette = useViewportPalette();
@@ -18,7 +20,7 @@ export function Bed() {
 
   // Il rendering è "a richiesta": togliere un oggetto dalla scena non richiede un nuovo frame (R3F non lo fa per
   // gli oggetti rimossi), quindi il piatto resta montato e cambia solo la visibilità, e si chiede comunque un frame.
-  useEffect(() => invalidate(), [mode, width, depth, invalidate]);
+  useEffect(() => invalidate(), [mode, width, depth, orthographic, invalidate]);
 
   return (
     <group name="bed" visible={mode !== 'none'}>
@@ -39,7 +41,7 @@ export function Bed() {
         sectionSize={50}
         sectionThickness={1.1}
         sectionColor={palette.gridSection}
-        fadeDistance={900}
+        fadeDistance={orthographic ? 100000 : 900}
         infiniteGrid={false}
       />
       <Line

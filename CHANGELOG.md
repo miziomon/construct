@@ -18,6 +18,12 @@ I messaggi di commit seguono i [Conventional Commits](https://www.conventionalco
 
 ## [Non rilasciato]
 
+## [0.39.0] - 2026-10-09
+
+### Aggiunto
+- **Viste**: tendina Viste nella sezione Vista della barra con i preset Alto (`7`), Fronte (`1`), Lato (`3`) e Isometrica (`0`), che tengono il centro inquadrato e la distanza, e con Inquadra selezione (`.`, gli oggetti selezionati o tutta la scena) e Inquadra tutto (`Home`, anche dal menu contestuale del vuoto; con la scena vuota inquadra il piatto).
+- **Proiezione ortografica** (pulsante Ortografica, tasto `5`): alterna prospettica e ortografica mantenendo la stessa inquadratura (lo zoom ortografico si ricava dalla distanza e viceversa), per allineare e misurare senza deformazione di prospettiva. La scelta resta salvata nel browser; la griglia del piatto non si dissolve con la distanza in ortografica.
+
 ## [0.38.0] - 2026-10-09
 
 ### Modificato

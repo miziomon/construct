@@ -63,6 +63,18 @@ const SHORTCUTS: { title: string; rows: [string, string][] }[] = [
     ],
   },
   {
+    title: 'Vista',
+    rows: [
+      ['7', 'Vista dall\'alto'],
+      ['1', 'Vista dal fronte'],
+      ['3', 'Vista di lato (da destra)'],
+      ['0', 'Vista isometrica'],
+      ['5', 'Prospettica / ortografica'],
+      ['.', 'Inquadra la selezione (o tutta la scena se non c\'è selezione)'],
+      ['Home', 'Inquadra tutta la scena (o il piatto se è vuota)'],
+    ],
+  },
+  {
     title: 'Generale',
     rows: [
       ['N', 'Nuovo progetto (chiede conferma se la scena non è vuota)'],

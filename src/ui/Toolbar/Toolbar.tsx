@@ -1,4 +1,4 @@
-import { Code, Moon, Sun, Redo2, Undo2, FilePlus, Grid3x3, Hash } from 'lucide-react';
+import { Box, Camera, Code, Moon, Sun, Redo2, Undo2, FilePlus, Grid3x3, Hash } from 'lucide-react';
 import { Fragment } from 'react';
 import type { ReactNode } from 'react';
 import { useStore } from 'zustand';
@@ -10,6 +10,7 @@ import { ToolTip } from './ToolTip';
 import { TOOLBAR_HELP } from './toolbarHelp';
 import type { HelpKey } from './toolbarHelp';
 import { PlacementMenu } from './PlacementMenu';
+import { ViewsMenu } from './ViewsMenu';
 import { AppMenu } from '../AppMenu/AppMenu';
 import { newProject } from '../fileActions';
 import { COMMANDS, COMMAND_GROUPS, helpOf, useCommandContext } from '../commands';
@@ -89,7 +90,7 @@ function Section({ label, children }: { label: string; children: ReactNode }) {
 export function Toolbar() {
   const canUndo = useStore(useSceneStore.temporal, (t) => t.pastStates.length > 0);
   const canRedo = useStore(useSceneStore.temporal, (t) => t.futureStates.length > 0);
-  const { codeOpen, toggleCode, theme, toggleTheme, bedMode, cycleBed, ghostOps, toggleGhostOps } = useUiStore();
+  const { codeOpen, toggleCode, theme, toggleTheme, bedMode, cycleBed, ghostOps, toggleGhostOps, projection, toggleProjection } = useUiStore();
   const ctx = useCommandContext();
 
   return (
@@ -116,6 +117,10 @@ export function Toolbar() {
       <div className="toolbar__spacer" />
 
       <Section label="Vista">
+        <ToolbarDropdown id="views" help="views" icon={<Camera size={18} />}>
+          {(close) => <ViewsMenu close={close} />}
+        </ToolbarDropdown>
+        <ToolbarButton help="ortho" extra={projection === 'orthographic' ? 'Ora: ortografica.' : 'Ora: prospettica.'} shortcut="5" active={projection === 'orthographic'} onClick={toggleProjection}><Box size={18} /></ToolbarButton>
         <ToolbarButton help="ghost" shortcut="X" active={ghostOps} onClick={toggleGhostOps}><Hash size={18} /></ToolbarButton>
         <ToolbarButton help="bed" extra={`Ora: ${BED_LABELS[bedMode]}. Prossimo: ${BED_LABELS[NEXT_BED[bedMode]]}.`} shortcut="P" active={bedMode !== 'full'} onClick={cycleBed}><Grid3x3 size={18} /></ToolbarButton>
         <ToolbarButton help="theme" extra={theme === 'light' ? 'Ora: tema chiaro.' : 'Ora: tema scuro.'} shortcut="D" onClick={toggleTheme}>{theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}</ToolbarButton>

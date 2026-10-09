@@ -25,6 +25,7 @@ import { PlacementPreview } from './PlacementPreview';
 import { useUiStore } from '../ui/uiStore';
 import { round } from '../scene/math';
 import { DimensionOverlay } from './DimensionOverlay';
+import { CameraRig } from './CameraRig';
 import './Viewport.scss';
 
 // I pannelli degli strumenti si scaricano alla prima attivazione (restano fuori dal caricamento iniziale)
@@ -150,7 +151,9 @@ export function Viewport() {
 
         <GhostOperands />
 
-        <OrbitControls makeDefault target={[0, 0, 20]} enableDamping={false} maxDistance={2500} />
+        <CameraRig />
+        {/* minZoom e maxZoom valgono per la camera ortografica, maxDistance per quella prospettica */}
+        <OrbitControls makeDefault target={[0, 0, 20]} enableDamping={false} maxDistance={2500} minZoom={0.05} maxZoom={60} />
         <GizmoHelper alignment="bottom-right" margin={[72, 72]}>
           <GizmoViewport axisColors={['#ff5d5d', '#46c47a', '#4da3ff']} labelColor={palette.axisLabel} />
         </GizmoHelper>

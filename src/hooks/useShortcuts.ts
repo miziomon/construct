@@ -13,6 +13,7 @@ import { usePatternTool } from '../ui/Pattern/patternToolStore';
 import { togglePattern } from '../ui/Pattern/togglePattern';
 import { toggleArray } from '../ui/Array/toggleArray';
 import { toggleLayFlat } from '../ui/LayFlat/toggleLayFlat';
+import { fitView, setViewPreset, toggleProjection } from '../viewport/cameraControl';
 
 const isTyping = (t: EventTarget | null) => t instanceof HTMLElement && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
 
@@ -128,6 +129,14 @@ export function useShortcuts(): void {
         e.preventDefault();
         if (s.selection.length === 1) useUiStore.getState().setRenamingId(s.selection[0]);
       }
+      // Viste: cifre (anche sul tastierino, lette dal codice del tasto perché con Maiusc cambierebbero), punto e Home
+      else if (!mod && !e.shiftKey && (e.code === 'Digit7' || e.code === 'Numpad7')) setViewPreset('top');
+      else if (!mod && !e.shiftKey && (e.code === 'Digit1' || e.code === 'Numpad1')) setViewPreset('front');
+      else if (!mod && !e.shiftKey && (e.code === 'Digit3' || e.code === 'Numpad3')) setViewPreset('side');
+      else if (!mod && !e.shiftKey && (e.code === 'Digit0' || e.code === 'Numpad0')) setViewPreset('iso');
+      else if (!mod && !e.shiftKey && (e.code === 'Digit5' || e.code === 'Numpad5')) toggleProjection();
+      else if (!mod && !e.shiftKey && (e.code === 'Period' || e.code === 'NumpadDecimal')) fitView(true);
+      else if (!mod && e.key === 'Home') { e.preventDefault(); fitView(false); }
       else if (!mod && key === 'q') s.setGizmoMode('select');
       else if (!mod && key === 'w') s.setGizmoMode('translate');
       else if (!mod && key === 'e') s.setGizmoMode('rotate');
