@@ -95,6 +95,16 @@ describe('sceneToOpenScad', () => {
     for (const line of code.split('\n')) expect(line.length, line).toBeLessThanOrEqual(100);
   });
 
+  it('tubolari: polygon con due tracciati (esterno e foro)', () => {
+    const rect = { ...shape2dDefaults('tubeRect'), id: 'r', name: 'R', position: [0, 0, 20] } as Shape2DNode;
+    const round = { ...shape2dDefaults('tubeRound'), id: 't', name: 'T', position: [0, 0, 20], segments: 8 } as Shape2DNode;
+    const code = sceneToOpenScad({ nodes: { r: rect, t: round }, rootIds: ['r', 't'] });
+    expect(code).toContain('polygon(points = [');
+    expect(code).toContain('], paths = [[0, 1, 2, 3], [4, 5, 6, 7]]);');
+    expect(code).toContain('paths = [[0, 1, 2, 3, 4, 5, 6, 7], [8, 9, 10, 11, 12, 13, 14, 15]]');
+    for (const line of code.split('\n')) expect(line.length, line).toBeLessThanOrEqual(100);
+  });
+
   it('scatola arrotondata: hull() di otto sfere', () => {
     const box = { ...primitiveDefaults('box'), id: 'b', name: 'Cubo', position: [0, 0, 10], size: [20, 20, 20], cornerRadius: 2 } as PrimitiveNode;
     const code = sceneToOpenScad({ nodes: { b: box }, rootIds: ['b'] });

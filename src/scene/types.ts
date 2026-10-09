@@ -51,8 +51,12 @@ export type PrimitiveNode = BaseNode & { type: 'primitive' } & (
   | { kind: 'torus'; majorRadius: number; minorRadius: number; segments: number }
 );
 
-/** Profilati strutturali: sezione a L, a T e a H (contorni in src/scene/profiles.ts). */
-export type ProfileKind = 'profileL' | 'profileT' | 'profileH';
+/** Profilati con ali e anima: sezione a L, a T, a H e a U (contorni in src/scene/profiles.ts). */
+export type BarKind = 'profileL' | 'profileT' | 'profileH' | 'profileU';
+/** Tubolari: sezione cava rettangolare o tonda. */
+export type TubeKind = 'tubeRect' | 'tubeRound';
+/** Profilati strutturali: ali e anima oppure tubolari. */
+export type ProfileKind = BarKind | TubeKind;
 
 export type Shape2DKind = 'circle' | 'square' | 'ring' | 'heart' | 'star5' | 'star6' | 'egg' | 'trapezoid' | 'cross' | 'drop' | 'crescent' | 'text' | 'svg' | ProfileKind;
 
@@ -110,17 +114,34 @@ export type Shape2DNode = BaseNode & {
       /**
        * Profilato strutturale: sezione di ingombro `width × depth` mm centrata nell'origine, estrusa per la sua lunghezza.
        * L: ala orizzontale in basso e ala verticale a sinistra; T: ala in alto e anima verticale al centro;
-       * H: due ali verticali ai lati e anima orizzontale al centro (come la lettera).
+       * H: due ali verticali ai lati e anima orizzontale al centro (come la lettera); U: fondo in basso e due ali
+       * verticali ai lati.
        */
-      kind: ProfileKind;
+      kind: BarKind;
       width: number;
       depth: number;
       /** Spessore delle ali in mm (L: dell'ala orizzontale). */
       flange: number;
-      /** Spessore dell'anima in mm (L: dell'ala verticale). */
+      /** Spessore dell'anima in mm (L: dell'ala verticale; U: del fondo). */
       web: number;
       /** Raggio del raccordo interno tra ala e anima in mm (0 o assente = spigolo vivo). */
       rootRadius?: number;
+    }
+  | {
+      /** Tubolare rettangolare (scatolato): ingombro `width × depth` mm, parete `wall`, angoli esterni arrotondati di `cornerRadius`. */
+      kind: 'tubeRect';
+      width: number;
+      depth: number;
+      wall: number;
+      /** Raggio degli angoli esterni in mm (0 o assente = vivi); quelli interni hanno `cornerRadius − wall`. */
+      cornerRadius?: number;
+    }
+  | {
+      /** Tubolare tondo: raggio esterno `radius`, parete `wall`, `segments` lati come `$fn`. */
+      kind: 'tubeRound';
+      radius: number;
+      wall: number;
+      segments: number;
     }
   | {
       /** Testo con un font del catalogo (src/scene/fontCatalog.ts). `size` è come in OpenSCAD: maiuscole alte circa `size` mm. */

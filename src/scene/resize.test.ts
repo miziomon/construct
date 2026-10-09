@@ -63,6 +63,17 @@ describe('applyScale', () => {
     // Un raccordo grande si riduce se la sezione si restringe
     const r = applyScale(shape('profileT', { rootRadius: 8 } as Partial<Shape2DNode>), [0.5, 0.5, 1]);
     expect(r.rootRadius).toBeLessThanOrEqual(maxRootRadius({ kind: 'profileT', width: 10, depth: 10, flange: 1.5, web: 1.5 }));
+    // U: come la H, ali lungo X
+    expect(applyScale(shape('profileU'), [2, 1, 1])).toMatchObject({ flange: 6, web: 3 });
+  });
+
+  it('tubolari: la parete del rettangolare segue il fattore minore, il tondo resta tondo', () => {
+    expect(applyScale(shape('tubeRect', { cornerRadius: 4 } as Partial<Shape2DNode>), [2, 1, 1])).toMatchObject({ width: 40, depth: 20, wall: 2, cornerRadius: 4 });
+    expect(applyScale(shape('tubeRect'), [2, 2, 1])).toMatchObject({ width: 40, depth: 40, wall: 4 });
+    expect(applyScale(shape('tubeRound'), [2, 2, 3])).toMatchObject({ radius: 20, wall: 4, height: 120 });
+    // Il tondo non ha lucchetto (una sola misura), il rettangolare sì
+    expect(lockedPatch(shape('tubeRound'), 'radius', 20)).toBeNull();
+    expect(lockedPatch(shape('tubeRect'), 'width', 40)).toMatchObject({ width: 40, depth: 40 });
   });
 
   it('arrotonda al passo e rispetta il minimo', () => {

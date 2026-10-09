@@ -8,7 +8,7 @@ Tutto gira nel browser: il calcolo geometrico usa [manifold-3d](https://github.c
 
 ## Funzioni principali
 
-- **Forme**: cubo, cilindro, cono, sfera, toro, poliedri regolari, profilati strutturali a L, T e H (spessori di ali e anima e raccordo interno regolabili), forme 2D estrudibili (cerchio, quadrato, poligoni), testo con una quarantina di font di Google Fonts, simboli, emoji e import di **SVG**, **STL** e **3MF**.
+- **Forme**: cubo, cilindro, cono, sfera, toro, poliedri regolari, profilati strutturali a L, T, H e U (spessori di ali e anima e raccordo interno regolabili), tubolari rettangolari e tondi (parete in mm), forme 2D estrudibili (cerchio, quadrato, poligoni), testo con una quarantina di font di Google Fonts, simboli, emoji e import di **SVG**, **STL** e **3MF**.
 - **Booleane**: unione, differenza, intersezione, inviluppo convesso e fori; gli operandi si possono vedere in trasparenza, come il `#` di OpenSCAD.
 - **Strumenti di dettaglio**: Raccordo, Smusso e Smusso angolare con anteprima dal vivo, Guscio, Appoggia su una faccia, Allinea, Specchia e Misura con aggancio a vertici e spigoli.
 - **Serie** (lineare, griglia, circolare): il risultato è un gruppo parametrico "Ripetizione", si modificano i parametri e non le singole copie.

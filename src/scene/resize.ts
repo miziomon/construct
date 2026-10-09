@@ -2,7 +2,7 @@ import type { PrimitiveNode, Shape2DNode, Vec3 } from './types';
 import { round } from './math';
 import { primitiveDefaults, shape2dDefaults } from './defaults';
 import { svgNaturalSize } from './shapes2d';
-import { clampProfile, isProfileShape, thicknessAxes } from './profiles';
+import { clampProfile, isBarShape, thicknessAxes } from './profiles';
 import { maxPolyhedronRadius, polygonMaxRadius } from './polyhedra';
 
 /** Dimensione minima di una misura (mm): sotto il kernel produrrebbe geometrie degeneri. */
@@ -75,14 +75,25 @@ export function applyScale(node: Resizable, scale: Vec3, step = 0.5): ResizePatc
     }
     // Testo: la dimensione segue la media dei due assi del piano
     if (node.kind === 'text') return { ...common, size: q(node.size, (fx + fy) / 2) };
+    if (node.kind === 'tubeRound') {
+      // Tubo tondo: raggio e parete seguono la media dei due assi (resta tondo)
+      const next = clampProfile({ ...node, radius: q(node.radius, (fx + fy) / 2), wall: q(node.wall, (fx + fy) / 2) });
+      return { ...common, radius: next.radius, wall: next.wall };
+    }
     const width = q(node.width, fx);
     const depth = locked && fx !== 1 ? Math.max(MIN_SIZE, round(node.depth * (width / node.width), 3)) : q(node.depth, fy);
-    if (isProfileShape(node)) {
+    if (isBarShape(node)) {
       // Profilati: anche gli spessori seguono l'asse lungo cui si misurano, così la sezione si scala senza deformarsi
       const axes = thicknessAxes(node.kind);
       const factor = (axis: 0 | 1) => (axis === 0 ? fx : fy);
       const next = clampProfile({ ...node, width, depth, flange: q(node.flange, factor(axes.flange)), web: q(node.web, factor(axes.web)) });
       return { ...common, width, depth, flange: next.flange, web: next.web, rootRadius: next.rootRadius };
+    }
+    if (node.kind === 'tubeRect') {
+      // Tubo rettangolare: la parete segue il fattore minore (così non supera mai metà del lato), il raggio idem
+      const f = Math.min(fx, fy);
+      const next = clampProfile({ ...node, width, depth, wall: q(node.wall, f), cornerRadius: Math.max(0, snap((node.cornerRadius ?? 0) * f)) });
+      return { ...common, width, depth, wall: next.wall, cornerRadius: next.cornerRadius };
     }
     // Forme poligonali e SVG: solo l'ingombro (il parametro `ratio` è una proporzione e non cambia)
     if (node.kind !== 'square') return { ...common, width, depth };
@@ -147,7 +158,8 @@ export function lockedPatch(node: Resizable, key: string, value: number, index =
     }
     return null;
   }
-  if (node.kind === 'text') return null;
+  // Testo e tubo tondo hanno una sola misura: niente da legare
+  if (node.kind === 'text' || node.kind === 'tubeRound') return null;
   if (key === 'width') return { width: value, depth: scaled(node.depth, value / node.width) };
   if (key === 'depth') return { depth: value, width: scaled(node.width, value / node.depth) };
   return null;
@@ -156,7 +168,7 @@ export function lockedPatch(node: Resizable, key: string, value: number, index =
 /** Misura principale che la Scala usa come riferimento (cubo: lato X, cerchio: raggio, testo: dimensione, il resto: larghezza). */
 function primaryMeasure(node: Resizable): number {
   if (node.type === 'primitive') return node.kind === 'box' ? node.size[0] : 1;
-  if (node.kind === 'circle') return node.radius;
+  if (node.kind === 'circle' || node.kind === 'tubeRound') return node.radius;
   if (node.kind === 'text') return node.size;
   return node.width;
 }

@@ -184,6 +184,10 @@ export function profileExtent(node: Shape2DNode): { width: number; depth: number
       width = Math.max(1, [...node.text].length) * node.size * 0.6;
       depth = node.size;
       break;
+    case 'tubeRound':
+      width = 2 * node.radius;
+      depth = 2 * node.radius;
+      break;
     default:
       width = node.width;
       depth = node.depth;

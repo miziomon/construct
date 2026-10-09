@@ -54,6 +54,9 @@ export const SHAPE2D_LABELS: Record<Shape2DKind, string> = {
   profileL: 'Profilato a L',
   profileT: 'Profilato a T',
   profileH: 'Profilato a H',
+  profileU: 'Profilato a U',
+  tubeRect: 'Tubolare rettangolare',
+  tubeRound: 'Tubolare tondo',
 };
 
 /**
@@ -133,7 +136,10 @@ export function shape2dDefaults(kind: Shape2DKind): DistributiveOmit<Shape2DNode
     // Profilati: sezione 20 × 20 con pareti di 3 mm, più lunghi delle altre estrusioni perché sono travi
     case 'profileL':
     case 'profileT':
-    case 'profileH': return { ...base, kind, width: 20, depth: 20, flange: 3, web: 3, rootRadius: 0, height: PROFILE_LENGTH };
+    case 'profileH':
+    case 'profileU': return { ...base, kind, width: 20, depth: 20, flange: 3, web: 3, rootRadius: 0, height: PROFILE_LENGTH };
+    case 'tubeRect': return { ...base, kind, width: 20, depth: 20, wall: 2, cornerRadius: 0, height: PROFILE_LENGTH };
+    case 'tubeRound': return { ...base, kind, radius: 10, wall: 2, segments: DEFAULT_SEGMENTS, height: PROFILE_LENGTH };
     default: return { ...base, kind, width: 20, depth: 20, ratio: RATIO_INFO[kind]!.default };
   }
 }

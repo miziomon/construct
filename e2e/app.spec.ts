@@ -1144,7 +1144,7 @@ test('le dodici forme 2D si aggiungono dalla libreria e danno un solido valido',
 
 test('profilati a L, T e H: nella tab Forme 3D, pannello dedicato con spessori e raccordo interno, polygon nel codice', async ({ page }) => {
   // Stanno con le forme 3D (non nella tab Forme 2D) e sono anche nel menu contestuale
-  const labels = ['Profilato a L', 'Profilato a T', 'Profilato a H'];
+  const labels = ['Profilato a L', 'Profilato a T', 'Profilato a H', 'Profilato a U', 'Tubolare rettangolare', 'Tubolare tondo'];
   for (const label of labels) await expect(page.locator(`button[title="Aggiungi: ${label}"]`)).toBeVisible();
   const read = () => page.evaluate(() => window.__construct!.results.getState().meshes[0]);
   for (const label of labels) {
@@ -1157,7 +1157,9 @@ test('profilati a L, T e H: nella tab Forme 3D, pannello dedicato con spessori e
     expect(m.bbox.min[2]).toBeCloseTo(0, 3);
     expect(m.bbox.max[2]).toBeCloseTo(40, 3);
   }
-  await expect(page.locator('.outliner__row')).toHaveCount(3);
+  await expect(page.locator('.outliner__row')).toHaveCount(labels.length);
+  // Il tubolare tondo appena aggiunto è selezionato: pannello con Raggio e Parete
+  for (const label of ['Raggio', 'Parete']) await expect(page.locator('.slider-field', { hasText: label })).toBeVisible();
 
   // Pannello dedicato: sezione "Profilato" con i due spessori (etichette della H) e il raccordo interno; "Lunghezza" nell'estrusione
   await page.locator('.outliner__row', { hasText: 'Profilato a H' }).click();
@@ -1165,13 +1167,18 @@ test('profilati a L, T e H: nella tab Forme 3D, pannello dedicato con spessori e
   for (const label of ['Spessore ali', 'Spessore anima', 'Raccordo interno', 'Lunghezza']) {
     await expect(page.locator('.slider-field', { hasText: label })).toBeVisible();
   }
-  const before = await read();
+  // La mesh della H selezionata (gli oggetti sono sei)
+  const readH = () => page.evaluate(() => {
+    const id = window.__construct!.store.getState().selection[0];
+    return window.__construct!.results.getState().meshes.find((m) => m.rootId === id)!;
+  });
+  const before = await readH();
   const root = page.locator('.slider-field', { hasText: 'Raccordo interno' }).locator('.number-field__input');
   await root.fill('2');
   await root.press('Enter');
   await settled(page);
   // Il raccordo interno aggiunge materiale negli angoli tra ali e anima
-  expect((await read()).volume).toBeGreaterThan(before.volume);
+  expect((await readH()).volume).toBeGreaterThan(before.volume);
   type ProfileFields = { kind?: string; rootRadius?: number; flange?: number };
   const profileH = async () => Object.values((await sceneState(page)).nodes as Record<string, ProfileFields>).find((n) => n.kind === 'profileH')!;
   expect((await profileH()).rootRadius).toBe(2);

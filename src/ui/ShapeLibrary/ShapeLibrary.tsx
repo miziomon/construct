@@ -2,7 +2,7 @@ import { Box, Circle, CircleDot, Cone, Cylinder, Diamond, Donut, Droplet, Egg, H
 import type { LucideIcon } from 'lucide-react';
 import { Decagon } from '../icons/Decagon';
 import { Ring, Star6, Trapezoid } from '../icons/Shapes2D';
-import { ProfileH, ProfileL, ProfileT } from '../icons/Profiles';
+import { ProfileH, ProfileL, ProfileT, ProfileU, TubeRect, TubeRound } from '../icons/Profiles';
 import { useSceneStore } from '../../scene/store';
 import { PRIMITIVE_LABELS, SHAPE2D_LABELS } from '../../scene/defaults';
 import { isProfileKind, PROFILE_KINDS } from '../../scene/profiles';
@@ -40,6 +40,9 @@ export const SHAPE2D_ICONS: Record<Shape2DKind, LucideIcon> = {
   profileL: ProfileL,
   profileT: ProfileT,
   profileH: ProfileH,
+  profileU: ProfileU,
+  tubeRect: TubeRect,
+  tubeRound: TubeRound,
 };
 
 const KINDS = Object.keys(PRIMITIVE_LABELS) as PrimitiveKind[];

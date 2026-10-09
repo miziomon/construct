@@ -18,6 +18,11 @@ I messaggi di commit seguono i [Conventional Commits](https://www.conventionalco
 
 ## [Non rilasciato]
 
+## [0.34.0] - 2026-10-09
+
+### Aggiunto
+- **Profilato a U, tubolare rettangolare e tubolare tondo**, accanto a L, T e H nella tab Forme 3D e nel menu contestuale. La U ha il fondo in basso e due ali verticali (spessori di ali e fondo, raccordo interno). Il tubolare rettangolare ha larghezza, profondità, parete e raccordo degli angoli esterni (quelli interni seguono con il raggio ridotto della parete, così lo spessore resta costante). Il tubolare tondo ha raggio esterno, parete e numero di lati, con lo spessore in mm (l'Anello 2D lo esprime in percentuale). Tutti con lunghezza iniziale di 40 mm, pannello dedicato, misure ricordate, ridimensionamento che scala anche le pareti e codice OpenSCAD con `polygon` a due tracciati per i tubolari.
+
 ## [0.33.0] - 2026-10-09
 
 ### Aggiunto

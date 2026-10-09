@@ -7,7 +7,7 @@ import { FONTS, FONT_CATEGORIES, fontInfo } from '../../scene/fontCatalog';
 import type { FontCategory, FontInfo } from '../../scene/fontCatalog';
 import { Lock, Unlock } from 'lucide-react';
 import { isPolygonShape, isRotational, RATIO_INFO, revolveParams } from '../../scene/shapes2d';
-import { clampProfile, isProfileShape, maxRootRadius, PROFILE_INFO } from '../../scene/profiles';
+import { clampProfile, isBarShape, isProfileShape, maxRootRadius, PROFILE_INFO } from '../../scene/profiles';
 import { isRatioLocked, lockedPatch, scalePatch, scalePercent } from '../../scene/resize';
 import { cornerSphere } from '../../scene/cornerProfile';
 import { EDGE_SEGMENTS, maxFilletRadius } from '../../scene/edgeProfile';
@@ -764,30 +764,52 @@ function Shape2DFields({ node, patch, locked }: { node: Shape2DNode; patch: (p: 
    * Profilati: ogni modifica passa da `clampProfile`, così uno spessore non supera mai l'ingombro e il raccordo resta
    * entro il massimo; si scrivono solo i campi cambiati, in un solo passo di Annulla.
    */
-  const editProfile = (key: 'width' | 'depth' | 'flange' | 'web' | 'rootRadius', value: number) => {
+  type ProfileKey = 'width' | 'depth' | 'flange' | 'web' | 'rootRadius' | 'wall' | 'cornerRadius' | 'radius';
+  const PROFILE_KEYS: ProfileKey[] = ['width', 'depth', 'flange', 'web', 'rootRadius', 'wall', 'cornerRadius', 'radius'];
+  const editProfile = (key: ProfileKey, value: number) => {
     if (!isProfileShape(node)) return;
     const locked = key === 'width' || key === 'depth' ? lockedPatch(node, key, value) : null;
-    const next = clampProfile({ ...node, ...(locked ?? { [key]: value }) });
-    const changed: Partial<Shape2DNode> = {};
-    for (const k of ['width', 'depth', 'flange', 'web', 'rootRadius'] as const) {
-      if (next[k] !== (node[k] ?? 0)) (changed as Record<string, number | undefined>)[k] = next[k];
+    const next = clampProfile({ ...node, ...(locked ?? { [key]: value }) } as typeof node);
+    const changed: Record<string, number | undefined> = {};
+    const before = node as unknown as Record<string, number | undefined>;
+    const after = next as unknown as Record<string, number | undefined>;
+    for (const k of PROFILE_KEYS) {
+      if (k in after && after[k] !== (before[k] ?? 0)) changed[k] = after[k];
     }
-    if (Object.keys(changed).length > 0) patch(changed);
+    if (Object.keys(changed).length > 0) patch(changed as Partial<Shape2DNode>);
   };
-  const profileSlider = (label: string, value: number, key: 'width' | 'depth' | 'flange' | 'web' | 'rootRadius', tooltip: string, opts: { min: number; max: number; step?: number; hardMin?: number; hardMax?: number }) => (
+  const profileSlider = (label: string, value: number, key: ProfileKey, tooltip: string, opts: { min: number; max: number; step?: number; hardMin?: number; hardMax?: number }) => (
     <SliderField key={key} label={label} unit="mm" tooltip={tooltip} disabled={locked} value={value} onCommit={(v) => editProfile(key, v)} {...opts} />
   );
+  /** Slider di uno spessore: fino a metà del lato minore, con il campo che accetta anche di più (poi limitato). */
+  const thickness = (label: string, value: number, key: ProfileKey, tooltip: string, limit: number) =>
+    profileSlider(label, value, key, tooltip, { min: 0.5, max: Math.max(0.5, limit), step: 0.5, hardMin: 0.1, hardMax: 2000 });
   return (
     <>
       <Section title={node.kind === 'text' ? (node.origin === 'symbol' ? 'Simbolo' : node.origin === 'emoji' ? 'Emoji' : 'Testo') : profile ? 'Profilato' : 'Profilo 2D'}>
-        {isProfileShape(node) ? (
-          // Profilato: ingombro della sezione, i due spessori (etichette diverse per tipo) e il raccordo interno
+        {isBarShape(node) ? (
+          // Profilato con ali e anima: ingombro della sezione, i due spessori (etichette diverse per tipo) e il raccordo interno
           [
             profileSlider('Larghezza', node.width, 'width', TIPS.profileWidth, length),
             profileSlider('Profondità', node.depth, 'depth', TIPS.profileDepth, length),
-            profileSlider(PROFILE_INFO[node.kind].flangeLabel, node.flange, 'flange', PROFILE_INFO[node.kind].flangeTip, { min: 0.5, max: Math.max(0.5, Math.min(node.width, node.depth) / 2), step: 0.5, hardMin: 0.1, hardMax: 2000 }),
-            profileSlider(PROFILE_INFO[node.kind].webLabel, node.web, 'web', PROFILE_INFO[node.kind].webTip, { min: 0.5, max: Math.max(0.5, Math.min(node.width, node.depth) / 2), step: 0.5, hardMin: 0.1, hardMax: 2000 }),
+            thickness(PROFILE_INFO[node.kind].flangeLabel, node.flange, 'flange', PROFILE_INFO[node.kind].flangeTip, Math.min(node.width, node.depth) / 2),
+            thickness(PROFILE_INFO[node.kind].webLabel, node.web, 'web', PROFILE_INFO[node.kind].webTip, Math.min(node.width, node.depth) / 2),
             profileSlider('Raccordo interno', node.rootRadius ?? 0, 'rootRadius', TIPS.rootRadius, { min: 0, max: Math.max(0.5, maxRootRadius(node)), step: 0.5, hardMin: 0, hardMax: Math.max(0, maxRootRadius(node)) }),
+          ]
+        ) : node.kind === 'tubeRect' ? (
+          // Tubolare rettangolare: ingombro, parete e raggio degli angoli esterni
+          [
+            profileSlider('Larghezza', node.width, 'width', TIPS.profileWidth, length),
+            profileSlider('Profondità', node.depth, 'depth', TIPS.profileDepth, length),
+            thickness('Parete', node.wall, 'wall', TIPS.tubeWall, Math.min(node.width, node.depth) / 2 - 0.5),
+            profileSlider('Raccordo angoli', node.cornerRadius ?? 0, 'cornerRadius', TIPS.tubeCorner, { min: 0, max: Math.max(0.5, Math.min(node.width, node.depth) / 2), step: 0.5, hardMin: 0, hardMax: Math.max(0, Math.min(node.width, node.depth) / 2) }),
+          ]
+        ) : node.kind === 'tubeRound' ? (
+          // Tubolare tondo: raggio esterno, parete e lati
+          [
+            profileSlider('Raggio', node.radius, 'radius', TIPS.tubeRadius, { ...length, max: reach / 2 }),
+            thickness('Parete', node.wall, 'wall', TIPS.tubeWall, node.radius - 0.5),
+            <SegmentsControl key="segments" value={node.segments} disabled={locked} onChange={(n) => patch({ segments: n } as Partial<Shape2DNode>)} />,
           ]
         ) : node.kind === 'text' ? (
           [

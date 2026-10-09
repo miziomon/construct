@@ -4,7 +4,7 @@ import type { ManifoldToplevel } from 'manifold-3d';
 import { Evaluator } from './evaluate';
 import type { GroupNode, PrimitiveNode, Scene, Shape2DNode } from '../scene/types';
 import { primitiveDefaults, shape2dDefaults } from '../scene/defaults';
-import { PROFILE_KINDS, profileArea, type ProfileShape } from '../scene/profiles';
+import { BAR_KINDS, profileArea, type ProfileShape } from '../scene/profiles';
 
 let wasm: ManifoldToplevel;
 
@@ -295,7 +295,7 @@ describe('nuove forme 2D e testo nel kernel', () => {
     expect(m.bbox.max[2] - m.bbox.min[2]).toBeCloseTo(6, 3);
   });
 
-  it.each(PROFILE_KINDS)('%s: solido valido, volume = area della sezione × lunghezza, anche con raccordo e torsione', (kind) => {
+  it.each(BAR_KINDS)('%s: solido valido, volume = area della sezione × lunghezza, anche con raccordo e torsione', (kind) => {
     const node = shape('a', kind, { width: 30, depth: 20, flange: 2, web: 3, height: 40 } as Partial<Shape2DNode>);
     const m = extruded(node);
     expect(m.status).toBe('NoError');
@@ -307,6 +307,20 @@ describe('nuove forme 2D e testo nel kernel', () => {
     expect(rounded.status).toBe('NoError');
     expect(rounded.volume).toBeGreaterThan(m.volume);
     expect(extruded({ ...node, twist: 45 } as Shape2DNode).status).toBe('NoError');
+  });
+
+  it('tubolari: il foro è vuoto (volume = corona × lunghezza), anche con gli angoli arrotondati', () => {
+    const rect = shape('a', 'tubeRect', { width: 30, depth: 20, wall: 2, height: 40 } as Partial<Shape2DNode>);
+    const m = extruded(rect);
+    expect(m.status).toBe('NoError');
+    expect(m.volume).toBeCloseTo((30 * 20 - 26 * 16) * 40, 3);
+    expect(m.bbox.max[0] - m.bbox.min[0]).toBeCloseTo(30, 3);
+    const rounded = extruded({ ...rect, cornerRadius: 4 } as Shape2DNode);
+    expect(rounded.status).toBe('NoError');
+    expect(rounded.volume).toBeLessThan(m.volume);
+    const round = extruded(shape('a', 'tubeRound', { radius: 10, wall: 2, segments: 64, height: 40 } as Partial<Shape2DNode>));
+    expect(round.status).toBe('NoError');
+    expect(Math.abs(round.volume / (Math.PI * (100 - 64) * 40) - 1)).toBeLessThan(0.005);
   });
 
   it('anello: il foro è vuoto (volume = esterno meno foro) e la torsione funziona con le forme nuove', () => {

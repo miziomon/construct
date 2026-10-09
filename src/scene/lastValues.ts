@@ -40,6 +40,9 @@ const SHAPE_FIELDS: Record<string, readonly string[]> = {
   profileL: ['width', 'depth', 'flange', 'web', 'rootRadius', 'height', 'twist', 'scaleTop'],
   profileT: ['width', 'depth', 'flange', 'web', 'rootRadius', 'height', 'twist', 'scaleTop'],
   profileH: ['width', 'depth', 'flange', 'web', 'rootRadius', 'height', 'twist', 'scaleTop'],
+  profileU: ['width', 'depth', 'flange', 'web', 'rootRadius', 'height', 'twist', 'scaleTop'],
+  tubeRect: ['width', 'depth', 'wall', 'cornerRadius', 'height', 'twist', 'scaleTop'],
+  tubeRound: ['radius', 'wall', 'segments', 'height', 'twist', 'scaleTop'],
 };
 
 /** Campi ricordati degli strumenti: Raccordo/Smusso/Smusso angolare (`edge`) e Guscio (`shell`). */
