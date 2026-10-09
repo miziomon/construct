@@ -1,6 +1,6 @@
-import { SquareArrowDown, AlignHorizontalJustifyStart, ArrowDownToLine, FlipHorizontal2, Ruler, Copy, Lock, Unlock, Group, MousePointer2, Move3d, Rotate3d, SquaresUnite, Scaling, ArrowUpFromLine, Trash2, Ungroup, CircleDashed } from 'lucide-react';
+import { SquareArrowDown, AlignHorizontalJustifyStart, ArrowDownToLine, FlipHorizontal2, Ruler, Copy, Lock, Unlock, Group, MousePointer2, Move3d, Rotate3d, RotateCw, SquaresUnite, Scaling, ArrowUpFromLine, Trash2, Ungroup, CircleDashed } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { combineToBed, dropSelectionToBed, lowestZByRoot } from '../kernel/placement';
+import { combineToBed, dropSelectionToBed, layDownSelection, lowestZByRoot } from '../kernel/placement';
 import { isLocked, useSceneStore } from '../scene/store';
 import type { GizmoMode } from '../scene/store';
 import { isCutter } from '../scene/treatment';
@@ -28,7 +28,7 @@ export type CommandId =
   | 'select' | 'translate' | 'rotate' | 'resize' | 'extrude'
   | 'group' | 'ungroup' | 'union' | 'hull' | 'minkowski' | 'hole'
   | 'fillet' | 'chamfer' | 'corner' | 'shell' | 'pattern'
-  | 'align' | 'mirror' | 'layflat' | 'drop' | 'array'
+  | 'align' | 'mirror' | 'layflat' | 'lay' | 'drop' | 'array'
   | 'duplicate' | 'lock' | 'delete' | 'measure';
 
 /** Stato da cui dipende la disponibilità dei comandi: selezione, scena e strumenti aperti. */
@@ -208,6 +208,7 @@ export const COMMANDS: Record<CommandId, Command> = {
     enabled: (c) => c.unlockedRoots.length >= 1, run: () => useUiStore.getState().setToolbarMenu('mirror'), dropdown: 'mirror', menu: true,
   },
   layflat: { id: 'layflat', help: 'layflat', shortcut: 'V', icon: (_c, size) => <SquareArrowDown size={size} />, enabled: (c) => c.hasObjects, active: (c) => c.layFlatActive, run: () => toggleLayFlat(), menu: true, inMenu: hasFlatFaces },
+  lay: { id: 'lay', help: 'lay', shortcut: '⇧V', icon: (_c, size) => <RotateCw size={size} />, enabled: (c) => c.unlockedRoots.length >= 1, run: () => layDownSelection(), menu: true },
   drop: { id: 'drop', help: 'drop', shortcut: 'B', icon: (_c, size) => <ArrowDownToLine size={size} />, enabled: (c) => c.rootSelection.length > 0, run: () => dropSelectionToBed(), menu: true, inMenu: someOffBed },
   array: {
     id: 'array', help: 'array', shortcut: 'O', icon: (_c, size) => <GROUP_ICONS.array size={size} />,
@@ -228,7 +229,7 @@ export const COMMAND_GROUPS: { label: string; ids: CommandId[] }[] = [
   { label: 'Trasforma', ids: ['select', 'translate', 'rotate', 'resize', 'extrude'] },
   { label: 'Combina', ids: ['group', 'ungroup', 'union', 'hull', 'minkowski', 'hole'] },
   { label: 'Modifica', ids: ['fillet', 'chamfer', 'corner', 'shell', 'pattern'] },
-  { label: 'Disponi', ids: ['align', 'mirror', 'layflat', 'drop', 'array'] },
+  { label: 'Disponi', ids: ['align', 'mirror', 'layflat', 'lay', 'drop', 'array'] },
   { label: 'Oggetto', ids: ['duplicate', 'lock', 'delete', 'measure'] },
 ];
 

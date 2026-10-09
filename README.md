@@ -10,7 +10,7 @@ Tutto gira nel browser: il calcolo geometrico usa [manifold-3d](https://github.c
 
 - **Forme**: cubo, cilindro, cono, sfera, toro, poliedri regolari, profilati strutturali a L, T, H e U (spessori di ali e anima, raccordo interno e punte smussate o arrotondate), tubolari rettangolari e tondi (parete in mm), forme 2D estrudibili (cerchio, quadrato, poligoni), testo con una quarantina di font di Google Fonts, simboli, emoji e import di **SVG**, **STL** e **3MF**.
 - **Booleane**: unione, differenza, intersezione, inviluppo convesso e fori; gli operandi si possono vedere in trasparenza, come il `#` di OpenSCAD.
-- **Strumenti di dettaglio**: Raccordo, Smusso e Smusso angolare con anteprima dal vivo, Guscio, Appoggia su una faccia, Allinea, Specchia e Misura con aggancio a vertici e spigoli.
+- **Strumenti di dettaglio**: Raccordo, Smusso e Smusso angolare con anteprima dal vivo, Guscio, Appoggia su una faccia, Sdraia, Allinea, Specchia e Misura con aggancio a vertici e spigoli.
 - **Serie** (lineare, griglia, circolare): il risultato è un gruppo parametrico "Ripetizione", si modificano i parametri e non le singole copie.
 - **Pattern**: fora un pezzo con celle **Voronoi casuali** riproducibili da un seme, **esagoni**, **cerchi**, **rombi** o **triangoli**, da una o più facce (anche scelte con il clic), passanti o a tasca, con parete, arrotondamento e margine regolabili. Un avviso segnala i calcoli lenti e l'anteprima semplificata li accelera.
 - **Codice OpenSCAD** sempre aggiornato, con `for()`, `offset()`, `hull()`, `rotate_extrude()` e le celle dei pattern già calcolate, così il risultato coincide con quello dell'app. Con più piatti il codice ha un `module piatto_N()` per piatto.
@@ -62,7 +62,7 @@ Ogni push su `main` avvia la GitHub Action `.github/workflows/deploy.yml`: build
 
 ## Scorciatoie
 
-Le principali: `Q` Seleziona, `W` Sposta, `E` Ruota, `R` Ridimensiona, `T` Estrudi, `U` Unisci, `J` Inviluppo, `Maiusc+J` Minkowski, `H` Foro, `F` Raccordo, `S` Smusso, `A` Smusso angolare, `G` Guscio, `K` Allinea, `Y` Specchia, `I` Misura, `O` Serie, `Z` Pattern, `V` Appoggia su una faccia, `B` Appoggia sul piatto, `C` Codice OpenSCAD. L'elenco completo è nel menu dell'app e nel tooltip di ogni pulsante.
+Le principali: `Q` Seleziona, `W` Sposta, `E` Ruota, `R` Ridimensiona, `T` Estrudi, `U` Unisci, `J` Inviluppo, `Maiusc+J` Minkowski, `H` Foro, `F` Raccordo, `S` Smusso, `A` Smusso angolare, `G` Guscio, `K` Allinea, `Y` Specchia, `I` Misura, `O` Serie, `Z` Pattern, `V` Appoggia su una faccia, `Maiusc+V` Sdraia, `B` Appoggia sul piatto, `C` Codice OpenSCAD. L'elenco completo è nel menu dell'app e nel tooltip di ogni pulsante.
 
 ## Struttura del progetto
 

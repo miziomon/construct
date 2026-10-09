@@ -129,6 +129,20 @@ export function combineToBed(op: GroupOp): void {
 }
 
 /**
+ * Sdraia: ruota di 90° gli oggetti selezionati alla radice attorno al centro del loro ingombro (in piedi → lungo X →
+ * lungo Y → in piedi, vedi src/scene/layDown.ts) e li riappoggia sul piatto quando il kernel ha il nuovo ingombro.
+ */
+export function layDownSelection(): void {
+  const { scene, selection } = useSceneStore.getState();
+  const bounds = boundsByRoot();
+  const ids = selection.filter((id) => scene.rootIds.includes(id) && bounds[id] && !isLocked(scene, id));
+  if (ids.length === 0) return;
+  const centers = Object.fromEntries(ids.map((id) => [id, [0, 1, 2].map((i) => (bounds[id].min[i] + bounds[id].max[i]) / 2) as Vec3]));
+  useSceneStore.getState().layDownSelected(centers);
+  queueDropToBed(ids);
+}
+
+/**
  * Appoggia su una faccia: ruota l'oggetto alla radice a cui appartiene la mesh perché la faccia scelta (indice di
  * `faceMap`) guardi in basso, attorno al centro del suo ingombro, e lo appoggia sul piatto quando il kernel ha il
  * nuovo ingombro. Restituisce false se l'oggetto è bloccato o la faccia non esiste.

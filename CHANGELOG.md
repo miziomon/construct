@@ -18,6 +18,11 @@ I messaggi di commit seguono i [Conventional Commits](https://www.conventionalco
 
 ## [Non rilasciato]
 
+## [0.37.0] - 2026-10-09
+
+### Aggiunto
+- **Comando Sdraia** (sezione Disponi della barra, menu contestuale, Maiusc+V): ruota di 90° gli oggetti selezionati attorno al centro del loro ingombro e li riappoggia sul piatto. Una trave in piedi si stende lungo X; premendo di nuovo gira lungo Y e la terza volta torna in piedi; un oggetto inclinato in modo qualsiasi si rimette in piedi al primo colpo. Un solo passo di Annulla per pressione.
+
 ## [0.36.0] - 2026-10-09
 
 ### Modificato

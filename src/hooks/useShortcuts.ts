@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useSceneStore } from '../scene/store';
 import { useUiStore } from '../ui/uiStore';
-import { combineToBed, dropSelectionToBed } from '../kernel/placement';
+import { combineToBed, dropSelectionToBed, layDownSelection } from '../kernel/placement';
 import { useEdgeTool } from '../ui/EdgeTool/edgeToolStore';
 import { newProject } from '../ui/fileActions';
 import { toggleShell, useShellTool } from '../ui/Shell/shellToolStore';
@@ -107,6 +107,8 @@ export function useShortcuts(): void {
       else if (!mod && key === 'p') useUiStore.getState().cycleBed();
       else if (!mod && key === 'u') combineToBed('union');
       else if (!mod && key === 'j') combineToBed(e.shiftKey ? 'minkowski' : 'hull');
+      // Maiusc+V sdraia (va controllato prima di V, che non esclude Maiusc)
+      else if (!mod && e.shiftKey && key === 'v') layDownSelection();
       else if (!mod && key === 'v' && s.scene.rootIds.length) toggleLayFlat();
       else if (!mod && key === 'o') toggleArray();
       else if (!mod && key === 'z') togglePattern();

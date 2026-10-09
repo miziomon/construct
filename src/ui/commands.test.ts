@@ -32,7 +32,7 @@ describe('registro dei comandi', () => {
   it('un solo cubo: niente Unisci, Raggruppa, Allinea, Separa; sì Duplica, Elimina, Specchia, Blocca, Raccordo', () => {
     useSceneStore.getState().addPrimitive('box');
     const ids = applicable();
-    for (const id of ['duplicate', 'delete', 'mirror', 'lock', 'hole', 'shell', 'pattern', 'array', 'fillet', 'chamfer', 'corner', 'layflat'] as const) expect(ids).toContain(id);
+    for (const id of ['duplicate', 'delete', 'mirror', 'lock', 'hole', 'shell', 'pattern', 'array', 'fillet', 'chamfer', 'corner', 'layflat', 'lay'] as const) expect(ids).toContain(id);
     for (const id of ['union', 'group', 'hull', 'minkowski', 'align', 'ungroup'] as const) expect(ids).not.toContain(id);
   });
 

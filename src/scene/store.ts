@@ -7,6 +7,7 @@ import type { CornerNode, EdgeNode, GroupNode, GroupOp, MeshNode, PrimitiveKind,
 import { randomColor } from './color';
 import { lastShape, rememberShape } from './lastValues';
 import { layFlatPatch } from './layFlat';
+import { layDownStep } from './layDown';
 import { DEFAULT_COLOR, PRIMITIVE_LABELS, SHAPE2D_LABELS, halfHeight, primitiveDefaults, shape2dDefaults } from './defaults';
 import { isScaled } from './groupScale';
 import { addImportedRoots, addPlateScene, moveRootsToPlate, plateName, platesOf, removePlateScene, renamePlateScene, switchPlateScene } from './plates';
@@ -57,6 +58,8 @@ interface SceneState {
   alignSelected: (deltaById: Record<string, Vec3>) => void;
   /** Ruota un oggetto alla radice perché la faccia con questa normale (in coordinate mondo) guardi in basso, attorno a `center`. */
   layOnFace: (rootId: string, normal: Vec3, center: Vec3) => void;
+  /** Sdraia: ruota di 90° le radici selezionate (vedi layDown.ts) attorno al centro del loro ingombro (id → centro). */
+  layDownSelected: (centerById: Record<string, Vec3>) => void;
   /** Specchia gli oggetti selezionati alla radice rispetto al piano perpendicolare all'asse (0 = X, 1 = Y, 2 = Z) passante per `center`. */
   mirrorSelected: (axis: 0 | 1 | 2, center: Vec3) => void;
   setGizmoMode: (mode: GizmoMode) => void;
@@ -541,6 +544,18 @@ export const useSceneStore = create<SceneState>()(
           const next = layFlatPatch(node, normal, center);
           node.position = next.position;
           node.rotation = next.rotation;
+        }),
+
+      layDownSelected: (centerById) =>
+        act('Sdraia', (s) => {
+          for (const id of selectedRoots(s.scene, s.selection)) {
+            const center = centerById[id];
+            if (!center || isLocked(s.scene, id)) continue;
+            const n = s.scene.nodes[id];
+            const next = layDownStep(n, center);
+            n.position = next.position;
+            n.rotation = next.rotation;
+          }
         }),
 
       mirrorSelected: (axis, center) =>

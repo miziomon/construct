@@ -1208,6 +1208,29 @@ test('profilati a L, T e H: nella tab Forme 3D, pannello dedicato con spessori e
   expect(code).toContain('linear_extrude(height = 40');
 });
 
+test('Sdraia (Maiusc+V): la trave si stende lungo X, poi lungo Y, poi torna in piedi, sempre appoggiata, un passo di Annulla per volta', async ({ page }) => {
+  await addShape(page, 'Profilato a L');
+  const read = () => page.evaluate(() => window.__construct!.results.getState().meshes[0].bbox);
+  const size = async () => {
+    const b = await read();
+    return [0, 1, 2].map((i) => Math.round(b.max[i] - b.min[i]));
+  };
+  expect(await size()).toEqual([20, 20, 40]);
+  const steps = async () => page.evaluate(() => window.__construct!.store.temporal.getState().pastStates.length);
+  const before = await steps();
+  for (const expected of [[40, 20, 20], [20, 40, 20], [20, 20, 40]]) {
+    await page.keyboard.press('Shift+V');
+    await settled(page);
+    expect(await size()).toEqual(expected);
+    expect((await read()).min[2]).toBeCloseTo(0, 3);
+  }
+  expect((await steps()) - before).toBe(3);
+  // Anche dalla barra e dal menu contestuale
+  await page.locator('header.toolbar').getByRole('button', { name: 'Sdraia', exact: true }).click();
+  await settled(page);
+  expect(await size()).toEqual([40, 20, 20]);
+});
+
 test('Guscio su un profilato: cavità esatta (nessun avviso di approssimazione), mesh valida e volume minore', async ({ page }) => {
   await addShape(page, 'Profilato a H');
   const read = () => page.evaluate(() => window.__construct!.results.getState().meshes[0]);
@@ -2458,7 +2481,7 @@ test('Barra strumenti: i comandi sono in gruppi con il nome della sezione', asyn
     ['Trasforma', ['Seleziona', 'Sposta', 'Ruota', 'Ridimensiona', 'Estrudi']],
     ['Combina', ['Raggruppa', 'Separa', 'Unisci', 'Inviluppo convesso']],
     ['Modifica', ['Raccordo', 'Smusso', 'Smusso angolare', 'Guscio', 'Pattern']],
-    ['Disponi', ['Allinea', 'Specchia', 'Serie']],
+    ['Disponi', ['Allinea', 'Specchia', 'Sdraia', 'Serie']],
     ['Oggetto', ['Duplica', 'Elimina', 'Misura']],
     ['Vista', ['Codice OpenSCAD', 'Tema']],
   ] as const) {

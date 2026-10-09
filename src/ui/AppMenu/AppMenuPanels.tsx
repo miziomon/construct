@@ -53,6 +53,7 @@ const SHORTCUTS: { title: string; rows: [string, string][] }[] = [
       ['L', 'Blocca / Sblocca'],
       ['B', 'Appoggia sul piatto'],
       ['V', 'Appoggia su una faccia: clic sulla faccia che deve poggiare sul piatto (Esc o V per uscire)'],
+      ['Maiusc+V', 'Sdraia: ruota di 90° e riappoggia (in piedi → lungo X → lungo Y → in piedi)'],
       ['K', 'Allinea gli oggetti selezionati: apre la tendina con asse e lato (min, centro, max)'],
       ['Y', 'Specchia gli oggetti selezionati: apre la tendina con gli assi X, Y e Z'],
       ['I', 'Misura: due clic (partenza e arrivo) per la distanza in mm, con aggancio a vertici e spigoli (Esc chiude)'],

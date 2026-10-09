@@ -17,7 +17,7 @@ export type HelpKey =
   | 'new' | 'undo' | 'redo' | 'select' | 'translate' | 'rotate' | 'resize' | 'extrude'
   | 'group' | 'union' | 'hull' | 'minkowski' | 'ungroup' | 'hole' | 'lock' | 'unlock'
   | 'fillet' | 'chamfer' | 'corner' | 'shell' | 'align' | 'mirror' | 'measure' | 'array' | 'pattern'
-  | 'layflat' | 'drop' | 'duplicate' | 'delete' | 'ghost' | 'bed' | 'theme' | 'code';
+  | 'layflat' | 'lay' | 'drop' | 'duplicate' | 'delete' | 'ghost' | 'bed' | 'theme' | 'code';
 
 export const TOOLBAR_HELP: Record<HelpKey, ToolbarHelp> = {
   new: { name: 'Nuovo progetto', what: 'Svuota la scena per ricominciare da zero.', how: 'Chiede conferma e, se vuoi, svuota anche la cronologia. Il progetto attuale si può salvare prima dal menu.' },
@@ -46,6 +46,7 @@ export const TOOLBAR_HELP: Record<HelpKey, ToolbarHelp> = {
   array: { name: 'Serie', what: 'Ripete l\'oggetto in fila, in griglia o in cerchio.', how: 'Seleziona un oggetto, premi il pulsante, scegli il tipo, il numero di copie e le distanze. Il risultato è un gruppo Ripetizione: si modificano i parametri, non le singole copie.', image: 'array' },
   pattern: { name: 'Pattern', what: 'Fora l\'oggetto con un disegno ripetuto: celle Voronoi casuali, esagoni, cerchi, rombi o triangoli.', how: 'Seleziona un oggetto, premi il pulsante e scegli il tipo; regola seme, celle, parete, margine e profondità. Attiva più facce dai pulsanti dei lati o con "Scegli facce" (clic sulle facce del pezzo). OK crea un gruppo Pattern modificabile.', image: 'pattern' },
   layflat: { name: 'Appoggia su una faccia', what: 'Ruota l\'oggetto in modo che la faccia scelta poggi sul piatto.', how: 'Premi il pulsante, passa sopra l\'oggetto (la faccia si evidenzia) e clicca quella che deve stare in basso: l\'oggetto si ruota e si appoggia, ideale per la stampa.', image: 'layflat' },
+  lay: { name: 'Sdraia', what: 'Ruota di 90° gli oggetti selezionati e li riappoggia sul piatto: una trave in piedi si stende lungo X.', how: 'Seleziona uno o più oggetti alla radice e premi il pulsante (o Maiusc+V). Premendolo di nuovo la trave gira lungo Y, e la terza volta torna in piedi. Un oggetto inclinato si rimette in piedi al primo colpo.' },
   drop: { name: 'Appoggia sul piatto', what: 'Porta gli oggetti selezionati a toccare il piano di stampa.', how: 'Seleziona uno o più oggetti alla radice e premi il pulsante: si spostano in verticale fino a z = 0.' },
   duplicate: { name: 'Duplica', what: 'Crea una copia dell\'oggetto selezionato.', how: 'Seleziona uno o più oggetti alla radice e premi il pulsante: la copia compare accanto all\'originale e si seleziona.' },
   delete: { name: 'Elimina', what: 'Toglie dalla scena gli oggetti selezionati.', how: 'Seleziona e premi il pulsante (o Canc). Si può sempre annullare con Ctrl+Z.' },
