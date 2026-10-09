@@ -7,7 +7,8 @@ import { primitiveDefaults, shape2dDefaults } from './defaults';
 import { edgeProfile } from './edgeProfile';
 import { cavityOf, localBounds, SHELL_OPEN_MARGIN, shellQuality } from './shell';
 import { buildShell } from './shellTool';
-import type { GroupNode, PrimitiveNode, Scene, SceneNode, Shape2DNode, Vec3 } from './types';
+import type { GroupNode, PrimitiveNode, ProfileKind, Scene, SceneNode, Shape2DNode, Vec3 } from './types';
+import { PROFILE_KINDS, profileArea, type ProfileShape } from './profiles';
 
 let wasm: ManifoldToplevel;
 
@@ -94,8 +95,48 @@ describe('cavità esatta', () => {
   });
 });
 
+describe('Guscio sui profilati: cavità esatta', () => {
+  const profile = (kind: ProfileKind, patch: Record<string, unknown> = {}): Shape2DNode =>
+    ({ ...shape2dDefaults(kind), id: 'p', name: 'p', position: [0, 0, 20] as Vec3, ...patch }) as Shape2DNode;
+
+  it.each(PROFILE_KINDS)('%s: qualità esatta, volume = pieno − sezione interna × altezza della cavità', (kind) => {
+    const node = profile(kind, { width: 30, depth: 24, flange: 4, web: 4, wall: 4, radius: 12, height: 40 });
+    expect(shellQuality(sceneOf([node], ['p']), node)).toBe('exact');
+    const cavity = cavityFor(node, { wall: 1, bottom: 2 });
+    expect(cavity.kind).toBe('exact');
+    if (cavity.kind !== 'exact') return;
+    // La cavità va da 2 mm sopra la base fino a 1 mm oltre la cima: 40 − 2 + 1
+    const inner = cavity.node as ProfileShape;
+    expect(inner.height).toBeCloseTo(39, 6);
+    const full = volumeOf(sceneOf([node], ['p']));
+    const hollow = volumeOf(shelled(node, 1, 2));
+    // La parte tolta è la cavità per i 38 mm dentro il pezzo (il margine di 1 mm sopra la cima non toglie nulla)
+    const removed = volumeOf(sceneOf([{ ...inner, id: 'c', name: 'c', position: [0, 0, 0] as Vec3, height: 38 } as Shape2DNode], ['c']));
+    expect(hollow).toBeCloseTo(full - removed, 3);
+    // Ogni parete è ristretta di 1 mm per lato: la sezione interna è più piccola di quella del pezzo
+    expect(profileArea(inner)).toBeLessThan(profileArea(node as ProfileShape));
+    // Con un raccordo interno il volume cambia poco ma la mesh resta valida (la cavità ha raccordo + w)
+    const rounded = profile(kind, { width: 30, depth: 24, flange: 4, web: 4, wall: 4, radius: 12, height: 40, rootRadius: 2, tipSize: 1.5 });
+    const mesh = new Evaluator(wasm).evaluate(shelled(rounded, 1, 2)).meshes[0];
+    expect(mesh.status).toBe('NoError');
+    expect(mesh.volume).toBeLessThan(volumeOf(sceneOf([rounded], ['p'])));
+  });
+
+  it('pareti più sottili del doppio dello spessore: errore, non una cavità degenere', () => {
+    const thin = profile('profileH', { flange: 3, web: 3 });
+    expect(cavityFor(thin, { wall: 1.6, bottom: 1 }).kind).toBe('error');
+    expect(cavityFor(profile('tubeRound', { wall: 2 }), { wall: 1.1, bottom: 1 }).kind).toBe('error');
+    expect(cavityFor(profile('tubeRect', { wall: 2 }), { wall: 0.9, bottom: 1 }).kind).toBe('exact');
+  });
+
+  it('con torsione o estrusione rotazionale resta la cavità scalata', () => {
+    const twisted = profile('profileL', { twist: 30 });
+    expect(shellQuality(sceneOf([twisted], ['p']), twisted)).toBe('scaled');
+  });
+});
+
 describe('Guscio sulle nuove forme 2D', () => {
-  it.each(['ring', 'heart', 'star5', 'egg', 'cross', 'profileH'] as const)('%s: usa la cavità scalata e il solido resta valido', (kind) => {
+  it.each(['ring', 'heart', 'star5', 'egg', 'cross'] as const)('%s: usa la cavità scalata e il solido resta valido', (kind) => {
     const node = { ...shape2dDefaults(kind), id: 'p', name: 'p', position: [0, 0, 5] as Vec3, width: 40, depth: 40, height: 12 } as Shape2DNode;
     expect(shellQuality(sceneOf([node], ['p']), node)).not.toBe('exact');
     const full = volumeOf(sceneOf([node], ['p']));

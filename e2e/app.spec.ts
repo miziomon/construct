@@ -1208,6 +1208,31 @@ test('profilati a L, T e H: nella tab Forme 3D, pannello dedicato con spessori e
   expect(code).toContain('linear_extrude(height = 40');
 });
 
+test('Guscio su un profilato: cavità esatta (nessun avviso di approssimazione), mesh valida e volume minore', async ({ page }) => {
+  await addShape(page, 'Profilato a H');
+  const read = () => page.evaluate(() => window.__construct!.results.getState().meshes[0]);
+  const full = await read();
+  await page.keyboard.press('g');
+  await expect(page.getByRole('region', { name: 'Guscio' })).toBeVisible();
+  await expect(page.locator('.edge-panel__hint', { hasText: 'non ha una cavità esatta' })).toHaveCount(0);
+  // Pareti di 3 mm: con 2 mm di spessore per lato la cavità non entra e il pannello lo dice; con 1 mm sì
+  await expect(page.locator('.edge-panel__error')).toContainText('troppo spesse');
+  const wall = page.locator('.slider-field', { hasText: 'Laterale' }).locator('.number-field__input');
+  await wall.fill('1');
+  await wall.press('Enter');
+  await settled(page);
+  await expect(page.locator('.edge-panel__error')).toHaveCount(0);
+  await page.keyboard.press('Enter');
+  await settled(page);
+  await expect(page.locator('.status-bar')).toContainText('Mesh valida');
+  const hollow = await read();
+  expect(hollow.volume).toBeGreaterThan(0);
+  expect(hollow.volume).toBeLessThan(full.volume);
+  // Nel codice la cavità è un secondo polygon dentro la difference del guscio
+  const code = await readCode(page);
+  expect(code.split('polygon(').length - 1).toBe(2);
+});
+
 test('Testo: scritta e font dal pannello, un passo di Annulla per ogni modifica, Esc annulla la bozza', async ({ page }) => {
   await addShape(page, 'Testo');
   await settled(page);

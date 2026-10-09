@@ -18,6 +18,11 @@ I messaggi di commit seguono i [Conventional Commits](https://www.conventionalco
 
 ## [Non rilasciato]
 
+## [0.36.0] - 2026-10-09
+
+### Modificato
+- **Guscio con cavità esatta sui profilati** (L, T, H, U e tubolari): la cavità è la stessa sezione con ogni parete ristretta dello spessore, invece del ripiego scalato che su una forma concava dava pareti irregolari. Il raccordo interno della cavità cresce dello spessore e le punte e gli angoli esterni calano dello spessore, così le pareti restano costanti anche in curva; con pareti più sottili del doppio dello spessore il pannello avvisa invece di produrre una cavità degenere. Nel codice OpenSCAD la cavità è un `polygon` come il pezzo. Con torsione, scala della cima, contorno o estrusione rotazionale resta la cavità scalata.
+
 ## [0.35.0] - 2026-10-09
 
 ### Aggiunto

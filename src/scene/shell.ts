@@ -1,6 +1,8 @@
 import { composeTransform, eulerToMatrix } from './math';
 import type { Mirror, Transform } from './math';
 import { polygonMaxRadius } from './polyhedra';
+import { isProfileShape } from './profiles';
+import type { ProfileShape } from './profiles';
 import type { PrimitiveNode, Scene, SceneNode, Shape2DNode, ShellParams, Vec3 } from './types';
 
 /**
@@ -74,10 +76,10 @@ function verticalSpan(h: number, bottom: number, margin: number): { height: numb
   return { height: high - low, centerZ: (low + high) / 2 };
 }
 
-/** Vero se la forma ha una cavità esatta da sola (cubo, cilindro, cono, forme 2D dritte). */
+/** Vero se la forma ha una cavità esatta da sola (cubo, cilindro, cono, forme 2D dritte, profilati). */
 function isExactShape(node: SceneNode): node is PrimitiveNode | Shape2DNode {
   // Le altre forme 2D (anello, cuore, testo, ...) usano la cavità scalata: non hanno una formula esatta
-  if (node.type === 'shape2d') return (node.kind === 'circle' || node.kind === 'square') && node.twist === 0 && node.scaleTop === 1 && node.extrusion !== 'rotate' && !node.offset;
+  if (node.type === 'shape2d') return (node.kind === 'circle' || node.kind === 'square' || isProfileShape(node)) && node.twist === 0 && node.scaleTop === 1 && node.extrusion !== 'rotate' && !node.offset;
   return node.type === 'primitive' && (node.kind === 'box' || node.kind === 'cylinder' || node.kind === 'cone');
 }
 
@@ -219,6 +221,13 @@ function exactCavity(p: PrimitiveNode | Shape2DNode, w: number, b: number): Cavi
       const outer = Math.min(Math.max(0, p.cornerRadius), (Math.min(p.width, p.depth) - 0.01) / 2);
       return { kind: 'exact', offset, node: derived(p, { width: iw, depth: id, cornerRadius: Math.max(0, outer - w), height: span.height }) };
     }
+    if (isProfileShape(p)) {
+      // Profilato: la stessa sezione con ogni parete ristretta di w per lato (il raccordo interno cresce di w, le
+      // punte e gli angoli esterni calano di w, così lo spessore resta costante anche in curva)
+      const inner = profileCavity(p, w);
+      if (!inner) return fail(TOO_THICK);
+      return { kind: 'exact', offset, node: derived(p, { ...inner, height: span.height }) };
+    }
     if (p.kind !== 'circle') return null;
     // Poligono regolare: lo spessore si misura sull'apotema, il raggio di circoscrizione cala di w / cos(π / lati)
     const k = w / Math.cos(Math.PI / Math.max(3, p.segments));
@@ -279,6 +288,27 @@ function exactCavity(p: PrimitiveNode | Shape2DNode, w: number, b: number): Cavi
     default:
       return null;
   }
+}
+
+/**
+ * Misure della sezione interna di un profilato svuotato con pareti di spessore `w`, oppure null se una parete del
+ * profilato è più sottile di 2w (la cavità mangerebbe tutto). I raccordi li limita poi `clampProfile` nel kernel.
+ */
+function profileCavity(p: ProfileShape, w: number): Record<string, number> | null {
+  if (p.kind === 'tubeRound') {
+    const k = w / Math.cos(Math.PI / Math.max(3, p.segments));
+    const [radius, wall] = [p.radius - k, p.wall - 2 * k];
+    return radius < MIN_SIZE || wall < MIN_SIZE ? null : { radius, wall };
+  }
+  const [width, depth] = [p.width - 2 * w, p.depth - 2 * w];
+  if (width < MIN_SIZE || depth < MIN_SIZE) return null;
+  if (p.kind === 'tubeRect') {
+    const wall = p.wall - 2 * w;
+    return wall < MIN_SIZE ? null : { width, depth, wall, cornerRadius: Math.max(0, (p.cornerRadius ?? 0) - w) };
+  }
+  const [flange, web] = [p.flange - 2 * w, p.web - 2 * w];
+  if (flange < MIN_SIZE || web < MIN_SIZE) return null;
+  return { width, depth, flange, web, rootRadius: (p.rootRadius ?? 0) + w, tipSize: Math.max(0, (p.tipSize ?? 0) - w) };
 }
 
 /** Ripiego: il solido stesso rimpicciolito attorno al centro della base (serve l'ingombro locale in `shell.bounds`). */
