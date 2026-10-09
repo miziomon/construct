@@ -34,7 +34,7 @@ export const TIPS = {
   tubeCorner: 'Raccordo angoli: raggio degli angoli esterni del tubolare, in mm. 0 lascia gli angoli vivi; quelli interni seguono con il raggio ridotto della parete.',
   tubeRadius: 'Raggio: raggio esterno del tubolare tondo, in mm. Il diametro è il doppio.',
   profileLength: 'Lunghezza: quanto è lungo il profilato lungo Z, in mm. Per sdraiarlo sul piatto ruotalo di 90° su X o Y.',
-  ratioLocked: 'Proporzioni bloccate: le misure e la maniglia Ridimensiona cambiano insieme, la forma non si deforma. Clic per sbloccare.',
+  ratioLocked: 'Proporzioni bloccate: le misure e la maniglia Ridimensiona cambiano insieme, la forma non si deforma (nei profilati scalano anche pareti, raccordi e punte). Clic per sbloccare.',
   ratioUnlocked: 'Proporzioni libere: ogni misura si cambia da sola (la forma si deforma). Clic per bloccare.',
   scale: 'Scala: dimensione della forma rispetto a quella iniziale (per gli SVG, a quella del file), in %. Ridimensiona sempre in proporzione.',
   offset: 'Contorno: ingrandisce (valori positivi) o restringe (negativi) il profilo 2D di questi mm prima di estruderlo, come offset() di OpenSCAD. Utile per ispessire un testo o dare gioco a un incastro.',

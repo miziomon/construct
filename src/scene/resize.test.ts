@@ -67,6 +67,16 @@ describe('applyScale', () => {
     expect(applyScale(shape('profileU'), [2, 1, 1])).toMatchObject({ flange: 6, web: 3 });
   });
 
+  it('lucchetto sui profilati: cambiando una misura a mano scalano anche pareti, raccordi e punte', () => {
+    const l = shape('profileL', { rootRadius: 2, tipSize: 1 } as Partial<Shape2DNode>);
+    expect(lockedPatch(l, 'width', 40)).toMatchObject({ width: 40, depth: 40, flange: 6, web: 6, rootRadius: 4, tipSize: 2 });
+    expect(lockedPatch(l, 'depth', 10)).toMatchObject({ width: 10, depth: 10, flange: 1.5, web: 1.5, rootRadius: 1, tipSize: 0.5 });
+    // Tubo rettangolare: parete e raggio degli angoli
+    expect(lockedPatch(shape('tubeRect', { cornerRadius: 3 } as Partial<Shape2DNode>), 'width', 40)).toMatchObject({ width: 40, depth: 40, wall: 4, cornerRadius: 6 });
+    // Le altre forme poligonali legano solo l'ingombro
+    expect(lockedPatch(shape('cross'), 'width', 40)).toEqual({ width: 40, depth: 40 });
+  });
+
   it('tubolari: la parete del rettangolare segue il fattore minore, il tondo resta tondo', () => {
     expect(applyScale(shape('tubeRect', { cornerRadius: 4 } as Partial<Shape2DNode>), [2, 1, 1])).toMatchObject({ width: 40, depth: 20, wall: 2, cornerRadius: 4 });
     expect(applyScale(shape('tubeRect'), [2, 2, 1])).toMatchObject({ width: 40, depth: 40, wall: 4 });

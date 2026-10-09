@@ -18,6 +18,11 @@ I messaggi di commit seguono i [Conventional Commits](https://www.conventionalco
 
 ## [Non rilasciato]
 
+## [0.38.0] - 2026-10-09
+
+### Modificato
+- **Lucchetto delle proporzioni sui profilati**: con le proporzioni bloccate, cambiando a mano Larghezza o Profondità scalano dello stesso fattore anche gli spessori di ali e anima, il raccordo interno e le punte (nel tubolare rettangolare la parete e il raggio degli angoli), così la sezione resta simile a sé stessa; prima scalava solo l'ingombro. Il gizmo Ridimensiona e la Scala in percentuale lo facevano già.
+
 ## [0.37.0] - 2026-10-09
 
 ### Aggiunto

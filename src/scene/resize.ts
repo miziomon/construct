@@ -160,9 +160,19 @@ export function lockedPatch(node: Resizable, key: string, value: number, index =
   }
   // Testo e tubo tondo hanno una sola misura: niente da legare
   if (node.kind === 'text' || node.kind === 'tubeRound') return null;
-  if (key === 'width') return { width: value, depth: scaled(node.depth, value / node.width) };
-  if (key === 'depth') return { depth: value, width: scaled(node.width, value / node.depth) };
-  return null;
+  if (key !== 'width' && key !== 'depth') return null;
+  const f = key === 'width' ? value / node.width : value / node.depth;
+  const outline = key === 'width' ? { width: value, depth: scaled(node.depth, f) } : { depth: value, width: scaled(node.width, f) };
+  // Profilati: con il lucchetto chiuso anche pareti, raccordi e punte scalano dello stesso fattore (la sezione non si deforma)
+  if (isBarShape(node)) {
+    const next = clampProfile({ ...node, ...outline, flange: scaled(node.flange, f), web: scaled(node.web, f), rootRadius: (node.rootRadius ?? 0) * f, tipSize: (node.tipSize ?? 0) * f });
+    return { ...outline, flange: next.flange, web: next.web, rootRadius: round(next.rootRadius ?? 0, 3), tipSize: round(next.tipSize ?? 0, 3) };
+  }
+  if (node.kind === 'tubeRect') {
+    const next = clampProfile({ ...node, ...outline, wall: scaled(node.wall, f), cornerRadius: (node.cornerRadius ?? 0) * f });
+    return { ...outline, wall: next.wall, cornerRadius: round(next.cornerRadius ?? 0, 3) };
+  }
+  return outline;
 }
 
 /** Misura principale che la Scala usa come riferimento (cubo: lato X, cerchio: raggio, testo: dimensione, il resto: larghezza). */
