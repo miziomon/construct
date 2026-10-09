@@ -18,6 +18,11 @@ I messaggi di commit seguono i [Conventional Commits](https://www.conventionalco
 
 ## [Non rilasciato]
 
+## [0.40.2] - 2026-10-09
+
+### Modificato
+- **Deploy doppio.** Oltre a GitHub Pages (che serve `construct.mavida.com` con certificato automatico) il workflow copia di nuovo `dist/` via rsync nell'hosting cPanel, come prima, finché il vecchio host non viene dismesso.
+
 ## [0.40.1] - 2026-10-09
 
 ### Modificato

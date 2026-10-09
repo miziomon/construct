@@ -11,8 +11,12 @@ name: Deploy su construct.mavida.com (GitHub Pages)
 # fornite ALLA BUILD. VITE_API_BASE_URL oggi non e' usata dall'app (non e'
 # ancora agganciata ad hub) ma il secret e' gia' pronto per quando lo sara'.
 #
-# Secret usati: RESEND_API_KEY, VITE_API_BASE_URL. Non servono piu' credenziali
-# SSH: il vecchio deploy via rsync su hosting cPanel e' stato sostituito.
+# Per ora il deploy e' doppio: lo stesso dist/ va anche via rsync su SSH
+# nell'hosting cPanel (public_html), come prima del passaggio a Pages, cosi'
+# il vecchio host resta allineato finche' non si decide di dismetterlo.
+#
+# Secret usati: SSH_HOST, SSH_USERNAME, SSH_PASSWORD, RESEND_API_KEY,
+# VITE_API_BASE_URL.
 
 on:
   push:
@@ -63,6 +67,24 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           path: dist
+
+      - name: Deploy via rsync su SSH in public_html (hosting cPanel)
+        env:
+          # sshpass -e legge la password da questa variabile: non compare mai
+          # nella riga di comando (ne' quindi nei log del processo).
+          SSHPASS: ${{ secrets.SSH_PASSWORD }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
+        run: |
+          sudo apt-get update && sudo apt-get install -y sshpass
+          # Flag pensati per hosting condiviso (cPanel): NON si tenta di
+          # preservare permessi/proprietario/gruppo/orari delle cartelle, che
+          # darebbero "operation not permitted". --delete tiene public_html
+          # allineato a dist/ (rimuove i vecchi bundle con hash obsoleto).
+          sshpass -e rsync -rltvz --delete \
+            --no-perms --no-owner --no-group --omit-dir-times \
+            -e "ssh -p 22 -o StrictHostKeyChecking=accept-new" \
+            ./dist/ "$SSH_USERNAME@$SSH_HOST:public_html/"
 
   deploy:
     needs: build
