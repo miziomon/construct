@@ -6,6 +6,7 @@ import { useLayFlat } from '../LayFlat/layFlatStore';
 import { useMeasure } from '../Measure/measureStore';
 import { usePatternTool } from '../Pattern/patternToolStore';
 import { useShellTool } from '../Shell/shellToolStore';
+import { useSplitTool } from '../Split/splitToolStore';
 import { confirmDialog } from '../notify/notifyStore';
 
 /**
@@ -19,6 +20,7 @@ export function closeTools(): void {
   usePatternTool.getState().cancel();
   useMeasure.getState().cancel();
   useLayFlat.getState().cancel();
+  useSplitTool.getState().cancel();
 }
 
 /** Rende attivo un piatto (chiude prima gli strumenti aperti). */

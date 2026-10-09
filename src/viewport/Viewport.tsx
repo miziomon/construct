@@ -26,6 +26,8 @@ import { useUiStore } from '../ui/uiStore';
 import { round } from '../scene/math';
 import { DimensionOverlay } from './DimensionOverlay';
 import { CameraRig } from './CameraRig';
+import { SplitOverlay } from './SplitOverlay';
+import { useSplitTool } from '../ui/Split/splitToolStore';
 import './Viewport.scss';
 
 // I pannelli degli strumenti si scaricano alla prima attivazione (restano fuori dal caricamento iniziale)
@@ -36,6 +38,7 @@ const MeasurePanel = lazyLoad(() => import('../ui/Measure/MeasurePanel').then((m
 const ArrayPanel = lazyLoad(() => import('../ui/Array/ArrayPanel').then((m) => ({ default: m.ArrayPanel })));
 const PatternPanel = lazyLoad(() => import('../ui/Pattern/PatternPanel').then((m) => ({ default: m.PatternPanel })));
 const LayFlatPanel = lazyLoad(() => import('../ui/LayFlat/LayFlatPanel').then((m) => ({ default: m.LayFlatPanel })));
+const SplitPanel = lazyLoad(() => import('../ui/Split/SplitPanel').then((m) => ({ default: m.SplitPanel })));
 
 // Asse Z verso l'alto come negli slicer: va impostato prima della creazione di camera e controlli
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
@@ -87,8 +90,11 @@ export function Viewport() {
   const arrayActive = useArrayTool((s) => s.active);
   // Idem con il Pattern: l'oggetto in anteprima non va spostato né deselezionato
   const patternActive = usePatternTool((s) => s.active);
+  // Idem con Dividi: le due metà in anteprima non vanno spostate né deselezionate
+  const splitActive = useSplitTool((s) => s.active);
+  const toolActive = edgeToolActive || shellToolActive || measureActive || layFlatActive || arrayActive || patternActive || splitActive;
   const gizmoId =
-    !edgeToolActive && !shellToolActive && !measureActive && !layFlatActive && !arrayActive && !patternActive && gizmoMode !== 'select' && selection.length === 1 && rootIds.includes(selection[0]) && !isLocked(scene, selection[0]) ? selection[0] : undefined;
+    !toolActive && gizmoMode !== 'select' && selection.length === 1 && rootIds.includes(selection[0]) && !isLocked(scene, selection[0]) ? selection[0] : undefined;
 
   /** Tasto destro nel vuoto: apre il menu delle forme, con il punto del piano di stampa (Z = 0) sotto il puntatore. */
   const openAddMenu = (e: MouseEvent) => {
@@ -116,6 +122,7 @@ export function Viewport() {
         {layFlatActive && <LayFlatPanel />}
         {arrayActive && <ArrayPanel />}
         {patternActive && <PatternPanel />}
+        {splitActive && <SplitPanel />}
       </Suspense>
       <Canvas
         // Il rendering parte solo quando serve (movimenti, modifiche): meno consumo di CPU/GPU
@@ -126,8 +133,8 @@ export function Viewport() {
         // (con Raccordo o Smusso attivi un clic nel vuoto non deve toccare la selezione)
         onPointerMissed={(e) => {
           // Tasto destro nel vuoto (con uno strumento aperto l'oggetto è in anteprima: niente menu)
-          if (e.button === 2 && !edgeToolActive && !shellToolActive && !measureActive && !layFlatActive && !arrayActive && !patternActive) openAddMenu(e);
-          else if (e.button === 0 && !edgeToolActive && !shellToolActive && !measureActive && !layFlatActive && !arrayActive && !patternActive) select([]);
+          if (e.button === 2 && !toolActive) openAddMenu(e);
+          else if (e.button === 0 && !toolActive) select([]);
         }}
       >
         <color attach="background" args={[palette.background]} />
@@ -145,6 +152,7 @@ export function Viewport() {
         <PatternOverlay />
         <DimensionOverlay />
         <PlacementPreview />
+        <SplitOverlay />
         {[...meshesByRoot].map(([rootId, parts]) => (
           <SceneObject key={rootId} rootId={rootId} meshes={parts} selection={selection} locked={isLocked(scene, rootId)} showGizmo={rootId === gizmoId} />
         ))}

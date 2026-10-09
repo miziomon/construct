@@ -1281,6 +1281,58 @@ test('Sdraia (Maiusc+V): la trave si stende lungo X, poi lungo Y, poi torna in p
   expect(await size()).toEqual([40, 20, 20]);
 });
 
+test('Dividi (Maiusc+S): anteprima delle due metà, piano per asse e quota, OK in un solo passo, Esc rimette l\'originale', async ({ page }) => {
+  await addShape(page, 'Cubo');
+  const meshes = () => page.evaluate(() => window.__construct!.results.getState().meshes.map((m) => ({ rootId: m.rootId, volume: m.volume, status: m.status })));
+  const steps = () => page.evaluate(() => window.__construct!.store.temporal.getState().pastStates.length);
+  const before = await steps();
+
+  await page.keyboard.press('Shift+S');
+  const panel = page.getByRole('region', { name: 'Dividi' });
+  await expect(panel).toBeVisible();
+  await settled(page);
+  // Piano a metà lungo X: due metà da 4000 mm³, già in anteprima nella scena
+  let parts = await meshes();
+  expect(parts).toHaveLength(2);
+  for (const m of parts) expect(m.volume).toBeCloseTo(4000, 1);
+  expect((await sceneState(page)).rootIds).toHaveLength(2);
+
+  // Asse Z e quota a 5 mm: 20·20·5 e 20·20·15
+  await panel.getByRole('button', { name: 'Z', exact: true }).click();
+  const pos = panel.locator('.slider-field', { hasText: 'Posizione' }).locator('.number-field__input');
+  await pos.fill('5');
+  await pos.press('Enter');
+  await settled(page);
+  parts = await meshes();
+  expect(parts.map((m) => Math.round(m.volume)).sort((a, b) => a - b)).toEqual([2000, 6000]);
+
+  // Esc: scena di partenza, nessun passo in cronologia
+  await page.keyboard.press('Escape');
+  await settled(page);
+  await expect(panel).toBeHidden();
+  expect((await sceneState(page)).rootIds).toHaveLength(1);
+  expect(await steps()).toBe(before);
+
+  // Di nuovo, con OK: due oggetti "Cubo (1)" e "Cubo (2)", un solo passo, codice con due intersection()
+  await page.keyboard.press('Shift+S');
+  await expect(panel).toBeVisible();
+  await settled(page);
+  await page.keyboard.press('Enter');
+  await settled(page);
+  await expect(panel).toBeHidden();
+  const scene = await sceneState(page);
+  expect(scene.rootIds).toHaveLength(2);
+  expect(scene.rootIds.map((id: string) => scene.nodes[id].name)).toEqual(['Cubo (1)', 'Cubo (2)']);
+  expect(await steps()).toBe(before + 1);
+  await expect(page.locator('.status-bar')).toContainText('Mesh valida');
+  const code = await readCode(page);
+  expect(code.split('intersection() {').length - 1).toBe(2);
+  // Ctrl+Z rimette il cubo intero
+  await page.keyboard.press('Control+z');
+  await settled(page);
+  expect((await sceneState(page)).rootIds).toHaveLength(1);
+});
+
 test('Guscio su un profilato: cavità esatta (nessun avviso di approssimazione), mesh valida e volume minore', async ({ page }) => {
   await addShape(page, 'Profilato a H');
   const read = () => page.evaluate(() => window.__construct!.results.getState().meshes[0]);
@@ -2530,7 +2582,7 @@ test('Barra strumenti: i comandi sono in gruppi con il nome della sezione', asyn
     ['File', ['Nuovo progetto', 'Annulla', 'Ripeti']],
     ['Trasforma', ['Seleziona', 'Sposta', 'Ruota', 'Ridimensiona', 'Estrudi']],
     ['Combina', ['Raggruppa', 'Separa', 'Unisci', 'Inviluppo convesso']],
-    ['Modifica', ['Raccordo', 'Smusso', 'Smusso angolare', 'Guscio', 'Pattern']],
+    ['Modifica', ['Raccordo', 'Smusso', 'Smusso angolare', 'Guscio', 'Pattern', 'Dividi']],
     ['Disponi', ['Allinea', 'Specchia', 'Sdraia', 'Serie']],
     ['Oggetto', ['Duplica', 'Elimina', 'Misura']],
     ['Vista', ['Viste', 'Ortografica', 'Codice OpenSCAD', 'Tema']],

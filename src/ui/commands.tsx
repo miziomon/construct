@@ -1,4 +1,4 @@
-import { SquareArrowDown, AlignHorizontalJustifyStart, ArrowDownToLine, FlipHorizontal2, Ruler, Copy, Lock, Unlock, Group, MousePointer2, Move3d, Rotate3d, RotateCw, SquaresUnite, Scaling, ArrowUpFromLine, Trash2, Ungroup, CircleDashed } from 'lucide-react';
+import { SquareArrowDown, AlignHorizontalJustifyStart, ArrowDownToLine, FlipHorizontal2, Ruler, Copy, Lock, Unlock, Group, MousePointer2, Move3d, Rotate3d, RotateCw, Scissors, SquaresUnite, Scaling, ArrowUpFromLine, Trash2, Ungroup, CircleDashed } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { combineToBed, dropSelectionToBed, layDownSelection, lowestZByRoot } from '../kernel/placement';
 import { isLocked, useSceneStore } from '../scene/store';
@@ -15,6 +15,8 @@ import { useMeasure } from './Measure/measureStore';
 import { canPattern, usePatternTool } from './Pattern/patternToolStore';
 import { togglePattern } from './Pattern/togglePattern';
 import { canShell, toggleShell, useShellTool } from './Shell/shellToolStore';
+import { canSplit, useSplitTool } from './Split/splitToolStore';
+import { toggleSplit } from './Split/toggleSplit';
 import type { HelpKey } from './Toolbar/toolbarHelp';
 import { CORNER_ICONS, EDGE_ICONS, GROUP_ICONS } from './groupIcons';
 import { useUiStore } from './uiStore';
@@ -27,7 +29,7 @@ import type { ToolbarMenu } from './uiStore';
 export type CommandId =
   | 'select' | 'translate' | 'rotate' | 'resize' | 'extrude'
   | 'group' | 'ungroup' | 'union' | 'hull' | 'minkowski' | 'hole'
-  | 'fillet' | 'chamfer' | 'corner' | 'shell' | 'pattern'
+  | 'fillet' | 'chamfer' | 'corner' | 'shell' | 'pattern' | 'split'
   | 'align' | 'mirror' | 'layflat' | 'lay' | 'drop' | 'array'
   | 'duplicate' | 'lock' | 'delete' | 'measure';
 
@@ -52,6 +54,7 @@ export interface CommandContext {
   layFlatActive: boolean;
   arrayActive: boolean;
   patternActive: boolean;
+  splitActive: boolean;
 }
 
 interface ContextInput {
@@ -64,6 +67,7 @@ interface ContextInput {
   layFlatActive: boolean;
   arrayActive: boolean;
   patternActive: boolean;
+  splitActive: boolean;
 }
 
 /** Calcola il contesto dei comandi da scena, selezione e strumenti aperti (funzione pura). */
@@ -94,7 +98,8 @@ export function useCommandContext(): CommandContext {
   const layFlatActive = useLayFlat((s) => s.active);
   const arrayActive = useArrayTool((s) => s.active);
   const patternActive = usePatternTool((s) => s.active);
-  return makeContext({ scene, selection, gizmoMode, edgeTool, shellActive, measureActive, layFlatActive, arrayActive, patternActive });
+  const splitActive = useSplitTool((s) => s.active);
+  return makeContext({ scene, selection, gizmoMode, edgeTool, shellActive, measureActive, layFlatActive, arrayActive, patternActive, splitActive });
 }
 
 /** Contesto di questo istante, fuori da React (per il menu contestuale e per i test). */
@@ -110,6 +115,7 @@ export function getCommandContext(): CommandContext {
     layFlatActive: useLayFlat.getState().active,
     arrayActive: useArrayTool.getState().active,
     patternActive: usePatternTool.getState().active,
+    splitActive: useSplitTool.getState().active,
   });
 }
 
@@ -134,6 +140,7 @@ export interface Command {
 /** Un solo strumento di bordo alla volta: il Guscio aperto si annulla, un secondo clic sullo stesso pulsante chiude. */
 const toggleEdgeTool = (kind: 'fillet' | 'chamfer' | 'corner', c: CommandContext) => {
   useShellTool.getState().cancel();
+  useSplitTool.getState().cancel();
   return c.edgeTool === kind ? useEdgeTool.getState().cancel() : useEdgeTool.getState().start(kind);
 };
 
@@ -199,6 +206,11 @@ export const COMMANDS: Record<CommandId, Command> = {
     enabled: (c) => c.patternActive || canPattern(c.scene, c.selection), active: (c) => c.patternActive, run: () => togglePattern(), menu: true,
   },
 
+  split: {
+    id: 'split', help: 'split', shortcut: '⇧S', icon: (_c, size) => <Scissors size={size} />,
+    enabled: (c) => c.splitActive || canSplit(c.scene, c.selection), active: (c) => c.splitActive, run: () => toggleSplit(), menu: true,
+  },
+
   align: {
     id: 'align', help: 'align', shortcut: 'K', icon: (_c, size) => <AlignHorizontalJustifyStart size={size} />,
     enabled: (c) => c.unlockedRoots.length >= 2, run: () => useUiStore.getState().setToolbarMenu('align'), dropdown: 'align', menu: true,
@@ -228,7 +240,7 @@ export const COMMANDS: Record<CommandId, Command> = {
 export const COMMAND_GROUPS: { label: string; ids: CommandId[] }[] = [
   { label: 'Trasforma', ids: ['select', 'translate', 'rotate', 'resize', 'extrude'] },
   { label: 'Combina', ids: ['group', 'ungroup', 'union', 'hull', 'minkowski', 'hole'] },
-  { label: 'Modifica', ids: ['fillet', 'chamfer', 'corner', 'shell', 'pattern'] },
+  { label: 'Modifica', ids: ['fillet', 'chamfer', 'corner', 'shell', 'pattern', 'split'] },
   { label: 'Disponi', ids: ['align', 'mirror', 'layflat', 'lay', 'drop', 'array'] },
   { label: 'Oggetto', ids: ['duplicate', 'lock', 'delete', 'measure'] },
 ];

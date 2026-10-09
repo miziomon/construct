@@ -5,6 +5,7 @@ import { useMeasure } from '../Measure/measureStore';
 import { useLayFlat } from '../LayFlat/layFlatStore';
 import { useArrayTool } from '../Array/arrayToolStore';
 import { usePatternTool } from '../Pattern/patternToolStore';
+import { useSplitTool } from '../Split/splitToolStore';
 import {
   buildCornerTreatment,
   buildEdgeTreatment,
@@ -201,6 +202,7 @@ export const useEdgeTool = create<EdgeToolState>()((set, get) => {
       useLayFlat.getState().cancel();
       useArrayTool.getState().cancel();
       usePatternTool.getState().cancel();
+      useSplitTool.getState().cancel();
       sceneStore.getState().select([]);
       sceneStore.getState().setGizmoMode('select');
       set({ ...INITIAL, ...rememberedOptions(), tool });

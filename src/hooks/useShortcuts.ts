@@ -14,6 +14,8 @@ import { togglePattern } from '../ui/Pattern/togglePattern';
 import { toggleArray } from '../ui/Array/toggleArray';
 import { toggleLayFlat } from '../ui/LayFlat/toggleLayFlat';
 import { fitView, setViewPreset, toggleProjection } from '../viewport/cameraControl';
+import { useSplitTool } from '../ui/Split/splitToolStore';
+import { toggleSplit } from '../ui/Split/toggleSplit';
 
 const isTyping = (t: EventTarget | null) => t instanceof HTMLElement && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
 
@@ -47,6 +49,13 @@ export function useShortcuts(): void {
       if (pattern.active) {
         if (e.key === 'Escape') (pattern.picking ? pattern.setPicking(false) : pattern.cancel());
         else if (e.key === 'Enter') pattern.commit();
+        return;
+      }
+      // Dividi aperto: Esc annulla, Invio conferma, il resto è ignorato
+      const split = useSplitTool.getState();
+      if (split.active) {
+        if (e.key === 'Escape') split.cancel();
+        else if (e.key === 'Enter') split.commit();
         return;
       }
       // Misura aperta: Esc o I la chiudono, il resto è ignorato (i clic scelgono punti, non modificano la scena)
@@ -122,6 +131,8 @@ export function useShortcuts(): void {
         ui.setToolbarMenu(ui.toolbarMenu === menu ? null : menu);
       }
       else if (!mod && key === 'f' && s.scene.rootIds.length) edgeStart('fillet');
+      // Maiusc+S divide (va controllato prima di S, che non esclude Maiusc)
+      else if (!mod && e.shiftKey && key === 's') toggleSplit();
       else if (!mod && key === 's' && s.scene.rootIds.length) edgeStart('chamfer');
       else if (!mod && key === 'a' && s.scene.rootIds.length) edgeStart('corner');
       else if (key === 'f2') {

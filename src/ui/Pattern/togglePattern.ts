@@ -4,6 +4,7 @@ import { useEdgeTool } from '../EdgeTool/edgeToolStore';
 import { useLayFlat } from '../LayFlat/layFlatStore';
 import { useMeasure } from '../Measure/measureStore';
 import { useShellTool } from '../Shell/shellToolStore';
+import { useSplitTool } from '../Split/splitToolStore';
 import { canPattern, usePatternTool } from './patternToolStore';
 
 /** Apre il Pattern sulla selezione (chiudendo gli altri strumenti); se è già aperto lo annulla. Usata da barra e tasto Z. */
@@ -18,5 +19,6 @@ export function togglePattern(): void {
   useMeasure.getState().cancel();
   useLayFlat.getState().cancel();
   useArrayTool.getState().cancel();
+  useSplitTool.getState().cancel();
   pattern.start();
 }

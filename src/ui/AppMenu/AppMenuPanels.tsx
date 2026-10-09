@@ -35,6 +35,7 @@ const SHORTCUTS: { title: string; rows: [string, string][] }[] = [
       ['S', 'Smusso tra due superfici (Invio conferma, Esc annulla)'],
       ['A', 'Smusso angolare: clic su un vertice, Maiusc+clic per sceglierne altri (Invio conferma, Esc annulla)'],
       ['G', 'Guscio: svuota il solido selezionato (Invio conferma, Esc annulla)'],
+      ['Maiusc+S', 'Dividi: taglia l\'oggetto in due con un piano perpendicolare a un asse (Invio conferma, Esc annulla)'],
       ['Doppio clic', 'Seleziona l\'oggetto e passa a Sposta'],
       ['Ctrl+G', 'Raggruppa (gli oggetti restano separati)'],
       ['U', 'Unisci in un solo solido (unione booleana)'],

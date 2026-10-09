@@ -12,6 +12,7 @@ import { useMeasure } from '../Measure/measureStore';
 import { useLayFlat } from '../LayFlat/layFlatStore';
 import { useArrayTool } from '../Array/arrayToolStore';
 import { usePatternTool } from '../Pattern/patternToolStore';
+import { useSplitTool } from '../Split/splitToolStore';
 
 /**
  * Strumento Guscio: svuota il solido selezionato. Stesso schema dello strumento Raccordo/Smusso: mentre il pannello è
@@ -64,6 +65,7 @@ export function toggleShell(): void {
   useLayFlat.getState().cancel();
   useArrayTool.getState().cancel();
   usePatternTool.getState().cancel();
+  useSplitTool.getState().cancel();
   shell.start();
 }
 

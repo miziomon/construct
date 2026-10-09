@@ -18,6 +18,11 @@ I messaggi di commit seguono i [Conventional Commits](https://www.conventionalco
 
 ## [Non rilasciato]
 
+## [0.40.0] - 2026-10-09
+
+### Aggiunto
+- **Dividi con un piano** (sezione Modifica della barra, menu contestuale, Maiusc+S): taglia l'oggetto selezionato in due con un piano perpendicolare a X, Y o Z, alla quota scelta dentro il suo ingombro, con le due metà in anteprima dal vivo e il piano evidenziato nella vista. Il risultato sono due oggetti, "Nome (1)" e "Nome (2)", ciascuno un gruppo Intersezione tra una copia del pezzo e un cubo "Taglio": restano parametrici (spostando il cubo si sposta il taglio) e nel codice OpenSCAD sono `intersection()` con un `cube`. Invio conferma in un solo passo di Annulla, Esc rimette l'originale; un piano fuori dal pezzo viene segnalato. Serve per i pezzi più grandi del piatto; i connettori tra le metà arriveranno in seguito.
+
 ## [0.39.0] - 2026-10-09
 
 ### Aggiunto

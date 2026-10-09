@@ -16,7 +16,7 @@ export interface ToolbarHelp {
 export type HelpKey =
   | 'new' | 'undo' | 'redo' | 'select' | 'translate' | 'rotate' | 'resize' | 'extrude'
   | 'group' | 'union' | 'hull' | 'minkowski' | 'ungroup' | 'hole' | 'lock' | 'unlock'
-  | 'fillet' | 'chamfer' | 'corner' | 'shell' | 'align' | 'mirror' | 'measure' | 'array' | 'pattern'
+  | 'fillet' | 'chamfer' | 'corner' | 'shell' | 'split' | 'align' | 'mirror' | 'measure' | 'array' | 'pattern'
   | 'layflat' | 'lay' | 'drop' | 'duplicate' | 'delete' | 'views' | 'ortho' | 'ghost' | 'bed' | 'theme' | 'code';
 
 export const TOOLBAR_HELP: Record<HelpKey, ToolbarHelp> = {
@@ -40,6 +40,7 @@ export const TOOLBAR_HELP: Record<HelpKey, ToolbarHelp> = {
   chamfer: { name: 'Smusso', what: 'Taglia lo spigolo tra due superfici con un piano inclinato.', how: 'Premi il pulsante, clicca le due superfici, scegli la distanza (anche diversa sui due lati) e conferma con OK.', image: 'chamfer' },
   corner: { name: 'Smusso angolare', what: 'Taglia o arrotonda un angolo del solido, dove si incontrano tre facce.', how: 'Premi il pulsante e clicca il vertice (Maiusc+clic per sceglierne più d\'uno), scegli piano o sferico e la distanza, poi OK.', image: 'corner' },
   shell: { name: 'Guscio', what: 'Svuota il solido lasciando pareti di spessore costante, utile per risparmiare materiale.', how: 'Seleziona un solido, premi il pulsante e imposta spessore delle pareti e del fondo: la cavità si vede dal vivo. Invio conferma, Esc annulla.', image: 'shell' },
+  split: { name: 'Dividi', what: 'Taglia l\'oggetto in due con un piano perpendicolare a un asse, per stampare pezzi più grandi del piatto.', how: 'Seleziona un oggetto alla radice, premi il pulsante (o Maiusc+S), scegli l\'asse e la posizione del piano: le due metà si vedono dal vivo. Invio conferma, Esc annulla. Il risultato sono due oggetti, ciascuno un\'intersezione con un cubo di taglio che si può spostare in seguito.' },
   align: { name: 'Allinea', what: 'Allinea più oggetti su un asse a uno dei loro lati.', how: 'Seleziona almeno due oggetti e apri la tendina: scegli l\'asse e il lato (minimo, centro, massimo). Passando sopra una voce vedi l\'anteprima del risultato.' },
   mirror: { name: 'Specchia', what: 'Riflette gli oggetti rispetto a un piano.', how: 'Seleziona uno o più oggetti e apri la tendina: scegli l\'asse e se il piano passa dal lato minimo, dal centro o dal lato massimo dell\'ingombro.' },
   measure: { name: 'Misura', what: 'Legge la distanza in millimetri tra due punti della scena.', how: 'Premi il pulsante e clicca un punto di partenza e uno di arrivo: il puntatore si aggancia a vertici, spigoli e superfici. Un terzo clic ricomincia, Esc chiude.', image: 'measure' },
