@@ -1,16 +1,18 @@
-name: Deploy su construct.mavida.com
+name: Deploy su construct.mavida.com (GitHub Pages)
 
 # Deploy automatico ad ogni push su main: build di produzione con Vite e
-# sincronizzazione via rsync su SSH del contenuto di dist/ dentro public_html.
+# pubblicazione su GitHub Pages (sorgente "GitHub Actions" nelle impostazioni
+# del repo). Il dominio personalizzato sta in public/CNAME, che finisce in dist/
+# e dice a Pages di servire il sito su construct.mavida.com; il DNS del
+# sottodominio punta con un record CNAME a miziomon.github.io.
 # Al termine invia una mail di esito (riuscito/fallito) tramite l'API di Resend.
 #
 # Le variabili VITE_* sono inlinate da Vite a compile-time, quindi vanno
 # fornite ALLA BUILD. VITE_API_BASE_URL oggi non e' usata dall'app (non e'
 # ancora agganciata ad hub) ma il secret e' gia' pronto per quando lo sara'.
 #
-# Tutte le credenziali/config arrivano dai GitHub Secrets, mai dal file (che e'
-# versionato): SSH_HOST, SSH_USERNAME, SSH_PASSWORD, RESEND_API_KEY,
-# VITE_API_BASE_URL.
+# Secret usati: RESEND_API_KEY, VITE_API_BASE_URL. Non servono piu' credenziali
+# SSH: il vecchio deploy via rsync su hosting cPanel e' stato sostituito.
 
 on:
   push:
@@ -18,18 +20,20 @@ on:
   # Consente anche l'avvio manuale dalla tab "Actions" di GitHub.
   workflow_dispatch: {}
 
-# Il workflow non scrive nel repository: solo lettura del codice.
+# Pages richiede di scrivere il sito e un token OIDC per il deploy; il codice resta in sola lettura.
 permissions:
   contents: read
+  pages: write
+  id-token: write
 
 # Evita deploy concorrenti (due push ravvicinati): si accodano ed eseguono in
-# ordine, cosi' vince l'ultimo push senza mai interrompere un rsync a meta'.
+# ordine, cosi' vince l'ultimo push senza mai interrompere una pubblicazione a meta'.
 concurrency:
   group: deploy-construct
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout del codice
@@ -50,23 +54,26 @@ jobs:
           VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
         run: npm run build
 
-      - name: Deploy via rsync su SSH in public_html
-        env:
-          # sshpass -e legge la password da questa variabile: non compare mai
-          # nella riga di comando (ne' quindi nei log del processo).
-          SSHPASS: ${{ secrets.SSH_PASSWORD }}
-          SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
-        run: |
-          sudo apt-get update && sudo apt-get install -y sshpass
-          # Flag pensati per hosting condiviso (cPanel): NON si tenta di
-          # preservare permessi/proprietario/gruppo/orari delle cartelle, che
-          # darebbero "operation not permitted". --delete tiene public_html
-          # allineato a dist/ (rimuove i vecchi bundle con hash obsoleto).
-          sshpass -e rsync -rltvz --delete \
-            --no-perms --no-owner --no-group --omit-dir-times \
-            -e "ssh -p 22 -o StrictHostKeyChecking=accept-new" \
-            ./dist/ "$SSH_USERNAME@$SSH_HOST:public_html/"
+      # Pages serve 404.html per i percorsi sconosciuti: con una SPA a pagina singola
+      # basta la stessa index, cosi' un link profondo (o un refresh) apre l'app.
+      - name: Pagina 404 per la SPA
+        run: cp dist/index.html dist/404.html
+
+      - name: Carica il sito per Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Pubblica su GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
 
       # Un solo invio email di esito, sia in caso di successo sia di errore:
       # if: always() fa girare lo step anche se un passo precedente e' fallito;
@@ -85,10 +92,10 @@ jobs:
         run: |
           if [ "$JOB_STATUS" = "success" ]; then
             SUBJECT="Deploy construct.mavida.com riuscito"
-            HEADLINE="Il deploy su <strong>construct.mavida.com</strong> e' stato completato con successo."
+            HEADLINE="Il deploy su <strong>construct.mavida.com</strong> (GitHub Pages) e' stato completato con successo."
           else
             SUBJECT="Deploy construct.mavida.com FALLITO"
-            HEADLINE="Il deploy su <strong>construct.mavida.com</strong> e' fallito. Controlla il log del workflow."
+            HEADLINE="Il deploy su <strong>construct.mavida.com</strong> (GitHub Pages) e' fallito. Controlla il log del workflow."
           fi
           BODY="$(jq -n \
             --arg headline "$HEADLINE" \

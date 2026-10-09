@@ -18,6 +18,11 @@ I messaggi di commit seguono i [Conventional Commits](https://www.conventionalco
 
 ## [Non rilasciato]
 
+## [0.40.1] - 2026-10-09
+
+### Modificato
+- **Deploy su GitHub Pages.** Il workflow non copia più `dist/` via rsync sull'hosting cPanel: pubblica il sito con `actions/deploy-pages` (sorgente "GitHub Actions" del repo), con `404.html` uguale alla pagina dell'app per i link profondi e `public/CNAME` che fissa il dominio `construct.mavida.com`. Il DNS del sottodominio va puntato con un record CNAME a `miziomon.github.io`; i secret SSH non servono più. Resta la mail di esito via Resend.
+
 ## [0.40.0] - 2026-10-09
 
 ### Aggiunto
