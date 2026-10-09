@@ -191,7 +191,7 @@ export default function DocsPanel() {
           <li>Booleane, inviluppo e somma di Minkowski: <code>union</code>, <code>difference</code>, <code>intersection</code>, <code>hull</code>, <code>minkowski</code>, <code>intersection_for</code>, <code>render</code>.</li>
           <li>Linguaggio: variabili, <code>module</code> e <code>function</code>, <code>children()</code>, <code>for</code>, <code>if</code>, <code>let</code>, list comprehension, funzioni anonime, intervalli <code>[inizio:passo:fine]</code>, operatori matematici e logici, modificatori <code>*</code>, <code>%</code> e <code>!</code>.</li>
           <li>Funzioni: trigonometriche (in gradi), <code>abs</code>, <code>sqrt</code>, <code>pow</code>, <code>exp</code>, <code>ln</code>, <code>log</code>, <code>floor</code>, <code>ceil</code>, <code>round</code>, <code>sign</code>, <code>min</code>, <code>max</code>, <code>len</code>, <code>norm</code>, <code>cross</code>, <code>concat</code>, <code>str</code>, <code>chr</code>, <code>ord</code>, <code>lookup</code>, <code>search</code>, <code>rands</code> e i controlli <code>is_undef</code>, <code>is_num</code>, <code>is_list</code>, <code>is_string</code>, <code>is_bool</code>, <code>is_function</code>.</li>
-          <li>Qualità delle curve: <code>$fn</code>, <code>$fa</code> e <code>$fs</code>. <code>echo</code> e <code>assert</code> vengono ignorati.</li>
+          <li>Qualità delle curve: <code>$fn</code>, <code>$fa</code> e <code>$fs</code>, con lo scope dinamico di OpenSCAD (valgono anche nei moduli e nelle funzioni richiamati). <code>echo</code> e <code>assert</code> vengono ignorati.</li>
         </ul>
         <h4>Supportato con limiti</h4>
         <ul>
@@ -199,7 +199,7 @@ export default function DocsPanel() {
           <li><code>color</code>: la trasparenza (alpha) si scarta, la scena non ha trasparenza per oggetto.</li>
           <li><code>offset</code> annidati (apertura e chiusura): si sommano in un contorno netto, ma le punte non vengono arrotondate come in OpenSCAD. <code>offset(chamfer = true)</code> dà angoli vivi.</li>
           <li><code>linear_extrude</code> con <code>scale</code> diversa per X e Y: vale un solo valore.</li>
-          <li><code>minkowski</code>: corretto e veloce con solidi separati o con facce piane; con superfici concave molto curve e fitte (per esempio un guscio sferico) il calcolo può richiedere qualche secondo, in secondo piano.</li>
+          <li><code>minkowski</code>: la “pennellata” (dal secondo operando in poi, se è una sfera, un cilindro o un cono) si calcola con i segmenti che tengono l’errore di corda entro 0,01 mm, invece di quelli del nodo: il risultato differisce al massimo di 0,01 mm e il calcolo è molto più rapido; il codice esportato conserva il <code>$fn</code> originale. Con superfici concave molto curve e fitte (un guscio sferico) il calcolo può comunque richiedere qualche secondo, in secondo piano.</li>
         </ul>
         <h4>Non ancora supportato</h4>
         <ul>

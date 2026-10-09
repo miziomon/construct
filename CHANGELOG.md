@@ -18,6 +18,16 @@ I messaggi di commit seguono i [Conventional Commits](https://www.conventionalco
 
 ## [Non rilasciato]
 
+## [0.32.0] - 2026-10-09
+
+### Modificato
+- **Minkowski su forme concave molto più veloce.** Il controllo che decide se una toppa della superficie è convessa non usa più una booleana sull'intera mesh ma un test geometrico (nessun triangolo estraneo entra nell'inviluppo della toppa, cercato in una griglia): sul corpo della tazza di `import/coffe-cup.scad` la scomposizione passa da 7,5 s a 1,5 s, con meno toppe e lo stesso risultato.
+- **Pennellata a tolleranza.** Dal secondo operando in poi, una sfera, un cilindro o un cono si costruiscono con i segmenti che tengono l'errore di corda entro 0,01 mm (una sfera di raggio 2 a 140 lati scende a 32: 258 vertici invece di 4902). Il risultato differisce al massimo di 0,01 mm, sotto la risoluzione di qualsiasi stampante; il codice OpenSCAD esportato conserva il `$fn` del nodo.
+- Tempi con gli esempi della cartella `import/` (kernel in Node): `coffe-cup.scad` da 16 s a 2,2 s, `BabyToy.scad` da 0,19 s a 0,08 s; `Bauble` e `Bauble2` invariati.
+
+### Corretto
+- **Import OpenSCAD: le variabili speciali hanno scope dinamico.** `$fn`, `$fa` e `$fs` impostate in un modulo valgono anche nei moduli e nelle funzioni che quello richiama, come in OpenSCAD (prima si leggevano solo nello scope lessicale: in `coffe-cup.scad` i cerchi del manico uscivano a 64 segmenti invece di 140). Passate come argomento (`m($fn = 12)`) continuano ad avere la precedenza; le variabili normali restano lessicali.
+
 ## [0.31.0] - 2026-10-08
 
 ### Aggiunto

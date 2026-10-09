@@ -322,10 +322,19 @@ function boxOf(items: Item[]): Box | null {
 
 // --- Ambiente ----------------------------------------------------------------------------------------------------
 
+/**
+ * Ambiente delle variabili. Le variabili normali hanno scope lessicale (`parent`: l'ambiente in cui il modulo o la
+ * funzione è definito); quelle speciali (`$fn`, `$fa`, ...) hanno scope dinamico come in OpenSCAD (`dynamic`: l'ambiente
+ * di chi chiama), così `$fn = 140` in un modulo vale anche nei moduli che quello richiama.
+ */
 class Env {
   private vars = new Map<string, Value>();
-  constructor(private parent?: Env) {}
+  constructor(private parent?: Env, private dynamic?: Env) {}
   get(name: string): Value | undefined {
+    if (name.startsWith('$')) {
+      for (let e: Env | undefined = this; e; e = e.dynamic ?? e.parent) if (e.vars.has(name)) return e.vars.get(name);
+      return undefined;
+    }
     for (let e: Env | undefined = this; e; e = e.parent) if (e.vars.has(name)) return e.vars.get(name);
     return undefined;
   }
@@ -635,10 +644,10 @@ export function evaluateScad(source: string): ScadResult {
       }
       case 'call': {
         const def = functions.get(e.name);
-        if (def) return callFunction(def.params, def.body, e.args, env, new Env(globalEnv));
+        if (def) return callFunction(def.params, def.body, e.args, env, new Env(globalEnv, env));
         // Una variabile che contiene una funzione anonima si richiama come una funzione
         const held = env.get(e.name);
-        if (held instanceof Closure) return callFunction(held.params, held.body, e.args, env, new Env(held.env));
+        if (held instanceof Closure) return callFunction(held.params, held.body, e.args, env, new Env(held.env, env));
         const args = e.args.map((a) => ev(a.e, env));
         const r = builtinFn(e.name, args);
         if (r === undefined) {
@@ -1068,7 +1077,8 @@ export function evaluateScad(source: string): ScadResult {
     const user = modules.get(s.name);
     if (user) {
       if (ctx.depth >= LIMITS.depth) throw new ScadError('Moduli annidati troppo in profondità', s.line);
-      const scope = bind(user.params, s.args, env, new Env(globalEnv));
+      // Scope lessicale globale, ma le variabili $ si leggono da chi chiama
+      const scope = bind(user.params, s.args, env, new Env(globalEnv, env));
       const kids = s.children ?? [];
       scope.set('$children', kids.filter(isGeometry).length);
       // I figli si valutano nell'ambiente di chi chiama, ma nella trasformazione di dove `children()` è usato

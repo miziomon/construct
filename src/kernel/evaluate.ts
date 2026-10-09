@@ -5,7 +5,7 @@ import { resolveEnds } from '../scene/edgeEnds';
 import { stretchFactors } from '../scene/ellipse';
 import { buildPattern } from './pattern';
 import { subdivideContours, twistPieceLength } from './twist';
-import { minkowskiOf } from './minkowski';
+import { brushSegments, minkowskiOf } from './minkowski';
 import { arrayCopies } from '../scene/arrayPattern';
 import type { CopyTransform } from '../scene/arrayPattern';
 import { isRotational, revolveParams, shapeContours, svgContours } from '../scene/shapes2d';
@@ -519,7 +519,14 @@ export class Evaluator {
       // Il Raggruppa (op 'group') dentro una booleana equivale a una unione di tutti i figli: non ha fori
       const isGroup = node.op === 'group';
       // I solid sono i figli che aggiungono materiale; i hole quelli che lo tolgono dal risultato
-      const solids = kids.filter((k) => isGroup || k.mode === 'solid').map((k) => this.build(scene, k));
+      // In un Minkowski la pennellata (dal secondo operando in poi) si costruisce con i segmenti entro la tolleranza:
+      // la curva di una sfera di raggio 2 a 140 lati non si distingue da una a 32, ma costa venti volte tanto
+      const brush = (k: SceneNode, i: number): SceneNode => {
+        if (node.op !== 'minkowski' || i === 0 || k.type !== 'primitive') return k;
+        const segments = brushSegments(k);
+        return segments === null ? k : ({ ...k, segments } as PrimitiveNode);
+      };
+      const solids = kids.filter((k) => isGroup || k.mode === 'solid').map((k, i) => this.build(scene, brush(k, i)));
       const holes = isGroup ? [] : kids.filter((k) => k.mode === 'hole').map((k) => this.build(scene, k));
       // UNIONE (o Raggruppa): somma di tutti i solid. INTERSEZIONE: solo la parte comune a tutti i solid.
       // INVILUPPO CONVESSO: la forma convessa più piccola che li contiene tutti (senza solidi, un insieme vuoto).

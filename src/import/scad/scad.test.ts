@@ -321,6 +321,20 @@ describe('import di file OpenSCAD: nuove forme e operazioni', () => {
     expect(first('linear_extrude(height = 2) text("A", font = "Inesistente");').node).toMatchObject({ font: 'roboto-bold' });
   });
 
+  it('le variabili $ hanno scope dinamico: valgono nei moduli e nelle funzioni chiamati', () => {
+    // $fn impostato nel chiamante arriva al modulo richiamato
+    expect(first('module m() { circle(5); } linear_extrude(1) { $fn = 24; m(); }').node).toMatchObject({ segments: 24 });
+    // Passato come argomento vince sul dinamico
+    expect(first('module m() { circle(5); } linear_extrude(1) { $fn = 24; m($fn = 12); }').node).toMatchObject({ segments: 12 });
+    // Attraverso due livelli di moduli
+    expect(first('module a() { b(); } module b() { circle(5); } linear_extrude(1) { $fn = 20; a(); }').node).toMatchObject({ segments: 20 });
+    // Una funzione utente legge $fn di chi la chiama
+    expect(first('function f() = $fn; module m() { $fn = 30; cylinder(h = 1, r = f()); } m();').node).toMatchObject({ radius: 30 });
+    // Le variabili normali restano lessicali: una variabile locale del chiamante non è visibile nel modulo
+    const r = importScad('module m() { cube(x); } module c() { x = 5; m(); } c();');
+    expect(r.warnings.join(' ')).toMatch(/Variabile non definita: x/);
+  });
+
   it('text: la spaziatura si importa e il codice di Construct la riscrive uguale', () => {
     const r = importScad('linear_extrude(height = 2) text("Ciao", spacing = 1.5);');
     expect(r.nodes[r.plates[0].rootIds[0]]).toMatchObject({ kind: 'text', spacing: 1.5 });

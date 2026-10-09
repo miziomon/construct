@@ -6,7 +6,7 @@ import { importScad } from '../import/scad/toScene';
 import { primitiveDefaults, shape2dDefaults } from '../scene/defaults';
 import type { GroupNode, PrimitiveNode, Scene, Shape2DNode } from '../scene/types';
 import { Evaluator } from './evaluate';
-import { minkowskiOf } from './minkowski';
+import { brushSegments, minkowskiOf, segmentsForTolerance } from './minkowski';
 
 let wasm: ManifoldToplevel;
 
@@ -211,5 +211,67 @@ describe('minkowskiOf: ottimizzazioni (componenti connesse e toppe convesse)', (
     const { Manifold } = wasm;
     expect(minkowskiOf(Manifold, [Manifold.union([]), Manifold.sphere(2, 16)]).isEmpty()).toBe(true);
     expect(minkowskiOf(Manifold, [Manifold.cube([5, 5, 5], false), Manifold.union([])]).isEmpty()).toBe(true);
+  });
+});
+
+describe('toppe convesse: controllo geometrico di contenimento', () => {
+  const diff = (a: Manifold, b: Manifold) => a.subtract(b).volume() + b.subtract(a).volume();
+
+  it('corpo della tazza (cono con manico forato) con una sfera: come manifold, in pochi secondi', () => {
+    const { Manifold, CrossSection } = wasm;
+    // Manico: profilo rettangolare arrotondato con un foro, estruso 6 mm e appoggiato al cono
+    const rounded = (x: number, y: number, r: number) => CrossSection.square([x - 2 * r, y - 2 * r], true).offset(r, 'Round', 2, 64);
+    const handle = Manifold.extrude(rounded(45, 40, 18).subtract(rounded(40, 35, 12)), 6).rotate([0, 90, 0]).translate([-3, -22.5, 22.5]);
+    const body = Manifold.union([Manifold.cylinder(45, 18, 28, 96), handle]);
+    const ball = Manifold.sphere(2, 32);
+    const started = performance.now();
+    const result = minkowskiOf(Manifold, [body, ball]);
+    const ms = performance.now() - started;
+    const expected = body.minkowskiSum(ball);
+    expect(Math.abs(result.volume() - expected.volume())).toBeLessThan(expected.volume() * 1e-4);
+    expect(diff(result, expected)).toBeLessThan(expected.volume() * 1e-4);
+    expect(ms).toBeLessThan(6000);
+  }, 60000);
+
+  it('un ponte sottile tra due blocchi non viene inglobato dalle toppe: il risultato resta quello di manifold', () => {
+    const { Manifold } = wasm;
+    // Due blocchi uniti da una barra sottile: l'inviluppo delle facce esterne dei blocchi passerebbe sopra la barra
+    const solid = Manifold.union([
+      Manifold.cube([10, 10, 10], false),
+      Manifold.cube([10, 10, 10], false).translate([20, 0, 0]),
+      Manifold.cube([12, 2, 2], false).translate([9, 4, 4]),
+    ]);
+    const ball = Manifold.sphere(1.5, 16);
+    const result = minkowskiOf(Manifold, [solid, ball]);
+    const expected = solid.minkowskiSum(ball);
+    expect(diff(result, expected)).toBeLessThan(expected.volume() * 1e-3);
+  });
+});
+
+describe('pennellata a tolleranza', () => {
+  it('segmentsForTolerance: corda entro 0,01 mm', () => {
+    expect(segmentsForTolerance(2, 0.01)).toBe(32);
+    expect(segmentsForTolerance(4, 0.01)).toBe(45);
+    expect(segmentsForTolerance(10, 0.01)).toBe(71);
+    // Raggio sotto la tolleranza: il minimo
+    expect(segmentsForTolerance(0.005, 0.01)).toBe(3);
+  });
+
+  it('brushSegments riduce solo quando serve e rispetta i minimi', () => {
+    expect(brushSegments(prim('s', 'sphere', { radius: 2, segments: 140 } as Partial<PrimitiveNode>))).toBe(32);
+    expect(brushSegments(prim('s', 'sphere', { radius: 2, segments: 24 } as Partial<PrimitiveNode>))).toBeNull();
+    expect(brushSegments(prim('s', 'sphere', { radius: 0.1, segments: 64 } as Partial<PrimitiveNode>))).toBe(8);
+    expect(brushSegments(prim('c', 'cylinder', { radius: 2, segments: 140 } as Partial<PrimitiveNode>))).toBe(32);
+    expect(brushSegments(prim('b', 'box', { segments: 1 } as Partial<PrimitiveNode>))).toBeNull();
+  });
+
+  it('nel kernel una sfera a 140 lati come pennellata dà lo stesso volume di una a 32, con meno triangoli', () => {
+    const fine = new Evaluator(wasm).evaluate(sceneOf({}, { segments: 140 })).meshes[0];
+    const coarse = new Evaluator(wasm).evaluate(sceneOf({}, { segments: 32 })).meshes[0];
+    expect(Math.abs(fine.volume - coarse.volume)).toBeLessThan(coarse.volume * 5e-4);
+    expect(fine.indices.length).toBe(coarse.indices.length);
+    // Come primo operando la sfera resta com'è: un Minkowski di sola sfera e cubo piccolo ha molti più triangoli
+    const asBase: Scene = { nodes: { ball: prim('ball', 'sphere', { radius: 2, segments: 140 } as Partial<PrimitiveNode>), cube: prim('cube', 'box', { size: [1, 1, 1] } as Partial<PrimitiveNode>), m: minkowski('m', ['ball', 'cube']) }, rootIds: ['m'] };
+    expect(new Evaluator(wasm).evaluate(asBase).meshes[0].indices.length).toBeGreaterThan(coarse.indices.length * 4);
   });
 });
