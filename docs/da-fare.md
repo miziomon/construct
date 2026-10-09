@@ -81,7 +81,7 @@ Primo passo economico alla Tinkercad: **Duplica e ripeti** (Ctrl+D ripete l'ulti
 - Piatti: provare i metadati scritti nel 3MF (`Metadata/model_settings.config`) in Bambu Studio e Orca, perché non si possono verificare senza gli slicer (restano ignorati dai programmi che non li conoscono), trascinamento degli oggetti tra i piatti, piatti con misure diverse.
 - Import OpenSCAD: quello che resta è nella sezione "Importa OpenSCAD" qui sotto (`polyhedron`, `import()`, `use`/`include` e librerie come BOSL2, booleane 2D vere).
 - Impostazioni: lingua, unità, colori dei nuovi oggetti, qualità predefinita delle curve, scorciatoie personalizzabili.
-- Schermata di benvenuto: modelli di esempio (la scheda c'è ma non è ancora selezionabile) e l'elenco dei progetti recenti.
+- Schermata di benvenuto: l'elenco dei progetti recenti. I modelli di esempio ci sono dalla 0.41.0 (tre schede; altri esempi si aggiungono in `src/examples/catalog.ts` con il JSON del progetto e l'anteprima rigenerata da `e2e/docs-images.spec.ts`).
 - Preset del piano: altre stampanti (Voron) e preset salvati dall'utente. Anycubic ed Elegoo ci sono dalla 0.29.0.
 - Ripetizione: "Rendi indipendenti" (Separa produce N oggetti veri, uno per copia), serie lungo un percorso o una curva, passo diverso per ogni asse nella lineare con angolo, copie che seguono un oggetto di riferimento, Ctrl+D che ripete l'ultimo spostamento (Duplica e ripeti di Tinkercad).
 - Estrusione rotazionale: opzione simmetrica (come Fusion, da -angolo/2 a +angolo/2) e passo elicoidale (come Blender Screw).

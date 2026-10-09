@@ -1,0 +1,363 @@
+{
+  "format": "construct-scene",
+  "version": 4,
+  "scene": {
+    "nodes": {
+      "763cd1b6": {
+        "type": "primitive",
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "mode": "solid",
+        "color": "#c0c0c0",
+        "kind": "box",
+        "size": [
+          80,
+          30,
+          8
+        ],
+        "cornerRadius": 0,
+        "id": "763cd1b6",
+        "name": "Cubo",
+        "position": [
+          40,
+          15,
+          4
+        ]
+      },
+      "22a475c2": {
+        "type": "primitive",
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "mode": "solid",
+        "color": "#c0c0c0",
+        "kind": "sphere",
+        "radius": 2,
+        "segments": 64,
+        "id": "22a475c2",
+        "name": "Sfera",
+        "position": [
+          0,
+          0,
+          2
+        ]
+      },
+      "096250e0": {
+        "id": "096250e0",
+        "type": "group",
+        "name": "Minkowski",
+        "op": "minkowski",
+        "children": [
+          "763cd1b6",
+          "22a475c2"
+        ],
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "mode": "solid",
+        "color": "#c0c0c0"
+      },
+      "7c03a746": {
+        "type": "primitive",
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "mode": "solid",
+        "color": "#e6e6fa",
+        "kind": "box",
+        "size": [
+          16,
+          16,
+          16
+        ],
+        "cornerRadius": 0,
+        "id": "7c03a746",
+        "name": "Cubo 2",
+        "position": [
+          15,
+          15,
+          14
+        ]
+      },
+      "9980f4dd": {
+        "type": "primitive",
+        "rotation": [
+          0,
+          0,
+          90
+        ],
+        "mode": "solid",
+        "color": "#e6e6fa",
+        "kind": "cylinder",
+        "radius": 8,
+        "height": 20,
+        "segments": 3,
+        "id": "9980f4dd",
+        "name": "Cilindro",
+        "position": [
+          40,
+          15,
+          16
+        ]
+      },
+      "dae926dd": {
+        "type": "primitive",
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "mode": "solid",
+        "color": "#e6e6fa",
+        "kind": "cylinder",
+        "radius": 8,
+        "height": 20,
+        "segments": 64,
+        "id": "dae926dd",
+        "name": "Cilindro 2",
+        "position": [
+          65,
+          15,
+          16
+        ]
+      },
+      "e478d570": {
+        "id": "e478d570",
+        "type": "group",
+        "name": "Unione",
+        "op": "union",
+        "children": [
+          "7c03a746",
+          "9980f4dd",
+          "dae926dd"
+        ],
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "mode": "solid",
+        "color": "#e6e6fa"
+      },
+      "2897fd0b": {
+        "type": "primitive",
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "mode": "solid",
+        "color": "#e6e6fa",
+        "kind": "sphere",
+        "radius": 4,
+        "segments": 64,
+        "id": "2897fd0b",
+        "name": "Sfera 2",
+        "position": [
+          0,
+          0,
+          0
+        ]
+      },
+      "e0a3f60d": {
+        "id": "e0a3f60d",
+        "type": "group",
+        "name": "Minkowski 2",
+        "op": "minkowski",
+        "children": [
+          "e478d570",
+          "2897fd0b"
+        ],
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "mode": "solid",
+        "color": "#e6e6fa"
+      },
+      "ec760f96": {
+        "id": "ec760f96",
+        "type": "group",
+        "name": "Differenza",
+        "op": "difference",
+        "children": [
+          "096250e0",
+          "e0a3f60d"
+        ],
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "mode": "solid",
+        "color": "#c0c0c0"
+      },
+      "3a461293": {
+        "type": "primitive",
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "mode": "solid",
+        "color": "#0000ff",
+        "kind": "box",
+        "size": [
+          16,
+          16,
+          16
+        ],
+        "cornerRadius": 0,
+        "id": "3a461293",
+        "name": "Cubo 3",
+        "position": [
+          15,
+          15,
+          8
+        ]
+      },
+      "645dfb3f": {
+        "type": "primitive",
+        "rotation": [
+          0,
+          0,
+          90
+        ],
+        "mode": "solid",
+        "color": "#ff0000",
+        "kind": "cylinder",
+        "radius": 8,
+        "height": 16,
+        "segments": 3,
+        "id": "645dfb3f",
+        "name": "Cilindro 3",
+        "position": [
+          40,
+          15,
+          8
+        ]
+      },
+      "374e298a": {
+        "type": "primitive",
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "mode": "solid",
+        "color": "#008000",
+        "kind": "cylinder",
+        "radius": 8,
+        "height": 16,
+        "segments": 64,
+        "id": "374e298a",
+        "name": "Cilindro 4",
+        "position": [
+          65,
+          15,
+          8
+        ]
+      },
+      "031afb53": {
+        "id": "031afb53",
+        "type": "group",
+        "name": "Unione 2",
+        "op": "union",
+        "children": [
+          "3a461293",
+          "645dfb3f",
+          "374e298a"
+        ],
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "mode": "solid",
+        "color": "#0000ff"
+      },
+      "eb5c95dc": {
+        "type": "primitive",
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "mode": "solid",
+        "color": "#4682b4",
+        "kind": "sphere",
+        "radius": 2,
+        "segments": 64,
+        "id": "eb5c95dc",
+        "name": "Sfera 3",
+        "position": [
+          0,
+          0,
+          0
+        ]
+      },
+      "c03873b4": {
+        "id": "c03873b4",
+        "type": "group",
+        "name": "Minkowski 3",
+        "op": "minkowski",
+        "children": [
+          "031afb53",
+          "eb5c95dc"
+        ],
+        "position": [
+          0,
+          30,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "mode": "solid",
+        "color": "#0000ff"
+      }
+    },
+    "rootIds": [
+      "ec760f96",
+      "c03873b4"
+    ]
+  },
+  "assets": {}
+}

@@ -1,5 +1,8 @@
 import { getKernel } from '../kernel/client';
+import { useResultStore } from '../kernel/useKernel';
 import { useSceneStore } from '../scene/store';
+import type { Example } from '../examples/catalog';
+import { fitView } from '../viewport/cameraControl';
 import { allRootIds, hasManyPlates, PLATE_GAP, platesOf } from '../scene/plates';
 import { useUiStore } from './uiStore';
 import { sceneFromJson, sceneToJson } from '../scene/persistence';
@@ -124,6 +127,17 @@ export async function saveProject(): Promise<void> {
   }
 }
 
+/** Carica nella scena il testo di un progetto JSON (file aperto o esempio incorporato); `name` è il nome proposto al salvataggio. */
+async function loadProjectText(text: string, name: string): Promise<void> {
+  const { scene, assets } = sceneFromJson(text);
+  // Le mesh del progetto entrano nell'archivio locale, poi si registrano nel kernel
+  for (const asset of assets) await addAsset(asset.positions, asset.indices);
+  useSceneStore.getState().loadScene(await restoreAssets(scene));
+  // Il nome si ricorda per il prossimo salvataggio; il file aperto non si può riscrivere (nessun handle)
+  projectName = name;
+  projectHandle = null;
+}
+
 /** Apre il selettore file e carica un progetto JSON; gli errori arrivano all'utente con un avviso. */
 export function openProject(): void {
   const input = document.createElement('input');
@@ -133,18 +147,29 @@ export function openProject(): void {
     const file = input.files?.[0];
     if (!file) return;
     try {
-      const { scene, assets } = sceneFromJson(await file.text());
-      // Le mesh del progetto entrano nell'archivio locale, poi si registrano nel kernel
-      for (const asset of assets) await addAsset(asset.positions, asset.indices);
-      useSceneStore.getState().loadScene(await restoreAssets(scene));
-      // Il nome si ricorda per il prossimo salvataggio; il file aperto non si può riscrivere (nessun handle)
-      projectName = file.name;
-      projectHandle = null;
+      await loadProjectText(await file.text(), file.name);
     } catch (err) {
       notify.error(err instanceof Error ? err.message : 'Impossibile aprire il file.');
     }
   };
   input.click();
+}
+
+/** Apre un modello di esempio al posto della scena (annullabile) e lo inquadra appena il kernel lo ha calcolato. */
+export async function openExample(example: Example): Promise<void> {
+  try {
+    await loadProjectText(await example.load(), `${example.id}.json`);
+  } catch (err) {
+    notify.error(err instanceof Error ? `Impossibile aprire l'esempio: ${err.message}` : 'Impossibile aprire l\'esempio.');
+    return;
+  }
+  // Il calcolo parte dopo il caricamento (effetto di useKernel): alla prima fine si inquadra tutta la scena
+  const unsubscribe = useResultStore.subscribe((state, prev) => {
+    if (!prev.busy || state.busy) return;
+    unsubscribe();
+    fitView(false);
+  });
+  notify.info(`Esempio aperto: ${example.title}.`);
 }
 
 /** Svuota la scena; se non è vuota chiede conferma (l'azione resta annullabile con Ctrl+Z). */

@@ -18,6 +18,11 @@ I messaggi di commit seguono i [Conventional Commits](https://www.conventionalco
 
 ## [Non rilasciato]
 
+## [0.41.0] - 2026-10-09
+
+### Aggiunto
+- **Modelli di esempio.** Nuova modale dal menu (voce **Modelli di esempio…**) e dalla quarta scheda del benvenuto, che ora è attiva: una galleria con anteprima, descrizione e crediti. Tre modelli: il biglietto da visita (testi, forme 2D e booleane), il gioco a incastri di Ulrich Bär (Minkowski, differenza e unione) e la pallina di Natale di Torsten Paul (rivoluzione, torsione, inviluppo e intersezione), entrambi CC0 e convertiti una volta per tutte dai `.scad` di esempio in progetti nativi di Construct (`src/examples/*.json`). Una scheda sostituisce la scena (un solo passo di Annulla), chiude la modale e inquadra il modello appena calcolato. I JSON si scaricano solo quando si sceglie l'esempio e le anteprime (`public/examples/*.webp`) nascono dallo script delle immagini della documentazione.
+
 ## [0.40.2] - 2026-10-09
 
 ### Modificato

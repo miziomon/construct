@@ -22,7 +22,8 @@ Tutto gira nel browser: il calcolo geometrico usa [manifold-3d](https://github.c
 - **Quote cliccabili**: l'oggetto selezionato mostra le misure X, Y e Z nella vista; un clic su una quota permette di digitare il valore in mm, senza passare dal pannello laterale, e il lucchetto accanto le fa scalare tutte in proporzione.
 - **Menu contestuale** con il tasto destro: su un oggetto elenca solo i comandi che hanno senso per lui (Raggruppa con due o più oggetti, Separa su un gruppo, niente raccordi su una sfera...); nel vuoto ha sottomenu a destra per aggiungere nel punto cliccato una forma 3D o 2D, un simbolo o un'emoji, più le voci Importa, Esporta, Dimensioni del piano e Schermata di benvenuto.
 - **Piatti**: un progetto può avere più piatti di stampa (scheda **Piatti** accanto a **Oggetti**), ciascuno con i suoi oggetti, per esempio la scatola sul primo e il coperchio sul secondo. Si vede un piatto alla volta; il 3MF esporta tutti i piatti affiancati e l'STL chiede quale piatto esportare.
-- **Schermata di benvenuto** al primo avvio (e dal menu): progetto vuoto, partire da un cubo, importare un file (i modelli di esempio arriveranno).
+- **Schermata di benvenuto** al primo avvio (e dal menu): progetto vuoto, partire da un cubo, importare un file o aprire un modello di esempio.
+- **Modelli di esempio** (menu e benvenuto): una galleria con anteprima (biglietto da visita, gioco a incastri, pallina di Natale) che sostituisce la scena, si annulla con Ctrl+Z e si inquadra da sola; i modelli sono progetti nativi incorporati nell'app, quindi si aprono anche offline.
 - **Timeline** a indicatori con il nome dell'operazione nel tooltip e un'icona per svuotare la cronologia.
 - **Barra strumenti a sezioni** (File, Trasforma, Combina, Modifica, Disponi, Oggetto, Vista), con il nome del gruppo sopra i pulsanti.
 - **Cronologia** con Annulla e Ripeti (un solo passo per operazione) e linea del tempo.

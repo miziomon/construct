@@ -1,5 +1,5 @@
 import { Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
-import { BookOpen, FileDown, FilePlus, FolderOpen, House, Info, Keyboard, Menu, Save, SaveAll, Settings, Sparkles, Upload } from 'lucide-react';
+import { BookOpen, FileDown, FilePlus, FolderOpen, House, Info, Keyboard, LayoutGrid, Menu, Save, SaveAll, Settings, Sparkles, Upload } from 'lucide-react';
 import { useUiStore } from '../uiStore';
 import { newProject, openProject, saveProject, saveProjectAs } from '../fileActions';
 import type { Panel } from './AppMenuPanels';
@@ -10,6 +10,8 @@ import { migrateLocalKey, STORAGE } from '../../storageMigration';
 const AppMenuPanels = lazyLoad(() => import('./AppMenuPanels'));
 // La documentazione è un modulo a parte: il manuale e le sue immagini si scaricano solo aprendola
 const DocsPanel = lazyLoad(() => import('../Docs/DocsPanel'));
+// I modelli di esempio (catalogo e schede) si scaricano solo aprendo la modale; ogni JSON solo quando lo si sceglie
+const ExamplesPanel = lazyLoad(() => import('../Examples/ExamplesPanel'));
 import './AppMenu.scss';
 
 
@@ -21,6 +23,7 @@ const GROUPS: Item[][] = [
   [
     { label: 'Nuovo progetto', icon: <FilePlus size={16} />, action: () => void newProject() },
     { label: 'Apri progetto…', icon: <FolderOpen size={16} />, action: openProject },
+    { panel: 'examples', label: 'Modelli di esempio…', icon: <LayoutGrid size={16} /> },
     { label: 'Salva progetto', icon: <Save size={16} />, action: () => void saveProject() },
     { label: 'Salva con nome…', icon: <SaveAll size={16} />, action: () => void saveProjectAs() },
   ],
@@ -38,7 +41,7 @@ const GROUPS: Item[][] = [
   ],
 ];
 
-const TITLES: Record<Panel, string> = { import: 'Importa', export: 'Esporta', settings: 'Impostazioni', shortcuts: 'Scorciatoie da tastiera', news: 'Novità', about: 'About', docs: 'Documentazione' };
+const TITLES: Record<Panel, string> = { import: 'Importa', export: 'Esporta', examples: 'Modelli di esempio', settings: 'Impostazioni', shortcuts: 'Scorciatoie da tastiera', news: 'Novità', about: 'About', docs: 'Documentazione' };
 
 /** Ultima versione le cui Novità sono state viste: serve al badge "nuovo". */
 const SEEN_KEY = STORAGE.seen.now;
@@ -144,10 +147,10 @@ export function AppMenu() {
         </div>
       )}
 
-      <Modal open={panel !== null} title={panel ? TITLES[panel] : ''} onClose={close} size={panel === 'shortcuts' || panel === 'news' || panel === 'docs' ? 'large' : panel === 'about' ? 'wide' : 'default'}>
+      <Modal open={panel !== null} title={panel ? TITLES[panel] : ''} onClose={close} size={panel === 'shortcuts' || panel === 'news' || panel === 'docs' ? 'large' : panel === 'about' || panel === 'examples' ? 'wide' : 'default'}>
         {panel && (
           <Suspense fallback={<p>Caricamento…</p>}>
-            {panel === 'docs' ? <DocsPanel /> : <AppMenuPanels panel={panel} run={run} />}
+            {panel === 'docs' ? <DocsPanel /> : panel === 'examples' ? <ExamplesPanel run={run} /> : <AppMenuPanels panel={panel} run={run} />}
           </Suspense>
         )}
       </Modal>

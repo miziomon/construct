@@ -1,0 +1,74 @@
+@use '../../styles/abstracts' as *;
+
+// Modelli di esempio: griglia di schede con anteprima (stesso stile delle schede del benvenuto)
+.examples {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: $space-3;
+
+  @media (max-width: 760px) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  @media (max-width: 480px) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  &__card {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: $space-1;
+    padding: $space-3;
+    border: 1px solid color('border');
+    border-radius: $radius-lg;
+    background: color('panel-raised');
+    color: color('text');
+    text-align: left;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+    @include focus-ring;
+
+    &:hover {
+      transform: translateY(-2px);
+      border-color: color('accent');
+      box-shadow: 0 10px 24px rgba(20, 40, 80, 0.16);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      transition: none;
+
+      &:hover {
+        transform: none;
+      }
+    }
+  }
+
+  // L'anteprima occupa tutta la larghezza della scheda, con proporzione fissa anche se l'immagine manca
+  &__image {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 8 / 5;
+    margin-bottom: $space-1;
+    border-radius: $radius-md;
+    background: color('bg');
+    object-fit: cover;
+  }
+
+  &__title {
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  &__text {
+    font-size: 12.5px;
+    line-height: 1.45;
+    color: color('text-muted');
+  }
+
+  &__credit {
+    margin-top: auto;
+    padding-top: $space-1;
+    font-size: 11px;
+    color: color('text-muted');
+  }
+}

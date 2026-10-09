@@ -242,13 +242,49 @@ test('modalità Ridimensiona (R): trascinando la maniglia X il cubo si allarga',
   expect(after.position[2]).toBe(10);
 });
 
-test('il menu contiene Nuovo, Apri, Salva e le Scorciatoie', async ({ page }) => {
+test('il menu contiene Nuovo, Apri, Modelli di esempio, Salva e le Scorciatoie', async ({ page }) => {
   await page.getByRole('button', { name: 'Menu', exact: true }).click();
-  for (const name of ['Nuovo progetto', 'Apri progetto…', 'Salva progetto', 'Scorciatoie da tastiera']) {
+  for (const name of ['Nuovo progetto', 'Apri progetto…', 'Modelli di esempio…', 'Salva progetto', 'Scorciatoie da tastiera']) {
     await expect(page.getByRole('menuitem', { name })).toBeVisible();
   }
   await page.getByRole('menuitem', { name: 'Scorciatoie da tastiera' }).click();
   await expect(page.getByRole('dialog')).toContainText('Ridimensiona');
+});
+
+test('Modelli di esempio: la modale elenca tre schede, una scheda sostituisce la scena (annullabile), la inquadra e chiude la modale', async ({ page }) => {
+  await addShape(page, 'Cubo');
+  await openMenuItem(page, 'Modelli di esempio…');
+  const dialog = page.getByRole('dialog', { name: 'Modelli di esempio' });
+  await expect(dialog).toBeVisible();
+  const cards = dialog.locator('.examples__card');
+  await expect(cards).toHaveCount(3);
+  await expect(cards).toContainText(['Biglietto da visita', 'Gioco a incastri', 'Pallina di Natale']);
+
+  // Il gioco a incastri: due oggetti alla radice (il vassoio forato e i tre pezzi uniti) al posto del cubo
+  await dialog.locator('.examples__card[data-example="baby-toy"]').click();
+  await expect(dialog).toBeHidden();
+  // Il JSON dell'esempio si scarica dopo la chiusura della modale: si attende che la scena cambi
+  await expect.poll(() => page.evaluate(() => window.__construct!.store.getState().scene.rootIds.length)).toBe(2);
+  await settled(page);
+  let scene = await sceneState(page);
+  expect(scene.rootIds.map((id: string) => scene.nodes[id].op).sort()).toEqual(['difference', 'minkowski']);
+  // Inquadratura automatica: il bersaglio della camera sta sul modello (lontano dall'origine, non più sul cubo)
+  await expect.poll(() => page.evaluate(() => (window.__r3f!.controls as { target: { x: number } } | null)?.target.x)).toBeGreaterThan(20);
+
+  // Un solo passo di Annulla riporta il cubo
+  await page.keyboard.press('Control+z');
+  await settled(page);
+  scene = await sceneState(page);
+  expect(scene.rootIds).toHaveLength(1);
+  expect(scene.nodes[scene.rootIds[0]].kind).toBe('box');
+
+  // Il biglietto da visita ha dieci oggetti alla radice, tra cui testi
+  await openMenuItem(page, 'Modelli di esempio…');
+  await dialog.locator('.examples__card[data-example="business-card"]').click();
+  await expect.poll(() => page.evaluate(() => window.__construct!.store.getState().scene.rootIds.length)).toBe(10);
+  await settled(page);
+  scene = await sceneState(page);
+  expect((Object.values(scene.nodes) as { kind?: string }[]).some((n) => n.kind === 'text')).toBe(true);
 });
 
 test('le nuove forme stanno in cima all\'elenco e hanno colori diversi', async ({ page }) => {
@@ -2711,7 +2747,7 @@ test('Quote: il lucchetto fa scalare tutti gli assi insieme', async ({ page }) =
   expect((await sceneState(page)).nodes[id].size).toEqual([60, 40, 40]);
 });
 
-test('Benvenuto: al primo avvio propone da dove cominciare, la quarta scelta non è ancora disponibile', async ({ browser }) => {
+test('Benvenuto: al primo avvio propone da dove cominciare, la quarta scelta apre i modelli di esempio', async ({ browser }) => {
   // Contesto nuovo (localStorage separato): la pagina di beforeEach ha già segnato il benvenuto come visto
   const page = await (await browser.newContext()).newPage();
   await openApp(page, { welcome: true });
@@ -2720,7 +2756,12 @@ test('Benvenuto: al primo avvio propone da dove cominciare, la quarta scelta non
   await expect(dialog.getByRole('button', { name: /Nuovo progetto/ })).toBeEnabled();
   await expect(dialog.getByRole('button', { name: /Parti da un cubo/ })).toBeEnabled();
   await expect(dialog.getByRole('button', { name: /Importa/ })).toBeEnabled();
-  await expect(dialog.getByRole('button', { name: /Modelli di esempio/ })).toBeDisabled();
+  await dialog.getByRole('button', { name: /Modelli di esempio/ }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByRole('dialog', { name: 'Modelli di esempio' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await openMenuItem(page, 'Schermata di benvenuto');
+  await expect(dialog).toBeVisible();
 
   // "Parti da un cubo" crea la scena con un cubo e chiude la finestra
   await dialog.getByRole('button', { name: /Parti da un cubo/ }).click();

@@ -1,10 +1,11 @@
 import { mkdirSync } from 'node:fs';
 import { test } from '@playwright/test';
 import sharp from 'sharp';
-import { addShape, openApp, project, settled } from './helpers';
+import { addShape, openApp, openMenuItem, project, settled } from './helpers';
 
 /**
- * Genera le immagini di esempio dei tooltip (public/help/*.webp) e quelle del README (docs/images/*.png).
+ * Genera le immagini di esempio dei tooltip (public/help/*.webp), le anteprime dei modelli di esempio
+ * (public/examples/*.webp) e quelle del README (docs/images/*.png).
  * Non fa parte della suite: si lancia a mano con `DOC_IMAGES=1 npx playwright test e2e/docs-images.spec.ts`.
  */
 test.skip(!process.env.DOC_IMAGES, 'Solo con DOC_IMAGES=1');
@@ -13,6 +14,7 @@ type Page = import('@playwright/test').Page;
 type Vec = [number, number, number];
 
 mkdirSync('public/help', { recursive: true });
+mkdirSync('public/examples', { recursive: true });
 mkdirSync('docs/images', { recursive: true });
 
 /** Inquadra la scena da un punto di vista a tre quarti, attorno a `target`, a `distance` mm di distanza. */
@@ -164,6 +166,26 @@ test.describe('immagini di esempio', () => {
     await page.keyboard.press('Shift+J');
     await settled(page);
     await help(page, 'minkowski');
+  });
+
+  test('anteprime dei modelli di esempio', async ({ page }) => {
+    // Ogni esempio si apre dalla sua scheda, si inquadra (Home) e si fotografa la vista 3D in proporzione 8:5
+    await page.setViewportSize({ width: 1400, height: 900 });
+    for (const id of ['business-card', 'baby-toy', 'bauble']) {
+      await openMenuItem(page, 'Modelli di esempio…');
+      await page.locator(`.examples__card[data-example="${id}"]`).click();
+      await settled(page);
+      await page.keyboard.press('Home');
+      // Il biglietto si legge dall'alto: dal punto di vista predefinito il testo si vedrebbe al rovescio
+      if (id === 'business-card') await page.keyboard.press('7');
+      await page.waitForTimeout(400);
+      const png = await page.locator('.viewport').screenshot();
+      const meta = await sharp(png).metadata();
+      // Ritaglio centrale 8:5 e riduzione a 480 px di larghezza
+      const width = meta.width!;
+      const height = Math.min(meta.height!, Math.round((width * 5) / 8));
+      await sharp(png).extract({ left: 0, top: Math.round((meta.height! - height) / 2), width, height }).resize({ width: 480 }).webp({ quality: 80 }).toFile(`public/examples/${id}.webp`);
+    }
   });
 
   test('immagini del README', async ({ page }) => {

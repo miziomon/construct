@@ -13,9 +13,7 @@ interface Choice {
   icon: LucideIcon;
   title: string;
   text: string;
-  /** Scelta non ancora disponibile: la scheda si vede ma non si può premere. */
-  soon?: boolean;
-  run?: () => void | Promise<void>;
+  run: () => void | Promise<void>;
 }
 
 /** Marchio dell'app: lo stesso cubo del favicon, sul fondo scuro del logo. */
@@ -45,8 +43,8 @@ export function WelcomeDialog() {
     setOpen(false);
   };
 
-  /** Chiude il benvenuto e apre una modale del menu (Documentazione, About). */
-  const openPanel = (panel: 'docs' | 'about') => {
+  /** Chiude il benvenuto e apre una modale del menu (Modelli di esempio, Documentazione, About). */
+  const openPanel = (panel: 'examples' | 'docs' | 'about') => {
     close();
     setAppPanel(panel);
   };
@@ -83,7 +81,7 @@ export function WelcomeDialog() {
       icon: FolderOpen,
       title: 'Modelli di esempio',
       text: 'Una raccolta di modelli pronti da aprire e studiare.',
-      soon: true,
+      run: () => openPanel('examples'),
     },
   ];
 
@@ -98,26 +96,22 @@ export function WelcomeDialog() {
 
         <p className="welcome__lead">Da dove vuoi cominciare?</p>
         <div className="welcome__grid">
-          {choices.map(({ id, icon: Icon, title, text, soon, run }) => (
+          {choices.map(({ id, icon: Icon, title, text, run }) => (
             <button
               key={id}
               type="button"
               className="welcome__card"
               data-choice={id}
-              disabled={soon}
               // Il fuoco parte dalla prima scelta, non dalla X di chiusura
               autoFocus={id === 'empty'}
               onClick={() => {
                 // Il file picker deve partire dal clic: si chiude e si esegue nello stesso gestore
                 close();
-                void run?.();
+                void run();
               }}
             >
               <span className="welcome__icon"><Icon size={22} strokeWidth={1.75} /></span>
-              <span className="welcome__card-title">
-                {title}
-                {soon && <span className="welcome__soon">Presto</span>}
-              </span>
+              <span className="welcome__card-title">{title}</span>
               <span className="welcome__card-text">{text}</span>
             </button>
           ))}

@@ -36,7 +36,7 @@ export type ToolbarMenu = 'align' | 'mirror' | 'views';
 export type Projection = 'perspective' | 'orthographic';
 
 /** Pannelli del menu hamburger (Importa, Esporta, ...): il menu del vuoto della vista li apre da fuori, quindi lo stato sta qui. */
-export type AppPanel = 'import' | 'export' | 'settings' | 'shortcuts' | 'news' | 'about' | 'docs';
+export type AppPanel = 'import' | 'export' | 'examples' | 'settings' | 'shortcuts' | 'news' | 'about' | 'docs';
 
 /**
  * Impostazioni dell'utente (modale Impostazioni), salvate in localStorage con le altre preferenze. I limiti servono anche
