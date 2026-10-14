@@ -18,6 +18,14 @@ I messaggi di commit seguono i [Conventional Commits](https://www.conventionalco
 
 ## [Non rilasciato]
 
+## [0.60.0] - 2026-10-15
+
+### Aggiunto
+- Profilo di Bézier, fase 1 (modello, kernel, codice OpenSCAD e ritorno): nuovo tipo di forma 2D `path` con contorni di nodi di Bézier (maniglie relative, tipo di nodo, più contorni con fori pari-dispari), estrusione lineare e rotazionale. `src/scene/bezier.ts` campiona le curve entro una tolleranza (predefinita 0,05 mm, tetti di punti con raddoppio deterministico), calcola area e autointersezioni e valida i dati non fidati; `pathContours` li porta a Larghezza × Profondità riusando `svgContours`, e in rotazione chiude sull'asse i contorni aperti.
+- Il codice OpenSCAD del Profilo scrive un commento `// construct:path` con i nodi sulla riga prima di `polygon()`; rileggendo il file, se il poligono coincide ancora (entro 0,001 mm) con i nodi, torna un Profilo con gli stessi contorni, altrimenti resta un Poligono. Dati rovinati o oltre i limiti (600 nodi) non causano errori.
+- `store.addPath` crea un Profilo in un solo passo ("Aggiungi Profilo"); nelle Proprietà si mostra con Larghezza, Profondità, lucchetto delle proporzioni e Scala. In rotazione lo slider Raggio non c'è: il raggio è la x del centro del disegno. In rotazione, un Profilo tutto a destra dell'asse non ha l'`intersection()` di ritaglio nel codice. Non c'è ancora un pulsante in libreria né un editor di disegno (fase 2).
+
+
 ## [0.59.3] - 2026-10-14
 
 ### Corretto

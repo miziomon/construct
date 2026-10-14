@@ -164,6 +164,15 @@ nell'editor in qualsiasi modalità.
 - **Ridimensionamento.** Per `svg`, `resize.ts` riscala i contorni campionati (casi speciali a `resize.ts:27` e `:195`).
   Per `path` scalare solo i punti campionati farebbe perdere i nodi: il ridimensionamento deve **scalare i nodi**
   (posizioni e maniglie) e ricalcolare il riquadro. È l'unico punto dove `path` si discosta da `svg`.
+  **Superato dalla fase 1 (0.60.0):** `path` ha `width` e `depth` come `svg` e non scala i nodi, vedi «Decisioni della fase 1» alla fine di questa sezione.
+
+### Decisioni della fase 1 (0.60.0)
+
+Prese realizzando il modello e il kernel; dove si discostano dal testo sopra, valgono queste.
+
+- **D1. Il riquadro naturale è quello delle sole curve.** La chiusura sull'asse dei contorni aperti si aggiunge dopo la centratura: passare da Lineare a Rotazionale non cambia `width`, `depth` né la scala.
+- **D2. Il riquadro non dipende dalla tolleranza.** Ogni cubica si spezza prima nei suoi estremi in x e in y, così il riquadro del poligono campionato è quello esatto della curva e cambiare la tolleranza non sposta l'oggetto.
+- **D3. Scala e raggio.** I nodi stanno nel sistema dell'editor e non si scalano mai: `pathContours` campiona le curve e riusa `svgContours` (scala a `width × depth` attorno al centro del riquadro), quindi `resize.ts` tratta il `path` come l'`svg` (lucchetto chiuso di default, Scala rispetto alla larghezza naturale). In rotazione il raggio è la x del centro del riquadro naturale (`pathRadius`, anche negativa), il campo `revolveRadius` è ignorato e lo slider Raggio non si mostra; i punti di chiusura stanno a x = −raggio dopo la centratura, cioè sull'asse. Ingrandendo il profilo con il gizmo una curva vicina all'asse può superarlo: la parte oltre l'asse si scarta (l'avviso arriva con la modale di disegno).
 
 ## 5. Esperienza d'uso (UX)
 
