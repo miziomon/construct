@@ -305,3 +305,61 @@ describe('parametri e formule nel codice', () => {
     expect(code).toContain('translate([i * (passo + 10), i * 0, i * 0])');
   });
 });
+
+describe('sceneToOpenScad: Profilo di Bézier', () => {
+  const corner = (p: [number, number]) => ({ p, kind: 'corner' as const });
+  /** Quadrato aperto a destra dell'asse: da (25, 0) a (35, 0), (35, 20), (25, 20). Centro a x = 30. */
+  const U = [{ closed: false, nodes: [corner([25, 0]), { p: [35, 0] as [number, number], out: [0, 5] as [number, number], kind: 'smooth' as const }, corner([35, 20]), corner([25, 20])] }];
+  const profile = (patch: Partial<Shape2DNode> = {}) => ({ ...shape2dDefaults('path'), id: 'p', name: 'Profilo', position: [0, 0, 5], paths: U, width: 10, depth: 20, ...patch }) as Extract<Shape2DNode, { kind: 'path' }>;
+  const codeOf = (node: Shape2DNode) => sceneToOpenScad({ nodes: { [node.id]: node }, rootIds: [node.id] });
+  const lines = (code: string) => code.split('\n').map((l) => l.trim());
+
+  it('il commento con i nodi sta sulla riga prima di polygon() e contiene gli stessi contorni', () => {
+    const node = profile();
+    const rows = lines(codeOf(node));
+    const at = rows.findIndex((l) => l.startsWith('// construct:path '));
+    expect(at).toBeGreaterThan(-1);
+    expect(rows[at + 1]).toMatch(/^polygon\(/);
+    const meta = JSON.parse(rows[at].replace('// construct:path ', ''));
+    expect(meta).toMatchObject({ v: 1, w: 10, d: 20, t: 0.05 });
+    expect(meta.paths).toStrictEqual(node.paths);
+  });
+
+  it('con il contorno (offset) il commento resta subito prima di polygon()', () => {
+    const rows = lines(codeOf(profile({ offset: 1.5 })));
+    const at = rows.findIndex((l) => l.startsWith('// construct:path '));
+    expect(rows[at - 1]).toMatch(/^offset\(/);
+    expect(rows[at + 1]).toMatch(/^polygon\(/);
+  });
+
+  it('rotazione tutta a destra dell\'asse: translate([raggio, 0]) senza intersection()', () => {
+    const code = codeOf(profile({ extrusion: 'rotate' }));
+    expect(code).not.toContain('intersection()');
+    expect(code).toContain(['rotate_extrude(angle = 360, $fn = 64)', 'translate([30, 0])', '// construct:path'].join('\n').replace(/\n/g, '\n'.padEnd(1) ));
+  });
+
+  it('rotazione con offset negativo: ancora senza intersection(), con offset e commento in ordine', () => {
+    const rows = lines(codeOf(profile({ extrusion: 'rotate', offset: -1 })));
+    expect(rows).not.toContain('intersection() {');
+    const at = rows.findIndex((l) => l.startsWith('translate([30, 0])'));
+    expect(rows[at + 1]).toMatch(/^offset\(/);
+    expect(rows[at + 2]).toMatch(/^\/\/ construct:path /);
+    expect(rows[at + 3]).toMatch(/^polygon\(/);
+  });
+
+  it('oltre l\'asse o con offset positivo l\'intersection() resta', () => {
+    // Centro a x = 0: metà del profilo sta oltre l'asse
+    const across = [{ closed: true, nodes: [corner([-5, 0]), corner([5, 0]), corner([5, 10]), corner([-5, 10])] }];
+    expect(codeOf(profile({ extrusion: 'rotate', paths: across, width: 10, depth: 10 }))).toContain('intersection() {');
+    // Il contorno ingrandito attraversa l'asse
+    expect(codeOf(profile({ extrusion: 'rotate', offset: 1 }))).toContain('intersection() {');
+    // Il commento c'è sempre, anche dentro intersection()
+    expect(codeOf(profile({ extrusion: 'rotate', offset: 1 }))).toContain('// construct:path ');
+  });
+
+  it('un profilo vuoto non ha commento e non rompe il codice', () => {
+    const code = codeOf(profile({ paths: [] }));
+    expect(code).not.toContain('construct:path');
+    expect(code).toContain('square(0.01, center = true);');
+  });
+});
