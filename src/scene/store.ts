@@ -16,6 +16,9 @@ import { addImportedRoots, addPlateScene, moveRootsToPlate, plateName, platesOf,
 import { composeTransform, conjugate, eulerToMatrix, matrixToEuler, normalizeMirror, round, toLocalTransform } from './math';
 import type { Mirror, Transform } from './math';
 import { pathNaturalSize } from './shapes2d';
+import { hasBoundDimension } from './resize';
+import { compensatePosition } from './pathPlacement';
+import type { Draft } from '../ui/ProfileEditor/model';
 
 export type GizmoMode = 'select' | 'translate' | 'rotate' | 'resize' | 'extrude';
 
@@ -38,7 +41,14 @@ interface SceneState {
    * Aggiunge un Profilo di Bézier (forma 2D `path`) dai contorni dati, appoggiato sul piatto. I nodi si arrotondano a 4
    * decimali; larghezza e profondità sono quelle naturali delle curve. Per ora nasce solo da qui (test) e dall'import di .scad.
    */
-  addPath: (input: { paths: PathContour[]; tolerance?: number; extrusion?: 'linear' | 'rotate'; height?: number; revolveAngle?: number; revolveSegments?: number; at?: [number, number]; name?: string }) => string;
+  addPath: (input: { paths: PathContour[]; tolerance?: number; extrusion?: 'linear' | 'rotate'; height?: number; twist?: number; scaleTop?: number; revolveAngle?: number; revolveSegments?: number; at?: [number, number]; name?: string }) => string;
+  /**
+   * Applica il disegno della modale a un Profilo esistente in un solo passo di Annulla ("Profilo"): contorni a 4 decimali,
+   * parametri di estrusione, `width × depth` = misure naturali del disegno (non scritte se qualche misura è legata a un
+   * parametro: lì il disegno si scala alla misura della formula) e posizione compensata dallo spostamento del centro del
+   * disegno da `before` a `after` (vedi pathPlacement.ts). Rifiuta (false) un nodo bloccato o che non è un Profilo.
+   */
+  commitProfile: (id: string, draft: Draft, centers: { before: Vec2; after: Vec2 }) => boolean;
   /** Aggiunge una mesh importata, appoggiata sul piatto e centrata in XY. */
   addMesh: (input: { assetId: string; name: string; fileName: string; color?: string; origin: Vec3; size: Vec3; triangles: number }) => string;
   /** Aggiorna campi di un nodo (patch parziale, validata dal chiamante). */
@@ -111,6 +121,15 @@ const GROUP_LABELS: Record<GroupOp, string> = { group: 'Gruppo', union: 'Unione'
 
 /** Altezza iniziale dell'estrusione di un SVG importato (mm). */
 const SVG_EXTRUDE_HEIGHT = 2;
+
+/** Contorni di un Profilo con le coordinate a 4 decimali (come il codice OpenSCAD); `|| 0` toglie il -0. */
+function roundPaths(paths: PathContour[]): PathContour[] {
+  const r4 = ([x, y]: Vec2): Vec2 => [round(x, 4) || 0, round(y, 4) || 0];
+  return paths.map((c) => ({
+    closed: c.closed,
+    nodes: c.nodes.map((n) => ({ p: r4(n.p), ...(n.in ? { in: r4(n.in) } : {}), ...(n.out ? { out: r4(n.out) } : {}), kind: n.kind })),
+  }));
+}
 
 export const emptyScene = (): Scene => ({ nodes: {}, rootIds: [] });
 
@@ -313,12 +332,7 @@ export const useSceneStore = create<SceneState>()(
         const id = newId();
         act('Aggiungi Profilo', (s) => {
           const { paths, at, name, ...params } = input;
-          // Coordinate a 4 decimali (come il codice OpenSCAD); `|| 0` toglie il -0
-          const r4 = ([x, y]: Vec2): Vec2 => [round(x, 4) || 0, round(y, 4) || 0];
-          const rounded: PathContour[] = paths.map((c) => ({
-            closed: c.closed,
-            nodes: c.nodes.map((n) => ({ p: r4(n.p), ...(n.in ? { in: r4(n.in) } : {}), ...(n.out ? { out: r4(n.out) } : {}), kind: n.kind })),
-          }));
+          const rounded = roundPaths(paths);
           const size = pathNaturalSize({ paths: rounded });
           const node = {
             ...shape2dDefaults('path'),
@@ -339,6 +353,34 @@ export const useSceneStore = create<SceneState>()(
           s.selection = [id];
         });
         return id;
+      },
+
+      commitProfile: (id, draft, centers) => {
+        const node = get().scene.nodes[id];
+        // Solo un Profilo, e non bloccato (nemmeno da un gruppo che lo contiene)
+        if (node?.type !== 'shape2d' || node.kind !== 'path' || isLocked(get().scene, id)) return false;
+        act('Profilo', (s) => {
+          const target = s.scene.nodes[id] as Shape2DNode;
+          const rounded = roundPaths(draft.paths);
+          const size = pathNaturalSize({ paths: rounded });
+          const patch: Record<string, unknown> = {
+            paths: rounded,
+            tolerance: draft.tolerance,
+            extrusion: draft.extrusion,
+            height: draft.height,
+            twist: draft.twist,
+            scaleTop: draft.scaleTop,
+            revolveAngle: draft.revolveAngle,
+            revolveSegments: draft.revolveSegments,
+            // Il centro del disegno è cambiato: il nodo si sposta perché le parti invariate restino dove sono
+            position: compensatePosition(target, draft.extrusion, centers.before, centers.after),
+          };
+          // Con una misura legata a un parametro il disegno si scala alla misura della formula: larghezza e profondità non si toccano
+          if (!hasBoundDimension(target)) Object.assign(patch, { width: size.width, depth: size.depth });
+          // I campi legati (altezza, posizione...) tengono il valore della formula, come per ogni altra modifica
+          Object.assign(target, holdBound(target, patch).patch);
+        });
+        return true;
       },
 
       addText: ({ text, font, origin, label, at }) => {

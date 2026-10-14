@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { isHidden, isLocked, useSceneStore } from './store';
 import { composeTransform, eulerToMatrix, matrixToEuler } from './math';
+import { draftFromNode, pathCenter } from '../ui/ProfileEditor/model';
+import { bboxOf } from './bezier';
+import { pathContours, pathNaturalSize } from './shapes2d';
+import { scalePercent } from './resize';
+import type { Shape2DNode } from './types';
 
 const st = () => useSceneStore.getState();
 const undo = () => useSceneStore.temporal.getState().undo();
@@ -314,10 +319,85 @@ describe('addPath: Profilo di Bézier', () => {
     expect(st().scene.rootIds).toEqual([id]);
   });
 
+  it('torsione e scala della cima del disegno arrivano al nodo', () => {
+    const id = st().addPath({ paths: [rect], twist: 45, scaleTop: 0.5 });
+    expect(st().scene.nodes[id]).toMatchObject({ twist: 45, scaleTop: 0.5 });
+  });
+
   it('un solo Annulla toglie il Profilo; in rotazione sta appoggiato sul piatto con metà profondità', () => {
     const id = st().addPath({ paths: [rect], extrusion: 'rotate', at: [5, 7], name: 'Bicchiere' });
     expect(st().scene.nodes[id]).toMatchObject({ name: 'Bicchiere', extrusion: 'rotate', position: [5, 7, 10] });
     undo();
     expect(st().scene.rootIds).toEqual([]);
+  });
+});
+
+describe('commitProfile: applica il disegno della modale', () => {
+  type PathNodeShape = Extract<Shape2DNode, { kind: 'path' }>;
+  const corner = (p: [number, number]) => ({ p, kind: 'corner' as const });
+  const rect = { closed: true, nodes: [corner([0, 0]), corner([40, 0]), corner([40, 20]), corner([0, 20])] };
+  const bigger = { closed: true, nodes: [corner([0, 0]), corner([60.123456, 0]), corner([60, 30]), corner([0, 30])] };
+  const get = (id: string) => st().scene.nodes[id] as PathNodeShape;
+  const draftOf = (id: string, patch: object = {}) => ({ ...draftFromNode(get(id)), ...patch });
+
+  it('in un solo passo "Profilo": nodi a 4 decimali, parametri, misure naturali e posizione compensata', () => {
+    const id = st().addPath({ paths: [rect], height: 6, at: [10, 20] });
+    useSceneStore.temporal.getState().clear();
+    const draft = { ...draftOf(id, { paths: [bigger], extrusion: 'linear' as const, height: 9, twist: 30, scaleTop: 0.5, tolerance: 0.1 }) };
+    // Il centro del disegno passa da (20, 10) a (30.0617, 15)
+    expect(st().commitProfile(id, draft, { before: [20, 10], after: pathCenter(draft) })).toBe(true);
+    expect(st().op).toBe('Profilo');
+    expect(useSceneStore.temporal.getState().pastStates).toHaveLength(1);
+    const node = get(id);
+    expect(node).toMatchObject({ width: 60.1235, depth: 30, height: 9, twist: 30, scaleTop: 0.5, tolerance: 0.1, extrusion: 'linear' });
+    expect(node.paths[0].nodes[1].p).toEqual([60.1235, 0]);
+    // Posizione: [10, 20, 3] + (Δx, Δy, 0) con Δ = (30.0617 - 20, 15 - 10)
+    expect(node.position[0]).toBeCloseTo(10 + 10.0617, 3);
+    expect(node.position[1]).toBeCloseTo(25, 6);
+    expect(node.position[2]).toBe(3);
+    undo();
+    expect(get(id)).toMatchObject({ width: 40, depth: 20, height: 6, position: [10, 20, 3] });
+  });
+
+  it('rifiuta un Profilo bloccato (anche dentro un gruppo bloccato) e un nodo che non è un Profilo', () => {
+    const id = st().addPath({ paths: [rect] });
+    const draft = draftOf(id, { paths: [bigger] });
+    useSceneStore.temporal.getState().clear();
+    st().updateNode(id, { locked: true });
+    useSceneStore.temporal.getState().clear();
+    expect(st().commitProfile(id, draft, { before: [0, 0], after: [0, 0] })).toBe(false);
+    expect(get(id).paths[0].nodes[1].p).toEqual([40, 0]);
+    expect(useSceneStore.temporal.getState().pastStates).toHaveLength(0);
+    st().addPrimitive('box');
+    expect(st().commitProfile(st().scene.rootIds[0], draft, { before: [0, 0], after: [0, 0] })).toBe(false);
+    expect(st().commitProfile('inesistente', draft, { before: [0, 0], after: [0, 0] })).toBe(false);
+  });
+
+  it('con una misura legata a un parametro width e depth non si scrivono; i campi legati tengono il valore', () => {
+    const id = st().addPath({ paths: [rect], height: 6 });
+    st().updateNode(id, { exprs: { width: { expr: '40' }, height: { expr: '6' } } });
+    // Con una misura legata il disegno non si incorpora: i nodi restano quelli del nodo
+    expect(draftFromNode(get(id)).paths).toBe(get(id).paths);
+    st().commitProfile(id, draftOf(id, { paths: [bigger], height: 9 }), { before: [20, 10], after: [20, 10] });
+    // Il disegno cambia, la misura legata no (e l'altezza legata nemmeno)
+    expect(get(id)).toMatchObject({ width: 40, depth: 20, height: 6 });
+    expect(get(id).paths[0].nodes[1].p).toEqual([60.1235, 0]);
+  });
+
+  it('OK senza modifiche dopo l\'incorporazione: stesso ingombro e posizione, width e depth = disegno, Scala 100%', () => {
+    const id = st().addPath({ paths: [rect], at: [5, 5] });
+    // Ingrandito col gizmo: 80 × 60 su un disegno naturale di 40 × 20 (la scala sta in width e depth)
+    st().updateNode(id, { width: 80, depth: 60 });
+    const before = get(id);
+    const boxBefore = bboxOf(pathContours(before))!;
+    const draft = draftFromNode(before);
+    st().commitProfile(id, draft, { before: pathCenter(draft), after: pathCenter(draft) });
+    const after = get(id);
+    expect(after.position).toEqual(before.position);
+    expect(after).toMatchObject({ width: 80, depth: 60 });
+    expect(pathNaturalSize(after)).toEqual({ width: 80, depth: 60 });
+    expect(scalePercent(after)).toBeCloseTo(100, 9);
+    const boxAfter = bboxOf(pathContours(after))!;
+    for (const key of ['minX', 'maxX', 'minY', 'maxY'] as const) expect(boxAfter[key]).toBeCloseTo(boxBefore[key], 3);
   });
 });
