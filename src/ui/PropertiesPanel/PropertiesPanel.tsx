@@ -775,11 +775,14 @@ function Shape2DFields({ node, patch, locked }: { node: Shape2DNode; patch: (p: 
   const length = { unit: 'mm', min: 0.5, max: reach, step: 0.5, hardMin: 0.1, hardMax: 2000 };
   const rotational = isRotational(node);
   const revolve = revolveParams(node);
-  /** Cambia il tipo di estrusione: al primo passaggio a Rotazionale scrive i valori calcolati (poi restano anche tornando a Lineare). */
+  /**
+   * Cambia il tipo di estrusione: al primo passaggio a Rotazionale scrive i valori calcolati (poi restano anche tornando a
+   * Lineare). Il Profilo di Bézier non scrive il raggio: è sempre la X del centro del disegno.
+   */
   const setExtrusion = (kind: 'linear' | 'rotate') =>
     patch(
       (kind === 'rotate'
-        ? { extrusion: 'rotate', revolveAngle: revolve.angle, revolveRadius: revolve.radius, revolveSegments: revolve.segments }
+        ? { extrusion: 'rotate', revolveAngle: revolve.angle, ...(node.kind === 'path' ? {} : { revolveRadius: revolve.radius }), revolveSegments: revolve.segments }
         : { extrusion: 'linear' }) as Partial<Shape2DNode>,
     );
   // Raggio massimo di arrotondamento: poco meno dell'inraggio del poligono, o di metà lato minore del quadrato
@@ -824,7 +827,7 @@ function Shape2DFields({ node, patch, locked }: { node: Shape2DNode; patch: (p: 
     profileSlider(label, value, key, tooltip, { min: 0.5, max: Math.max(0.5, limit), step: 0.5, hardMin: 0.1, hardMax: 2000 });
   return (
     <>
-      <Section title={node.kind === 'text' ? (node.origin === 'symbol' ? 'Simbolo' : node.origin === 'emoji' ? 'Emoji' : 'Testo') : profile ? 'Profilato' : 'Profilo 2D'}>
+      <Section title={node.kind === 'text' ? (node.origin === 'symbol' ? 'Simbolo' : node.origin === 'emoji' ? 'Emoji' : 'Testo') : profile ? 'Profilato' : node.kind === 'path' ? 'Profilo' : 'Profilo 2D'}>
         {isBarShape(node) ? (
           // Profilato con ali e anima: ingombro della sezione, i due spessori (etichette diverse per tipo) e il raccordo interno
           [
@@ -985,7 +988,8 @@ function Shape2DFields({ node, patch, locked }: { node: Shape2DNode; patch: (p: 
         {rotational ? (
           <>
             {slider('Angolo', revolve.angle, 'revolveAngle', TIPS.revolveAngle, { unit: '°', min: 1, max: 360, step: 1, hardMin: 1, hardMax: 360 })}
-            {slider('Raggio', revolve.radius, 'revolveRadius', TIPS.revolveRadius, { unit: 'mm', min: 0, max: reach, step: 0.5, hardMin: 0, hardMax: 2000 })}
+            {/* Il Profilo di Bézier gira attorno all'asse con il raggio che ha nel disegno: non si imposta */}
+            {node.kind !== 'path' && slider('Raggio', revolve.radius, 'revolveRadius', TIPS.revolveRadius, { unit: 'mm', min: 0, max: reach, step: 0.5, hardMin: 0, hardMax: 2000 })}
             {slider('Segmenti', revolve.segments, 'revolveSegments', TIPS.revolveSegments, { unit: '', min: 8, max: 128, step: 1, hardMin: 3, hardMax: 256 })}
           </>
         ) : (

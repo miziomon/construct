@@ -296,3 +296,28 @@ describe('etichette della timeline', () => {
     expect(st().scene.rootIds).toHaveLength(2);
   });
 });
+
+describe('addPath: Profilo di Bézier', () => {
+  const corner = (p: [number, number]) => ({ p, kind: 'corner' as const });
+  const rect = { closed: true, nodes: [corner([0, 0]), corner([40.123456, -0]), corner([40, 20]), corner([0, 20])] };
+
+  it('crea il Profilo in un solo passo, con i nodi a 4 decimali, le misure naturali e il lucchetto chiuso', () => {
+    const id = st().addPath({ paths: [rect], height: 6 });
+    expect(st().op).toBe('Aggiungi Profilo');
+    // Un solo passo oltre allo stato iniziale
+    expect(useSceneStore.temporal.getState().pastStates).toHaveLength(1);
+    const node = st().scene.nodes[id];
+    expect(node).toMatchObject({ type: 'shape2d', kind: 'path', name: 'Profilo', width: 40.1235, depth: 20, height: 6, lockRatio: true, tolerance: 0.05 });
+    expect(node.position).toEqual([0, 0, 3]);
+    expect(Object.is((node as { paths: typeof rect[] }).paths[0].nodes[1].p[1], 0)).toBe(true);
+    expect(st().selection).toEqual([id]);
+    expect(st().scene.rootIds).toEqual([id]);
+  });
+
+  it('un solo Annulla toglie il Profilo; in rotazione sta appoggiato sul piatto con metà profondità', () => {
+    const id = st().addPath({ paths: [rect], extrusion: 'rotate', at: [5, 7], name: 'Bicchiere' });
+    expect(st().scene.nodes[id]).toMatchObject({ name: 'Bicchiere', extrusion: 'rotate', position: [5, 7, 10] });
+    undo();
+    expect(st().scene.rootIds).toEqual([]);
+  });
+});

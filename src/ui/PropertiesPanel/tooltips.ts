@@ -37,7 +37,7 @@ export const TIPS = {
   ratioLocked: 'Proporzioni bloccate: le misure e la maniglia Ridimensiona cambiano insieme, la forma non si deforma (nei profilati scalano anche pareti, raccordi e punte). Clic per sbloccare.',
   ratioBlocked: 'Una misura è legata a un parametro: le proporzioni non si possono bloccare, ogni misura libera cambia da sola. Togli il parametro (doppio clic sul nome del campo) per riattivare il lucchetto.',
   ratioUnlocked: 'Proporzioni libere: ogni misura si cambia da sola (la forma si deforma). Clic per bloccare.',
-  scale: 'Scala: dimensione della forma rispetto a quella iniziale (per gli SVG, a quella del file), in %. Ridimensiona sempre in proporzione.',
+  scale: "Scala: dimensione della forma rispetto a quella iniziale (per gli SVG e i Profili, a quella del file o del disegno), in %. Ridimensiona sempre in proporzione. In estrusione rotazionale un Profilo si scala attorno al suo centro: il raggio dall'asse non cambia.",
   offset: 'Contorno: ingrandisce (valori positivi) o restringe (negativi) il profilo 2D di questi mm prima di estruderlo, come offset() di OpenSCAD. Utile per ispessire un testo o dare gioco a un incastro.',
   offsetJoin: 'Angoli del contorno: arrotondati (offset con r) oppure vivi (offset con delta, gli angoli restano a spigolo).',
   extrusionKind: "Tipo di estrusione: Lineare estrude il profilo in altezza; Rotazionale lo fa girare attorno all'asse Z (come rotate_extrude di OpenSCAD) per anelli, tori, vasi e archi.",

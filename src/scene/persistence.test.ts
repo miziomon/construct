@@ -56,6 +56,15 @@ describe('file di progetto JSON', () => {
     expect((loaded.nodes.g as GroupNode).op).toBe('group');
   });
 
+  it('un Profilo di Bézier torna identico, anche in rotazione e senza campi inventati', () => {
+    const corner = (p: [number, number]) => ({ p, kind: 'corner' as const });
+    const curved = { closed: false, nodes: [{ p: [1, 2] as [number, number], out: [3.5, 0.25] as [number, number], kind: 'smooth' as const }, { p: [9, 2] as [number, number], in: [-3.5, 0] as [number, number], kind: 'symmetric' as const }, corner([9, 8])] };
+    const path = { ...shape2dDefaults('path'), id: 'p', name: 'Profilo', position: [1, 2, 3] as Vec3, paths: [curved], tolerance: 0.02, width: 8, depth: 6, extrusion: 'rotate', revolveAngle: 270 } as Shape2DNode;
+    const scene = sceneOf([path], ['p']);
+    const { scene: loaded } = sceneFromJson(sceneToJson(scene));
+    expect(loaded).toStrictEqual(scene);
+  });
+
   it('il file è leggibile: formato, versione, scena e nessun dato di interfaccia', () => {
     const data = JSON.parse(sceneToJson(fullScene()));
     expect(data.format).toBe('construct-scene');

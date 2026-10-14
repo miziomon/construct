@@ -3,7 +3,7 @@ import { immer } from 'zustand/middleware/immer';
 import { current } from 'immer';
 import { temporal } from 'zundo';
 import type { ScadImport } from '../import/scad/toScene';
-import type { Binding, CornerNode, EdgeNode, GroupNode, GroupOp, MeshNode, Param, PrimitiveKind, PrimitiveNode, Scene, SceneNode, Shape2DKind, Shape2DNode, Vec3 } from './types';
+import type { Binding, CornerNode, EdgeNode, GroupNode, GroupOp, MeshNode, Param, PathContour, PrimitiveKind, PrimitiveNode, Scene, SceneNode, Shape2DKind, Shape2DNode, Vec2, Vec3 } from './types';
 import { notify } from '../ui/notify/notifyStore';
 import { applyBindings, boundValue, formulaDeps, holdBound, nameProblem, renameInExpr, resolveParams, setPath } from './params';
 import { randomColor } from './color';
@@ -15,6 +15,7 @@ import { isScaled } from './groupScale';
 import { addImportedRoots, addPlateScene, moveRootsToPlate, plateName, platesOf, removePlateScene, renamePlateScene, switchPlateScene } from './plates';
 import { composeTransform, conjugate, eulerToMatrix, matrixToEuler, normalizeMirror, round, toLocalTransform } from './math';
 import type { Mirror, Transform } from './math';
+import { pathNaturalSize } from './shapes2d';
 
 export type GizmoMode = 'select' | 'translate' | 'rotate' | 'resize' | 'extrude';
 
@@ -33,6 +34,11 @@ interface SceneState {
   addText: (input: { text: string; font: string; origin?: 'symbol' | 'emoji'; label?: string; at?: [number, number] }) => void;
   /** Aggiunge un disegno SVG importato come forma 2D estrusa (contorni in mm, centrati), appoggiata sul piatto. */
   addSvg: (input: { name: string; fileName: string; contours: [number, number][][]; width: number; depth: number }) => string;
+  /**
+   * Aggiunge un Profilo di Bézier (forma 2D `path`) dai contorni dati, appoggiato sul piatto. I nodi si arrotondano a 4
+   * decimali; larghezza e profondità sono quelle naturali delle curve. Per ora nasce solo da qui (test) e dall'import di .scad.
+   */
+  addPath: (input: { paths: PathContour[]; tolerance?: number; extrusion?: 'linear' | 'rotate'; height?: number; revolveAngle?: number; revolveSegments?: number; at?: [number, number]; name?: string }) => string;
   /** Aggiunge una mesh importata, appoggiata sul piatto e centrata in XY. */
   addMesh: (input: { assetId: string; name: string; fileName: string; color?: string; origin: Vec3; size: Vec3; triangles: number }) => string;
   /** Aggiorna campi di un nodo (patch parziale, validata dal chiamante). */
@@ -295,6 +301,38 @@ export const useSceneStore = create<SceneState>()(
           // Uno spessore iniziale basso: un disegno piano è di solito una sagoma da estrudere poco
           const node = { ...shape2dDefaults('svg'), ...drawing, id, name: uniqueName(s.scene, name), position: [0, 0, 0] as Vec3, height: SVG_EXTRUDE_HEIGHT, lockRatio: true } as Shape2DNode;
           node.position = [0, 0, halfHeight(node)];
+          node.color = randomColor();
+          s.scene.nodes[id] = node;
+          s.scene.rootIds.unshift(id);
+          s.selection = [id];
+        });
+        return id;
+      },
+
+      addPath: (input) => {
+        const id = newId();
+        act('Aggiungi Profilo', (s) => {
+          const { paths, at, name, ...params } = input;
+          // Coordinate a 4 decimali (come il codice OpenSCAD); `|| 0` toglie il -0
+          const r4 = ([x, y]: Vec2): Vec2 => [round(x, 4) || 0, round(y, 4) || 0];
+          const rounded: PathContour[] = paths.map((c) => ({
+            closed: c.closed,
+            nodes: c.nodes.map((n) => ({ p: r4(n.p), ...(n.in ? { in: r4(n.in) } : {}), ...(n.out ? { out: r4(n.out) } : {}), kind: n.kind })),
+          }));
+          const size = pathNaturalSize({ paths: rounded });
+          const node = {
+            ...shape2dDefaults('path'),
+            ...params,
+            paths: rounded,
+            width: size.width,
+            depth: size.depth,
+            id,
+            name: uniqueName(s.scene, name ?? SHAPE2D_LABELS.path),
+            position: [0, 0, 0] as Vec3,
+            lockRatio: true,
+          } as Shape2DNode;
+          // L'estrusione è centrata: la base tocca il piatto con Z = altezza / 2
+          node.position = [at?.[0] ?? 0, at?.[1] ?? 0, halfHeight(node)];
           node.color = randomColor();
           s.scene.nodes[id] = node;
           s.scene.rootIds.unshift(id);
