@@ -140,13 +140,14 @@ const clampTolerance = (tol: number): number => (Number.isFinite(tol) ? Math.min
 /**
  * Poligono che approssima un contorno entro `tol` mm. Ogni cubica si spezza prima nei suoi estremi in x e y, così il
  * riquadro del poligono è quello esatto della curva qualunque sia la tolleranza (D2). Un contorno chiuso non ripete il
- * primo punto in fondo. Si ferma presto se supera il tetto di punti per contorno (chi chiama lo riconosce dalla lunghezza).
+ * primo punto in fondo. Oltre il tetto di punti per contorno `flattenCubic` smette di suddividere (il lavoro resta limitato) ma
+ * nessun segmento viene saltato: chi chiama riconosce il superamento dalla lunghezza e ricampiona con più tolleranza.
  */
 export function sampleContour(c: PathContour, tol: number): Vec2[] {
   const t = clampTolerance(tol);
   if (c.nodes.length === 0) return [];
   const points: Vec2[] = [c.nodes[0].p];
-  for (let i = 0; i < segmentCount(c) && points.length <= MAX_CONTOUR_SAMPLES; i++) {
+  for (let i = 0; i < segmentCount(c); i++) {
     const { cubic, straight } = segmentOf(c, i);
     if (straight) {
       points.push(cubic[3]);

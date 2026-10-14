@@ -125,6 +125,16 @@ describe('campionamento', () => {
     expect(samplePaths([quarter], 0.05)).toMatchObject({ capped: false, tolerance: 0.05 });
   });
 
+  it('un contorno lecito ma enorme non perde segmenti: ogni nodo resta tra i punti (D2) anche se si supera il tetto', () => {
+    // 500 nodi con cubiche che hanno estremi in x e in y: servono oltre 2000 punti a qualunque tolleranza
+    const nodes: PathNode[] = Array.from({ length: 500 }, (_, i) => node([10 * i, 0], [30, 30], [-30, -30], 'smooth'));
+    const huge: PathContour = { closed: true, nodes };
+    const { contours, capped } = samplePaths([huge], 0.05);
+    expect(capped).toBe(true);
+    const points = new Set(contours[0].points.map(([x, y]) => `${x},${y}`));
+    for (const n of nodes) expect(points.has(`${n.p[0]},${n.p[1]}`)).toBe(true);
+  });
+
   it('la tolleranza resta nei limiti consentiti', () => {
     expect(samplePaths([quarter], 0).tolerance).toBe(0.001);
     expect(samplePaths([quarter], 50).tolerance).toBe(1);

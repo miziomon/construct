@@ -173,6 +173,10 @@ Prese realizzando il modello e il kernel; dove si discostano dal testo sopra, va
 - **D1. Il riquadro naturale è quello delle sole curve.** La chiusura sull'asse dei contorni aperti si aggiunge dopo la centratura: passare da Lineare a Rotazionale non cambia `width`, `depth` né la scala.
 - **D2. Il riquadro non dipende dalla tolleranza.** Ogni cubica si spezza prima nei suoi estremi in x e in y, così il riquadro del poligono campionato è quello esatto della curva e cambiare la tolleranza non sposta l'oggetto.
 - **D3. Scala e raggio.** I nodi stanno nel sistema dell'editor e non si scalano mai: `pathContours` campiona le curve e riusa `svgContours` (scala a `width × depth` attorno al centro del riquadro), quindi `resize.ts` tratta il `path` come l'`svg` (lucchetto chiuso di default, Scala rispetto alla larghezza naturale). In rotazione il raggio è la x del centro del riquadro naturale (`pathRadius`, anche negativa), il campo `revolveRadius` è ignorato e lo slider Raggio non si mostra; i punti di chiusura stanno a x = −raggio dopo la centratura, cioè sull'asse. Ingrandendo il profilo con il gizmo una curva vicina all'asse può superarlo: la parte oltre l'asse si scarta (l'avviso arriva con la modale di disegno).
+- **D4 (fase 2).** Il nodo nuovo nasce solo con l'OK della modale: Annulla non lascia nodi vuoti e c'è un solo passo "Aggiungi Profilo".
+- **D5 (fase 2).** `Modal` riceve una prop `onEscape`, così Esc chiede conferma anche con `dismissable={false}`.
+- **D6 (fase 2).** Il comando "Modifica profilo" sta solo nel menu contestuale e nelle Proprietà (campo `toolbar?: false` nel registro dei comandi), con la scorciatoia Maiusc+P controllata prima del ramo di `p`.
+- **D7. Risposte alle domande aperte del §10.** Tolleranza predefinita 0,05 mm; profilo oltre l'asse accettato solo con un avviso; bozza in `localStorage` per nodo (`construct:profile-draft:<id>` o `:new`); al massimo 500 nodi per contorno (e 100 contorni); il nodo `svg` resta com'è.
 
 ## 5. Esperienza d'uso (UX)
 
@@ -405,6 +409,8 @@ fase 2; il codice nuovo è quasi tutto puro e testabile con Vitest. La verifica 
 helper `openApp` e `settled` già esistenti.
 
 ## 10. Domande aperte
+
+Le risposte scelte sono nella decisione D7 della sezione 4.
 
 1. Il profilo rotazionale deve poter attraversare l'asse (e in quel caso la parte a sinistra va ruotata, specchiata o scartata) oppure basta l'avviso di oggi?
 2. Quale tolleranza di campionamento offrire come predefinita, 0,05 mm o 0,1 mm, tenendo conto del peso del codice OpenSCAD?
