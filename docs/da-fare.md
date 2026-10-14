@@ -147,6 +147,15 @@ Dalla 0.27.0 l'importazione legge anche `let`/`assign`, le liste per comprension
 | Esporta e reimporta un solido rotazionale | Media | Il codice di Construct per `rotate_extrude` contiene un `intersection()` che ritaglia la parte oltre l'asse: riletto diventa un gruppo di tre oggetti invece della forma originale. Si potrebbe riconoscere lo schema. Dalla 0.60.0 non vale per il Profilo di Bézier (`path`) tutto a destra dell'asse: il codice non ha l'`intersection()` e si rilegge come Profilo; resta per le altre forme e per un Profilo che attraversa l'asse. |
 | `text` | Media | La posizione è stimata (il font di OpenSCAD non è nel catalogo e le misure dei glifi non sono disponibili in modo sincrono). Con le misure vere dei font si potrebbe calcolare l'allineamento esatto. |
 
+## Profili Bézier: punti aperti dalla fase 1 (0.60.0)
+
+- **Costo di un commento ostile ma lecito**: un `// construct:path` al limite dei dati (100 contorni da 500 nodi con cubiche piene di estremi) costa circa 1-2 s di thread principale per poligono (tre campionamenti: riquadro naturale, `pathContours` e di nuovo il riquadro). Un file con molti poligoni così blocca l'interfaccia per diversi secondi; si potrebbe portare il lavoro in un worker o abbassare i tetti.
+- **Linea aperta verticale in rotazione** (fase 2): un tornio disegnato come un solo tratto verticale produce `[]`, perché `svgContours` scarta i disegni senza larghezza. È un caso d'uso plausibile per i solidi di rotazione: servirà un modo di dare spessore o larghezza minima al disegno.
+- **Tolleranza oltre il massimo**: dopo 12 raddoppi `samplePaths` può arrivare a 204,8 mm; se i soli estremi superano il tetto di punti, raddoppiare non riduce più i punti e appiattisce comunque le curve. Basterebbe fermarsi quando un raddoppio non riduce il totale.
+- **Larghezza e profondità nel ritorno lineare**: sono arrotondate a 4 decimali, ma `addPath` scrive le misure naturali non arrotondate, quindi l'andata e ritorno è esatta solo se le misure hanno già 4 decimali.
+- **Ripiego del Poligono in rotazione dentro `scale()`**: il centro di `decompose` si calcola prima di sapere se il Profilo torna davvero (scarto al più circa 5e-5 mm); è più pulito calcolarlo dopo.
+- **Test mancanti**: il menu contestuale senza "Profilo" (oggi verificato solo leggendo `ContextMenu.tsx`) e un ritorno da OpenSCAD con `mirror`.
+
 ## Font non presenti su Google Fonts
 
 Dalla cartella `C:\Users\maurizio.MAVIDA\Dropbox\openscad\fonts` (0.30.0) sono entrati nel catalogo i font che si trovano su Google Fonts (Bilbo Swash Caps, Boogaloo, Calistoga, Dancing Script Regular, Marck Script, Meow Script, Modak, Niconne, Playfair Display Regular, Roboto Black, Sriracha; Pacifico c'era già). Questi no, perché non risultano su Google Fonts:

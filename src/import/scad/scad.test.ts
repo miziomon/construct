@@ -503,10 +503,25 @@ describe('import di file OpenSCAD: Profilo di Bézier (andata e ritorno)', () =>
     expect(root.children.map((id) => r.nodes[id])).toContainEqual(expect.objectContaining({ kind: 'path', extrusion: 'rotate' }));
   });
 
-  it('600 nodi nel commento (oltre il limite): Poligono senza eccezioni', () => {
+  it('600 nodi nel commento (oltre il limite): Poligono senza eccezioni, mentre con un commento valido nello stesso punto torna un Profilo', () => {
+    // Stesso schema (commento sulla riga subito prima di polygon): cambia solo il commento
+    const code = codeOf(node());
+    expect(back(code)).toMatchObject({ kind: 'path' });
     const nodes = Array.from({ length: 600 }, (_, i) => corner([i, (i * 7) % 11]));
     const meta = JSON.stringify({ v: 1, w: 10, d: 10, t: 0.05, paths: [{ closed: true, nodes }] });
-    const code = `// construct:path ${meta}\nlinear_extrude(height = 5, center = true)\npolygon([[0, 0], [10, 0], [10, 10], [0, 10]]);`;
-    expect(back(code)).toMatchObject({ kind: 'svg' });
+    const rows = code.split(/\r?\n/);
+    const at = rows.findIndex((l) => l.startsWith('// construct:path '));
+    expect(rows[at + 1]).toMatch(/^polygon\(/);
+    rows[at] = `// construct:path ${meta}`;
+    expect(back(rows.join(String.fromCharCode(10)))).toMatchObject({ kind: 'svg' });
   });
+
+  it('un commento lecito ma enorme (100 contorni da 500 nodi, tetto di punti superato): Poligono senza eccezioni', () => {
+    const paths = Array.from({ length: 100 }, (_, k) => ({ closed: true, nodes: Array.from({ length: 500 }, (_, i) => ({ p: [i * 0.01, 50 * k], out: [10, 20], in: [10, -5], kind: 'corner' })) }));
+    const meta = JSON.stringify({ v: 1, w: 100, d: 100, t: 0.05, paths });
+    const code = `linear_extrude(height = 10, center = true)
+// construct:path ${meta}
+polygon([[0, 0], [10, 0], [0, 10]]);`;
+    expect(back(code)).toMatchObject({ kind: 'svg' });
+  }, 20000);
 });

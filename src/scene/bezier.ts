@@ -314,5 +314,5 @@ export function decodePathMeta(text: string): PathMeta | null {
   const finite = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x) && x > 0 && x <= MAX_COORD;
   if (v !== 1 || !finite(w) || !finite(d) || !finite(t)) return null;
   const clean = sanitizePaths(paths);
-  return clean ? { paths: clean, tolerance: t, width: w, depth: d } : null;
+  return clean ? { paths: clean, tolerance: clampTolerance(t), width: w, depth: d } : null;
 }

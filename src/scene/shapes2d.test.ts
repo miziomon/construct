@@ -208,6 +208,12 @@ describe('Profilo di Bézier: riquadro, scala e chiusura sull\'asse', () => {
     expect(pathContours(path({ paths: [square(0, 20), square(5, 15)], width: 20, depth: 20 }))).toHaveLength(2);
   });
 
+  it('un disegno con centinaia di migliaia di punti campionati non lancia eccezioni', () => {
+    // 100 contorni da 500 nodi con cubiche piene di estremi: oltre i tetti, la tolleranza raddoppia e restano molti punti
+    const paths: PathContour[] = Array.from({ length: 100 }, (_, k) => ({ closed: true, nodes: Array.from({ length: 500 }, (_, i) => ({ p: [i * 0.01, 50 * k] as Vec2, out: [10, 20] as Vec2, in: [10, -5] as Vec2, kind: 'corner' as const })) }));
+    expect(() => pathContours(path({ paths, width: 100, depth: 100 }))).not.toThrow();
+  }, 20000);
+
   it('valori iniziali e metà altezza, in lineare e in rotazione', () => {
     expect(shape2dDefaults('path')).toMatchObject({ kind: 'path', paths: [], tolerance: 0.05, width: 20, depth: 20 });
     expect(halfHeight(path({ height: 12 }))).toBe(6);

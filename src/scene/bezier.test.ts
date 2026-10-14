@@ -200,6 +200,13 @@ describe('dati non fidati', () => {
     expect(decodePathMeta(text)).toStrictEqual(meta);
   });
 
+  it('decodePathMeta limita la tolleranza ai valori consentiti', () => {
+    const text = encodePathMeta({ paths: valid(), tolerance: 0.05, width: 10, depth: 10 });
+    expect(decodePathMeta(text.replace('"t":0.05', '"t":100000'))!.tolerance).toBe(1);
+    expect(decodePathMeta(text.replace('"t":0.05', '"t":1e-9'))!.tolerance).toBe(0.001);
+    expect(decodePathMeta(text)!.tolerance).toBe(0.05);
+  });
+
   it('decodePathMeta rifiuta JSON rovinato, versione ignota e misure non valide', () => {
     const meta = { paths: valid(), tolerance: 0.05, width: 10, depth: 10 };
     const text = encodePathMeta(meta);

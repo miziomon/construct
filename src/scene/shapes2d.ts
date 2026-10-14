@@ -134,10 +134,10 @@ export function shapeContours(p: PolygonShape): Vec2[][] {
  * quindi un tracciato dentro un altro è un foro in qualunque verso sia disegnato.
  */
 export function svgContours(p: Pick<SvgShape, 'contours' | 'width' | 'depth'>): Vec2[][] {
-  const all = p.contours.flat();
-  if (all.length === 0) return [];
-  const [minX, maxX] = [Math.min(...all.map((q) => q[0])), Math.max(...all.map((q) => q[0]))];
-  const [minY, maxY] = [Math.min(...all.map((q) => q[1])), Math.max(...all.map((q) => q[1]))];
+  // Riquadro con un ciclo: `Math.min(...punti)` lancia un RangeError con centinaia di migliaia di punti (profili di Bézier molto fitti)
+  const box = bboxOf(p.contours);
+  if (!box) return [];
+  const { minX, maxX, minY, maxY } = box;
   // Un disegno senza altezza o larghezza (linea) non ha area: nessun contorno
   if (maxX - minX <= 0 || maxY - minY <= 0) return [];
   const sx = Math.max(0.01, p.width) / (maxX - minX);

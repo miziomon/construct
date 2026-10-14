@@ -25,7 +25,6 @@ I messaggi di commit seguono i [Conventional Commits](https://www.conventionalco
 - Il codice OpenSCAD del Profilo scrive un commento `// construct:path` con i nodi sulla riga prima di `polygon()`; rileggendo il file, se il poligono coincide ancora (entro 0,001 mm) con i nodi, torna un Profilo con gli stessi contorni, altrimenti resta un Poligono. Dati rovinati o oltre i limiti (600 nodi) non causano errori.
 - `store.addPath` crea un Profilo in un solo passo ("Aggiungi Profilo"); nelle Proprietà si mostra con Larghezza, Profondità, lucchetto delle proporzioni e Scala. In rotazione lo slider Raggio non c'è: il raggio è la x del centro del disegno. In rotazione, un Profilo tutto a destra dell'asse non ha l'`intersection()` di ritaglio nel codice. Non c'è ancora un pulsante in libreria né un editor di disegno (fase 2).
 
-
 ## [0.59.3] - 2026-10-14
 
 ### Corretto
