@@ -26,7 +26,7 @@ const GLYPH_COLUMNS = 8;
 
 const KINDS_3D = Object.keys(PRIMITIVE_LABELS) as PrimitiveKind[];
 // L'SVG nasce dall'importazione di un file, non dal menu; i profilati stanno nel sottomenu delle forme 3D
-const KINDS_2D = (Object.keys(SHAPE2D_LABELS) as Shape2DKind[]).filter((kind) => kind !== 'svg' && !isProfileKind(kind));
+const KINDS_2D = (Object.keys(SHAPE2D_LABELS) as Shape2DKind[]).filter((kind) => kind !== 'svg' && kind !== 'path' && !isProfileKind(kind));
 
 /** Un carattere di una griglia (simbolo o emoji) con ciò che serve a mostrarlo e ad aggiungerlo. */
 interface Glyph {

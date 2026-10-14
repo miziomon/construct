@@ -1,5 +1,6 @@
 import type { PrimitiveKind, PrimitiveNode, Shape2DKind, Shape2DNode } from './types';
 import { DEFAULT_FONT } from './fontCatalog';
+import { PATH_DEFAULT_TOLERANCE } from './bezier';
 import { RATIO_INFO, profileExtent } from './shapes2d';
 
 /** Etichette italiane delle primitive, usate in libreria e outliner. */
@@ -51,6 +52,7 @@ export const SHAPE2D_LABELS: Record<Shape2DKind, string> = {
   crescent: 'Mezzaluna',
   text: 'Testo',
   svg: 'SVG',
+  path: 'Profilo',
   profileL: 'Profilato a L',
   profileT: 'Profilato a T',
   profileH: 'Profilato a H',
@@ -128,6 +130,8 @@ export function shape2dDefaults(kind: Shape2DKind): DistributiveOmit<Shape2DNode
     case 'text': return { ...base, kind, text: 'Testo', font: DEFAULT_FONT, size: 10, height: 3 };
     // Il disegno vero lo fornisce l'importazione (`addSvg`): qui un segnaposto vuoto
     case 'svg': return { ...base, kind, contours: [], width: 20, depth: 20, fileName: '' };
+    // Profilo di Bézier: vuoto, senza contorni (nasce da `addPath` o dall'importazione di un .scad con `// construct:path`)
+    case 'path': return { ...base, kind, paths: [], tolerance: PATH_DEFAULT_TOLERANCE, width: 20, depth: 20 };
     // Forme poligonali: 20 × 20 mm (tranne dove la forma ha una proporzione propria) e il parametro predefinito
     case 'egg': return { ...base, kind, width: 16, depth: 22, ratio: RATIO_INFO.egg!.default };
     case 'trapezoid': return { ...base, kind, width: 24, depth: 16, ratio: RATIO_INFO.trapezoid!.default };

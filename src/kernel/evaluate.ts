@@ -8,7 +8,7 @@ import { subdivideContours, twistPieceLength } from './twist';
 import { brushSegments, minkowskiOf } from './minkowski';
 import { arrayCopies } from '../scene/arrayPattern';
 import type { CopyTransform } from '../scene/arrayPattern';
-import { isRotational, revolveParams, shapeContours, svgContours } from '../scene/shapes2d';
+import { isRotational, pathContours, revolveParams, shapeContours, svgContours } from '../scene/shapes2d';
 import { isProfileShape, profileContours } from '../scene/profiles';
 import { textContours } from '../scene/fontOutline';
 import { fontInfo } from '../scene/fontCatalog';
@@ -398,6 +398,11 @@ export class Evaluator {
     } else if (p.kind === 'svg') {
       // Disegno importato: contorni scalati a width × depth, riempimento pari-dispari (i tracciati interni sono fori)
       const contours = svgContours(p);
+      section = contours.length ? new CrossSection(contours, 'EvenOdd') : CrossSection.compose([]);
+    } else if (p.kind === 'path') {
+      // Profilo di Bézier: curve campionate e scalate a width × depth (in rotazione i contorni aperti si chiudono sull'asse);
+      // riempimento pari-dispari, un contorno dentro un altro è un foro. Senza contorni validi la forma è vuota
+      const contours = pathContours(p);
       section = contours.length ? new CrossSection(contours, 'EvenOdd') : CrossSection.compose([]);
     } else if (isProfileShape(p)) {
       // Profilati (L, T, H): un solo contorno con le misure già rese valide (spessori dentro l'ingombro)

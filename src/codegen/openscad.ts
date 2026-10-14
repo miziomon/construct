@@ -11,7 +11,8 @@ import { stretchFactors } from '../scene/ellipse';
 import { isScaled, scaleOf } from '../scene/groupScale';
 import { circularStep, linearStep, normalizeArray } from '../scene/arrayPattern';
 import { cutReach, faceFrame, frameRect, isAxisFace, normalizePattern, patternCells } from '../scene/pattern';
-import { isRotational, revolveParams, shapeContours, svgContours } from '../scene/shapes2d';
+import { isRotational, pathContours, revolveParams, shapeContours, svgContours } from '../scene/shapes2d';
+import { encodePathMeta } from '../scene/bezier';
 import { isProfileShape, profileContours } from '../scene/profiles';
 import { fontInfo, fontsUsed, scadFontName } from '../scene/fontCatalog';
 import { platesOf } from '../scene/plates';
@@ -127,6 +128,16 @@ function primitiveLines(p: PrimitiveNode): string[] {
 }
 
 /**
+ * Un profilo di Bézier sta tutto a destra dell'asse una volta spostato del raggio? Si guardano i numeri che si scrivono nel
+ * codice (4 decimali, in interi per evitare gli errori dei decimali): se sì, e il contorno non cresce, `intersection()`
+ * non serve. Nel dubbio si tiene.
+ */
+function pathFitsAxis(p: Extract<Shape2DNode, { kind: 'path' }>): boolean {
+  const radius = Math.round(revolveParams(p).radius * 1e4);
+  return (p.offset ?? 0) <= 0 && pathContours(p).every((c) => c.every(([x]) => Math.round(x * 1e4) + radius >= 0));
+}
+
+/**
  * Forma 2D estrusa: `linear_extrude` oppure, per l'estrusione rotazionale, `rotate_extrude`. In questo caso il profilo
  * si sposta di `radius` dall'asse e si tiene solo la parte con x >= 0 (come fa il kernel), perché OpenSCAD ignora le
  * forme che attraversano l'asse.
@@ -138,6 +149,8 @@ function shape2dLines(p: Shape2DNode): string[] {
   const lines = offset === 0 ? base : [base[0], p.offsetJoin === 'sharp' ? `offset(delta = ${n(offset)})` : `offset(r = ${n(offset)}, $fn = 32)`, ...base.slice(1)];
   if (!isRotational(p)) return lines;
   const { angle, radius, segments } = revolveParams(p);
+  // Profilo di Bézier tutto oltre l'asse: basta spostarlo, il ritaglio sarebbe superfluo (e il file si rilegge come Profilo)
+  if (p.kind === 'path' && pathFitsAxis(p)) return [`rotate_extrude(angle = ${n(angle)}, $fn = ${segments})`, `translate([${n(radius)}, 0])`, ...lines.slice(1)];
   return [
     `rotate_extrude(angle = ${n(angle)}, $fn = ${segments})`,
     'intersection() {',
@@ -174,18 +187,20 @@ function linearShape2dLines(p: Shape2DNode): string[] {
   if (p.kind !== 'square') {
     // Forme poligonali, profilati e disegni SVG: un contorno, oppure più contorni (il foro dell'anello) con `paths`;
     // punti su più righe
-    const contours = p.kind === 'svg' ? svgContours(p) : isProfileShape(p) ? profileContours(p) : shapeContours(p);
+    const contours = p.kind === 'svg' ? svgContours(p) : p.kind === 'path' ? pathContours(p) : isProfileShape(p) ? profileContours(p) : shapeContours(p);
     // Un SVG senza tracciati (file svuotato) non produce nulla
     if (contours.length === 0) return [extrude, 'square(0.01, center = true);'];
     const points = contours.flat();
-    if (contours.length === 1) return [extrude, 'polygon([', ...vectorRows(points, IND), ']);'];
+    // Il profilo di Bézier porta i suoi nodi nel commento sulla riga prima di polygon(): il file si rilegge come Profilo
+    const meta = p.kind === 'path' ? [`// construct:path ${encodePathMeta(p)}`] : [];
+    if (contours.length === 1) return [extrude, ...meta, 'polygon([', ...vectorRows(points, IND), ']);'];
     let start = 0;
     const paths = contours.map((c) => {
       const indices = c.map((_, i) => start + i);
       start += c.length;
       return `[${indices.join(', ')}]`;
     });
-    return [extrude, 'polygon(points = [', ...vectorRows(points, IND), `], paths = [${paths.join(', ')}]);`];
+    return [extrude, ...meta, 'polygon(points = [', ...vectorRows(points, IND), `], paths = [${paths.join(', ')}]);`];
   }
   const r = Math.min(Math.max(0, p.cornerRadius), (Math.min(p.width, p.depth) - 0.01) / 2);
   if (r > 0) return [extrude, `offset(r = ${n(r)}, $fn = 32)`, `square([${n(p.width - 2 * r)}, ${n(p.depth - 2 * r)}], center = true);`];

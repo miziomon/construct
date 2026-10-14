@@ -1,6 +1,8 @@
 import type { Shape2DNode } from './types';
+import { PATH_MAX_TOLERANCE, bboxOf, samplePaths, signedArea as areaOf } from './bezier';
 
 type SvgShape = Extract<Shape2DNode, { kind: 'svg' }>;
+type PathShape = Extract<Shape2DNode, { kind: 'path' }>;
 
 /**
  * Profili delle forme 2D poligonali (anello, cuore, stelle, uovo, trapezio, croce, goccia, mezzaluna).
@@ -160,6 +162,66 @@ export function svgScalePercent(p: Pick<SvgShape, 'contours' | 'width'>): number
   return natural > 0 ? (p.width / natural) * 100 : 100;
 }
 
+const round4 = (v: number) => Math.round(v * 1e4) / 1e4;
+
+/** Riquadri naturali già calcolati: la chiave è l'elenco dei contorni (immutabile nello store, cambia a ogni modifica). */
+const naturalBoxes = new WeakMap<PathShape['paths'], ReturnType<typeof computeNaturalBox>>();
+
+function computeNaturalBox(paths: PathShape['paths']) {
+  // Si campiona alla tolleranza massima: i punti agli estremi delle curve ci sono sempre, quindi il riquadro è lo stesso
+  // a qualunque tolleranza (D2). Solo i contorni con almeno due punti entrano nel disegno, come in `pathContours`
+  const box = bboxOf(samplePaths(paths, PATH_MAX_TOLERANCE).contours.filter((c) => c.points.length >= 2).map((c) => c.points));
+  if (!box) return null;
+  return { ...box, cx: (box.minX + box.maxX) / 2, cy: (box.minY + box.maxY) / 2, width: box.maxX - box.minX, depth: box.maxY - box.minY };
+}
+
+/** Riquadro naturale di un profilo: solo le curve, nel sistema dell'editor, senza la chiusura sull'asse (D1). Null se non c'è disegno. */
+export function pathNaturalBox(p: Pick<PathShape, 'paths'>) {
+  if (!naturalBoxes.has(p.paths)) naturalBoxes.set(p.paths, computeNaturalBox(p.paths));
+  return naturalBoxes.get(p.paths) ?? null;
+}
+
+/** Ingombro naturale di un profilo (le curve così come sono state disegnate), in mm. */
+export function pathNaturalSize(p: Pick<PathShape, 'paths'>): { width: number; depth: number } {
+  const box = pathNaturalBox(p);
+  return { width: box?.width ?? 0, depth: box?.depth ?? 0 };
+}
+
+/** Raggio dell'estrusione rotazionale di un profilo: la X del centro del riquadro naturale (può essere negativa). */
+export function pathRadius(p: Pick<PathShape, 'paths'>): number {
+  return round4(pathNaturalBox(p)?.cx ?? 0);
+}
+
+/**
+ * Contorni di un profilo di Bézier portati a `width × depth` mm, centrati nell'origine: si campionano le curve e si
+ * riusa `svgContours` (stessa scala attorno al centro e stesso arrotondamento). In estrusione rotazionale un contorno
+ * aperto si chiude sull'asse (x = −raggio, dopo la centratura); in lineare si chiude da solo con un segmento retto.
+ * I contorni senza area si scartano.
+ */
+export function pathContours(p: Pick<PathShape, 'paths' | 'tolerance' | 'width' | 'depth' | 'extrusion'>): Vec2[][] {
+  // Solo i contorni con almeno due punti: gli altri non descrivono nulla
+  const sampled = samplePaths(p.paths, p.tolerance).contours.filter((c) => c.points.length >= 2);
+  const scaled = svgContours({ contours: sampled.map((c) => c.points), width: p.width, depth: p.depth });
+  const r = pathRadius(p);
+  return scaled
+    .map((points, i) => {
+      if (!isRotational(p) || sampled[i].closed) return points;
+      // Contorno aperto in rotazione: dall'ultimo punto all'asse e dall'asse al primo, senza punti doppi
+      const first = points[0];
+      const last = points[points.length - 1];
+      const closed = [...points];
+      for (const q of [[-r, last[1]], [-r, first[1]]] as Vec2[]) {
+        const tail = closed[closed.length - 1];
+        if (q[0] !== tail[0] || q[1] !== tail[1]) closed.push(q);
+      }
+      // L'ultimo punto aggiunto non deve coincidere con il primo (il poligono si chiude da solo)
+      const end = closed[closed.length - 1];
+      if (closed.length > points.length && end[0] === first[0] && end[1] === first[1]) closed.pop();
+      return closed;
+    })
+    .filter((points) => points.length >= 3 && Math.abs(areaOf(points)) > 1e-8);
+}
+
 /** Valori predefiniti dell'estrusione rotazionale. */
 export const REVOLVE_DEFAULT_ANGLE = 360;
 export const REVOLVE_DEFAULT_SEGMENTS = 64;
@@ -201,7 +263,8 @@ export function profileExtent(node: Shape2DNode): { width: number; depth: number
 export function revolveParams(node: Shape2DNode): { angle: number; radius: number; segments: number } {
   return {
     angle: Math.min(360, Math.max(1, node.revolveAngle ?? REVOLVE_DEFAULT_ANGLE)),
-    radius: Math.max(0, node.revolveRadius ?? Math.round(profileExtent(node).width * 10) / 10),
+    // Il profilo di Bézier ha il raggio fisso (la X del suo centro, anche negativa) e ignora `revolveRadius`
+    radius: node.kind === 'path' ? pathRadius(node) : Math.max(0, node.revolveRadius ?? Math.round(profileExtent(node).width * 10) / 10),
     segments: Math.min(256, Math.max(3, Math.round(node.revolveSegments ?? REVOLVE_DEFAULT_SEGMENTS))),
   };
 }

@@ -2,7 +2,7 @@ import type { PrimitiveNode, Shape2DNode, Vec3 } from './types';
 import { round } from './math';
 import { holdBound } from './params';
 import { primitiveDefaults, shape2dDefaults } from './defaults';
-import { svgNaturalSize } from './shapes2d';
+import { pathNaturalSize, svgNaturalSize } from './shapes2d';
 import { clampProfile, isBarShape, thicknessAxes } from './profiles';
 import { maxPolyhedronRadius, polygonMaxRadius } from './polyhedra';
 
@@ -21,10 +21,10 @@ export type ResizePatch = Record<string, number | Vec3 | undefined>;
 export const hasBoundDimension = (node: { exprs?: Record<string, unknown> }): boolean => Object.keys(node.exprs ?? {}).some((p) => !p.startsWith('position') && !p.startsWith('rotation'));
 
 /**
- * Proporzioni bloccate? Gli SVG lo sono finché non si apre il lucchetto; le altre forme restano libere finché non si
+ * Proporzioni bloccate? Gli SVG e i Profili lo sono finché non si apre il lucchetto; le altre forme restano libere finché non si
  * chiude (così i progetti salvati prima del lucchetto si comportano come sempre).
  */
-export const isRatioLocked = (node: Resizable): boolean => !hasBoundDimension(node) && (node.type === 'shape2d' && node.kind === 'svg' ? node.lockRatio !== false : node.lockRatio === true);
+export const isRatioLocked = (node: Resizable): boolean => !hasBoundDimension(node) && (node.type === 'shape2d' && (node.kind === 'svg' || node.kind === 'path') ? node.lockRatio !== false : node.lockRatio === true);
 
 /** Misure scalate dello stesso fattore: la più grande si arrotonda, le altre ne seguono il rapporto esatto. */
 function proportional(values: readonly number[], factor: number, q: (v: number, s: number) => number): number[] {
@@ -190,9 +190,10 @@ function primaryMeasure(node: Resizable): number {
   return node.width;
 }
 
-/** Misura principale predefinita: 100 % della Scala. Per gli SVG è la larghezza del file, per le altre la misura iniziale della forma. */
+/** Misura principale predefinita: 100 % della Scala. Per gli SVG è la larghezza del file, per i Profili quella delle curve, per le altre la misura iniziale della forma. */
 export function scaleReference(node: Resizable): number {
   if (node.type === 'shape2d' && node.kind === 'svg') return svgNaturalSize(node).width;
+  if (node.type === 'shape2d' && node.kind === 'path') return pathNaturalSize(node).width;
   return primaryMeasure(node.type === 'primitive' ? ({ ...primitiveDefaults(node.kind), id: '', name: '', position: [0, 0, 0] } as PrimitiveNode) : ({ ...shape2dDefaults(node.kind), id: '', name: '', position: [0, 0, 0] } as Shape2DNode));
 }
 

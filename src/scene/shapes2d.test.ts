@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { RATIO_INFO, shapeContours, svgNaturalSize, svgScalePercent, type PolygonKind, type PolygonShape } from './shapes2d';
+import { RATIO_INFO, pathContours, pathNaturalBox, pathNaturalSize, pathRadius, revolveParams, shapeContours, svgNaturalSize, svgScalePercent, type PolygonKind, type PolygonShape } from './shapes2d';
+import { halfHeight, shape2dDefaults } from './defaults';
+import type { PathContour, PathNode, Shape2DNode, Vec2 } from './types';
 
 const KINDS = Object.keys(RATIO_INFO) as PolygonKind[];
 
@@ -119,5 +121,97 @@ describe('SVG importato: dimensione naturale e scala', () => {
     expect(svgScalePercent({ contours, width: 10 })).toBe(25);
     // Senza contorni non c'è nulla da scalare
     expect(svgScalePercent({ contours: [], width: 10 })).toBe(100);
+  });
+});
+
+describe('Profilo di Bézier: riquadro, scala e chiusura sull\'asse', () => {
+  const corner = (p: Vec2, out?: Vec2, inn?: Vec2): PathNode => ({ p, ...(inn ? { in: inn } : {}), ...(out ? { out } : {}), kind: 'corner' });
+  /** Contorno aperto a U a destra dell'asse: da (25, 0) a (35, 0), (35, 20), (25, 20). Riquadro naturale 10 × 20, centro (30, 10). */
+  const U: PathContour[] = [{ closed: false, nodes: [corner([25, 0]), corner([35, 0]), corner([35, 20]), corner([25, 20])] }];
+  type PathNodeShape = Extract<Shape2DNode, { kind: 'path' }>;
+  const path = (patch: Partial<PathNodeShape> = {}) => ({ ...shape2dDefaults('path'), id: 'p', name: 'p', position: [0, 0, 0], paths: U, width: 10, depth: 20, ...patch }) as PathNodeShape;
+
+  it('il riquadro è width × depth centrato nell\'origine, anche a una misura diversa da quella naturale', () => {
+    for (const [w, d] of [[10, 20], [20, 40], [7, 3]]) {
+      const b = bounds(pathContours(path({ width: w, depth: d })));
+      expect(b.maxX - b.minX).toBeCloseTo(w, 3);
+      expect(b.maxY - b.minY).toBeCloseTo(d, 3);
+      expect((b.maxX + b.minX) / 2).toBeCloseTo(0, 3);
+      expect((b.maxY + b.minY) / 2).toBeCloseTo(0, 3);
+    }
+  });
+
+  it('il riquadro naturale non dipende dalla tolleranza e un cerchio di quattro cubiche è esatto (D2)', () => {
+    const k = 0.5523 * 10;
+    const circle: PathContour[] = [{ closed: true, nodes: [
+      { p: [10, 0], in: [0, -k], out: [0, k], kind: 'smooth' },
+      { p: [0, 10], in: [k, 0], out: [-k, 0], kind: 'smooth' },
+      { p: [-10, 0], in: [0, k], out: [0, -k], kind: 'smooth' },
+      { p: [0, -10], in: [-k, 0], out: [k, 0], kind: 'smooth' },
+    ] }];
+    expect(pathNaturalSize({ paths: circle })).toEqual({ width: 20, depth: 20 });
+    for (const tolerance of [0.001, 1]) {
+      const b = bounds(pathContours(path({ paths: circle, width: 20, depth: 20, tolerance })));
+      expect(b.maxX - b.minX).toBeCloseTo(20, 3);
+      expect(b.maxY - b.minY).toBeCloseTo(20, 3);
+    }
+  });
+
+  it('in lineare un contorno aperto resta com\'è (si chiude da solo con un segmento retto)', () => {
+    const [c] = pathContours(path());
+    expect(c).toHaveLength(4);
+  });
+
+  it('in rotazione un contorno aperto si chiude sull\'asse, a x = −raggio', () => {
+    const node = path({ extrusion: 'rotate' });
+    expect(pathRadius(node)).toBe(30);
+    const [c] = pathContours(node);
+    // Dopo la centratura il profilo sta tra −5 e 5 e l'asse a −30: gli ultimi due punti sono sull'asse
+    expect(c.slice(-2)).toEqual([[-30, 10], [-30, -10]]);
+    expect(c).toHaveLength(6);
+  });
+
+  it('passare da Lineare a Rotazionale non cambia misure naturali, raggio e scala (D1)', () => {
+    const linear = path({ width: 20 });
+    const rotary = path({ width: 20, extrusion: 'rotate' });
+    expect(pathNaturalSize(linear)).toEqual(pathNaturalSize(rotary));
+    expect(pathRadius(linear)).toBe(pathRadius(rotary));
+    // I punti delle curve sono gli stessi: la rotazione aggiunge solo i due punti sull'asse
+    expect(pathContours(rotary)[0].slice(0, 4)).toEqual(pathContours(linear)[0]);
+    // Il raggio non segue la scala: scalare attorno al centro lo lascia dov'è
+    expect(pathRadius(path({ width: 40, depth: 80, extrusion: 'rotate' }))).toBe(30);
+  });
+
+  it('un contorno già sull\'asse non ripete i punti', () => {
+    const onAxis = path({ extrusion: 'rotate', paths: [{ closed: false, nodes: [corner([0, 0]), corner([10, 0]), corner([10, 20]), corner([0, 20])] }], width: 10, depth: 20 });
+    const [c] = pathContours(onAxis);
+    expect(c).toHaveLength(4);
+  });
+
+  it('revolveParams ignora revolveRadius e non limita il raggio a zero', () => {
+    expect(revolveParams({ ...path({ extrusion: 'rotate' }), revolveRadius: 99 }).radius).toBe(30);
+    const left = path({ paths: [{ closed: false, nodes: [corner([-35, 0]), corner([-25, 0]), corner([-25, 20])] }] });
+    expect(revolveParams({ ...left, extrusion: 'rotate' }).radius).toBe(-30);
+  });
+
+  it('un disegno senza area non produce contorni', () => {
+    // Una linea verticale non ha larghezza; tre punti allineati non hanno area
+    expect(pathContours(path({ paths: [{ closed: false, nodes: [corner([0, 0]), corner([0, 10])] }] }))).toEqual([]);
+    expect(pathContours(path({ paths: [{ closed: true, nodes: [corner([0, 0]), corner([5, 5]), corner([10, 10])] }] }))).toEqual([]);
+    expect(pathContours(path({ paths: [] }))).toEqual([]);
+    expect(pathNaturalBox({ paths: [] })).toBeNull();
+    expect(pathNaturalSize({ paths: [] })).toEqual({ width: 0, depth: 0 });
+  });
+
+  it('un contorno dentro un altro resta un contorno a sé (il foro lo decide il riempimento pari-dispari)', () => {
+    const square = (a: number, b: number): PathContour => ({ closed: true, nodes: [corner([a, a]), corner([b, a]), corner([b, b]), corner([a, b])] });
+    expect(pathContours(path({ paths: [square(0, 20), square(5, 15)], width: 20, depth: 20 }))).toHaveLength(2);
+  });
+
+  it('valori iniziali e metà altezza, in lineare e in rotazione', () => {
+    expect(shape2dDefaults('path')).toMatchObject({ kind: 'path', paths: [], tolerance: 0.05, width: 20, depth: 20 });
+    expect(halfHeight(path({ height: 12 }))).toBe(6);
+    // In rotazione la Y del profilo diventa l'altezza: conta metà della profondità
+    expect(halfHeight(path({ extrusion: 'rotate', depth: 20 }))).toBe(10);
   });
 });

@@ -204,3 +204,33 @@ describe('estrusione rotazionale e ridimensionamento', () => {
   });
 });
 
+
+describe('Profilo di Bézier e ridimensionamento', () => {
+  const corner = (p: [number, number]) => ({ p, kind: 'corner' as const });
+  /** Rettangolo chiuso 40 × 20 (riquadro naturale). */
+  const path = (patch: Partial<Shape2DNode> = {}) =>
+    shape('path', { paths: [{ closed: true, nodes: [corner([0, 0]), corner([40, 0]), corner([40, 20]), corner([0, 20])] }], width: 40, depth: 20, ...patch } as Partial<Shape2DNode>);
+
+  it('le proporzioni sono bloccate di default, finché non si apre il lucchetto', () => {
+    expect(isRatioLocked(path())).toBe(true);
+    expect(isRatioLocked(path({ lockRatio: false }))).toBe(false);
+  });
+
+  it('la Scala parte dalla larghezza naturale delle curve: 100 % e 200 %', () => {
+    expect(scalePercent(path())).toBe(100);
+    expect(scalePercent(path({ width: 80, depth: 40 } as Partial<Shape2DNode>))).toBe(200);
+    expect(scalePatch(path(), 200)).toMatchObject({ width: 80, depth: 40 });
+  });
+
+  it('applyScale in rotazione non scrive revolveRadius e con il lucchetto tiene le proporzioni', () => {
+    const r = applyScale(path({ extrusion: 'rotate' }), [2, 1, 1]);
+    expect(r).toMatchObject({ width: 80, depth: 40 });
+    expect(r).not.toHaveProperty('revolveRadius');
+    expect(r).not.toHaveProperty('height');
+  });
+
+  it('lockedPatch: con il lucchetto chiuso cambiare la larghezza scala anche la profondità', () => {
+    expect(lockedPatch(path(), 'width', 80)).toEqual({ width: 80, depth: 40 });
+    expect(lockedPatch(path(), 'depth', 10)).toEqual({ depth: 10, width: 20 });
+  });
+});

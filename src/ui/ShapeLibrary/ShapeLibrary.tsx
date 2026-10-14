@@ -1,4 +1,4 @@
-import { Box, Circle, CircleDot, Cone, Cylinder, Diamond, Donut, Droplet, Egg, Heart, Hexagon, Moon, Pentagon, Plus, Shapes, Square, Star, Type } from 'lucide-react';
+import { Box, Circle, CircleDot, Cone, Cylinder, Diamond, Donut, Droplet, Egg, Heart, Hexagon, Moon, PenTool, Pentagon, Plus, Shapes, Square, Star, Type } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Decagon } from '../icons/Decagon';
 import { Ring, Star6, Trapezoid } from '../icons/Shapes2D';
@@ -37,6 +37,7 @@ export const SHAPE2D_ICONS: Record<Shape2DKind, LucideIcon> = {
   crescent: Moon,
   text: Type,
   svg: Shapes,
+  path: PenTool,
   profileL: ProfileL,
   profileT: ProfileT,
   profileH: ProfileH,
@@ -46,8 +47,9 @@ export const SHAPE2D_ICONS: Record<Shape2DKind, LucideIcon> = {
 };
 
 const KINDS = Object.keys(PRIMITIVE_LABELS) as PrimitiveKind[];
-// L'SVG non si aggiunge dalla libreria: nasce dall'importazione di un file (menu Importa); i profilati stanno con le forme 3D
-const KINDS_2D = (Object.keys(SHAPE2D_LABELS) as Shape2DKind[]).filter((kind) => kind !== 'svg' && !isProfileKind(kind));
+// L'SVG non si aggiunge dalla libreria: nasce dall'importazione di un file (menu Importa); il Profilo di Bézier non ha ancora
+// un editor da cui crearlo; i profilati stanno con le forme 3D
+const KINDS_2D = (Object.keys(SHAPE2D_LABELS) as Shape2DKind[]).filter((kind) => kind !== 'svg' && kind !== 'path' && !isProfileKind(kind));
 
 /** Griglia delle primitive 3D e dei profilati (prima tab della libreria). */
 export function Shapes3DGrid() {

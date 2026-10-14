@@ -84,7 +84,27 @@ export type TubeKind = 'tubeRect' | 'tubeRound';
 /** Profilati strutturali: ali e anima oppure tubolari. */
 export type ProfileKind = BarKind | TubeKind;
 
-export type Shape2DKind = 'circle' | 'square' | 'ring' | 'heart' | 'star5' | 'star6' | 'egg' | 'trapezoid' | 'cross' | 'drop' | 'crescent' | 'text' | 'svg' | ProfileKind;
+export type Shape2DKind = 'circle' | 'square' | 'ring' | 'heart' | 'star5' | 'star6' | 'egg' | 'trapezoid' | 'cross' | 'drop' | 'crescent' | 'text' | 'svg' | 'path' | ProfileKind;
+
+/** Punto del piano XY in mm (Y verso l'alto). */
+export type Vec2 = [number, number];
+
+/**
+ * Nodo di un contorno di Bézier: `p` è la posizione, `in` e `out` le maniglie RELATIVE al nodo (assenti = nessuna maniglia
+ * da quel lato). `kind` dice come si muovono le maniglie nell'editor: la forma dipende solo da `p`, `in` e `out`.
+ */
+export interface PathNode {
+  p: Vec2;
+  in?: Vec2;
+  out?: Vec2;
+  kind: 'corner' | 'smooth' | 'symmetric';
+}
+
+/** Contorno di nodi di Bézier cubiche: `closed` unisce l'ultimo nodo al primo; un segmento senza maniglie è retto. */
+export interface PathContour {
+  closed: boolean;
+  nodes: PathNode[];
+}
 
 /**
  * Forma 2D estrusa (come linear_extrude di OpenSCAD): il profilo sta sul piano XY e si estrude
@@ -183,6 +203,20 @@ export type Shape2DNode = BaseNode & {
       spacing?: number;
       /** Se il testo è nato dalla tab Simboli o Emoji: l'oggetto si chiama e si mostra come tale, non come "Testo". */
       origin?: 'symbol' | 'emoji';
+    }
+  | {
+      /**
+       * Profilo disegnato con curve di Bézier (src/scene/bezier.ts). `paths` sono i contorni nel sistema dell'editor, a
+       * qualunque scala e posizione; `width × depth` è l'ingombro attuale delle sole curve: il disegno campionato si scala
+       * per adattarlo e si centra nell'origine (come `svg`). Riempimento pari-dispari: i contorni interni sono fori.
+       * `tolerance` è l'errore massimo di campionamento in mm. In estrusione rotazionale `revolveRadius` è ignorato: il
+       * raggio è la X del centro del riquadro naturale (vedi `pathRadius` in shapes2d.ts).
+       */
+      kind: 'path';
+      paths: PathContour[];
+      tolerance: number;
+      width: number;
+      depth: number;
     }
   | {
       /**
