@@ -186,7 +186,7 @@ export type Shape =
   | ({ s: 'circle'; r: number; fn: number } & Flat)
   | ({ s: 'square'; size: [number, number]; center: boolean } & Flat)
   /** `paths`: elenco di indici dei punti per ogni contorno (il primo è l'esterno, gli altri sono fori). */
-  | ({ s: 'polygon'; points: [number, number][]; paths?: number[][] } & Flat)
+  | ({ s: 'polygon'; points: [number, number][]; paths?: number[][]; /** Dati del commento `// construct:path` sulla riga prima (testo non ancora validato). */ meta?: string } & Flat)
   | ({ s: 'text'; text: string; font: string; size: number; halign: string; valign: string; spacing: number } & Flat);
 
 /** Un problema trovato leggendo il codice: `error` = parte saltata o non capita, `note` = approssimazione o informazione. */
@@ -375,7 +375,7 @@ const hex2 = (n: number) => Math.round(Math.max(0, Math.min(1, n)) * 255).toStri
 const isGeometry = (s: Stmt) => s.t !== 'assign' && s.t !== 'module' && s.t !== 'function';
 
 export function evaluateScad(source: string): ScadResult {
-  const { tokens, plateNames, uses } = tokenize(source);
+  const { tokens, plateNames, pathMeta, uses } = tokenize(source);
   const program = parse(tokens);
 
   /** Problemi trovati, senza ripetizioni (stesso messaggio sulla stessa riga). */
@@ -859,7 +859,8 @@ export function evaluateScad(source: string): ScadResult {
           if (valid.length < p.paths.length) warn('polygon(): alcuni percorsi (paths) non sono validi e si saltano.');
           paths = valid.length ? valid : undefined;
         }
-        return leaf2d({ s: 'polygon', points, paths }, ctx, 'polygon');
+        // Il commento `// construct:path` sta sulla riga subito prima di polygon()
+        return leaf2d({ s: 'polygon', points, paths, meta: pathMeta.get(s.line - 1) }, ctx, 'polygon');
       }
       case 'text': {
         const p = a(['text', 'size', 'font', 'halign', 'valign', 'spacing']);

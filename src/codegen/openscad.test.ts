@@ -335,7 +335,7 @@ describe('sceneToOpenScad: Profilo di Bézier', () => {
   it('rotazione tutta a destra dell\'asse: translate([raggio, 0]) senza intersection()', () => {
     const code = codeOf(profile({ extrusion: 'rotate' }));
     expect(code).not.toContain('intersection()');
-    expect(code).toContain(['rotate_extrude(angle = 360, $fn = 64)', 'translate([30, 0])', '// construct:path'].join('\n').replace(/\n/g, '\n'.padEnd(1) ));
+    expect(code).toContain(['rotate_extrude(angle = 360, $fn = 64)', 'translate([30, 0])', '// construct:path'].join('\n'));
   });
 
   it('rotazione con offset negativo: ancora senza intersection(), con offset e commento in ordine', () => {

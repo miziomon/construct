@@ -108,7 +108,8 @@ function distanceToSegment(p: Vec2, a: Vec2, b: Vec2): number {
  */
 export function flattenCubic(c: Cubic, tol: number, out: Vec2[], depth = 0): void {
   const flat = distanceToSegment(c[1], c[0], c[3]) <= tol && distanceToSegment(c[2], c[0], c[3]) <= tol;
-  if (flat || depth >= MAX_DEPTH) {
+  // Oltre il tetto di punti per contorno non si suddivide più: il campionamento verrà scartato e rifatto con più tolleranza
+  if (flat || depth >= MAX_DEPTH || out.length > MAX_CONTOUR_SAMPLES) {
     out.push(c[3]);
     return;
   }

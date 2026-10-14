@@ -72,6 +72,8 @@ export interface Tokens {
   tokens: Token[];
   /** Nomi dei piatti scritti da Construct nei commenti `// === Piatto N: nome ===`, per numero di piatto. */
   plateNames: Map<number, string>;
+  /** Dati dei profili di Bézier scritti da Construct nei commenti `// construct:path {...}`, per numero di riga del commento. */
+  pathMeta: Map<number, string>;
   /** File richiamati con `use <...>` o `include <...>`: non si leggono. */
   uses: string[];
 }
@@ -82,6 +84,7 @@ const PUNCT = new Set([...'(){}[];,=<>+-*/%?:!#.^']);
 export function tokenize(src: string): Tokens {
   const tokens: Token[] = [];
   const plateNames = new Map<number, string>();
+  const pathMeta = new Map<number, string>();
   const uses: string[] = [];
   let i = 0;
   let line = 1;
@@ -97,6 +100,9 @@ export function tokenize(src: string): Tokens {
       const text = src.slice(i, end < 0 ? src.length : end);
       const plate = /^\/\/\s*===\s*Piatto\s+(\d+):\s*(.*?)\s*===\s*$/.exec(text);
       if (plate) plateNames.set(Number(plate[1]), plate[2]);
+      // I dati del profilo restano testo: li valida chi li usa (`restorePath`), perché il file può essere stato modificato
+      const path = /^\/\/\s*construct:path\s+(\{.*\})\s*$/.exec(text);
+      if (path) pathMeta.set(line, path[1]);
       i = end < 0 ? src.length : end;
     } else if (c === '/' && src[i + 1] === '*') {
       const end = src.indexOf('*/', i + 2);
@@ -147,7 +153,7 @@ export function tokenize(src: string): Tokens {
     }
   }
   tokens.push({ t: 'eof', v: '', line });
-  return { tokens, plateNames, uses };
+  return { tokens, plateNames, pathMeta, uses };
 }
 
 // --- Analisi sintattica ------------------------------------------------------------------------------------------

@@ -8,6 +8,7 @@ import type { GroupNode, PrimitiveNode, SceneNode, Shape2DNode, Vec3 } from '../
 import { evaluateScad, transformItems } from './evaluate';
 import type { GroupOp, Item, Mat, PrimItem, ScadIssue } from './evaluate';
 import { ScadError } from './parse';
+import { restorePath } from './pathMeta';
 
 /** Piatto del risultato: nome e radici (id dei nodi creati). */
 export interface ImportedPlate {
@@ -195,7 +196,9 @@ export function importScad(source: string): ScadImport {
         c = [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2];
         [width, depth] = [Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)];
       }
-      const d = decompose(item.M, [0, 0, c[1]]);
+      // Poligono scritto da Construct con il commento `// construct:path`, rimasto com'era: torna un Profilo (il suo centro è l'origine)
+      const restored = sh.s === 'polygon' ? restorePath(sh.meta, sh, { profile: P }) : null;
+      const d = decompose(item.M, [0, 0, restored ? 0 : c[1]]);
       note(d.skewed);
       if (!same(d.scale[0], d.scale[1])) addNote('Una scala diversa in X e in Y attorno a rotate_extrude() è stata approssimata.');
       if (c[0] < -1e-9) addNote('rotate_extrude(): una parte del profilo sta oltre l\'asse (X negativa) e si perde.');
@@ -212,6 +215,11 @@ export function importScad(source: string): ScadImport {
         position: d.position,
         rotation: d.rotation,
       };
+      // Il raggio di un Profilo non si imposta: con una scala attorno a rotate_extrude() il disegno resta un Poligono
+      if (restored && d.scale.every((k) => Math.abs(k - 1) < 1e-6)) {
+        const { revolveRadius: _fixed, ...turn } = revolve;
+        return { ...shape2dDefaults('path'), ...base, name: SHAPE2D_LABELS.path, ...restored, ...turn } as Shape2DNode;
+      }
       if (sh.s === 'circle') {
         const radius = r3(Math.max(MIN, (width / 2) * kx));
         const radiusY = r3(Math.max(MIN, (depth / 2) * kz));
@@ -267,8 +275,16 @@ export function importScad(source: string): ScadImport {
     const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
     const width = r3(Math.max(MIN, Math.max(...xs) - Math.min(...xs)));
     const depth = r3(Math.max(MIN, Math.max(...ys) - Math.min(...ys)));
-    const d = decompose(item.M, [cx, cy, ext.center ? 0 : ext.h / 2]);
+    // Poligono scritto da Construct con il commento `// construct:path`, rimasto com'era: torna un Profilo (il suo centro è l'origine)
+    const restored = restorePath(sh.meta, sh);
+    const d = decompose(item.M, [restored ? 0 : cx, restored ? 0 : cy, ext.center ? 0 : ext.h / 2]);
     note(d.skewed);
+    if (restored) {
+      return {
+        ...shape2dDefaults('path'), ...base, name: SHAPE2D_LABELS.path, ...restored, width: round(Math.max(MIN, restored.width * d.scale[0]), 4), depth: round(Math.max(MIN, restored.depth * d.scale[1]), 4),
+        height: heightOf(d.scale[2]), ...twist, ...scaleTop, ...offsetOf(d.scale[0]), position: d.position, rotation: d.rotation,
+      } as Shape2DNode;
+    }
     return {
       ...shape2dDefaults('svg'), ...base, name: 'Poligono', kind: 'svg', fileName: 'OpenSCAD', contours: contoursOf(sh.paths, sh.points, [cx, cy]),
       width: r3(width * d.scale[0]), depth: r3(depth * d.scale[1]), height: heightOf(d.scale[2]), ...twist, ...scaleTop, ...offsetOf(d.scale[0]), position: d.position, rotation: d.rotation,

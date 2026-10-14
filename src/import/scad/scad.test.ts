@@ -443,3 +443,70 @@ describe('import di file OpenSCAD: intervalli, $fa e $fs nei profili', () => {
     expect(first('linear_extrude(height = 120, twist = -160) square([120, 5], center = true);').node).toMatchObject({ kind: 'square', twist: 160 });
   });
 });
+
+describe('import di file OpenSCAD: Profilo di Bézier (andata e ritorno)', () => {
+  const corner = (p: [number, number]) => ({ p, kind: 'corner' as const });
+  /** Foro e contorno esterno curvi, con numeri a 4 decimali come li scrive lo store. */
+  const PATHS = [
+    { closed: true, nodes: [{ p: [0, 0] as [number, number], in: [-3.5, 0] as [number, number], out: [3.5, 0.0001] as [number, number], kind: 'smooth' as const }, { p: [20.1234, 5] as [number, number], in: [0, -4] as [number, number], out: [0, 4] as [number, number], kind: 'symmetric' as const }, corner([10, 18.5])] },
+    { closed: true, nodes: [corner([8, 6]), corner([12, 6]), corner([10, 9])] },
+  ];
+  const node = (patch: Partial<Shape2DNode> = {}) => ({ ...shape2dDefaults('path'), id: 'p', name: 'Profilo', position: [10, 20, 5], paths: PATHS, width: 20.1234, depth: 18.5, ...patch }) as Shape2DNode;
+  const codeOf = (n: Shape2DNode) => sceneToOpenScad({ nodes: { [n.id]: n }, rootIds: [n.id] });
+  const back = (code: string) => first(code).node as Shape2DNode;
+
+  it('lineare con torsione e offset: torna un Profilo con gli stessi contorni', () => {
+    const original = node({ height: 8, twist: 45, scaleTop: 0.8, offset: 1.5, offsetJoin: 'sharp' } as Partial<Shape2DNode>);
+    const result = back(codeOf(original)) as Extract<Shape2DNode, { kind: 'path' }>;
+    expect(result).toMatchObject({ type: 'shape2d', kind: 'path', name: 'Profilo', tolerance: 0.05, width: 20.1234, depth: 18.5, height: 8, twist: 45, scaleTop: 0.8, offset: 1.5, offsetJoin: 'sharp' });
+    expect(result.paths).toStrictEqual(PATHS);
+    near(result.position, [10, 20, 5]);
+  });
+
+  it('rotazione: torna un Profilo senza revolveRadius', () => {
+    const original = node({ extrusion: 'rotate', revolveAngle: 270, revolveSegments: 48, paths: [{ closed: false, nodes: [corner([25, 0]), corner([35, 0]), corner([35, 20])] }], width: 10, depth: 20 } as Partial<Shape2DNode>);
+    const result = back(codeOf(original)) as Extract<Shape2DNode, { kind: 'path' }>;
+    expect(result).toMatchObject({ kind: 'path', extrusion: 'rotate', revolveAngle: 270, revolveSegments: 48, width: 10, depth: 20 });
+    expect(result).not.toHaveProperty('revolveRadius');
+    expect(result.paths).toStrictEqual(original.type === 'shape2d' && original.kind === 'path' ? original.paths : []);
+    near(result.position, [10, 20, 5]);
+  });
+
+  it('lineare dentro scale(2): le misure raddoppiano, i contorni restano', () => {
+    const result = back(`scale([2, 2, 2]) {\n${codeOf(node())}\n}`) as Extract<Shape2DNode, { kind: 'path' }>;
+    expect(result.kind).toBe('path');
+    expect(result.paths).toStrictEqual(PATHS);
+    expect(result.width).toBeCloseTo(2 * 20.1234, 2);
+    expect(result.depth).toBeCloseTo(37, 2);
+  });
+
+  it('rotazione dentro scale(): il raggio non si imposta, torna un Poligono', () => {
+    const original = node({ extrusion: 'rotate', paths: [{ closed: true, nodes: [corner([25, 0]), corner([35, 0]), corner([35, 20])] }], width: 10, depth: 20 } as Partial<Shape2DNode>);
+    expect(back(`scale([2, 2, 2]) {\n${codeOf(original)}\n}`)).toMatchObject({ kind: 'svg', name: 'Poligono' });
+  });
+
+  it('un punto modificato a mano, un commento staccato o un JSON rovinato: Poligono, senza eccezioni', () => {
+    const code = codeOf(node());
+    expect(back(code.replace(/(polygon\(points = \[\s*\[)(-?[\d.]+)/, (_m, a, b) => `${a}${Number(b) + 0.5}`))).toMatchObject({ kind: 'svg' });
+    expect(back(code.replace(/(\/\/ construct:path [^\n]*\n)/, '$1\n'))).toMatchObject({ kind: 'svg' });
+    expect(back(code.replace('"paths":', '"paths"'))).toMatchObject({ kind: 'svg' });
+    expect(back(code.replace('"v":1', '"v":7'))).toMatchObject({ kind: 'svg' });
+    // Senza commento resta il Poligono di sempre
+    expect(back(code.split('\n').filter((l) => !l.includes('construct:path')).join('\n'))).toMatchObject({ kind: 'svg' });
+  });
+
+  it('rotazione oltre l asse: il ritaglio resta e il Profilo torna dentro l intersezione', () => {
+    const across = node({ extrusion: 'rotate', paths: [{ closed: true, nodes: [corner([-5, 0]), corner([5, 0]), corner([5, 10]), corner([-5, 10])] }], width: 10, depth: 10 } as Partial<Shape2DNode>);
+    const r = importScad(codeOf(across));
+    const root = r.nodes[r.plates[0].rootIds[0]] as GroupNode;
+    expect(root).toMatchObject({ type: 'group', op: 'intersection' });
+    expect(root.children.map((id) => r.nodes[id])).toContainEqual(expect.objectContaining({ kind: 'path', extrusion: 'rotate' }));
+  });
+
+  it('600 nodi nel commento (oltre il limite): Poligono senza eccezioni', () => {
+    const nodes = Array.from({ length: 600 }, (_, i) => corner([i, (i * 7) % 11]));
+    const meta = JSON.stringify({ v: 1, w: 10, d: 10, t: 0.05, paths: [{ closed: true, nodes }] });
+    const code = `// construct:path ${meta}\nlinear_extrude(height = 5, center = true)\npolygon([[0, 0], [10, 0], [10, 10], [0, 10]]);`;
+    expect(back(code)).toMatchObject({ kind: 'svg' });
+  });
+});
