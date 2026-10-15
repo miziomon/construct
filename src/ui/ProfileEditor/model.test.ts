@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { appendPenNode, bakeScale, closeContour, cycleKind, deleteNodes, draftFromNode, emptyDraft, gridStep, insertNode, moveHandle, moveNodes, nearestSegment, pathCenter, setNodeKind, snapPoint } from './model';
+import { appendPenNode, bakeScale, closeContour, cycleKind, deleteNodes, draftContours, draftFromNode, emptyDraft, gridStep, insertNode, moveHandle, moveNodes, nearestSegment, pathCenter, setNodeKind, snapPoint } from './model';
 import { bboxOf, cubicPoint, segmentOf, signedArea, splitCubic } from '../../scene/bezier';
 import { pathContours, pathNaturalSize } from '../../scene/shapes2d';
 import { shape2dDefaults } from '../../scene/defaults';
@@ -408,5 +408,31 @@ describe('splitCubic coerente con insertNode', () => {
     const [left] = splitCubic(original, 0.4);
     const inserted = insertNode(paths, { path: 0, segment: 0 }, 0.4)!.paths[0].nodes[1].p;
     expect(inserted).toEqual(left[3]);
+  });
+});
+
+describe('draftContours', () => {
+  it('sono i poligoni del kernel nelle coordinate del disegno: il cerchio resta dov\'è disegnato', () => {
+    const shifted = moveNodes([circle()], [0, 1, 2, 3].map((node) => ({ path: 0, node })), [30, 5]);
+    const [contour] = draftContours({ ...emptyDraft(), paths: shifted });
+    const box = bboxOf([contour])!;
+    expect(box.minX).toBeCloseTo(20, 3);
+    expect(box.maxX).toBeCloseTo(40, 3);
+    expect(box.minY).toBeCloseTo(-5, 3);
+    expect(box.maxY).toBeCloseTo(15, 3);
+  });
+
+  it('un contorno aperto in rotazione si chiude sull\'asse (x = 0), in lineare no', () => {
+    const open: PathContour = { closed: false, nodes: [node([10, 0]), node([12, 5]), node([10, 10])] };
+    const rotated = draftContours({ ...emptyDraft(), paths: [open], extrusion: 'rotate' });
+    expect(rotated).toHaveLength(1);
+    expect(rotated[0].some(([x]) => Math.abs(x) < 1e-3)).toBe(true);
+    const linear = draftContours({ ...emptyDraft(), paths: [open] });
+    expect(linear[0].every(([x]) => x > 9)).toBe(true);
+  });
+
+  it('un disegno senza area (linea verticale) o vuoto non ha poligoni', () => {
+    expect(draftContours({ ...emptyDraft(), paths: [{ closed: false, nodes: [node([5, 0]), node([5, 10])] }], extrusion: 'rotate' })).toEqual([]);
+    expect(draftContours(emptyDraft())).toEqual([]);
   });
 });

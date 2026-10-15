@@ -1,0 +1,296 @@
+@use '../../styles/abstracts' as *;
+
+// La modale del Profilo usa tutto il corpo della finestra: niente margine attorno
+.modal__body:has(> .profile-editor) {
+  padding: 0;
+  overflow: hidden;
+}
+
+// Modale di disegno del Profilo: disegno 2D a sinistra, opzioni a destra, piede con avvisi e pulsanti
+.profile-editor {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  outline: none;
+
+  &__main {
+    display: grid;
+    flex: 1;
+    grid-template-columns: minmax(0, 1fr) 280px;
+    min-height: 0;
+  }
+
+  // Area di disegno: l'SVG sta in sovrimpressione, così la sua dimensione segue quella dell'area e non il contrario
+  &__canvas {
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    background: color('panel');
+    outline: none;
+
+    &:focus-visible {
+      box-shadow: inset 0 0 0 2px color('accent');
+    }
+  }
+
+  &__svg {
+    position: absolute;
+    inset: 0;
+    display: block;
+    touch-action: none;
+    user-select: none;
+
+    text {
+      pointer-events: none;
+    }
+  }
+
+  &__grid {
+    fill: none;
+    stroke: color('border');
+    stroke-width: 1;
+
+    &--minor {
+      opacity: 0.45;
+    }
+  }
+
+  &__tick {
+    fill: color('text-muted');
+    font-size: 10px;
+  }
+
+  // Asse orizzontale (Y = 0) e asse verticale (X = 0, di rotazione)
+  &__axis {
+    stroke: color('profile-axis');
+
+    &--x {
+      stroke-width: 1;
+      opacity: 0.5;
+    }
+
+    &--y {
+      stroke-width: 1.5;
+    }
+  }
+
+  &__axis-label {
+    fill: color('profile-axis');
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  // Parte a sinistra dell'asse in rotazione
+  &__outside {
+    rect {
+      fill: color('profile-outside');
+    }
+
+    text {
+      fill: color('text');
+      font-size: 11px;
+    }
+  }
+
+  &__fill {
+    fill: color('profile-fill');
+  }
+
+  &__curve {
+    fill: none;
+    stroke: color('accent');
+    stroke-width: 1.75;
+    stroke-linejoin: round;
+  }
+
+  &__handle {
+    line {
+      stroke: color('profile-handle');
+      stroke-dasharray: 3 2;
+      stroke-width: 1;
+    }
+
+    circle {
+      fill: color('panel');
+      stroke: color('profile-handle');
+      stroke-width: 1.5;
+    }
+  }
+
+  // Nodi: la forma (quadrato, cerchio, rombo) dice il tipo, il riempimento dice se è selezionato
+  &__node {
+    cursor: pointer;
+
+    rect,
+    circle,
+    polygon {
+      fill: color('panel-raised');
+      stroke: color('profile-node');
+      stroke-width: 1.5;
+    }
+
+    &--selected {
+      rect,
+      circle,
+      polygon {
+        fill: color('accent');
+        stroke: color('accent');
+      }
+    }
+  }
+
+  &__crossing {
+    fill: none;
+    stroke: color('danger');
+    stroke-width: 2;
+  }
+
+  &__rubber {
+    fill: color('accent-soft');
+    stroke: color('accent');
+    stroke-dasharray: 4 3;
+  }
+
+  // Zoom e Adatta in alto a destra del disegno
+  &__zoom {
+    position: absolute;
+    top: $space-2;
+    right: $space-2;
+    display: flex;
+    gap: $space-1;
+
+    button {
+      display: inline-flex;
+      padding: 5px;
+      border: 1px solid color('border');
+      border-radius: $radius-sm;
+      background: color('panel-raised');
+      color: color('text');
+      @include focus-ring;
+
+      &:hover {
+        border-color: color('accent');
+      }
+    }
+  }
+
+  &__coords {
+    position: absolute;
+    right: $space-3;
+    bottom: $space-2;
+    font-family: $font-mono;
+    font-size: 11px;
+    color: color('text-muted');
+    pointer-events: none;
+  }
+
+  &__sidebar {
+    min-height: 0;
+    overflow-y: auto;
+    border-left: 1px solid color('border');
+    background: color('panel');
+    @include thin-scrollbar;
+  }
+
+  &__section {
+    display: flex;
+    flex-direction: column;
+    gap: $space-2;
+    padding: 0 $space-3 $space-3;
+    border-bottom: 1px solid color('border');
+  }
+
+  &__section-title {
+    @include section-title;
+    padding-right: 0;
+    padding-left: 0;
+  }
+
+  &__hint {
+    margin: 0;
+    font-size: 12px;
+    color: color('text-muted');
+  }
+
+  // Interruttore a più voci (estrusione, tipo di nodo): la voce attiva è evidenziata, non solo colorata
+  &__segmented {
+    display: flex;
+    gap: $space-1;
+
+    button {
+      flex: 1;
+      padding: 5px $space-2;
+      border: 1px solid color('border');
+      border-radius: $radius-sm;
+      background: color('panel-raised');
+      font-size: 12px;
+      @include focus-ring;
+
+      &:hover {
+        border-color: color('accent');
+      }
+
+      &[aria-pressed='true'] {
+        border-color: color('accent');
+        background: color('accent-soft');
+        color: color('accent');
+        font-weight: 600;
+      }
+    }
+  }
+
+  &__footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: $space-3;
+    padding: $space-3 $space-4;
+    border-top: 1px solid color('border');
+  }
+
+  &__status {
+    display: flex;
+    flex: 1;
+    flex-wrap: wrap;
+    gap: $space-2;
+    min-width: 0;
+  }
+
+  &__chip {
+    padding: 2px $space-2;
+    border: 1px solid color('border');
+    border-radius: 999px;
+    font-size: 12px;
+
+    &--ok {
+      border-color: color('ok');
+      color: color('ok');
+    }
+
+    &--warn {
+      border-color: color('warn');
+      color: color('warn');
+    }
+
+    &--err {
+      border-color: color('danger');
+      color: color('danger');
+    }
+  }
+
+  // Finestre strette: una colonna sola, le opzioni sotto il disegno
+  @media (max-width: 900px) {
+    &__main {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1fr) minmax(0, 40%);
+    }
+
+    &__sidebar {
+      border-top: 1px solid color('border');
+      border-left: 0;
+    }
+  }
+}

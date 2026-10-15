@@ -9,10 +9,11 @@ import { startKernelSync, useResultStore } from './kernel/useKernel';
 import { startPrintChecks } from './ui/Warnings/warningsStore';
 import { resetThumbnails, startThumbnailCapture } from './ui/Timeline/thumbnails';
 import { useSceneStore } from './scene/store';
+import { useProfileEditor } from './ui/ProfileEditor/profileEditorStore';
 import './styles/main.scss';
 
 // Solo nella build dei test end-to-end: i test leggono lo stato dell'app senza passare dalla UI
-if (import.meta.env.MODE === 'e2e') window.__construct = { store: useSceneStore, results: useResultStore, ui: useUiStore, thumbnails: { reset: resetThumbnails } };
+if (import.meta.env.MODE === 'e2e') window.__construct = { store: useSceneStore, results: useResultStore, ui: useUiStore, profileEditor: useProfileEditor, thumbnails: { reset: resetThumbnails } };
 
 // Prima si ripristina la scena salvata, poi si collega il kernel (che calcola la scena già caricata)
 // Al primo avvio, senza una scena da ripristinare, si mostra la schermata di benvenuto

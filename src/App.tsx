@@ -18,12 +18,15 @@ import { lazyLoad } from './ui/lazyLoad';
 import { useShortcuts } from './hooks/useShortcuts';
 import { importFiles } from './import/importFile';
 import { useScadReport } from './import/scad/reportStore';
+import { useProfileEditor } from './ui/ProfileEditor/profileEditorStore';
 import './App.scss';
 
 // La modale del codice (e il generatore OpenSCAD) si scarica solo quando serve
 const CodeModal = lazyLoad(() => import('./ui/CodeModal/CodeModal'));
 // Il rapporto dell'importazione OpenSCAD si scarica solo quando un file ha dei problemi
 const ScadReportModal = lazyLoad(() => import('./ui/ScadReport/ScadReportModal'));
+// La modale di disegno del Profilo (e il suo codice) si scarica solo quando si apre
+const ProfileEditor = lazyLoad(() => import('./ui/ProfileEditor/ProfileEditor'));
 
 /** Colore di sfondo della pagina per la barra del browser (stessi valori del token "bg"). */
 const THEME_COLORS = { light: '#e9eff6', dark: '#14171c' };
@@ -34,6 +37,7 @@ export default function App() {
   const codeOpen = useUiStore((s) => s.codeOpen);
   const librarySplit = useUiStore((s) => s.librarySplit);
   const scadReport = useScadReport((s) => s.report);
+  const profileTarget = useProfileEditor((s) => s.target);
 
   // Il tema è un attributo sulla radice: le variabili CSS cambiano di conseguenza
   useEffect(() => {
@@ -77,6 +81,11 @@ export default function App() {
       {scadReport && (
         <Suspense fallback={null}>
           <ScadReportModal />
+        </Suspense>
+      )}
+      {profileTarget && (
+        <Suspense fallback={null}>
+          <ProfileEditor />
         </Suspense>
       )}
       <UpdatePrompt />

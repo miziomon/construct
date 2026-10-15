@@ -1,5 +1,5 @@
 import { MAX_PATH_CONTOURS, MAX_PATH_NODES, PATH_DEFAULT_TOLERANCE, cubicPoint, segmentOf, splitCubic } from '../../scene/bezier';
-import { REVOLVE_DEFAULT_ANGLE, REVOLVE_DEFAULT_SEGMENTS, pathNaturalBox } from '../../scene/shapes2d';
+import { REVOLVE_DEFAULT_ANGLE, REVOLVE_DEFAULT_SEGMENTS, pathContours, pathNaturalBox } from '../../scene/shapes2d';
 import { hasBoundDimension } from '../../scene/resize';
 import { shape2dDefaults } from '../../scene/defaults';
 import type { PathContour, PathNode, Shape2DNode, Vec2 } from '../../scene/types';
@@ -299,6 +299,18 @@ export function gridStep(base: number, pxPerMm: number): number {
 export function pathCenter(d: Pick<Draft, 'paths'>): Vec2 {
   const box = pathNaturalBox(d);
   return box ? [box.cx, box.cy] : [0, 0];
+}
+
+/**
+ * Poligoni che il kernel riempie per il disegno, nel sistema dell'editor (per il riempimento della modale): sono i
+ * contorni di `pathContours` (stesso campionamento, chiusura dei contorni aperti sull'asse in rotazione, contorni senza
+ * area scartati) alla misura naturale, cioè senza scala, riportati dal centro nell'origine alle coordinate del disegno.
+ */
+export function draftContours(d: Draft): Vec2[][] {
+  const box = pathNaturalBox(d);
+  if (!box) return [];
+  const contours = pathContours({ paths: d.paths, tolerance: d.tolerance, width: box.width, depth: box.depth, extrusion: d.extrusion });
+  return contours.map((c) => c.map(([x, y]): Vec2 => [x + box.cx, y + box.cy]));
 }
 
 /** Disegno vuoto con i valori iniziali di un Profilo nuovo (estrusione lineare). */
