@@ -283,4 +283,20 @@ test.describe('immagini di esempio', () => {
     await page.waitForTimeout(400);
     await page.screenshot({ path: 'docs/images/serie.png' });
   });
+
+  test('immagine della modale di disegno del Profilo', async ({ page }) => {
+    // Un contorno con un lato curvo e un foro triangolare, selezionato un nodo liscio con le sue maniglie
+    const paths = [
+      { closed: true, nodes: [{ p: [0, 0], kind: 'corner' }, { p: [40, 0], out: [10, 8], kind: 'smooth' }, { p: [40, 30], in: [10, -8], kind: 'smooth' }, { p: [0, 30], kind: 'corner' }] },
+      { closed: true, nodes: [{ p: [12, 10], kind: 'corner' }, { p: [24, 10], kind: 'corner' }, { p: [18, 20], kind: 'corner' }] },
+    ];
+    const id = await page.evaluate((p) => window.__construct!.store.getState().addPath({ paths: p as never, height: 8, twist: 30 }), paths);
+    await settled(page);
+    await page.evaluate((nodeId) => window.__construct!.profileEditor.getState().open({ nodeId }), id);
+    const dialog = page.locator('dialog.modal[open]');
+    await dialog.locator('[data-node="0:1"]').click();
+    await dialog.locator('section[data-state="ready"]').waitFor();
+    await page.waitForTimeout(600);
+    await page.screenshot({ path: 'docs/images/profilo-editor.png' });
+  });
 });

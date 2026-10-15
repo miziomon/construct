@@ -150,12 +150,22 @@ Dalla 0.27.0 l'importazione legge anche `let`/`assign`, le liste per comprension
 ## Profili Bézier: punti aperti dalla fase 1 (0.60.0)
 
 - **Costo di un commento ostile ma lecito**: un `// construct:path` al limite dei dati (100 contorni da 500 nodi con cubiche piene di estremi) costa circa 1-2 s di thread principale per poligono (tre campionamenti: riquadro naturale, `pathContours` e di nuovo il riquadro). Un file con molti poligoni così blocca l'interfaccia per diversi secondi; si potrebbe portare il lavoro in un worker o abbassare i tetti.
-- **Linea aperta verticale in rotazione** (fase 2): un tornio disegnato come un solo tratto verticale produce `[]`, perché `svgContours` scarta i disegni senza larghezza. È un caso d'uso plausibile per i solidi di rotazione: servirà un modo di dare spessore o larghezza minima al disegno.
+- **Linea aperta verticale in rotazione**: un tornio disegnato come un solo tratto verticale produce `[]`, perché `svgContours` scarta i disegni senza larghezza. Dalla 0.61.0 il piede della modale lo spiega ("tutti i punti stanno sulla stessa verticale... aggiungi un punto non allineato") e OK resta disattivato, ma il caso d'uso resta senza soluzione: servirà un modo di dare spessore o larghezza minima al disegno.
 - **Tolleranza oltre il massimo**: dopo 12 raddoppi `samplePaths` può arrivare a 204,8 mm; se i soli estremi superano il tetto di punti, raddoppiare non riduce più i punti e appiattisce comunque le curve. Basterebbe fermarsi quando un raddoppio non riduce il totale.
 - **Larghezza e profondità nel ritorno lineare**: sono arrotondate a 4 decimali, ma `addPath` scrive le misure naturali non arrotondate, quindi l'andata e ritorno è esatta solo se le misure hanno già 4 decimali.
 - **Ripiego del Poligono in rotazione dentro `scale()`**: il centro di `decompose` si calcola prima di sapere se il Profilo torna davvero (scarto al più circa 5e-5 mm); è più pulito calcolarlo dopo.
-- **Test mancanti**: il menu contestuale senza "Profilo" (oggi verificato solo leggendo `ContextMenu.tsx`) e un ritorno da OpenSCAD con `mirror`.
+- **Test mancanti**: un ritorno da OpenSCAD con `mirror`. (Chiuso con la 0.61.0: il menu contestuale ora ha la voce Profilo e `e2e/profile-editor.spec.ts` la prova.)
 - **Esc in `NumberField` non annulla** (emerso con la modale del Profilo, 0.61.0): il gestore fa `setText(valore)` e subito `blur()`, ma `onBlur` legge il testo del DOM, ancora quello modificato, e lo conferma. Basterebbe un flag che salti il `commit` all'uscita causata da Esc.
+
+## Profili Bézier: punti aperti dalla fase 2 (0.61.0)
+
+Chiusi dalla fase 2: modale di disegno con Penna e Seleziona, anteprima 3D, voce in libreria, menu del vuoto, Proprietà e comando `profile` (Maiusc+P), compensazione della posizione, scala incorporata, bozza, tolleranza effettiva e avviso dei troppi punti. Restano:
+
+- **Fase 3 dello studio**: forme base (rettangolo, cerchio, poligono regolare) nella modale, import di un SVG con le curve conservate, "Converti in profilo" da cerchio, quadrato e SVG, elenco dei fori (oggi il foro è solo l'effetto del riempimento pari-dispari) e Penna per i fori.
+- **Anteprima a ogni gesto**: durante un trascinamento il kernel ricalcola al massimo ogni 100 ms con una sola richiesta in volo; con profili molto fitti (migliaia di punti) l'anteprima può restare indietro. Si potrebbe campionare più grossolano durante il gesto.
+- **Controlli dei componenti**: la modale si prova solo da e2e (Vitest gira in ambiente node): i gesti del canvas non hanno test unitari, solo le funzioni pure di `model.ts`.
+- **Layout stretto**: a una colonna (sotto i 900 px) il piede scorre con le opzioni; si potrebbe tenere fissa la riga dei pulsanti OK e Annulla.
+- **Annulla della bozza ripristinata**: dopo "Ripristina" Ctrl+Z torna al disegno della scena, non ai singoli passi fatti prima della chiusura (la bozza salva solo lo stato finale).
 
 ## Font non presenti su Google Fonts
 

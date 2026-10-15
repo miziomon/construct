@@ -9,6 +9,10 @@ Tutto gira nel browser: il calcolo geometrico usa [manifold-3d](https://github.c
 ## Funzioni principali
 
 - **Forme**: cubo, cilindro, cono, sfera, toro, poliedri regolari, profilati strutturali a L, T, H e U (spessori di ali e anima, raccordo interno e punte smussate o arrotondate), tubolari rettangolari e tondi (parete in mm), forme 2D estrudibili (cerchio, quadrato, poligoni), testo con una quarantina di font di Google Fonts, simboli, emoji e import di **SVG**, **STL** e **3MF**.
+- **Profili di Bézier**: una modale di disegno (libreria 2D, tasto destro sul vuoto, Proprietà o `Maiusc+P`) con Penna e Seleziona per tracciare contorni di curve di Bézier, più contorni (quelli dentro altri sono fori), estrusione lineare o rotazionale e anteprima 3D calcolata dal kernel; il codice OpenSCAD conserva i nodi in un commento e si rilegge come Profilo.
+
+![La modale di disegno del Profilo](docs/images/profilo-editor.png)
+
 - **Booleane**: unione, differenza, intersezione, inviluppo convesso e fori; gli operandi si possono vedere in trasparenza, come il `#` di OpenSCAD.
 - **Strumenti di dettaglio**: Raccordo, Smusso e Smusso angolare con anteprima dal vivo, Guscio (con la faccia da lasciare aperta scelta con un clic), Dividi con un piano (anche inclinato, per esempio a 45°, e con connettori tondi o quadrati: perni e sedi oppure spine, con tolleranza), Appoggia su una faccia, Sdraia, Allinea, Specchia e Misura con aggancio a vertici e spigoli.
 - **Serie** (lineare, griglia, circolare): il risultato è un gruppo parametrico "Ripetizione", si modificano i parametri e non le singole copie.
