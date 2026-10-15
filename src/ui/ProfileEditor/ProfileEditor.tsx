@@ -206,6 +206,8 @@ function Editor({ target }: { target: ProfileTarget }) {
     history.current!.push(stateRef.current.draft);
     // Passo concluso: l'anteprima si aggiorna subito (vedi `immediate` più sotto)
     setSettled((n) => n + 1);
+    // Lo slider lascia il focus alla pagina al rilascio: senza un elemento attivo le scorciatoie della modale (Ctrl+Z, P) non arrivano
+    if (document.activeElement === document.body) root.current?.focus();
   }, []);
   useEffect(() => {
     window.addEventListener('pointerup', settle);
@@ -333,6 +335,9 @@ function Editor({ target }: { target: ProfileTarget }) {
 
   // --- Tastiera -------------------------------------------------------------------------------------------------------
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    // Nessun tasto della modale arriva alle scorciatoie dell'app (sulla finestra): con uno strumento della scena aperto
+    // Invio o Canc agirebbero sulla scena
+    e.stopPropagation();
     // Esc: la gestiamo noi (il dialog non deve chiudersi da solo). Termina il contorno della Penna, altrimenti conferma se
     // c'è del lavoro; in un campo di testo basta l'annullamento del campo
     if (e.key === 'Escape') {

@@ -68,16 +68,11 @@ function FitCamera({ mesh, fitSignal }: { mesh: NodeMesh | null; fitSignal: numb
   return null;
 }
 
-/** Alla chiusura rilascia il contesto WebGL: la modale si apre e si chiude spesso e i browser ne ammettono pochi. */
-function ReleaseContext() {
-  const gl = useThree((s) => s.gl);
-  useEffect(() => () => gl.forceContextLoss(), [gl]);
-  return null;
-}
-
 /**
  * Anteprima 3D del Profilo: un secondo Canvas (a richiesta, con orbita) alimentato dalla mesh del kernel. Il pulsante
- * Comprimi smonta il Canvas (e il suo contesto WebGL), Ingrandisci porta l'anteprima a tutta la colonna.
+ * Comprimi smonta il Canvas, Ingrandisci porta l'anteprima a tutta la colonna. Allo smontaggio R3F rilascia da sé il contesto
+ * WebGL (`forceContextLoss`: la modale si apre e si chiude spesso e i browser ne ammettono pochi); un secondo rilascio
+ * esplicito darebbe l'avviso "context already lost" (l'e2e delle dieci aperture lo verifica).
  */
 export function ProfilePreview({ mesh, state, mode, onMode, fitSignal, onFit }: Props) {
   const palette = useViewportPalette();
@@ -111,7 +106,6 @@ export function ProfilePreview({ mesh, state, mode, onMode, fitSignal, onFit }: 
             {mesh && <PreviewSolid mesh={mesh} />}
             <OrbitControls makeDefault enableDamping={false} />
             <FitCamera mesh={mesh} fitSignal={fitSignal} />
-            <ReleaseContext />
           </Canvas>
           {!mesh && state !== 'busy' && <div className="profile-editor__preview-empty">Nessun solido da mostrare</div>}
           {state === 'error' && <div className="profile-editor__preview-empty">Calcolo non riuscito</div>}

@@ -219,6 +219,9 @@ test('Backspace nel campo X modifica il testo e non elimina il nodo; fuori dal c
   await page.keyboard.press('Escape');
   await expect(confirmBox(page)).toHaveCount(0);
   await expect(editor(page)).toBeVisible();
+  // Bug noto di NumberField (docs/da-fare.md): Esc conferma il testo modificato invece di annullarlo, quindi X resta 4 e il
+  // nodo si è spostato. Se il bug viene corretto questa asserzione va cambiata in 40
+  await expect(x).toHaveValue('4');
   // Fuori dal campo Canc elimina il nodo selezionato
   await editor(page).locator('.profile-editor__canvas').focus();
   await page.keyboard.press('Delete');
@@ -857,4 +860,50 @@ test('una colonna sola sotto i 900 px: anteprima sopra il disegno e il disegno a
   // Il piede e le opzioni scorrono: i pulsanti si raggiungono
   await okButton(page).scrollIntoViewIfNeeded();
   await expect(okButton(page)).toBeVisible();
+});
+
+test('con uno strumento della scena aperto (Serie, Raccordo) la modale non tocca la scena: lo strumento si annulla e Invio ed Esc restano della modale', async ({ page }) => {
+  await addShapeBox(page);
+  const sceneSize = () => page.evaluate(() => ({ nodes: Object.keys(window.__construct!.store.getState().scene.nodes).length, steps: window.__construct!.store.temporal.getState().pastStates.length }));
+  const before = await sceneSize();
+  for (const [key, panel] of [['o', 'Serie'], ['f', 'Raccordo']] as const) {
+    await page.keyboard.press(key);
+    await expect(page.getByRole('region', { name: panel })).toBeVisible();
+    await page.getByRole('tab', { name: 'Forme 2D' }).click();
+    await page.locator('button[title^="Aggiungi: Profilo"]').click();
+    await expect(editor(page)).toBeVisible();
+    // Aprire la modale ha annullato lo strumento
+    await expect(page.getByRole('region', { name: panel })).toHaveCount(0);
+    await editor(page).getByRole('button', { name: 'Penna' }).click();
+    await clicks(page, [[-100, 60], [0, -60], [100, 60]]);
+    await page.keyboard.press('Enter');
+    await expect(nodes(page)).toHaveCount(3);
+    // Esc: il contorno è già terminato, quindi chiede di chiudere; si conferma e la scena non è cambiata
+    await page.keyboard.press('Escape');
+    await confirmBox(page).getByRole('button', { name: 'Chiudi' }).click();
+    await expect(editor(page)).toHaveCount(0);
+    expect(await sceneSize()).toEqual(before);
+    await page.evaluate(() => localStorage.clear());
+    // Il cubo resta selezionato: si ripete con l'altro strumento
+    await page.evaluate(() => window.__construct!.store.getState().select([Object.keys(window.__construct!.store.getState().scene.nodes)[0]]));
+  }
+});
+
+test('dopo aver trascinato uno slider con il mouse il focus resta nella modale: Ctrl+Z riporta il valore', async ({ page }) => {
+  const id = await addPath(page);
+  await openEditor(page, id);
+  const height = editor(page).locator('.slider-field').filter({ has: page.getByText('Altezza', { exact: true }) });
+  const value = height.locator('.number-field__input');
+  await expect(value).toHaveValue('5');
+  const range = (await height.locator('input[type=range]').boundingBox())!;
+  await page.mouse.move(range.x + range.width * 0.1, range.y + range.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(range.x + range.width * 0.7, range.y + range.height / 2, { steps: 6 });
+  await page.mouse.up();
+  await expect(value).not.toHaveValue('5');
+  // Il rilascio dello slider toglie il focus all'elemento: la modale lo riprende e le scorciatoie funzionano
+  await page.keyboard.press('Control+z');
+  await expect(value).toHaveValue('5');
+  await page.keyboard.press('p');
+  await expect(editor(page).getByRole('button', { name: 'Penna' })).toHaveAttribute('aria-pressed', 'true');
 });

@@ -164,6 +164,11 @@ Chiusi dalla fase 2: modale di disegno con Penna e Seleziona, anteprima 3D, voce
 - **Fase 3 dello studio**: forme base (rettangolo, cerchio, poligono regolare) nella modale, import di un SVG con le curve conservate, "Converti in profilo" da cerchio, quadrato e SVG, elenco dei fori (oggi il foro è solo l'effetto del riempimento pari-dispari) e Penna per i fori.
 - **Anteprima a ogni gesto**: durante un trascinamento il kernel ricalcola al massimo ogni 100 ms con una sola richiesta in volo; con profili molto fitti (migliaia di punti) l'anteprima può restare indietro. Si potrebbe campionare più grossolano durante il gesto.
 - **Controlli dei componenti**: la modale si prova solo da e2e (Vitest gira in ambiente node): i gesti del canvas non hanno test unitari, solo le funzioni pure di `model.ts`.
+- **Doppio ricalcolo dell'anteprima**: `usePreviewMesh` riparte alla fine di ogni gesto anche con la stessa scena (si ricalcola due volte lo stesso disegno) e, se `enabled` diventa falso con una richiesta in volo, la risposta rimette la mesh vecchia. Basta ricordare l'ultima scena inviata e ignorare le risposte quando la scena è `null`.
+- **Tipo `Draft` nello strato sbagliato**: `store.ts` lo importa da `ui/ProfileEditor/model`; è solo un tipo, ma andrebbe in `scene/`.
+- **Attese fisse negli e2e**: `waitForTimeout` (700 e 800 ms) in `e2e/profile-editor.spec.ts` per la bozza; meglio `expect.poll` sulla chiave di `localStorage`.
+- **Altezza legata a un parametro**: nella modale lo slider la cambia e l'anteprima la mostra, ma all'OK `holdBound` la scarta in silenzio; si potrebbe disattivare lo slider o mostrare la formula.
+- **Screenshot dei due temi** della modale: il piano li voleva allegati alla PR; per ora c'è solo `docs/images/profilo-editor.png`.
 - **Layout stretto**: a una colonna (sotto i 900 px) il piede scorre con le opzioni; si potrebbe tenere fissa la riga dei pulsanti OK e Annulla.
 - **Annulla della bozza ripristinata**: dopo "Ripristina" Ctrl+Z torna al disegno della scena, non ai singoli passi fatti prima della chiusura (la bozza salva solo lo stato finale).
 

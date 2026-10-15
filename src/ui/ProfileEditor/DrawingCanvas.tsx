@@ -450,7 +450,7 @@ export function DrawingCanvas({ draft, contours, crossings, selection, grid, spa
         {rotate && outsideWidth > 0 && (
           <g className="profile-editor__outside">
             <rect x={0} y={0} width={outsideWidth} height={size.h} />
-            <text x={Math.max(8, outsideWidth - 8)} y={38} textAnchor={outsideWidth > 180 ? 'end' : 'start'}>
+            <text x={Math.max(8, outsideWidth - 8)} y={78} textAnchor={outsideWidth > 180 ? 'end' : 'start'}>
               Questa parte non viene ruotata
             </text>
           </g>
@@ -466,7 +466,7 @@ export function DrawingCanvas({ draft, contours, crossings, selection, grid, spa
         {grid.showAxis && <line className="profile-editor__axis profile-editor__axis--x" x1={0} x2={size.w} y1={origin[1]} y2={origin[1]} />}
         {grid.showAxis && <line className="profile-editor__axis profile-editor__axis--y" x1={origin[0]} x2={origin[0]} y1={0} y2={size.h} />}
         {rotate && grid.showAxis && (
-          <text className="profile-editor__axis-label" x={origin[0] + 6} y={20}>
+          <text className="profile-editor__axis-label" x={origin[0] + 6} y={60}>
             asse di rotazione
           </text>
         )}
