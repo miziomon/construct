@@ -227,6 +227,22 @@ export function appendPenNode(paths: PathContour[], current: number | null, p: V
   };
 }
 
+/** Toglie l'ultimo nodo del contorno `i` (Backspace della Penna); un contorno che resta senza nodi sparisce. */
+export function dropLastNode(paths: PathContour[], i: number): PathContour[] {
+  const c = paths[i];
+  if (!c) return paths;
+  if (c.nodes.length <= 1) return paths.filter((_, k) => k !== i);
+  return paths.map((x, k) => (k === i ? { ...x, nodes: x.nodes.slice(0, -1) } : x));
+}
+
+/** Toglie l'ultimo nodo del contorno `i` se coincide con il penultimo (il secondo clic di un doppio clic della Penna). */
+export function trimDuplicateTail(paths: PathContour[], i: number): PathContour[] {
+  const c = paths[i];
+  if (!c || c.nodes.length < 2) return paths;
+  const [last, prev] = [c.nodes[c.nodes.length - 1], c.nodes[c.nodes.length - 2]];
+  return dist(last.p, prev.p) < 1e-6 ? dropLastNode(paths, i) : paths;
+}
+
 /**
  * Incorpora una scala nei nodi: posizioni e maniglie si scalano di `sx`, `sy` attorno al centro (cx, cy), che resta
  * dov'è. Serve ad aprire nella modale un profilo ingrandito col gizmo: il disegno mostra la misura vera.

@@ -1,57 +1,74 @@
-import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
-import { selfIntersections } from '../../scene/bezier';
+import { samplePaths, selfIntersections } from '../../scene/bezier';
 import { hasBoundDimension } from '../../scene/resize';
+import { pathNaturalBox } from '../../scene/shapes2d';
 import { useSceneStore } from '../../scene/store';
-import type { PathContour, PathNode } from '../../scene/types';
+import type { PathContour, PathNode, Vec2 } from '../../scene/types';
 import { Modal } from '../Modal/Modal';
 import { confirmDialog, notify } from '../notify/notifyStore';
 import { DrawingCanvas } from './DrawingCanvas';
-import type { GridSettings } from './DrawingCanvas';
+import type { GridSettings, Tool } from './DrawingCanvas';
 import { clearDraft, flushDrafts, loadDraft, saveDraft } from './draft';
 import { createHistory } from './history';
 import type { History } from './history';
-import { deleteNodes, draftContours, draftFromNode, emptyDraft, moveNodes, pathCenter, setNodeKind } from './model';
+import { closeContour, deleteNodes, draftContours, draftFromNode, dropLastNode, emptyDraft, moveHandle, moveNodes, pathCenter, setNodeKind, trimDuplicateTail } from './model';
 import type { Draft, NodeRef } from './model';
 import { useProfileEditor } from './profileEditorStore';
 import type { ProfileTarget } from './profileEditorStore';
 import { Sidebar } from './Sidebar';
 import './ProfileEditor.scss';
 
-/** Stato del disegno: i contorni e i parametri (Draft) e i nodi selezionati. La cronologia sta a parte (vedi `createHistory`). */
+/** Stato del disegno: contorni e parametri (Draft), nodi selezionati, strumento e contorno in corso della Penna. La cronologia sta a parte. */
 interface EditorState {
   draft: Draft;
   selection: NodeRef[];
+  tool: Tool;
+  /** Indice del contorno che la Penna sta disegnando (null = nessuno). */
+  pen: number | null;
 }
 
 type Action =
+  // Un nuovo disegno (passo concluso, annulla, ripeti, ripristino): la Penna non ha più un contorno in corso
   | { type: 'replace'; draft: Draft; selection?: NodeRef[] }
-  | { type: 'paths'; paths: PathContour[]; selection?: NodeRef[] }
-  | { type: 'select'; selection: NodeRef[] };
+  // Modifica in corso (trascinamento, Penna): `pen` cambia solo se indicato
+  | { type: 'paths'; paths: PathContour[]; selection?: NodeRef[]; pen?: number | null }
+  | { type: 'select'; selection: NodeRef[] }
+  | { type: 'tool'; tool: Tool };
 
 // Il reducer è puro: la cronologia (con i suoi effetti) si aggiorna fuori, nei gestori degli eventi
 function reducer(state: EditorState, action: Action): EditorState {
   switch (action.type) {
     case 'replace':
-      return { draft: action.draft, selection: action.selection ?? state.selection };
+      return { ...state, draft: action.draft, selection: action.selection ?? state.selection, pen: null };
     case 'paths':
-      return { draft: { ...state.draft, paths: action.paths }, selection: action.selection ?? state.selection };
+      return { ...state, draft: { ...state.draft, paths: action.paths }, selection: action.selection ?? state.selection, pen: action.pen === undefined ? state.pen : action.pen };
     case 'select':
       return { ...state, selection: action.selection };
+    case 'tool':
+      return { ...state, tool: action.tool, pen: null };
   }
 }
 
-/** Aggancio e griglia iniziali: passo di 1 mm, a griglia e a nodi (la sidebar completa li renderà modificabili). */
-const GRID: GridSettings = { step: 1, snapGrid: true, snapNodes: true };
+/** Aggancio e griglia iniziali: passo di 1 mm, tutti gli agganci attivi, assi visibili. */
+const GRID: GridSettings = { step: 1, snapGrid: true, snapNodes: true, snapOrtho: true, showAxis: true };
 
-/** Vero se il tasto va alla casella di testo che ha il focus (le scorciatoie della modale restano inattive). */
-const isTyping = (t: EventTarget | null) => t instanceof HTMLElement && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
+/** Vero se il tasto va a un campo che usa la tastiera per scrivere (le scorciatoie della modale restano inattive). Caselle e pulsanti no. */
+const isTyping = (t: EventTarget | null) => {
+  if (!(t instanceof HTMLElement)) return false;
+  if (t instanceof HTMLInputElement) return t.type !== 'checkbox' && t.type !== 'radio';
+  return t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable;
+};
 
-/** Chip di stato nel piede. */
+/** Chip di stato nel piede; `action` è un pulsante che risolve l'avviso. */
 interface Chip {
   kind: 'ok' | 'warn' | 'err';
   text: string;
+  action?: { label: string; run: () => void };
 }
+
+/** Numero con al più due decimali, per i messaggi. */
+const fmt = (n: number) => String(Math.round(n * 100) / 100);
 
 /**
  * Modale di disegno del Profilo (si apre da `useProfileEditor`). Il disegno vive nello stato locale con una cronologia
@@ -85,14 +102,19 @@ function Editor({ target }: { target: ProfileTarget }) {
     };
   });
 
-  const [state, dispatch] = useReducer(reducer, { draft: init.draft, selection: [] } satisfies EditorState);
-  const { draft, selection } = state;
+  const [state, dispatch] = useReducer(reducer, { draft: init.draft, selection: [], tool: 'select', pen: null } satisfies EditorState);
+  const { draft, selection, tool, pen } = state;
+  const [grid, setGrid] = useState<GridSettings>(GRID);
   const stateRef = useRef(state);
   const history = useRef<History<Draft>>(null);
   if (!history.current) {
     history.current = createHistory<Draft>();
     history.current.reset(init.draft);
   }
+  // Ultimo disegno entrato nella cronologia: a questo torna l'annullamento di un contorno della Penna a metà
+  const committed = useRef(init.draft);
+  // Un cursore (slider) ha modificato il disegno senza ancora chiudere il passo: lo chiude il rilascio
+  const pendingLive = useRef(false);
   const root = useRef<HTMLDivElement>(null);
   const spaceDown = useRef(false);
   // Vero finché si decide se ripristinare la bozza: finché non si decide non si salva nulla
@@ -120,6 +142,7 @@ function Editor({ target }: { target: ProfileTarget }) {
         if (ok) {
           // Dal disegno ripristinato si può tornare a quello di partenza con Annulla
           history.current!.push(stored);
+          committed.current = stored;
           dispatch({ type: 'replace', draft: stored, selection: [] });
         } else clearDraft(nodeId);
         setReady(true);
@@ -164,20 +187,88 @@ function Editor({ target }: { target: ProfileTarget }) {
     return () => clearTimeout(t);
   }, []);
 
-  // --- Modifiche ------------------------------------------------------------------------------------------------------
+  // --- Cronologia -----------------------------------------------------------------------------------------------------
+  /** Chiude il passo aperto da uno slider (ogni rilascio, anche fuori dalla barra, e ogni tasto rilasciato). */
+  const settle = useCallback(() => {
+    if (!pendingLive.current) return;
+    pendingLive.current = false;
+    committed.current = stateRef.current.draft;
+    history.current!.push(stateRef.current.draft);
+  }, []);
+  useEffect(() => {
+    window.addEventListener('pointerup', settle);
+    window.addEventListener('keyup', settle);
+    return () => {
+      window.removeEventListener('pointerup', settle);
+      window.removeEventListener('keyup', settle);
+    };
+  }, [settle]);
+
   /** Modifica conclusa: un passo della cronologia locale. */
   const commitDraft = (next: Draft, nextSelection?: NodeRef[]) => {
+    settle();
     history.current!.push(next);
+    committed.current = next;
     dispatch({ type: 'replace', draft: next, selection: nextSelection });
   };
   const commitPaths = (paths: PathContour[], nextSelection: NodeRef[] = stateRef.current.selection) => commitDraft({ ...stateRef.current.draft, paths }, nextSelection);
+  /** Modifica in corso di un parametro (slider): il disegno cambia subito, il passo si chiude al rilascio (`settle`). */
+  const liveDraft = (patch: Partial<Draft>) => {
+    finishPen();
+    const next = { ...stateRef.current.draft, ...patch };
+    stateRef.current = { ...stateRef.current, draft: next };
+    pendingLive.current = true;
+    dispatch({ type: 'replace', draft: next });
+  };
   const undo = () => {
+    // Con un contorno della Penna a metà, annulla quel contorno (non è ancora un passo)
+    if (stateRef.current.pen !== null) {
+      dispatch({ type: 'replace', draft: committed.current, selection: [] });
+      return;
+    }
+    settle();
     const prev = history.current!.undo();
-    if (prev) dispatch({ type: 'replace', draft: prev, selection: [] });
+    if (prev) {
+      committed.current = prev;
+      dispatch({ type: 'replace', draft: prev, selection: [] });
+    }
   };
   const redo = () => {
+    settle();
     const next = history.current!.redo();
-    if (next) dispatch({ type: 'replace', draft: next, selection: [] });
+    if (next) {
+      committed.current = next;
+      dispatch({ type: 'replace', draft: next, selection: [] });
+    }
+  };
+
+  // --- Penna ----------------------------------------------------------------------------------------------------------
+  /** Termina il contorno della Penna in corso: un solo passo di cronologia per tutto il contorno. Con meno di 2 nodi sparisce. */
+  const finishPen = () => {
+    const { draft: current, pen: index } = stateRef.current;
+    if (index === null) return;
+    const paths = trimDuplicateTail(current.paths, index);
+    if ((paths[index]?.nodes.length ?? 0) < 2) {
+      // Il contorno è l'unica cosa che la Penna aveva aggiunto: si torna all'ultimo disegno concluso
+      dispatch({ type: 'replace', draft: committed.current, selection: [] });
+      return;
+    }
+    commitDraft({ ...current, paths }, []);
+  };
+  /** Clic sul primo nodo: il contorno si chiude e termina. */
+  const closePen = (index: number) => commitDraft({ ...stateRef.current.draft, paths: closeContour(stateRef.current.draft.paths, index) }, [{ path: index, node: 0 }]);
+  /** Backspace: toglie l'ultimo nodo del contorno in corso. */
+  const penBackspace = () => {
+    const { draft: current, pen: index } = stateRef.current;
+    if (index === null) return;
+    const paths = dropLastNode(current.paths, index);
+    // Se il contorno sparisce la Penna non aveva aggiunto altro: si torna all'ultimo disegno concluso
+    if (paths.length < current.paths.length) dispatch({ type: 'replace', draft: committed.current, selection: [] });
+    else dispatch({ type: 'paths', paths, selection: [], pen: index });
+  };
+  const changeTool = (next: Tool) => {
+    finishPen();
+    dispatch({ type: 'tool', tool: next });
   };
 
   // --- Chiusura -------------------------------------------------------------------------------------------------------
@@ -196,6 +287,10 @@ function Editor({ target }: { target: ProfileTarget }) {
 
   const contours = useMemo(() => draftContours(draft), [draft]);
   const crossings = useMemo(() => selfIntersections(contours), [contours]);
+  const sampling = useMemo(() => {
+    const sampled = samplePaths(draft.paths, draft.tolerance);
+    return { points: sampled.contours.reduce((n, c) => n + c.points.length, 0), tolerance: sampled.tolerance, capped: sampled.capped };
+  }, [draft.paths, draft.tolerance]);
   const validContours = draft.paths.filter((c) => c.nodes.length >= 2);
   const nodeCount = draft.paths.reduce((n, c) => n + c.nodes.length, 0);
   // OK solo con almeno un contorno che il kernel riempie davvero
@@ -224,11 +319,13 @@ function Editor({ target }: { target: ProfileTarget }) {
 
   // --- Tastiera -------------------------------------------------------------------------------------------------------
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    // Esc: la gestiamo noi (conferma se c'è del lavoro) e il dialog non deve chiudersi da solo; in un campo di testo
-    // basta l'annullamento del campo
+    // Esc: la gestiamo noi (il dialog non deve chiudersi da solo). Termina il contorno della Penna, altrimenti conferma se
+    // c'è del lavoro; in un campo di testo basta l'annullamento del campo
     if (e.key === 'Escape') {
       e.preventDefault();
-      if (!isTyping(e.target)) void askClose();
+      if (isTyping(e.target)) return;
+      if (stateRef.current.pen !== null) finishPen();
+      else void askClose();
       return;
     }
     if (isTyping(e.target)) return;
@@ -245,18 +342,27 @@ function Editor({ target }: { target: ProfileTarget }) {
       }
       return;
     }
-    const sel = stateRef.current.selection;
-    if (key === 'delete' || key === 'backspace') {
+    const { selection: sel, pen: penIndex } = stateRef.current;
+    if (key === 'v') changeTool('select');
+    else if (key === 'p') changeTool('pen');
+    else if (key === 'enter') {
+      // Invio termina il contorno della Penna (sui pulsanti conserva il suo significato)
+      if (penIndex !== null && !(e.target instanceof HTMLButtonElement)) {
+        e.preventDefault();
+        finishPen();
+      }
+    } else if (key === 'delete' || key === 'backspace') {
       e.preventDefault();
-      if (sel.length) commitPaths(deleteNodes(stateRef.current.draft.paths, sel), []);
+      if (penIndex !== null) penBackspace();
+      else if (sel.length && stateRef.current.tool === 'select') commitPaths(deleteNodes(stateRef.current.draft.paths, sel), []);
     } else if (key.startsWith('arrow')) {
       // Frecce: un passo di griglia (Maiusc: dieci)
       e.preventDefault();
-      if (!sel.length) return;
-      const step = GRID.step * (e.shiftKey ? 10 : 1);
-      const delta: [number, number] = key === 'arrowleft' ? [-step, 0] : key === 'arrowright' ? [step, 0] : key === 'arrowup' ? [0, step] : [0, -step];
+      if (!sel.length || stateRef.current.tool !== 'select') return;
+      const step = grid.step * (e.shiftKey ? 10 : 1);
+      const delta: Vec2 = key === 'arrowleft' ? [-step, 0] : key === 'arrowright' ? [step, 0] : key === 'arrowup' ? [0, step] : [0, -step];
       commitPaths(moveNodes(stateRef.current.draft.paths, sel, delta));
-    } else if (e.key === ' ' && !(e.target instanceof HTMLButtonElement)) {
+    } else if (e.key === ' ' && !(e.target instanceof HTMLButtonElement) && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLElement && e.target.tagName === 'SUMMARY')) {
       // Spazio: panoramica finché è premuto
       e.preventDefault();
       spaceDown.current = true;
@@ -267,17 +373,32 @@ function Editor({ target }: { target: ProfileTarget }) {
   };
 
   // --- Sidebar --------------------------------------------------------------------------------------------------------
-  const single = selection.length === 1 ? draft.paths[selection[0].path]?.nodes[selection[0].node] ?? null : null;
-  const selected = selection.length === 1 ? selection[0] : null;
+  const selected = selection.length === 1 && draft.paths[selection[0].path]?.nodes[selection[0].node] ? selection[0] : null;
+  const setHandle = (side: 'in' | 'out', length: number, angle: number) => {
+    if (!selected) return;
+    const p = draft.paths[selected.path].nodes[selected.node].p;
+    const a = (angle * Math.PI) / 180;
+    commitPaths(moveHandle(draft.paths, { ...selected, side }, [p[0] + length * Math.cos(a), p[1] + length * Math.sin(a)], false));
+  };
+  const closeOpen = () => commitPaths(draft.paths.map((c) => (!c.closed && c.nodes.length >= 2 ? { ...c, closed: true } : c)));
 
   // --- Piede ----------------------------------------------------------------------------------------------------------
   const chips: Chip[] = [];
-  if (init.bound.is) chips.push({ kind: 'warn', text: `Le misure sono legate a un parametro: il disegno viene scalato a ${Math.round(init.bound.width * 100) / 100} × ${Math.round(init.bound.depth * 100) / 100}` });
-  if (draft.extrusion === 'linear' && validContours.some((c) => !c.closed)) chips.push({ kind: 'warn', text: 'Contorno aperto: in estrusione lineare si chiude con un segmento retto' });
+  if (init.bound.is) chips.push({ kind: 'warn', text: `Le misure sono legate a un parametro: il disegno viene scalato a ${fmt(init.bound.width)} × ${fmt(init.bound.depth)}` });
+  if (draft.extrusion === 'linear' && validContours.some((c) => !c.closed)) {
+    chips.push({ kind: 'warn', text: 'Contorno aperto: in estrusione lineare si chiude con un segmento retto', action: { label: 'Chiudi il contorno', run: closeOpen } });
+  }
   if (crossings.length) chips.push({ kind: 'err', text: `${crossings.length} ${crossings.length === 1 ? 'autointersezione' : 'autointersezioni'}` });
   if (draft.extrusion === 'rotate' && contours.some((c) => c.some(([x]) => x < -1e-6))) chips.push({ kind: 'warn', text: 'Una parte sta oltre l\'asse e non viene ruotata' });
   const noArea = validContours.length - contours.length;
-  if (noArea > 0) chips.push({ kind: 'warn', text: `${noArea} ${noArea === 1 ? 'contorno senza area' : 'contorni senza area'}: non entra nel solido` });
+  if (noArea > 0) {
+    // Perché non c'è area, e cosa fare: i punti stanno tutti su una retta verticale o orizzontale, oppure allineati in altro modo
+    const box = pathNaturalBox(draft);
+    const why = box && box.width <= 0 ? 'tutti i punti stanno sulla stessa verticale' : box && box.depth <= 0 ? 'tutti i punti stanno sulla stessa orizzontale' : 'i punti sono allineati';
+    const what = noArea === validContours.length ? 'Nessun contorno ha area' : `${noArea} ${noArea === 1 ? 'contorno senza area' : 'contorni senza area'}`;
+    chips.push({ kind: 'warn', text: `${what}: ${why}, non produce un solido. Aggiungi un punto non allineato` });
+  }
+  if (sampling.capped) chips.push({ kind: 'warn', text: `Troppi punti: la tolleranza effettiva è ${fmt(sampling.tolerance)} mm (impostata ${fmt(draft.tolerance)} mm)` });
   if (!chips.length && contours.length) chips.push({ kind: 'ok', text: 'Nessun avviso' });
 
   if (!init.valid) return null;
@@ -291,19 +412,37 @@ function Editor({ target }: { target: ProfileTarget }) {
             contours={contours}
             crossings={crossings}
             selection={selection}
-            grid={GRID}
+            grid={grid}
             spaceDown={spaceDown}
+            tool={tool}
+            onTool={changeTool}
+            pen={pen}
             onLive={(paths, sel) => dispatch({ type: 'paths', paths, selection: sel })}
             onCommit={commitPaths}
             onSelect={(sel) => dispatch({ type: 'select', selection: sel })}
+            onPenLive={(paths, current, sel) => dispatch({ type: 'paths', paths, selection: sel, pen: current })}
+            onPenClose={closePen}
+            onPenFinish={finishPen}
+            onPenLimit={() => notify.info('Limite raggiunto: al massimo 500 nodi per contorno e 100 contorni. Termina il contorno (Invio) o chiudilo')}
           />
           <Sidebar
             draft={draft}
-            node={single}
-            selectedCount={selection.length}
+            selection={selection}
+            grid={grid}
+            sampling={sampling}
             onExtrusion={(mode) => commitDraft({ ...draft, extrusion: mode })}
+            onLive={liveDraft}
+            onPatch={(patch) => commitDraft({ ...draft, ...patch })}
             onKind={(kind: PathNode['kind']) => selected && commitPaths(setNodeKind(draft.paths, selected, kind), selection)}
-            onCoordinate={(axis, value) => selected && single && commitPaths(moveNodes(draft.paths, [selected], axis === 0 ? [value - single.p[0], 0] : [0, value - single.p[1]]), selection)}
+            onCoordinate={(axis, value) => {
+              const p = selected && draft.paths[selected.path].nodes[selected.node].p;
+              if (selected && p) commitPaths(moveNodes(draft.paths, [selected], axis === 0 ? [value - p[0], 0] : [0, value - p[1]]), selection);
+            }}
+            onHandle={setHandle}
+            onGrid={(patch) => setGrid((g) => ({ ...g, ...patch }))}
+            onSelectPath={(i) => dispatch({ type: 'select', selection: draft.paths[i].nodes.map((_, node) => ({ path: i, node })) })}
+            onClosePath={(i) => commitPaths(closeContour(draft.paths, i))}
+            onDeletePath={(i) => commitPaths(draft.paths.filter((_, k) => k !== i), [])}
           />
         </div>
         <footer className="profile-editor__footer">
@@ -311,10 +450,15 @@ function Editor({ target }: { target: ProfileTarget }) {
             <span className="profile-editor__chip">
               {validContours.length} {validContours.length === 1 ? 'contorno' : 'contorni'}, {nodeCount} {nodeCount === 1 ? 'nodo' : 'nodi'}
             </span>
-            {!contours.length && <span className="profile-editor__chip profile-editor__chip--warn">Servono almeno 2 nodi per un contorno con un&apos;area</span>}
+            {!validContours.length && <span className="profile-editor__chip profile-editor__chip--warn">Servono almeno 2 nodi per un contorno</span>}
             {chips.map((c) => (
               <span key={c.text} className={`profile-editor__chip profile-editor__chip--${c.kind}`}>
                 {c.text}
+                {c.action && (
+                  <button type="button" className="profile-editor__chip-action" onClick={c.action.run}>
+                    {c.action.label}
+                  </button>
+                )}
               </span>
             ))}
           </div>

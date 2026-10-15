@@ -139,6 +139,36 @@
         stroke: color('accent');
       }
     }
+
+    // Primo nodo del contorno della Penna: un clic lo chiude
+    &--first {
+      rect,
+      circle,
+      polygon {
+        stroke: color('accent');
+        stroke-width: 3;
+      }
+    }
+  }
+
+  &__canvas[data-tool='pen'] &__svg {
+    cursor: crosshair;
+  }
+
+  // Penna: anteprima del prossimo segmento e punto agganciato
+  &__preview {
+    fill: none;
+    stroke: color('accent');
+    stroke-dasharray: 5 4;
+    stroke-width: 1.5;
+    opacity: 0.8;
+  }
+
+  &__snap {
+    fill: none;
+    stroke: color('accent');
+    stroke-width: 1.5;
+    pointer-events: none;
   }
 
   &__crossing {
@@ -151,6 +181,56 @@
     fill: color('accent-soft');
     stroke: color('accent');
     stroke-dasharray: 4 3;
+  }
+
+  // Strumenti (Seleziona, Penna) in alto a sinistra del disegno
+  &__tools {
+    position: absolute;
+    top: $space-2;
+    left: $space-2;
+    display: flex;
+    gap: $space-1;
+
+    button {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px $space-2;
+      border: 1px solid color('border');
+      border-radius: $radius-sm;
+      background: color('panel-raised');
+      color: color('text');
+      font-size: 12px;
+      @include focus-ring;
+
+      &:hover {
+        border-color: color('accent');
+      }
+
+      &[aria-pressed='true'] {
+        border-color: color('accent');
+        background: color('accent-soft');
+        color: color('accent');
+        font-weight: 600;
+      }
+    }
+  }
+
+  // Disegno vuoto: suggerimento al centro
+  &__empty {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    max-width: 80%;
+    transform: translate(-50%, -50%);
+    padding: $space-2 $space-4;
+    border: 1px dashed color('border');
+    border-radius: $radius-md;
+    background: color('panel-raised');
+    color: color('text-muted');
+    font-size: 13px;
+    text-align: center;
+    pointer-events: none;
   }
 
   // Zoom e Adatta in alto a destra del disegno
@@ -212,6 +292,113 @@
     margin: 0;
     font-size: 12px;
     color: color('text-muted');
+
+    &--warn {
+      color: color('warn');
+    }
+  }
+
+  // Le etichette dei campi numerici sono parole (Lung., Tolleranza): non la larghezza di una lettera
+  .number-field__label {
+    width: auto;
+    min-width: 14px;
+  }
+
+  // Maniglie di entrata e di uscita: il nome sopra, lunghezza e angolo affiancati
+  &__handle-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: $space-1 $space-2;
+  }
+
+  &__handle-name {
+    grid-column: 1 / -1;
+    font-size: 11px;
+    font-weight: 600;
+    color: color('text-muted');
+  }
+
+  &__paths {
+    display: flex;
+    flex-direction: column;
+    gap: $space-1;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  &__path {
+    display: flex;
+    align-items: center;
+    gap: $space-1;
+    padding: 2px $space-1;
+    border: 1px solid transparent;
+    border-radius: $radius-sm;
+
+    &--selected {
+      border-color: color('accent');
+      background: color('accent-soft');
+    }
+  }
+
+  &__path-name {
+    flex: 1;
+    min-width: 0;
+    padding: 3px $space-1;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font-size: 12px;
+    text-align: left;
+    @include focus-ring;
+  }
+
+  &__badge {
+    padding: 0 $space-2;
+    border: 1px solid color('border');
+    border-radius: 999px;
+    font-size: 11px;
+    color: color('text-muted');
+  }
+
+  &__mini {
+    padding: 2px $space-2;
+    border: 1px solid color('border');
+    border-radius: $radius-sm;
+    background: color('panel-raised');
+    font-size: 11px;
+    @include focus-ring;
+
+    &:hover {
+      border-color: color('accent');
+    }
+  }
+
+  &__check {
+    display: flex;
+    align-items: center;
+    gap: $space-2;
+    font-size: 12px;
+  }
+
+  &__details {
+    summary {
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: color('text-muted');
+      padding: $space-2 0;
+      @include focus-ring;
+    }
+  }
+
+  &__details-body {
+    display: flex;
+    flex-direction: column;
+    gap: $space-2;
+    padding-bottom: $space-2;
   }
 
   // Interruttore a più voci (estrusione, tipo di nodo): la voce attiva è evidenziata, non solo colorata
@@ -279,6 +466,18 @@
       border-color: color('danger');
       color: color('danger');
     }
+  }
+
+  // Pulsante dentro un chip di avviso (Chiudi il contorno)
+  &__chip-action {
+    margin-left: $space-2;
+    padding: 0 $space-2;
+    border: 1px solid currentcolor;
+    border-radius: 999px;
+    background: transparent;
+    color: inherit;
+    font-size: 12px;
+    @include focus-ring;
   }
 
   // Finestre strette: una colonna sola, le opzioni sotto il disegno

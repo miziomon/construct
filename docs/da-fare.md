@@ -155,6 +155,7 @@ Dalla 0.27.0 l'importazione legge anche `let`/`assign`, le liste per comprension
 - **Larghezza e profondità nel ritorno lineare**: sono arrotondate a 4 decimali, ma `addPath` scrive le misure naturali non arrotondate, quindi l'andata e ritorno è esatta solo se le misure hanno già 4 decimali.
 - **Ripiego del Poligono in rotazione dentro `scale()`**: il centro di `decompose` si calcola prima di sapere se il Profilo torna davvero (scarto al più circa 5e-5 mm); è più pulito calcolarlo dopo.
 - **Test mancanti**: il menu contestuale senza "Profilo" (oggi verificato solo leggendo `ContextMenu.tsx`) e un ritorno da OpenSCAD con `mirror`.
+- **Esc in `NumberField` non annulla** (emerso con la modale del Profilo, 0.61.0): il gestore fa `setText(valore)` e subito `blur()`, ma `onBlur` legge il testo del DOM, ancora quello modificato, e lo conferma. Basterebbe un flag che salti il `commit` all'uscita causata da Esc.
 
 ## Font non presenti su Google Fonts
 

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type MutableRefObject, type PointerEvent as ReactPointerEvent } from 'react';
-import { Maximize, ZoomIn, ZoomOut } from 'lucide-react';
+import { Maximize, MousePointer2, PenTool, ZoomIn, ZoomOut } from 'lucide-react';
 import { segmentOf } from '../../scene/bezier';
 import type { PathContour, PathNode, Vec2 } from '../../scene/types';
-import { cycleKind, gridStep, insertNode, moveHandle, moveNodes, nearestSegment, setNodeKind, snapPoint } from './model';
+import { appendPenNode, cycleKind, gridStep, insertNode, moveHandle, moveNodes, nearestSegment, setNodeKind, snapPoint } from './model';
 import type { Draft, HandleRef, NodeRef, SegmentRef } from './model';
 
 /** Aggancio e griglia: il passo (mm) serve anche a disegnare le righe; gli interruttori dicono a cosa ci si aggancia. */
@@ -10,7 +10,13 @@ export interface GridSettings {
   step: number;
   snapGrid: boolean;
   snapNodes: boolean;
+  /** Penna: allinea alla X o alla Y del punto precedente. */
+  snapOrtho: boolean;
+  /** Disegna gli assi (a Y = 0 e, di rotazione, a X = 0). */
+  showAxis: boolean;
 }
+
+export type Tool = 'select' | 'pen';
 
 interface Props {
   draft: Draft;
@@ -27,6 +33,18 @@ interface Props {
   /** Modifica conclusa: un passo della cronologia. */
   onCommit: (paths: PathContour[], selection: NodeRef[]) => void;
   onSelect: (selection: NodeRef[]) => void;
+  tool: Tool;
+  onTool: (tool: Tool) => void;
+  /** Contorno che la Penna sta disegnando (indice), oppure null. */
+  pen: number | null;
+  /** Penna: un nodo in più (o spostato durante il trascinamento) nel contorno `current`; il passo di cronologia lo fa il termine del contorno. */
+  onPenLive: (paths: PathContour[], current: number, selection: NodeRef[]) => void;
+  /** Penna: clic sul primo nodo, il contorno `index` si chiude. */
+  onPenClose: (index: number) => void;
+  /** Penna: doppio clic, il contorno termina aperto. */
+  onPenFinish: () => void;
+  /** Penna: raggiunto il limite di nodi o di contorni. */
+  onPenLimit: () => void;
 }
 
 /** Vista: centro (mm) e zoom (pixel per mm). La Y del disegno va verso l'alto. */
@@ -90,7 +108,9 @@ type Drag =
   | { type: 'pan'; sx: number; sy: number; cx: number; cy: number }
   | { type: 'node'; refs: NodeRef[]; base: PathContour[]; last: PathContour[]; primary: Vec2; down: Vec2; sx: number; sy: number; moved: boolean; inserted: boolean; collapse: NodeRef | null }
   | { type: 'handle'; ref: HandleRef; base: PathContour[]; last: PathContour[]; sx: number; sy: number; moved: boolean; alt: boolean }
-  | { type: 'box'; sx: number; sy: number; shift: boolean; base: NodeRef[]; moved: boolean };
+  | { type: 'box'; sx: number; sy: number; shift: boolean; base: NodeRef[]; moved: boolean }
+  // Penna: lo stato di partenza serve a ricalcolare il nodo (e la sua maniglia) a ogni movimento del trascinamento
+  | { type: 'pen'; base: PathContour[]; current: number | null; p: Vec2; sx: number; sy: number; moved: boolean };
 
 /**
  * Disegno 2D del profilo (SVG) con lo strumento Seleziona: clic, Maiusc, riquadro, trascinamento di nodi e maniglie
@@ -98,7 +118,7 @@ type Drag =
  * zoom sul puntatore, Spazio o tasto centrale per la panoramica. Le modifiche passano da `onLive` (durante il gesto) e
  * `onCommit` (al rilascio): un gesto è un solo passo della cronologia.
  */
-export function DrawingCanvas({ draft, contours, crossings, selection, grid, spaceDown, onLive, onCommit, onSelect }: Props) {
+export function DrawingCanvas({ draft, contours, crossings, selection, grid, spaceDown, onLive, onCommit, onSelect, tool, onTool, pen, onPenLive, onPenClose, onPenFinish, onPenLimit }: Props) {
   const wrap = useRef<HTMLDivElement>(null);
   const svg = useRef<SVGSVGElement>(null);
   const [size, setSize] = useState({ w: 600, h: 400 });
@@ -111,9 +131,14 @@ export function DrawingCanvas({ draft, contours, crossings, selection, grid, spa
   const drag = useRef<Drag | null>(null);
   const [rubber, setRubber] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const [cursor, setCursor] = useState<Vec2 | null>(null);
+  // Penna: punto (agganciato) in cui cadrebbe il prossimo nodo, per l'anteprima del segmento
+  const [hover, setHover] = useState<Vec2 | null>(null);
   // Schermo a dito: aree attive più grandi
   const [coarse] = useState(() => typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches === true);
   const rotate = draft.extrusion === 'rotate';
+  const nodeR = coarse ? 20 : 10;
+  // Contorno aperto che la Penna sta continuando
+  const activePen = tool === 'pen' && pen !== null && draft.paths[pen] && !draft.paths[pen].closed ? draft.paths[pen] : null;
 
   useEffect(() => {
     latest.current = { paths: draft.paths, rotate };
@@ -194,7 +219,6 @@ export function DrawingCanvas({ draft, contours, crossings, selection, grid, spa
   /** Che cosa c'è nel punto (pixel): prima le maniglie visibili, poi i nodi, infine i segmenti. */
   const hitTest = (sx: number, sy: number): Hit => {
     const handleR = coarse ? 18 : 9;
-    const nodeR = coarse ? 20 : 10;
     for (const key of shown) {
       const [pi, ni] = key.split(':').map(Number);
       const n = draft.paths[pi].nodes[ni];
@@ -215,9 +239,13 @@ export function DrawingCanvas({ draft, contours, crossings, selection, grid, spa
     return near ? { type: 'segment', seg: { path: near.path, segment: near.segment }, t: near.t } : { type: 'none' };
   };
 
-  /** Aggancio del punto: griglia, nodi non trascinati; Ctrl lo sospende. */
-  const snapped = (p: Vec2, e: { ctrlKey: boolean }, others: Vec2[] | undefined): Vec2 =>
-    e.ctrlKey ? p : snapPoint(p, { grid: grid.snapGrid ? gridStep(grid.step, view.s) : undefined, nodes: grid.snapNodes ? others : undefined, ortho: false, angle45: false, radius: SNAP_RADIUS_PX / view.s });
+  /**
+   * Aggancio del punto: griglia, nodi, e con un punto precedente (`prev`, solo la Penna) allineamento orizzontale o
+   * verticale e Maiusc per i 45°; Ctrl lo sospende.
+   */
+  const snapped = (p: Vec2, e: { ctrlKey: boolean; shiftKey?: boolean }, others: Vec2[] | undefined, prev?: Vec2): Vec2 =>
+    e.ctrlKey ? p : snapPoint(p, { grid: grid.snapGrid ? gridStep(grid.step, view.s) : undefined, nodes: grid.snapNodes ? others : undefined, prev, ortho: grid.snapOrtho && !!prev, angle45: !!e.shiftKey && !!prev, radius: SNAP_RADIUS_PX / view.s });
+  const allNodes = () => draft.paths.flatMap((c) => c.nodes.map((n) => n.p));
 
   const onPointerDown = (e: ReactPointerEvent<SVGSVGElement>) => {
     if (e.button === 2) return;
@@ -231,8 +259,31 @@ export function DrawingCanvas({ draft, contours, crossings, selection, grid, spa
       return;
     }
     if (e.button !== 0) return;
-    const hit = hitTest(sx, sy);
     const w = toW(sx, sy);
+    if (tool === 'pen') {
+      setHover(null);
+      const prev = activePen ? activePen.nodes[activePen.nodes.length - 1].p : undefined;
+      const p = snapped(w, e, allNodes(), prev);
+      // Clic sul primo nodo (o aggancio a lui): il contorno si chiude
+      if (activePen && activePen.nodes.length >= 3) {
+        const first = activePen.nodes[0].p;
+        const fs = toS(first);
+        if (Math.hypot(fs[0] - sx, fs[1] - sy) <= nodeR || (p[0] === first[0] && p[1] === first[1])) {
+          onPenClose(pen!);
+          return;
+        }
+      }
+      // Un nodo in più; con il trascinamento (sotto) diventa simmetrico con la maniglia
+      const added = appendPenNode(draft.paths, activePen ? pen : null, p);
+      if (!added) {
+        onPenLimit();
+        return;
+      }
+      onPenLive(added.paths, added.current, [added.node]);
+      drag.current = { type: 'pen', base: draft.paths, current: activePen ? pen : null, p, sx, sy, moved: false };
+      return;
+    }
+    const hit = hitTest(sx, sy);
     if (hit.type === 'handle') {
       drag.current = { type: 'handle', ref: hit.ref, base: draft.paths, last: draft.paths, sx, sy, moved: false, alt: false };
     } else if (hit.type === 'node') {
@@ -263,7 +314,11 @@ export function DrawingCanvas({ draft, contours, crossings, selection, grid, spa
     const w = toW(sx, sy);
     setCursor(w);
     const d = drag.current;
-    if (!d) return;
+    if (!d) {
+      // Penna senza gesto in corso: l'anteprima del prossimo segmento segue il puntatore
+      if (tool === 'pen') setHover(snapped(w, e, allNodes(), activePen ? activePen.nodes[activePen.nodes.length - 1].p : undefined));
+      return;
+    }
     if (d.type === 'pan') {
       changeView({ ...view, cx: d.cx - (sx - d.sx) / view.s, cy: d.cy + (sy - d.sy) / view.s });
     } else if (d.type === 'node') {
@@ -284,6 +339,13 @@ export function DrawingCanvas({ draft, contours, crossings, selection, grid, spa
       d.alt = d.alt || e.altKey;
       d.last = moveHandle(d.base, d.ref, snapped(w, e, undefined), d.alt);
       onLive(d.last);
+    } else if (d.type === 'pen') {
+      if (!d.moved && Math.hypot(sx - d.sx, sy - d.sy) < DRAG_THRESHOLD) return;
+      d.moved = true;
+      // La maniglia è il vettore dal nodo al puntatore (agganciato): il nodo si ricalcola dallo stato di partenza
+      const target = snapped(w, e, undefined, d.p);
+      const dragged = appendPenNode(d.base, d.current, d.p, [target[0] - d.p[0], target[1] - d.p[1]]);
+      if (dragged) onPenLive(dragged.paths, dragged.current, [dragged.node]);
     } else if (d.type === 'box') {
       if (!d.moved && Math.hypot(sx - d.sx, sy - d.sy) < DRAG_THRESHOLD) return;
       d.moved = true;
@@ -296,6 +358,7 @@ export function DrawingCanvas({ draft, contours, crossings, selection, grid, spa
     drag.current = null;
     setRubber(null);
     if (!d) return;
+    // Penna: niente da fare al rilascio, il passo di cronologia lo fa il termine del contorno
     if (d.type === 'node') {
       if (d.moved || d.inserted) onCommit(d.last, d.refs);
       else if (d.collapse) onSelect([d.collapse]);
@@ -323,6 +386,11 @@ export function DrawingCanvas({ draft, contours, crossings, selection, grid, spa
 
   // Doppio clic su un nodo: scorre il tipo (spigolo, liscio, simmetrico)
   const onDoubleClick = (e: ReactMouseEvent<SVGSVGElement>) => {
+    // Penna: il doppio clic termina il contorno (il nodo doppio lo toglie chi termina)
+    if (tool === 'pen') {
+      onPenFinish();
+      return;
+    }
     const [sx, sy] = pos(e);
     const hit = hitTest(sx, sy);
     if (hit.type !== 'node') return;
@@ -361,7 +429,7 @@ export function DrawingCanvas({ draft, contours, crossings, selection, grid, spa
     kind === 'corner' ? <rect x={-4.5} y={-4.5} width={9} height={9} /> : kind === 'symmetric' ? <polygon points="0,-6 6,0 0,6 -6,0" /> : <circle r={5} />;
 
   return (
-    <div ref={wrap} className="profile-editor__canvas" tabIndex={0} role="group" aria-label="Disegno del profilo">
+    <div ref={wrap} className="profile-editor__canvas" tabIndex={0} role="group" aria-label="Disegno del profilo" data-tool={tool}>
       <svg
         ref={svg}
         className="profile-editor__svg"
@@ -371,7 +439,10 @@ export function DrawingCanvas({ draft, contours, crossings, selection, grid, spa
         onPointerMove={onPointerMove}
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
-        onPointerLeave={() => setCursor(null)}
+        onPointerLeave={() => {
+          setCursor(null);
+          setHover(null);
+        }}
         onDoubleClick={onDoubleClick}
         onContextMenu={(e) => e.preventDefault()}
       >
@@ -392,9 +463,9 @@ export function DrawingCanvas({ draft, contours, crossings, selection, grid, spa
           </text>
         ))}
         {/* Assi: la X sta a y = 0; l'asse verticale a x = 0 è l'asse di rotazione */}
-        <line className="profile-editor__axis profile-editor__axis--x" x1={0} x2={size.w} y1={origin[1]} y2={origin[1]} />
-        <line className="profile-editor__axis profile-editor__axis--y" x1={origin[0]} x2={origin[0]} y1={0} y2={size.h} />
-        {rotate && (
+        {grid.showAxis && <line className="profile-editor__axis profile-editor__axis--x" x1={0} x2={size.w} y1={origin[1]} y2={origin[1]} />}
+        {grid.showAxis && <line className="profile-editor__axis profile-editor__axis--y" x1={origin[0]} x2={origin[0]} y1={0} y2={size.h} />}
+        {rotate && grid.showAxis && (
           <text className="profile-editor__axis-label" x={origin[0] + 6} y={20}>
             asse di rotazione
           </text>
@@ -426,7 +497,7 @@ export function DrawingCanvas({ draft, contours, crossings, selection, grid, spa
             const [x, y] = toS(n.p);
             const selected = selection.some((r) => r.path === pi && r.node === ni);
             return (
-              <g key={`${pi}:${ni}`} className={`profile-editor__node${selected ? ' profile-editor__node--selected' : ''}`} transform={`translate(${f1(x)} ${f1(y)})`} data-node={`${pi}:${ni}`} data-kind={n.kind}>
+              <g key={`${pi}:${ni}`} className={`profile-editor__node${selected ? ' profile-editor__node--selected' : ''}${activePen && pi === pen && ni === 0 && activePen.nodes.length >= 3 ? ' profile-editor__node--first' : ''}`} transform={`translate(${f1(x)} ${f1(y)})`} data-node={`${pi}:${ni}`} data-kind={n.kind}>
                 {nodeShape(n.kind)}
               </g>
             );
@@ -436,8 +507,31 @@ export function DrawingCanvas({ draft, contours, crossings, selection, grid, spa
           const [x, y] = toS(q);
           return <circle key={i} className="profile-editor__crossing" cx={x} cy={y} r={7} />;
         })}
+        {/* Penna: il segmento che nascerebbe dal prossimo clic (curvo se l'ultimo nodo ha la maniglia) e il punto agganciato */}
+        {activePen && hover && (() => {
+          const last = activePen.nodes[activePen.nodes.length - 1];
+          const [a, b] = [toS(last.p), toS(hover)];
+          const d = last.out ? `M${a.map(f1).join(' ')} C${toS(add(last.p, last.out)).map(f1).join(' ')} ${b.map(f1).join(' ')} ${b.map(f1).join(' ')}` : `M${a.map(f1).join(' ')} L${b.map(f1).join(' ')}`;
+          return <path className="profile-editor__preview" d={d} />;
+        })()}
+        {tool === 'pen' && hover && <circle className="profile-editor__snap" cx={toS(hover)[0]} cy={toS(hover)[1]} r={4} />}
         {rubber && <rect className="profile-editor__rubber" x={Math.min(rubber.x0, rubber.x1)} y={Math.min(rubber.y0, rubber.y1)} width={Math.abs(rubber.x1 - rubber.x0)} height={Math.abs(rubber.y1 - rubber.y0)} />}
       </svg>
+      <div className="profile-editor__tools" role="toolbar" aria-label="Strumenti di disegno">
+        <button type="button" aria-pressed={tool === 'select'} title="Seleziona (V): sposta nodi e maniglie, clic su un segmento per inserire un nodo" onClick={() => onTool('select')}>
+          <MousePointer2 size={16} />
+          <span>Seleziona</span>
+        </button>
+        <button type="button" aria-pressed={tool === 'pen'} title="Penna (P): clic per uno spigolo, clic e trascina per una curva, clic sul primo nodo per chiudere, Invio per terminare" onClick={() => onTool('pen')}>
+          <PenTool size={16} />
+          <span>Penna</span>
+        </button>
+      </div>
+      {draft.paths.length === 0 && (
+        <div className="profile-editor__empty" role="note">
+          {tool === 'pen' ? 'Fai clic nel disegno per aggiungere il primo punto' : 'Scegli la Penna e fai clic per iniziare'}
+        </div>
+      )}
       <div className="profile-editor__zoom" role="toolbar" aria-label="Vista del disegno">
         <button type="button" aria-label="Rimpicciolisci" title="Rimpicciolisci" onClick={() => changeView({ ...view, s: clampScale(view.s / 1.4) })}>
           <ZoomOut size={16} />

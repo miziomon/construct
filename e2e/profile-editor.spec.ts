@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { openApp, sceneState, settled } from './helpers';
+import { openApp, readCode, sceneState, settled } from './helpers';
 
 test.beforeEach(async ({ page }) => {
   await openApp(page);
@@ -360,4 +360,293 @@ test('con la modale aperta le scorciatoie dell\'app non agiscono sulla scena', a
   expect((await getNode(page, id) as unknown as { locked?: boolean }).locked).toBeFalsy();
   // E il Delete della modale ha tolto il nodo del disegno, non l'oggetto
   await expect(editor(page).locator('[data-node]')).toHaveCount(3);
+});
+
+// --- Penna e sidebar completa -----------------------------------------------------------------------------------------
+
+const canvas = (page: Page) => editor(page).locator('.profile-editor__canvas');
+const okButton = (page: Page) => editor(page).getByRole('button', { name: 'OK', exact: true });
+const nodes = (page: Page) => editor(page).locator('[data-node]');
+
+/** Punto dell'area di disegno, in pixel di pagina, a una distanza dal suo centro. */
+async function at(page: Page, dx: number, dy: number) {
+  const box = (await canvas(page).boundingBox())!;
+  return { x: box.x + box.width / 2 + dx, y: box.y + box.height / 2 + dy };
+}
+
+/** Clic della Penna nei punti dati (distanze dal centro dell'area). */
+async function clicks(page: Page, points: [number, number][]) {
+  for (const [dx, dy] of points) {
+    const p = await at(page, dx, dy);
+    await page.mouse.click(p.x, p.y);
+  }
+}
+
+/** Apre la modale su un Profilo nuovo e sceglie la Penna. */
+async function openNewWithPen(page: Page) {
+  await page.evaluate(() => window.__construct!.profileEditor.getState().open({ new: true }));
+  await expect(editor(page)).toBeVisible();
+  await editor(page).getByRole('button', { name: 'Penna' }).click();
+}
+
+const SQUARE: [number, number][] = [[-100, 80], [100, 80], [100, -80], [-100, -80]];
+
+test('Penna: quattro clic e un clic sul primo nodo chiudono il contorno, un solo passo locale; l\'OK crea il Profilo', async ({ page }) => {
+  const steps = await history(page);
+  await page.evaluate(() => window.__construct!.profileEditor.getState().open({ new: true }));
+  await expect(editor(page)).toBeVisible();
+  // Stato vuoto: suggerimento al centro
+  await expect(editor(page).getByText('Scegli la Penna e fai clic per iniziare')).toBeVisible();
+  await expect(okButton(page)).toBeDisabled();
+  await editor(page).getByRole('button', { name: 'Penna' }).click();
+  await clicks(page, SQUARE);
+  await expect(nodes(page)).toHaveCount(4);
+  await expect(editor(page).getByText('Scegli la Penna e fai clic per iniziare')).toHaveCount(0);
+  // Il clic sul primo nodo chiude il contorno
+  await clicks(page, [SQUARE[0]]);
+  await expect(nodes(page)).toHaveCount(4);
+  await expect(editor(page).locator('[data-path="0"]')).toContainText('Chiuso');
+  await expect(editor(page).getByText('1 contorno, 4 nodi')).toBeVisible();
+  // Un solo passo per tutto il contorno: un Ctrl+Z lo toglie, Ctrl+Maiusc+Z lo rimette
+  await page.keyboard.press('Control+z');
+  await expect(nodes(page)).toHaveCount(0);
+  await page.keyboard.press('Control+Shift+z');
+  await expect(nodes(page)).toHaveCount(4);
+  await okButton(page).click();
+  await expect(editor(page)).toHaveCount(0);
+  await settled(page);
+  expect(await history(page)).toBe(steps + 1);
+  expect(await page.evaluate(() => window.__construct!.store.getState().op)).toBe('Aggiungi Profilo');
+  const scene = await sceneState(page);
+  const created = Object.values(scene.nodes)[0] as unknown as { kind: string; paths: { closed: boolean; nodes: { kind: string }[] }[] };
+  expect(created.kind).toBe('path');
+  expect(created.paths).toHaveLength(1);
+  expect(created.paths[0].closed).toBe(true);
+  expect(created.paths[0].nodes).toHaveLength(4);
+  expect(created.paths[0].nodes.every((n) => n.kind === 'corner')).toBe(true);
+});
+
+test('Penna: Invio termina il contorno aperto; "Chiudi il contorno" nel piede lo chiude', async ({ page }) => {
+  await openNewWithPen(page);
+  await canvas(page).focus();
+  await clicks(page, [[-100, 60], [0, -60], [100, 60]]);
+  await page.keyboard.press('Enter');
+  await expect(nodes(page)).toHaveCount(3);
+  await expect(editor(page).locator('[data-path="0"]')).toContainText('Aperto');
+  await expect(editor(page).getByText('Contorno aperto: in estrusione lineare si chiude con un segmento retto')).toBeVisible();
+  await editor(page).getByRole('button', { name: 'Chiudi il contorno' }).click();
+  await expect(editor(page).locator('[data-path="0"]')).toContainText('Chiuso');
+  await expect(editor(page).getByText('Contorno aperto')).toHaveCount(0);
+  // Terminato il contorno, un nuovo clic ne inizia un altro; con un solo nodo non esiste
+  await clicks(page, [[-150, -100]]);
+  await page.keyboard.press('Enter');
+  await expect(editor(page).locator('[data-path]')).toHaveCount(1);
+  await okButton(page).click();
+  await settled(page);
+  const created = Object.values((await sceneState(page)).nodes)[0] as unknown as { paths: { closed: boolean }[] };
+  expect(created.paths).toHaveLength(1);
+  expect(created.paths[0].closed).toBe(true);
+});
+
+test('Penna: Backspace toglie l\'ultimo nodo, Esc termina il contorno senza chiedere conferma, il doppio clic termina', async ({ page }) => {
+  await openNewWithPen(page);
+  await canvas(page).focus();
+  await clicks(page, [[-100, 60], [0, -60], [100, 60]]);
+  await page.keyboard.press('Backspace');
+  await expect(nodes(page)).toHaveCount(2);
+  // Esc con la Penna a metà termina il contorno: nessuna conferma, la modale resta
+  await page.keyboard.press('Escape');
+  await expect(confirmBox(page)).toHaveCount(0);
+  await expect(editor(page)).toBeVisible();
+  await expect(nodes(page)).toHaveCount(2);
+  // Il contorno è un passo solo: Ctrl+Z lo toglie tutto
+  await page.keyboard.press('Control+z');
+  await expect(nodes(page)).toHaveCount(0);
+  // Doppio clic: termina e il nodo doppio sparisce
+  const first = await at(page, -120, 0);
+  await page.mouse.click(first.x, first.y);
+  const second = await at(page, -50, 40);
+  await page.mouse.dblclick(second.x, second.y);
+  await expect(nodes(page)).toHaveCount(2);
+  await expect(editor(page).locator('[data-path="0"]')).toContainText('Aperto');
+});
+
+test('Penna: clic e trascina crea un nodo simmetrico con le maniglie; Maiusc vincola a 45 gradi', async ({ page }) => {
+  await openNewWithPen(page);
+  const a = await at(page, -100, 0);
+  await page.mouse.move(a.x, a.y);
+  await page.mouse.down();
+  for (let i = 1; i <= 6; i++) await page.mouse.move(a.x + 10 * i, a.y - 8 * i);
+  await page.mouse.up();
+  await expect(node(page, '0:0')).toHaveAttribute('data-kind', 'symmetric');
+  await expect(editor(page).locator('[data-handle]')).toHaveCount(2);
+  // Secondo nodo con Maiusc: la direzione dal precedente (circa 38 gradi) diventa 45 gradi
+  await page.keyboard.down('Shift');
+  const b = await at(page, 80, -140);
+  await page.mouse.click(b.x, b.y);
+  await page.keyboard.up('Shift');
+  const [n0, n1] = [await center(node(page, '0:0')), await center(node(page, '0:1'))];
+  expect(Math.abs(Math.abs(n1.x - n0.x) - Math.abs(n1.y - n0.y))).toBeLessThan(2);
+});
+
+test('rotazionale con un profilo aperto a destra dell\'asse: OK scrive extrusion rotate, niente Raggio né intersection()', async ({ page }) => {
+  const open = [{ closed: false, nodes: [{ p: [10, 0], kind: 'corner' }, { p: [15, 10], out: [0, 3], kind: 'smooth' }, { p: [10, 20], kind: 'corner' }] }];
+  const id = await addPath(page, open);
+  await openEditor(page, id);
+  await editor(page).getByRole('button', { name: 'Rotazionale' }).click();
+  // Nella modale: Angolo e Segmenti, senza Raggio
+  await expect(editor(page).getByRole('slider', { name: 'Angolo' })).toBeVisible();
+  await expect(editor(page).getByRole('slider', { name: 'Segmenti' })).toBeVisible();
+  await expect(editor(page).getByText('Raggio', { exact: true })).toHaveCount(0);
+  // Un profilo a destra dell'asse non ha avvisi sulla parte oltre l'asse
+  await expect(editor(page).getByText('oltre l\'asse')).toHaveCount(0);
+  await okButton(page).click();
+  await expect(editor(page)).toHaveCount(0);
+  await settled(page);
+  expect((await getNode(page, id)).extrusion).toBe('rotate');
+  const code = await readCode(page);
+  expect(code).toContain('rotate_extrude');
+  expect(code).not.toContain('intersection()');
+  // Nelle Proprietà non c'è lo slider Raggio
+  await expect(page.locator('.slider-field').filter({ has: page.getByText('Raggio', { exact: true }) })).toHaveCount(0);
+});
+
+test('slider di estrusione: un valore digitato è un passo locale annullabile e arriva alla scena con l\'OK', async ({ page }) => {
+  const id = await addPath(page);
+  await openEditor(page, id);
+  const height = editor(page).locator('.slider-field').filter({ has: page.getByText('Altezza', { exact: true }) });
+  await expect(height.locator('.number-field__input')).toHaveValue('5');
+  await height.locator('.number-field__input').fill('12');
+  await height.locator('.number-field__input').press('Enter');
+  await expect(height.locator('.number-field__input')).toHaveValue('12');
+  // Il campo lascia il focus: Ctrl+Z della modale torna a 5
+  await page.keyboard.press('Control+z');
+  await expect(height.locator('.number-field__input')).toHaveValue('5');
+  await page.keyboard.press('Control+Shift+z');
+  await expect(height.locator('.number-field__input')).toHaveValue('12');
+  // Torsione: dallo slider
+  const twist = editor(page).locator('.slider-field').filter({ has: page.getByText('Torsione', { exact: true }) });
+  await twist.locator('input[type=range]').fill('45');
+  await canvas(page).click({ position: { x: 5, y: 200 } });
+  await okButton(page).click();
+  await settled(page);
+  expect(await getNode(page, id)).toMatchObject({ height: 12, twist: 45 });
+});
+
+test('percorsi: elenco, selezione, chiudi ed elimina', async ({ page }) => {
+  const two = [
+    { closed: false, nodes: [{ p: [0, 0], kind: 'corner' }, { p: [20, 0], kind: 'corner' }, { p: [20, 20], kind: 'corner' }] },
+    { closed: true, nodes: [{ p: [40, 0], kind: 'corner' }, { p: [60, 0], kind: 'corner' }, { p: [60, 20], kind: 'corner' }] },
+  ];
+  const id = await addPath(page, two);
+  await openEditor(page, id);
+  const rows = editor(page).locator('[data-path]');
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0)).toContainText('Percorso 1');
+  await expect(rows.nth(0)).toContainText('Aperto');
+  await expect(rows.nth(1)).toContainText('Chiuso');
+  // Il clic sul nome seleziona i nodi del percorso
+  await rows.nth(1).getByRole('button', { name: 'Percorso 2', exact: true }).click();
+  await expect(editor(page).locator('.profile-editor__node--selected')).toHaveCount(3);
+  await expect(editor(page).getByText('3 nodi selezionati')).toBeVisible();
+  // Chiudi: solo per i percorsi aperti
+  await expect(rows.nth(1).getByRole('button', { name: 'Chiudi', exact: true })).toHaveCount(0);
+  await rows.nth(0).getByRole('button', { name: 'Chiudi', exact: true }).click();
+  await expect(rows.nth(0)).toContainText('Chiuso');
+  // Elimina il primo percorso
+  await rows.nth(0).getByRole('button', { name: 'Elimina il percorso 1' }).click();
+  await expect(rows).toHaveCount(1);
+  await expect(nodes(page)).toHaveCount(3);
+});
+
+test('punto selezionato: coordinate, tipo e maniglie di entrata e uscita', async ({ page }) => {
+  const id = await addPath(page, PATHS);
+  await openEditor(page, id);
+  await node(page, '0:1').click();
+  const out = editor(page).locator('[data-handle-row="out"]');
+  // Il nodo B (40,0) ha la maniglia di uscita (10, 8): lunghezza 12,806 e angolo 38,66
+  await expect(out.locator('input').nth(0)).toHaveValue('12.806');
+  await expect(out.locator('input').nth(1)).toHaveValue('38.66');
+  await out.locator('input').nth(0).fill('20');
+  await out.locator('input').nth(0).press('Enter');
+  await okButton(page).click();
+  await settled(page);
+  const b = (await getNode(page, id)).paths[0].nodes[1] as unknown as { out: [number, number]; kind: string };
+  expect(Math.hypot(...b.out)).toBeCloseTo(20, 2);
+  // L'angolo non è cambiato
+  expect((Math.atan2(b.out[1], b.out[0]) * 180) / Math.PI).toBeCloseTo(38.66, 1);
+  expect(b.kind).toBe('smooth');
+});
+
+test('griglia e snap: il passo cambia l\'aggancio, Mostra asse nasconde gli assi', async ({ page }) => {
+  const id = await addPath(page);
+  await openEditor(page, id);
+  await editor(page).getByRole('button', { name: '5', exact: true }).click();
+  await expect(editor(page).getByRole('button', { name: '5', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  const k = await pixelsPerMm(page);
+  const c = await center(node(page, '0:2'));
+  await drag(page, c, { x: c.x + 12 * k, y: c.y });
+  await okButton(page).click();
+  await settled(page);
+  const moved = (await getNode(page, id)).paths[0].nodes[2].p;
+  expect(moved[0] % 5).toBe(0);
+  expect(moved[1] % 5).toBe(0);
+  // Mostra asse
+  await openEditor(page, id);
+  await expect(editor(page).locator('.profile-editor__axis--y')).toHaveCount(1);
+  await editor(page).getByLabel('Mostra asse').uncheck();
+  await expect(editor(page).locator('.profile-editor__axis--y')).toHaveCount(0);
+});
+
+test('qualità: la tolleranza cambia i punti campionati e arriva al nodo; con troppi punti c\'è l\'avviso con la tolleranza effettiva', async ({ page }) => {
+  const id = await addPath(page, PATHS);
+  await openEditor(page, id);
+  await editor(page).locator('summary', { hasText: 'Qualità' }).click();
+  const points = editor(page).locator('[data-points]');
+  const before = Number(await points.getAttribute('data-points'));
+  expect(before).toBeGreaterThan(5);
+  const tolerance = editor(page).locator('.number-field').filter({ hasText: 'Tolleranza' }).locator('input');
+  await tolerance.fill('0.5');
+  await tolerance.press('Enter');
+  await expect.poll(async () => Number(await points.getAttribute('data-points'))).toBeLessThan(before);
+  await okButton(page).click();
+  await settled(page);
+  expect((await getNode(page, id)) as unknown as { tolerance: number }).toMatchObject({ tolerance: 0.5 });
+  // Un cerchio enorme alla tolleranza minima supera i tetti di punti
+  const R = 50000;
+  const K = 0.5523 * R;
+  const huge = [{ closed: true, nodes: [
+    { p: [R, 0], out: [0, K], in: [0, -K], kind: 'symmetric' }, { p: [0, R], out: [-K, 0], in: [K, 0], kind: 'symmetric' },
+    { p: [-R, 0], out: [0, -K], in: [0, K], kind: 'symmetric' }, { p: [0, -R], out: [K, 0], in: [-K, 0], kind: 'symmetric' },
+  ] }];
+  const hugeId = await page.evaluate((paths) => window.__construct!.store.getState().addPath({ paths: paths as never, tolerance: 0.001 }), huge);
+  await settled(page);
+  await openEditor(page, hugeId);
+  await expect(editor(page).locator('.profile-editor__chip', { hasText: /Troppi punti: la tolleranza effettiva è/ })).toBeVisible();
+  await editor(page).locator('summary', { hasText: 'Qualità' }).click();
+  await expect(editor(page).getByText(/Troppi punti: la tolleranza effettiva è .* mm\. Alzala/)).toBeVisible();
+});
+
+test('una linea verticale in rotazione non ha area: il piede dice perché e cosa fare, OK è disattivato', async ({ page }) => {
+  await openNewWithPen(page);
+  await canvas(page).focus();
+  await clicks(page, [[60, -60], [60, 60]]);
+  await page.keyboard.press('Enter');
+  await editor(page).getByRole('button', { name: 'Rotazionale' }).click();
+  await expect(editor(page).getByText(/stessa verticale.*Aggiungi un punto non allineato/)).toBeVisible();
+  await expect(okButton(page)).toBeDisabled();
+});
+
+test('Penna: al 501esimo nodo compare l\'avviso del limite', async ({ page }) => {
+  test.setTimeout(120_000);
+  await openNewWithPen(page);
+  const box = (await canvas(page).boundingBox())!;
+  // Nodi distinti in una zona libera dell'area
+  for (let i = 0; i < 500; i++) {
+    await page.mouse.click(box.x + 60 + (i % 50) * 14, box.y + 60 + Math.floor(i / 50) * 14);
+  }
+  await expect(nodes(page)).toHaveCount(500);
+  await page.mouse.click(box.x + 60, box.y + 300);
+  await expect(page.getByText('Limite raggiunto: al massimo 500 nodi per contorno')).toBeVisible();
+  await expect(nodes(page)).toHaveCount(500);
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { appendPenNode, bakeScale, closeContour, cycleKind, deleteNodes, draftContours, draftFromNode, emptyDraft, gridStep, insertNode, moveHandle, moveNodes, nearestSegment, pathCenter, setNodeKind, snapPoint } from './model';
+import { appendPenNode, bakeScale, closeContour, cycleKind, deleteNodes, draftContours, draftFromNode, dropLastNode, emptyDraft, gridStep, insertNode, moveHandle, moveNodes, nearestSegment, pathCenter, setNodeKind, snapPoint, trimDuplicateTail } from './model';
 import { bboxOf, cubicPoint, segmentOf, signedArea, splitCubic } from '../../scene/bezier';
 import { pathContours, pathNaturalSize } from '../../scene/shapes2d';
 import { shape2dDefaults } from '../../scene/defaults';
@@ -434,5 +434,23 @@ describe('draftContours', () => {
   it('un disegno senza area (linea verticale) o vuoto non ha poligoni', () => {
     expect(draftContours({ ...emptyDraft(), paths: [{ closed: false, nodes: [node([5, 0]), node([5, 10])] }], extrusion: 'rotate' })).toEqual([]);
     expect(draftContours(emptyDraft())).toEqual([]);
+  });
+});
+
+describe('dropLastNode e trimDuplicateTail', () => {
+  it('toglie l\'ultimo nodo; con un nodo solo il contorno sparisce', () => {
+    const paths = freeze([square(), { closed: false, nodes: [node([1, 1]), node([2, 2])] }]);
+    const result = dropLastNode(paths, 1);
+    expect(result[1].nodes).toEqual([node([1, 1])]);
+    expect(result[0]).toBe(paths[0]);
+    expect(dropLastNode(result, 1)).toHaveLength(1);
+    expect(dropLastNode(paths, 9)).toBe(paths);
+  });
+
+  it('il nodo doppio finale (doppio clic) si toglie, uno distinto no', () => {
+    const doubled = freeze([{ closed: false, nodes: [node([1, 1]), node([5, 5]), node([5, 5])] }]);
+    expect(trimDuplicateTail(doubled, 0)[0].nodes).toHaveLength(2);
+    const distinct = freeze([{ closed: false, nodes: [node([1, 1]), node([5, 5])] }]);
+    expect(trimDuplicateTail(distinct, 0)).toBe(distinct);
   });
 });
