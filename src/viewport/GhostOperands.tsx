@@ -5,16 +5,11 @@ import { getKernel } from '../kernel/client';
 import type { NodeMesh } from '../kernel/evaluate';
 import { parentOf, useSceneStore } from '../scene/store';
 import { useUiStore } from '../ui/uiStore';
+import { meshGeometry } from './meshGeometry';
 
 /** Una mesh fantasma: rosso traslucido, senza contorno e senza intercettare i clic. */
 function GhostPart({ mesh }: { mesh: NodeMesh }) {
-  const geometry = useMemo(() => {
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(mesh.positions, 3));
-    g.setIndex(new THREE.BufferAttribute(mesh.indices, 1));
-    g.computeVertexNormals();
-    return g;
-  }, [mesh]);
+  const geometry = useMemo(() => meshGeometry(mesh), [mesh]);
   useEffect(() => () => geometry.dispose(), [geometry]);
   return (
     <mesh geometry={geometry} raycast={() => null} renderOrder={1}>

@@ -16,6 +16,7 @@ import { toggleLayFlat } from '../ui/LayFlat/toggleLayFlat';
 import { fitView, setViewPreset, toggleProjection } from '../viewport/cameraControl';
 import { useSplitTool } from '../ui/Split/splitToolStore';
 import { toggleSplit } from '../ui/Split/toggleSplit';
+import { COMMANDS, getCommandContext } from '../ui/commands';
 
 const isTyping = (t: EventTarget | null) => t instanceof HTMLElement && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
 
@@ -116,6 +117,11 @@ export function useShortcuts(): void {
       else if (!mod && key === 'b') dropSelectionToBed();
       else if (!mod && key === 'x') useUiStore.getState().toggleGhostOps();
       else if (!mod && key === 'n') void newProject();
+      // Maiusc+P apre il disegno del Profilo selezionato (va controllato prima di P, che non esclude Maiusc)
+      else if (!mod && e.shiftKey && key === 'p') {
+        const c = getCommandContext();
+        if (!c.toolActive && COMMANDS.profile.enabled(c)) COMMANDS.profile.run(c);
+      }
       else if (!mod && key === 'p') useUiStore.getState().toggleBed();
       else if (!mod && key === 'u') combineToBed('union');
       else if (!mod && key === 'j') combineToBed(e.shiftKey ? 'minkowski' : 'hull');

@@ -123,7 +123,7 @@ const GROUP_LABELS: Record<GroupOp, string> = { group: 'Gruppo', union: 'Unione'
 const SVG_EXTRUDE_HEIGHT = 2;
 
 /** Contorni di un Profilo con le coordinate a 4 decimali (come il codice OpenSCAD); `|| 0` toglie il -0. */
-function roundPaths(paths: PathContour[]): PathContour[] {
+export function roundPaths(paths: PathContour[]): PathContour[] {
   const r4 = ([x, y]: Vec2): Vec2 => [round(x, 4) || 0, round(y, 4) || 0];
   return paths.map((c) => ({
     closed: c.closed,

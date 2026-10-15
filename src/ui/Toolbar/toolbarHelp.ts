@@ -17,7 +17,7 @@ export type HelpKey =
   | 'new' | 'undo' | 'redo' | 'select' | 'translate' | 'rotate' | 'resize' | 'extrude'
   | 'group' | 'union' | 'hull' | 'minkowski' | 'ungroup' | 'hole' | 'lock' | 'unlock' | 'hide' | 'showAll'
   | 'fillet' | 'chamfer' | 'corner' | 'shell' | 'split' | 'align' | 'mirror' | 'measure' | 'array' | 'pattern'
-  | 'layflat' | 'lay' | 'drop' | 'duplicate' | 'delete' | 'views' | 'ortho' | 'ghost' | 'bed' | 'theme' | 'code' | 'more';
+  | 'layflat' | 'lay' | 'drop' | 'duplicate' | 'delete' | 'profile' | 'views' | 'ortho' | 'ghost' | 'bed' | 'theme' | 'code' | 'more';
 
 export const TOOLBAR_HELP: Record<HelpKey, ToolbarHelp> = {
   new: { name: 'Nuovo progetto', what: 'Svuota la scena per ricominciare da zero.', how: 'Chiede conferma e, se vuoi, svuota anche la cronologia. Il progetto attuale si può salvare prima dal menu.' },
@@ -28,6 +28,7 @@ export const TOOLBAR_HELP: Record<HelpKey, ToolbarHelp> = {
   rotate: { name: 'Ruota', what: 'Mostra gli anelli per ruotare l\'oggetto attorno agli assi.', how: 'Seleziona un oggetto e trascina un anello. La rotazione è in gradi e si legge anche nel pannello delle proprietà.' },
   resize: { name: 'Ridimensiona', what: 'Cambia le dimensioni dell\'oggetto trascinando le maniglie.', how: 'Seleziona un oggetto e trascina una maniglia: con il lucchetto attivo le proporzioni restano fisse. Funziona anche su un gruppo di qualsiasi tipo (unione, guscio, serie, pattern...): la scala vale per tutto il contenuto. Le misure esatte si digitano nelle proprietà o, senza muovere il mouse, cliccando le quote X, Y e Z che compaiono sull\'oggetto selezionato.' },
   extrude: { name: 'Estrudi', what: 'Dà spessore a una forma 2D trascinando una maniglia verso l\'alto.', how: 'Seleziona una forma 2D (cerchio, quadrato, testo, SVG) e trascina la maniglia: l\'altezza dell\'estrusione segue il mouse.' },
+  profile: { name: 'Modifica profilo', what: 'Apre la modale di disegno del Profilo di Bézier: nodi, curve, più contorni (i contorni dentro altri sono fori) e anteprima 3D dal kernel.', how: 'Seleziona un Profilo e premi Maiusc+P, oppure usa il menu contestuale o il pulsante nelle Proprietà. Nella modale: Penna (P) per disegnare, Seleziona (V) per spostare nodi e maniglie, OK per applicare in un solo passo.' },
   group: { name: 'Raggruppa', what: 'Unisce più oggetti in un gruppo che si muove insieme, senza fonderli.', how: 'Seleziona almeno due oggetti e premi il pulsante: restano separati (colori e codice propri). Separa scioglie il gruppo.' },
   union: { name: 'Unisci', what: 'Fonde più oggetti in un solo solido con una unione booleana.', how: 'Seleziona almeno due oggetti: il risultato è un solo pezzo, appoggiato sul piatto. Un oggetto impostato come Foro viene invece sottratto.', image: 'union' },
   hull: { name: 'Inviluppo convesso', what: 'Crea la forma più piccola e senza concavità che contiene tutti gli oggetti.', how: 'Seleziona almeno due oggetti e premi il pulsante: è come tendere un elastico attorno a loro. Nel codice diventa hull().', image: 'hull' },

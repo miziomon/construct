@@ -16,6 +16,7 @@ import { PRIMITIVE_ICONS, SHAPE2D_ICONS } from '../ShapeLibrary/ShapeLibrary';
 import { previewFamily, registerPreviewFonts } from '../ShapeLibrary/previewFonts';
 import { shortcutText } from '../Toolbar/Toolbar';
 import { TOOLBAR_HELP } from '../Toolbar/toolbarHelp';
+import { useProfileEditor } from '../ProfileEditor/profileEditorStore';
 import { useUiStore } from '../uiStore';
 import './ContextMenu.scss';
 
@@ -289,10 +290,14 @@ export function ContextMenu() {
               return item(kind, SHAPE2D_LABELS[kind], <Icon size={16} />, () => st().addShape2D(kind, at), { nested: true });
             }),
           ])}
-          {submenu('2d', 'Forme 2D', <Square size={16} />, KINDS_2D.map((kind) => {
-            const Icon = SHAPE2D_ICONS[kind];
-            return item(`2d-${kind}`, SHAPE2D_LABELS[kind], <Icon size={16} />, () => st().addShape2D(kind, at), { nested: true });
-          }))}
+          {submenu('2d', 'Forme 2D', <Square size={16} />, [
+            ...KINDS_2D.map((kind) => {
+              const Icon = SHAPE2D_ICONS[kind];
+              return item(`2d-${kind}`, SHAPE2D_LABELS[kind], <Icon size={16} />, () => st().addShape2D(kind, at), { nested: true });
+            }),
+            // Il Profilo si disegna in una modale: nasce nel punto cliccato solo con l'OK
+            item('2d-path', SHAPE2D_LABELS.path, <SHAPE2D_ICONS.path size={16} />, () => useProfileEditor.getState().open({ new: true, at }), { nested: true }),
+          ])}
           {submenu(
             'symbols',
             'Simboli',

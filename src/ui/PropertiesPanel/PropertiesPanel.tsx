@@ -21,6 +21,7 @@ import { NumberField } from '../NumberField/NumberField';
 import { FormulaContext, type FormulaApi } from '../NumberField/formulaContext';
 import { resolveParams } from '../../scene/params';
 import { useParamPicker } from '../Params/paramPickerStore';
+import { useProfileEditor } from '../ProfileEditor/profileEditorStore';
 import { ArrayFields } from '../Array/ArrayFields';
 import { useArrayTool } from '../Array/arrayToolStore';
 import { PatternFields } from '../Pattern/PatternFields';
@@ -828,6 +829,14 @@ function Shape2DFields({ node, patch, locked }: { node: Shape2DNode; patch: (p: 
   return (
     <>
       <Section title={node.kind === 'text' ? (node.origin === 'symbol' ? 'Simbolo' : node.origin === 'emoji' ? 'Emoji' : 'Testo') : profile ? 'Profilato' : node.kind === 'path' ? 'Profilo' : 'Profilo 2D'}>
+        {node.kind === 'path' && (
+          <div className="properties__row">
+            <span className="properties__label">Disegno</span>
+            <button type="button" className="properties__action" disabled={locked} onClick={() => useProfileEditor.getState().open({ nodeId: node.id })} title="Apre la modale di disegno: nodi, curve e fori del profilo (Maiusc+P)">
+              Modifica profilo…
+            </button>
+          </div>
+        )}
         {isBarShape(node) ? (
           // Profilato con ali e anima: ingombro della sezione, i due spessori (etichette diverse per tipo) e il raccordo interno
           [

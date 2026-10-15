@@ -14,11 +14,27 @@
   min-height: 0;
   outline: none;
 
+  // Disegno a sinistra su tutta l'altezza; a destra l'anteprima 3D sopra le opzioni
   &__main {
     display: grid;
     flex: 1;
     grid-template-columns: minmax(0, 1fr) 280px;
+    grid-template-rows: auto minmax(0, 1fr);
     min-height: 0;
+  }
+
+  &__canvas {
+    grid-column: 1;
+    grid-row: 1 / -1;
+  }
+
+  // Anteprima ingrandita: occupa tutta la colonna e le opzioni si nascondono
+  &__main--preview-large {
+    grid-template-rows: minmax(0, 1fr) auto;
+
+    .profile-editor__sidebar {
+      display: none;
+    }
   }
 
   // Area di disegno: l'SVG sta in sovrimpressione, così la sua dimensione segue quella dell'area e non il contrario
@@ -266,7 +282,104 @@
     pointer-events: none;
   }
 
+  // Anteprima 3D
+  &__preview {
+    grid-column: 2;
+    grid-row: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border-left: 1px solid color('border');
+    border-bottom: 1px solid color('border');
+    background: color('panel');
+  }
+
+  &__preview-head {
+    display: flex;
+    align-items: center;
+    gap: $space-2;
+    padding-right: $space-2;
+
+    .profile-editor__section-title {
+      flex: 1;
+      padding-left: $space-3;
+    }
+  }
+
+  &__preview-buttons {
+    display: flex;
+    gap: $space-1;
+
+    button {
+      display: inline-flex;
+      padding: 3px;
+      border: 1px solid color('border');
+      border-radius: $radius-sm;
+      background: color('panel-raised');
+      color: color('text');
+      @include focus-ring;
+
+      &:hover:not(:disabled) {
+        border-color: color('accent');
+      }
+
+      &:disabled {
+        opacity: 0.35;
+      }
+    }
+  }
+
+  // Indicatore di calcolo in corso (un anello che gira)
+  &__spinner {
+    width: 12px;
+    height: 12px;
+    border: 2px solid transparent;
+    border-radius: 50%;
+
+    &--on {
+      border-color: color('border');
+      border-top-color: color('accent');
+      animation: profile-editor-spin 0.8s linear infinite;
+    }
+  }
+
+  // L'area ha un'altezza sua (220 px, o tutto lo spazio se ingrandita): il Canvas sta in sovrimpressione, così la sua
+  // dimensione intrinseca (l'ultima misura del canvas) non spinge il layout
+  &__preview-view {
+    position: relative;
+    flex: none;
+    height: 220px;
+
+    > div {
+      position: absolute;
+      inset: 0;
+    }
+
+    canvas {
+      display: block;
+    }
+  }
+
+  &__preview--large &__preview-view {
+    flex: 1;
+    height: auto;
+    min-height: 0;
+  }
+
+  &__preview-empty {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    color: color('text-muted');
+    pointer-events: none;
+  }
+
   &__sidebar {
+    grid-column: 2;
+    grid-row: 2;
     min-height: 0;
     overflow-y: auto;
     border-left: 1px solid color('border');
@@ -480,16 +593,47 @@
     @include focus-ring;
   }
 
-  // Finestre strette: una colonna sola, le opzioni sotto il disegno
+  // Finestre strette: una colonna sola (anteprima, disegno, opzioni); il disegno ha almeno 320 px e il resto, piede compreso, scorre
   @media (max-width: 900px) {
+    overflow-y: auto;
+
     &__main {
-      grid-template-columns: minmax(0, 1fr);
-      grid-template-rows: minmax(0, 1fr) minmax(0, 40%);
+      display: flex;
+      flex: none;
+      flex-direction: column;
+    }
+
+    &__preview {
+      order: -1;
+      border-bottom: 1px solid color('border');
+      border-left: 0;
+    }
+
+    &__preview-view {
+      flex: none;
+      height: 160px;
+    }
+
+    &__main--preview-large &__preview-view {
+      height: 300px;
+    }
+
+    &__canvas {
+      flex: none;
+      height: 340px;
+      min-height: 320px;
     }
 
     &__sidebar {
+      overflow: visible;
       border-top: 1px solid color('border');
       border-left: 0;
     }
+  }
+}
+
+@keyframes profile-editor-spin {
+  to {
+    transform: rotate(360deg);
   }
 }

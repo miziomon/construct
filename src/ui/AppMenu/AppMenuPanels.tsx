@@ -36,6 +36,7 @@ const SHORTCUTS: { title: string; rows: [string, string][] }[] = [
       ['S', 'Smusso tra due superfici (Invio conferma, Esc annulla)'],
       ['A', 'Smusso angolare: clic su un vertice, Maiusc+clic per sceglierne altri (Invio conferma, Esc annulla)'],
       ['G', 'Guscio: svuota il solido selezionato, con la faccia aperta a scelta (Invio conferma, Esc annulla)'],
+      ['Maiusc+P', 'Modifica profilo: apre la modale di disegno del Profilo selezionato (anche dal menu contestuale e dalle Proprietà)'],
       ['Maiusc+S', 'Dividi: taglia l\'oggetto in due con un piano perpendicolare a un asse, anche inclinato di un angolo, con connettori per rimontarlo (Invio conferma, Esc annulla)'],
       ['Doppio clic', 'Seleziona l\'oggetto e passa a Sposta'],
       ['Ctrl+G', 'Raggruppa (gli oggetti restano separati)'],
@@ -81,6 +82,19 @@ const SHORTCUTS: { title: string; rows: [string, string][] }[] = [
       ['5', 'Prospettica / ortografica'],
       ['.', 'Inquadra la selezione (o tutta la scena se non c\'è selezione)'],
       ['Home', 'Inquadra tutta la scena (o il piatto se è vuota)'],
+    ],
+  },
+  {
+    title: 'Disegno del Profilo (nella modale)',
+    rows: [
+      ['V / P', 'Strumento Seleziona / Penna'],
+      ['Penna', 'Clic: spigolo. Clic e trascina: nodo simmetrico con le maniglie. Clic sul primo nodo: chiude il contorno. Invio, doppio clic o Esc: termina. Backspace: toglie l\'ultimo nodo'],
+      ['Seleziona', 'Clic o riquadro per scegliere i nodi (Maiusc aggiunge), trascina nodi e maniglie (Alt spezza la tangente), clic su un segmento per inserire un nodo, doppio clic su un nodo per cambiarne il tipo'],
+      ['Canc / Frecce', 'Elimina i nodi selezionati / li sposta di un passo di griglia (Maiusc: dieci passi)'],
+      ['Ctrl+Z / Ctrl+Maiusc+Z', 'Annulla e ripeti sul disegno (la scena cambia solo con OK, in un passo)'],
+      ['Spazio o tasto centrale', 'Panoramica; la rotella ingrandisce sul puntatore'],
+      ['Maiusc / Ctrl', 'Penna: vincola a 45° / sospende l\'aggancio'],
+      ['Esc', 'Termina il contorno della Penna; altrimenti chiede conferma se ci sono modifiche e chiude'],
     ],
   },
   {

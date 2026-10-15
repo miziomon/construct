@@ -123,7 +123,7 @@ export function Toolbar() {
         <Fragment key={label}>
           <Divider />
           <Section label={label} tone={tone}>
-            {ids.map((id) => (
+            {ids.filter((id) => COMMANDS[id].toolbar !== false).map((id) => (
               <CommandButton key={id} cmd={COMMANDS[id]} ctx={ctx} />
             ))}
           </Section>

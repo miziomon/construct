@@ -637,16 +637,224 @@ test('una linea verticale in rotazione non ha area: il piede dice perché e cosa
   await expect(okButton(page)).toBeDisabled();
 });
 
-test('Penna: al 501esimo nodo compare l\'avviso del limite', async ({ page }) => {
-  test.setTimeout(120_000);
-  await openNewWithPen(page);
-  const box = (await canvas(page).boundingBox())!;
-  // Nodi distinti in una zona libera dell'area
-  for (let i = 0; i < 500; i++) {
-    await page.mouse.click(box.x + 60 + (i % 50) * 14, box.y + 60 + Math.floor(i / 50) * 14);
+test('Penna: raggiunto il limite di contorni compare l\'avviso (bozza con 100 contorni)', async ({ page }) => {
+  // Cento contorni da due nodi, ripristinati da una bozza: il centunesimo non si può iniziare
+  const contour = (i: number) => ({ closed: false, nodes: [{ p: [i, 0], kind: 'corner' }, { p: [i, 5], kind: 'corner' }] });
+  const draft = { paths: Array.from({ length: 100 }, (_, i) => contour(i)), tolerance: 0.05, extrusion: 'linear', height: 5, twist: 0, scaleTop: 1, revolveAngle: 360, revolveSegments: 64 };
+  await page.evaluate((d) => localStorage.setItem('construct:profile-draft:new', JSON.stringify({ v: 1, draft: d })), draft);
+  await page.evaluate(() => window.__construct!.profileEditor.getState().open({ new: true }));
+  await confirmBox(page).getByRole('button', { name: 'Ripristina' }).click();
+  await expect(editor(page).locator('[data-path]')).toHaveCount(100);
+  await editor(page).getByRole('button', { name: 'Penna' }).click();
+  await page.mouse.click((await at(page, 0, 120)).x, (await at(page, 0, 120)).y);
+  await expect(page.getByText('Limite raggiunto: al massimo 500 nodi per contorno e 100 contorni')).toBeVisible();
+  await expect(editor(page).locator('[data-path]')).toHaveCount(100);
+});
+
+// --- Punti di ingresso, anteprima 3D e criteri della fase ------------------------------------------------------------------
+
+/** Anteprima 3D della modale (il suo Canvas è il secondo della pagina). */
+const preview = (page: Page) => editor(page).locator('section[aria-label="Anteprima 3D"]');
+const previewReady = async (page: Page) => {
+  await expect(preview(page)).toHaveAttribute('data-state', 'ready');
+  return Number(await preview(page).getAttribute('data-triangles'));
+};
+
+test('libreria 2D: il pulsante Profilo apre la modale; quattro clic della Penna e un clic sul primo nodo, OK crea il Profilo, Ctrl+Z toglie tutto', async ({ page }) => {
+  const steps = await history(page);
+  await page.getByRole('tab', { name: 'Forme 2D' }).click();
+  await page.locator('button[title^="Aggiungi: Profilo"]').click();
+  await expect(editor(page)).toBeVisible();
+  // Il nodo nasce solo con l'OK
+  expect((await sceneState(page)).rootIds).toHaveLength(0);
+  await editor(page).getByRole('button', { name: 'Penna' }).click();
+  await clicks(page, SQUARE);
+  await clicks(page, [SQUARE[0]]);
+  await expect(editor(page).getByText('1 contorno, 4 nodi')).toBeVisible();
+  // L'anteprima calcola il solido dal kernel
+  expect(await previewReady(page)).toBe(12);
+  await okButton(page).click();
+  await expect(editor(page)).toHaveCount(0);
+  await settled(page);
+  expect(await history(page)).toBe(steps + 1);
+  expect(await page.evaluate(() => window.__construct!.store.getState().op)).toBe('Aggiungi Profilo');
+  const created = Object.values((await sceneState(page)).nodes)[0] as unknown as { kind: string; paths: { closed: boolean; nodes: unknown[] }[] };
+  expect(created.kind).toBe('path');
+  expect(created.paths[0].closed).toBe(true);
+  expect(created.paths[0].nodes).toHaveLength(4);
+  // Ctrl+Z: scena vuota
+  await page.keyboard.press('Control+z');
+  expect((await sceneState(page)).rootIds).toHaveLength(0);
+});
+
+test('anteprima 3D: pronta con i triangoli del solido, cambia con il disegno e dopo l\'OK la mesh della scena ha gli stessi triangoli e lo stesso volume', async ({ page }) => {
+  const id = await addPath(page, PATHS);
+  await openEditor(page, id);
+  const first = await previewReady(page);
+  expect(first).toBeGreaterThan(12);
+  // Selezionato il nodo B si trascina la sua maniglia di uscita molto più in là: la curva è più ampia e più campionata
+  await node(page, '0:1').click();
+  const k = await pixelsPerMm(page);
+  const b = await center(node(page, '0:1'));
+  await drag(page, { x: b.x + 10 * k, y: b.y - 8 * k }, { x: b.x + 45 * k, y: b.y - 8 * k });
+  const second = await previewReady(page);
+  expect(second).not.toBe(first);
+  // Ultima anteprima: triangoli e volume
+  const last = { triangles: Number(await preview(page).getAttribute('data-triangles')), volume: Number(await preview(page).getAttribute('data-volume')) };
+  await okButton(page).click();
+  await expect(editor(page)).toHaveCount(0);
+  await settled(page);
+  const mesh = await page.evaluate(() => {
+    const m = window.__construct!.results.getState().meshes[0];
+    return { triangles: m.indices.length / 3, volume: m.volume };
+  });
+  expect(mesh.triangles).toBe(last.triangles);
+  expect(Math.abs(mesh.volume - last.volume) / mesh.volume).toBeLessThan(1e-6);
+});
+
+test('anteprima 3D: Comprimi la toglie e libera il contesto, Ingrandisci nasconde le opzioni, Adatta c\'è', async ({ page }) => {
+  const id = await addPath(page);
+  await openEditor(page, id);
+  await previewReady(page);
+  const view = preview(page).locator('.profile-editor__preview-view');
+  await expect(view.locator('canvas')).toHaveCount(1);
+  await expect(preview(page).getByRole('button', { name: 'Adatta l\'anteprima' })).toBeEnabled();
+  await preview(page).getByRole('button', { name: 'Ingrandisci l\'anteprima' }).click();
+  await expect(editor(page).locator('.profile-editor__sidebar')).toBeHidden();
+  await preview(page).getByRole('button', { name: 'Riduci l\'anteprima' }).click();
+  await expect(editor(page).locator('.profile-editor__sidebar')).toBeVisible();
+  await preview(page).getByRole('button', { name: 'Comprimi l\'anteprima' }).click();
+  await expect(view).toHaveCount(0);
+  await expect(preview(page).getByRole('button', { name: 'Adatta l\'anteprima' })).toBeDisabled();
+  await preview(page).getByRole('button', { name: 'Mostra l\'anteprima' }).click();
+  await expect(view.locator('canvas')).toHaveCount(1);
+});
+
+test('dieci aperture e chiusure della modale non accumulano contesti WebGL', async ({ page }) => {
+  // Registra i contesti WebGL dei canvas dentro una modale (quello dell'anteprima): quelli ancora vivi si contano alla fine.
+  // Il contesto della vista principale e quello delle miniature non c'entrano e restano fuori dal conteggio
+  await page.evaluate(() => {
+    const w = window as unknown as { __ctx?: WebGLRenderingContext[] };
+    w.__ctx = [];
+    const original = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, type: string, ...args: unknown[]) {
+      const ctx = (original as (...a: unknown[]) => RenderingContext | null).call(this, type, ...args);
+      if (ctx && /webgl/.test(type) && this.closest('dialog')) w.__ctx!.push(ctx as WebGLRenderingContext);
+      return ctx;
+    } as typeof original;
+  });
+  const alive = () => page.evaluate(() => (window as unknown as { __ctx: WebGLRenderingContext[] }).__ctx.filter((c) => !c.isContextLost()).length);
+  const id = await addPath(page);
+  for (let i = 0; i < 10; i++) {
+    await openEditor(page, id);
+    await previewReady(page);
+    await page.keyboard.press('Escape');
+    await expect(editor(page)).toHaveCount(0);
   }
-  await expect(nodes(page)).toHaveCount(500);
-  await page.mouse.click(box.x + 60, box.y + 300);
-  await expect(page.getByText('Limite raggiunto: al massimo 500 nodi per contorno')).toBeVisible();
-  await expect(nodes(page)).toHaveCount(500);
+  // Il Canvas dell'anteprima ha creato dieci contesti, ma alla chiusura li ha rilasciati tutti
+  const created = await page.evaluate(() => (window as unknown as { __ctx: unknown[] }).__ctx.length);
+  expect(created).toBeGreaterThanOrEqual(10);
+  await expect.poll(alive).toBe(0);
+});
+
+test('Maiusc+P fuori dalla modale apre il disegno del Profilo selezionato; P nella modale sceglie la Penna e non accende il piano', async ({ page }) => {
+  const id = await addPath(page);
+  const bed = () => page.evaluate(() => window.__construct!.ui.getState().bedMode);
+  const bedBefore = await bed();
+  // Con il Profilo selezionato (lo è appena creato) e il fuoco sulla pagina
+  await page.keyboard.press('Shift+P');
+  await expect(editor(page)).toBeVisible();
+  expect(await bed()).toBe(bedBefore);
+  await canvas(page).focus();
+  await page.keyboard.press('p');
+  await expect(editor(page).getByRole('button', { name: 'Penna' })).toHaveAttribute('aria-pressed', 'true');
+  expect(await bed()).toBe(bedBefore);
+  await page.keyboard.press('v');
+  await expect(editor(page).getByRole('button', { name: 'Seleziona' })).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('Escape');
+  await expect(editor(page)).toHaveCount(0);
+  // Senza un Profilo selezionato Maiusc+P non fa nulla (e non accende il piano)
+  await page.evaluate(() => window.__construct!.store.getState().select([]));
+  await page.keyboard.press('Shift+P');
+  await expect(editor(page)).toHaveCount(0);
+  expect(await bed()).toBe(bedBefore);
+  // Con un cubo selezionato nemmeno
+  await addShapeBox(page);
+  await page.keyboard.press('Shift+P');
+  await expect(editor(page)).toHaveCount(0);
+  expect(id).toBeTruthy();
+});
+
+/** Aggiunge un cubo dalla libreria 3D (tab predefinita). */
+async function addShapeBox(page: Page) {
+  await page.locator('button[title^="Aggiungi: Cubo"]').click();
+  await settled(page);
+}
+
+test('Proprietà e menu contestuale: "Modifica profilo" apre la modale; con il Profilo bloccato è disattivato e il menu non lo offre', async ({ page }) => {
+  const id = await addPath(page);
+  const action = page.locator('.properties__action', { hasText: 'Modifica profilo' });
+  await action.click();
+  await expect(editor(page)).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(editor(page)).toHaveCount(0);
+  // Menu contestuale sull'oggetto: clic destro nella vista, sul centro del Profilo
+  const menu = page.getByRole('menu', { name: 'Comandi per la selezione' });
+  const spot = await page.evaluate(() => {
+    const s = window.__r3f!;
+    const V = s.camera.position.constructor as new (x: number, y: number, z: number) => { project(c: unknown): { x: number; y: number } };
+    const v = new V(0, 0, 2.5).project(s.camera);
+    const r = s.gl.domElement.getBoundingClientRect();
+    return { x: r.left + ((v.x + 1) / 2) * r.width, y: r.top + ((1 - v.y) / 2) * r.height };
+  });
+  await page.mouse.click(spot.x, spot.y, { button: 'right' });
+  await expect(menu.getByRole('menuitem', { name: 'Modifica profilo' })).toBeVisible();
+  await menu.getByRole('menuitem', { name: 'Modifica profilo' }).click();
+  await expect(editor(page)).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(editor(page)).toHaveCount(0);
+  // Bloccato: il pulsante delle Proprietà è disattivato e Maiusc+P non apre
+  await page.evaluate((nodeId) => window.__construct!.store.getState().updateNode(nodeId, { locked: true }), id);
+  await expect(action).toBeDisabled();
+  await page.keyboard.press('Shift+P');
+  await expect(editor(page)).toHaveCount(0);
+});
+
+test('menu contestuale sul vuoto: Forme 2D > Profilo apre la modale e il Profilo nasce nel punto cliccato', async ({ page }) => {
+  await addShapeBox(page);
+  const menu = page.getByRole('menu', { name: 'Aggiungi una forma' });
+  const spot = await page.evaluate(() => {
+    const s = window.__r3f!;
+    const V = s.camera.position.constructor as new (x: number, y: number, z: number) => { project(c: unknown): { x: number; y: number } };
+    const v = new V(-80, 70, 0).project(s.camera);
+    const r = s.gl.domElement.getBoundingClientRect();
+    return { x: r.left + ((v.x + 1) / 2) * r.width, y: r.top + ((1 - v.y) / 2) * r.height };
+  });
+  await page.mouse.click(spot.x, spot.y, { button: 'right' });
+  await menu.getByRole('menuitem', { name: 'Forme 2D', exact: true }).hover();
+  await menu.getByRole('menu', { name: 'Forme 2D' }).getByRole('menuitem', { name: 'Profilo', exact: true }).click();
+  await expect(editor(page)).toBeVisible();
+  await editor(page).getByRole('button', { name: 'Penna' }).click();
+  await clicks(page, SQUARE);
+  await clicks(page, [SQUARE[0]]);
+  await okButton(page).click();
+  await settled(page);
+  const scene = await sceneState(page);
+  const created = scene.nodes[scene.rootIds[0]] as unknown as { kind: string; position: [number, number, number] };
+  expect(created.kind).toBe('path');
+  // Nel punto cliccato del piano (circa -80, 70)
+  expect(Math.abs(created.position[0] + 80)).toBeLessThan(3);
+  expect(Math.abs(created.position[1] - 70)).toBeLessThan(3);
+});
+
+test('una colonna sola sotto i 900 px: anteprima sopra il disegno e il disegno alto almeno 320 px', async ({ page }) => {
+  const id = await addPath(page);
+  await page.setViewportSize({ width: 820, height: 760 });
+  await openEditor(page, id);
+  const [view, drawing] = [(await preview(page).boundingBox())!, (await canvas(page).boundingBox())!];
+  expect(view.y).toBeLessThan(drawing.y);
+  expect(drawing.height).toBeGreaterThanOrEqual(320);
+  // Il piede e le opzioni scorrono: i pulsanti si raggiungono
+  await okButton(page).scrollIntoViewIfNeeded();
+  await expect(okButton(page)).toBeVisible();
 });

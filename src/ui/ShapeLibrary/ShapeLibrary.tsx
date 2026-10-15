@@ -4,6 +4,7 @@ import { Decagon } from '../icons/Decagon';
 import { Ring, Star6, Trapezoid } from '../icons/Shapes2D';
 import { ProfileH, ProfileL, ProfileT, ProfileU, TubeRect, TubeRound } from '../icons/Profiles';
 import { useSceneStore } from '../../scene/store';
+import { useProfileEditor } from '../ProfileEditor/profileEditorStore';
 import { PRIMITIVE_LABELS, SHAPE2D_LABELS } from '../../scene/defaults';
 import { isProfileKind, PROFILE_KINDS } from '../../scene/profiles';
 import type { PrimitiveKind, Shape2DKind } from '../../scene/types';
@@ -47,8 +48,8 @@ export const SHAPE2D_ICONS: Record<Shape2DKind, LucideIcon> = {
 };
 
 const KINDS = Object.keys(PRIMITIVE_LABELS) as PrimitiveKind[];
-// L'SVG non si aggiunge dalla libreria: nasce dall'importazione di un file (menu Importa); il Profilo di Bézier non ha ancora
-// un editor da cui crearlo; i profilati stanno con le forme 3D
+// L'SVG non si aggiunge dalla libreria: nasce dall'importazione di un file (menu Importa); il Profilo di Bézier ha un pulsante
+// proprio (non aggiunge una forma: apre la modale di disegno); i profilati stanno con le forme 3D
 const KINDS_2D = (Object.keys(SHAPE2D_LABELS) as Shape2DKind[]).filter((kind) => kind !== 'svg' && kind !== 'path' && !isProfileKind(kind));
 
 /** Griglia delle primitive 3D e dei profilati (prima tab della libreria). */
@@ -94,6 +95,11 @@ export function Shapes2DGrid() {
           </button>
         );
       })}
+      {/* Il Profilo si disegna in una modale: il nodo nasce solo con l'OK */}
+      <button type="button" className="shape-library__item" onClick={() => useProfileEditor.getState().open({ new: true })} title={`Aggiungi: ${SHAPE2D_LABELS.path}`}>
+        <SHAPE2D_ICONS.path size={24} strokeWidth={1.6} />
+        <span className="shape-library__label">{SHAPE2D_LABELS.path}</span>
+      </button>
     </div>
   );
 }

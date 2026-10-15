@@ -232,3 +232,38 @@ describe('barra con uno strumento a pannello aperto', () => {
     }
   });
 });
+
+describe('Modifica profilo (D6)', () => {
+  const rect = { closed: true, nodes: [{ p: [0, 0] as [number, number], kind: 'corner' as const }, { p: [10, 0] as [number, number], kind: 'corner' as const }, { p: [10, 10] as [number, number], kind: 'corner' as const }] };
+
+  it('non ha un pulsante sulla barra e sta nel gruppo Modifica', () => {
+    expect(COMMANDS.profile.toolbar).toBe(false);
+    expect(COMMAND_GROUPS.find((g) => g.label === 'Modifica')!.ids).toContain('profile');
+    expect(COMMANDS.profile.shortcut).toBe('⇧P');
+  });
+
+  it('si può usare solo con un solo Profilo non bloccato selezionato', () => {
+    expect(COMMANDS.profile.enabled(getCommandContext())).toBe(false);
+    useSceneStore.getState().addPrimitive('box');
+    expect(applicable()).not.toContain('profile');
+    const id = useSceneStore.getState().addPath({ paths: [rect] });
+    expect(COMMANDS.profile.enabled(getCommandContext())).toBe(true);
+    expect(applicable()).toContain('profile');
+    // Due oggetti selezionati: no
+    useSceneStore.getState().select(useSceneStore.getState().scene.rootIds);
+    expect(applicable()).not.toContain('profile');
+    // Bloccato: no, né nel menu
+    useSceneStore.getState().select([id]);
+    useSceneStore.getState().toggleLockSelected();
+    expect(COMMANDS.profile.enabled(getCommandContext())).toBe(false);
+    expect(applicable()).not.toContain('profile');
+  });
+
+  it('run apre la modale sul nodo', async () => {
+    const { useProfileEditor } = await import('./ProfileEditor/profileEditorStore');
+    const id = useSceneStore.getState().addPath({ paths: [rect] });
+    COMMANDS.profile.run(getCommandContext());
+    expect(useProfileEditor.getState().target).toEqual({ nodeId: id });
+    useProfileEditor.getState().close();
+  });
+});

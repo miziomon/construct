@@ -1,4 +1,4 @@
-import { SquareArrowDown, AlignHorizontalJustifyStart, ArrowDownToLine, Eye, EyeOff, FlipHorizontal2, Ruler, Copy, Lock, Unlock, Group, MousePointer2, Move3d, Rotate3d, RotateCw, Scissors, SquaresUnite, Scaling, ArrowUpFromLine, Trash2, Ungroup, CircleDashed } from 'lucide-react';
+import { SquareArrowDown, AlignHorizontalJustifyStart, PenTool, ArrowDownToLine, Eye, EyeOff, FlipHorizontal2, Ruler, Copy, Lock, Unlock, Group, MousePointer2, Move3d, Rotate3d, RotateCw, Scissors, SquaresUnite, Scaling, ArrowUpFromLine, Trash2, Ungroup, CircleDashed } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { combineToBed, dropSelectionToBed, layDownSelection, lowestZByRoot } from '../kernel/placement';
 import { isAppGroup, isLocked, parentOf, useSceneStore } from '../scene/store';
@@ -9,6 +9,7 @@ import type { Scene, SceneNode } from '../scene/types';
 import { canArray, useArrayTool } from './Array/arrayToolStore';
 import { toggleArray } from './Array/toggleArray';
 import { useEdgeTool } from './EdgeTool/edgeToolStore';
+import { useProfileEditor } from './ProfileEditor/profileEditorStore';
 import { toggleLayFlat } from './LayFlat/toggleLayFlat';
 import { useLayFlat } from './LayFlat/layFlatStore';
 import { toggleMeasure } from './Measure/toggleMeasure';
@@ -32,7 +33,7 @@ export type CommandId =
   | 'group' | 'ungroup' | 'union' | 'hull' | 'minkowski' | 'hole'
   | 'fillet' | 'chamfer' | 'corner' | 'shell' | 'pattern' | 'split'
   | 'align' | 'mirror' | 'layflat' | 'lay' | 'drop' | 'array'
-  | 'duplicate' | 'lock' | 'hide' | 'delete' | 'measure';
+  | 'duplicate' | 'lock' | 'hide' | 'delete' | 'measure' | 'profile';
 
 /** Stato da cui dipende la disponibilità dei comandi: selezione, scena e strumenti aperti. */
 export interface CommandContext {
@@ -148,6 +149,8 @@ export interface Command {
   dropdown?: Extract<ToolbarMenu, 'align' | 'mirror'>;
   /** Il menu contestuale lo mostra. Le modalità del gizmo restano solo sulla barra. */
   menu: boolean;
+  /** `false`: il comando non ha un pulsante sulla barra (solo menu contestuale, Proprietà e scorciatoia). */
+  toolbar?: false;
   /** Condizione in più per il menu (la barra usa solo `enabled`): nasconde i comandi che per questo oggetto non hanno senso. */
   inMenu?: (c: CommandContext) => boolean;
 }
@@ -268,6 +271,12 @@ export const COMMANDS: Record<CommandId, Command> = {
     inMenu: (c) => c.rootSelection.length > 0,
   },
   delete: { id: 'delete', help: 'delete', shortcut: 'Del', icon: (_c, size) => <Trash2 size={size} />, enabled: (c) => c.selection.some((id) => !isLocked(c.scene, id)), run: () => sceneState().removeSelected(), menu: true },
+  // Modifica profilo: solo menu contestuale, Proprietà e Maiusc+P (la barra è già piena); un solo Profilo, non bloccato
+  profile: {
+    id: 'profile', help: 'profile', shortcut: '⇧P', icon: (_c, size) => <PenTool size={size} />,
+    enabled: (c) => c.single?.type === 'shape2d' && c.single.kind === 'path' && !isLocked(c.scene, c.single.id),
+    run: (c) => c.single && useProfileEditor.getState().open({ nodeId: c.single.id }), menu: true, toolbar: false,
+  },
   measure: { id: 'measure', help: 'measure', shortcut: 'I', icon: (_c, size) => <Ruler size={size} />, enabled: (c) => c.hasObjects, active: (c) => c.measureActive, run: () => toggleMeasure(), menu: true },
 };
 
@@ -278,7 +287,7 @@ export type SectionTone = 'transform' | 'combine' | 'modify' | 'arrange' | 'obje
 export const COMMAND_GROUPS: { label: string; ids: CommandId[]; tone: SectionTone }[] = [
   { label: 'Trasforma', ids: ['select', 'translate', 'rotate', 'resize'], tone: 'transform' },
   { label: 'Combina', ids: ['group', 'ungroup', 'union', 'hull', 'minkowski', 'hole'], tone: 'combine' },
-  { label: 'Modifica', ids: ['extrude', 'fillet', 'chamfer', 'corner', 'shell', 'pattern', 'split'], tone: 'modify' },
+  { label: 'Modifica', ids: ['extrude', 'profile', 'fillet', 'chamfer', 'corner', 'shell', 'pattern', 'split'], tone: 'modify' },
   { label: 'Disponi', ids: ['align', 'mirror', 'layflat', 'lay', 'drop', 'array'], tone: 'arrange' },
   { label: 'Oggetto', ids: ['duplicate', 'lock', 'hide', 'delete', 'measure'], tone: 'object' },
 ];

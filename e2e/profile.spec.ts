@@ -44,8 +44,8 @@ test('Profilo di Bézier: una mesh, il codice con construct:path e il pannello c
   await expect(page.locator('.properties__section-title', { hasText: /^Profilo$/ })).toBeVisible();
   await expect(field(page, 'Larghezza')).toHaveValue('10');
   await expect(field(page, 'Profondità')).toHaveValue('20');
-  // Non esiste un pulsante Profilo nella libreria
-  await expect(page.locator('button[title^="Aggiungi: Profilo"]')).toHaveCount(0);
+  // Dalla 0.61.0 la libreria 2D ha il pulsante Profilo, ma apre la modale di disegno: non aggiunge un nodo da sé (vedi profile-editor.spec.ts)
+  await expect(page.locator('.properties__action', { hasText: 'Modifica profilo' })).toBeVisible();
 });
 
 test('Profilo di Bézier: con il lucchetto chiuso la Larghezza scala anche la Profondità, in un solo passo', async ({ page }) => {

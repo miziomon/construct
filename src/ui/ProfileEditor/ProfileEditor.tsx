@@ -16,7 +16,10 @@ import { closeContour, deleteNodes, draftContours, draftFromNode, dropLastNode, 
 import type { Draft, NodeRef } from './model';
 import { useProfileEditor } from './profileEditorStore';
 import type { ProfileTarget } from './profileEditorStore';
+import { ProfilePreview } from './ProfilePreview';
+import type { PreviewMode } from './ProfilePreview';
 import { Sidebar } from './Sidebar';
+import { usePreviewMesh } from './usePreviewMesh';
 import './ProfileEditor.scss';
 
 /** Stato del disegno: contorni e parametri (Draft), nodi selezionati, strumento e contorno in corso della Penna. La cronologia sta a parte. */
@@ -99,6 +102,9 @@ function Editor({ target }: { target: ProfileTarget }) {
       baked: !!path && draft.paths !== path.paths,
       // Misure legate a un parametro: il disegno si scala alla misura della formula
       bound: path ? { is: hasBoundDimension(path), width: path.width, depth: path.depth } : { is: false, width: 0, depth: 0 },
+      // Il nodo esistente (colore, contorno 2D) e le misure che l'anteprima deve tenere
+      node: path ?? null,
+      size: path && hasBoundDimension(path) ? { width: path.width, depth: path.depth } : null,
     };
   });
 
@@ -121,6 +127,10 @@ function Editor({ target }: { target: ProfileTarget }) {
   const [ready, setReady] = useState(false);
   const confirming = useRef(false);
   const dirty = draft !== init.draft;
+  // Anteprima 3D: la dimensione della colonna, l'inquadratura (Adatta) e un contatore che ridisegna alla chiusura di un passo
+  const [previewMode, setPreviewMode] = useState<PreviewMode>('normal');
+  const [fitSignal, setFitSignal] = useState(0);
+  const [, setSettled] = useState(0);
 
   useEffect(() => {
     stateRef.current = state;
@@ -194,6 +204,8 @@ function Editor({ target }: { target: ProfileTarget }) {
     pendingLive.current = false;
     committed.current = stateRef.current.draft;
     history.current!.push(stateRef.current.draft);
+    // Passo concluso: l'anteprima si aggiorna subito (vedi `immediate` più sotto)
+    setSettled((n) => n + 1);
   }, []);
   useEffect(() => {
     window.addEventListener('pointerup', settle);
@@ -295,6 +307,8 @@ function Editor({ target }: { target: ProfileTarget }) {
   const nodeCount = draft.paths.reduce((n, c) => n + c.nodes.length, 0);
   // OK solo con almeno un contorno che il kernel riempie davvero
   const canApply = contours.length > 0;
+  // Durante un trascinamento il disegno non è ancora un passo concluso: l'anteprima si aggiorna al più ogni 100 ms; al rilascio subito
+  const preview = usePreviewMesh(draft, init.node, init.size, draft === committed.current, canApply);
 
   /** OK: applica il disegno alla scena (un solo passo) e chiude. */
   const apply = () => {
@@ -406,7 +420,7 @@ function Editor({ target }: { target: ProfileTarget }) {
   return (
     <Modal open title="Profilo" size="large" dismissable={false} onClose={() => void askClose()} onEscape={() => void askClose()}>
       <div ref={root} className="profile-editor" tabIndex={-1} onKeyDown={onKeyDown} onKeyUp={onKeyUp}>
-        <div className="profile-editor__main">
+        <div className={`profile-editor__main profile-editor__main--preview-${previewMode}`}>
           <DrawingCanvas
             draft={draft}
             contours={contours}
@@ -425,6 +439,7 @@ function Editor({ target }: { target: ProfileTarget }) {
             onPenFinish={finishPen}
             onPenLimit={() => notify.info('Limite raggiunto: al massimo 500 nodi per contorno e 100 contorni. Termina il contorno (Invio) o chiudilo')}
           />
+          <ProfilePreview {...preview} mode={previewMode} onMode={setPreviewMode} fitSignal={fitSignal} onFit={() => setFitSignal((n) => n + 1)} />
           <Sidebar
             draft={draft}
             selection={selection}
