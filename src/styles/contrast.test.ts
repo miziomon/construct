@@ -95,6 +95,29 @@ describe.each(['light', 'dark'])('contrasto del tema %s', (name) => {
     expect(contrast(c(token), c('code-bg'))).toBeGreaterThanOrEqual(4.5);
   });
 
+  // Disegno 2D della modale del Profilo: il canvas sta sul pannello. Nodi, maniglie e asse sono elementi grafici (almeno 3:1);
+  // il testo dell'asse e dell'avviso nella zona non ruotata (sulla tinta rossa) segue la soglia dei testi (4,5:1)
+  it.each(['profile-axis', 'profile-node', 'profile-handle', 'accent'])('disegno del Profilo: %s sul pannello: almeno 3:1', (token) => {
+    expect(contrast(c(token), c('panel'))).toBeGreaterThanOrEqual(3);
+  });
+
+  it('disegno del Profilo: asse sul pannello come testo (etichetta "asse di rotazione"): almeno 4,5:1', () => {
+    expect(contrast(c('profile-axis'), c('panel'))).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('disegno del Profilo: testo principale (avviso) sulla zona non ruotata: almeno 4,5:1', () => {
+    expect(contrast(c('text'), c('profile-outside', c('panel')))).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('disegno del Profilo: il contorno (accento) si distingue dal riempimento: almeno 3:1', () => {
+    expect(contrast(c('accent'), c('profile-fill', c('panel')))).toBeGreaterThanOrEqual(3);
+  });
+
+  it('disegno del Profilo: il riempimento e la zona non ruotata si vedono sul pannello (almeno 1,1:1) e non si confondono', () => {
+    expect(contrast(c('profile-fill', c('panel')), c('panel'))).toBeGreaterThanOrEqual(1.1);
+    expect(contrast(c('profile-outside', c('panel')), c('panel'))).toBeGreaterThanOrEqual(1.05);
+  });
+
   it('testo del codice su code-bg: almeno 7:1', () => {
     expect(contrast(c('text'), c('code-bg'))).toBeGreaterThanOrEqual(7);
   });

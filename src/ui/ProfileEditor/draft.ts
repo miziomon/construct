@@ -13,8 +13,8 @@ const SAVE_DELAY = 500;
 /** Chiave di localStorage: `nodeId` null è il Profilo nuovo. */
 const keyOf = (nodeId: string | null): string => `construct:profile-draft:${nodeId ?? 'new'}`;
 
-/** Scritture in attesa, per chiave: l'ultima modifica sostituisce la precedente. */
-const timers = new Map<string, ReturnType<typeof setTimeout>>();
+/** Scritture in attesa, per chiave: il timer e la scrittura da fare (l'ultima modifica sostituisce la precedente). */
+const pending = new Map<string, { timer: ReturnType<typeof setTimeout>; write: () => void }>();
 
 /**
  * Salva la bozza dopo 500 ms dall'ultima chiamata (un trascinamento ne fa decine). I contorni con meno di 2 nodi (la Penna
@@ -22,19 +22,25 @@ const timers = new Map<string, ReturnType<typeof setTimeout>>();
  */
 export function saveDraft(nodeId: string | null, draft: Draft, storage?: Pick<Storage, 'setItem'>): void {
   const key = keyOf(nodeId);
-  clearTimeout(timers.get(key));
-  timers.set(
-    key,
-    setTimeout(() => {
-      timers.delete(key);
-      try {
-        const clean: Draft = { ...draft, paths: draft.paths.filter((c) => c.nodes.length >= 2) };
-        (storage ?? localStorage).setItem(key, JSON.stringify({ v: 1, draft: clean }));
-      } catch {
-        // Spazio esaurito o storage non disponibile: senza bozza si lavora lo stesso
-      }
-    }, SAVE_DELAY),
-  );
+  clearTimeout(pending.get(key)?.timer);
+  const write = () => {
+    pending.delete(key);
+    try {
+      const clean: Draft = { ...draft, paths: draft.paths.filter((c) => c.nodes.length >= 2) };
+      (storage ?? localStorage).setItem(key, JSON.stringify({ v: 1, draft: clean }));
+    } catch {
+      // Spazio esaurito o storage non disponibile: senza bozza si lavora lo stesso
+    }
+  };
+  pending.set(key, { timer: setTimeout(write, SAVE_DELAY), write });
+}
+
+/** Scrive subito le bozze in attesa: alla chiusura della pagina o della modale non si perde l'ultima modifica. */
+export function flushDrafts(): void {
+  for (const { timer, write } of [...pending.values()]) {
+    clearTimeout(timer);
+    write();
+  }
 }
 
 /** Numero finito entro l'intervallo (estremi inclusi). */
@@ -63,8 +69,8 @@ export function loadDraft(nodeId: string | null, storage?: Pick<Storage, 'getIte
 /** Elimina la bozza e annulla la scrittura in attesa: senza questo un salvataggio tardivo la farebbe risorgere dopo OK o Annulla. */
 export function clearDraft(nodeId: string | null, storage?: Pick<Storage, 'removeItem'>): void {
   const key = keyOf(nodeId);
-  clearTimeout(timers.get(key));
-  timers.delete(key);
+  clearTimeout(pending.get(key)?.timer);
+  pending.delete(key);
   try {
     (storage ?? localStorage).removeItem(key);
   } catch {

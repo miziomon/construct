@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { clearDraft, loadDraft, saveDraft } from './draft';
+import { clearDraft, flushDrafts, loadDraft, saveDraft } from './draft';
 import { emptyDraft } from './model';
 import type { Draft } from './model';
 import { useProfileEditor } from './profileEditorStore';
@@ -61,6 +61,24 @@ describe('bozza del disegno', () => {
     vi.advanceTimersByTime(2000);
     expect(s.data.size).toBe(0);
     expect(loadDraft('abc', s)).toBeNull();
+  });
+
+  it('flushDrafts scrive subito le bozze in attesa (pagehide, chiusura della modale) e il timer non scrive una seconda volta', () => {
+    const s = fakeStorage();
+    const setItem = vi.spyOn(s, 'setItem');
+    saveDraft('abc', triangle, s);
+    saveDraft(null, { ...triangle, height: 3 }, s);
+    flushDrafts();
+    expect(setItem).toHaveBeenCalledTimes(2);
+    expect(loadDraft('abc', s)).toEqual(triangle);
+    expect(loadDraft(null, s)?.height).toBe(3);
+    vi.advanceTimersByTime(2000);
+    expect(setItem).toHaveBeenCalledTimes(2);
+    // Dopo clearDraft non resta nulla da scrivere
+    saveDraft('abc', triangle, s);
+    clearDraft('abc', s);
+    flushDrafts();
+    expect(setItem).toHaveBeenCalledTimes(2);
   });
 
   it('un contorno appena iniziato (un solo nodo) non si salva, così la bozza resta valida', () => {

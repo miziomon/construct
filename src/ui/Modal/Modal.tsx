@@ -9,6 +9,8 @@ interface Props {
   children: ReactNode;
   /** Se false Esc, la X e il click sullo sfondo non chiudono la finestra (es. aggiornamento obbligatorio). */
   dismissable?: boolean;
+  /** Esc: se c'è, lo gestisce al posto di `onClose` anche con `dismissable` falso (es. conferma prima di chiudere un disegno). */
+  onEscape?: () => void;
   /** "large": 80% della larghezza e dell'altezza della finestra (es. codice OpenSCAD); "wide": 60% della larghezza, altezza del contenuto (es. About). */
   size?: 'default' | 'large' | 'wide';
   /** "welcome": senza intestazione né margini del corpo, con la X in alto a destra (schermata di benvenuto). */
@@ -16,7 +18,7 @@ interface Props {
 }
 
 /** Finestra modale su <dialog> nativo: gestisce da sola focus, Esc e blocco dello sfondo. */
-export function Modal({ open, title, onClose, children, dismissable = true, size = 'default', variant = 'default' }: Props) {
+export function Modal({ open, title, onClose, children, dismissable = true, onEscape, size = 'default', variant = 'default' }: Props) {
   const welcome = variant === 'welcome';
   const dialog = useRef<HTMLDialogElement>(null);
 
@@ -34,10 +36,11 @@ export function Modal({ open, title, onClose, children, dismissable = true, size
       className={`modal${size === 'large' ? ' modal--large' : ''}${size === 'wide' ? ' modal--wide' : ''}${welcome ? ' modal--welcome' : ''}`}
       // Senza intestazione visibile il nome accessibile è il titolo stesso
       {...(welcome ? { 'aria-label': title } : { 'aria-labelledby': 'modal-title' })}
-      // Esc: chiude solo se consentito
+      // Esc: lo gestisce `onEscape` se c'è, altrimenti chiude solo se consentito
       onCancel={(e) => {
         e.preventDefault();
-        if (dismissable) onClose();
+        if (onEscape) onEscape();
+        else if (dismissable) onClose();
       }}
       // Click sullo sfondo (il target è il dialog stesso, non un suo figlio)
       onClick={(e) => {

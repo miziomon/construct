@@ -30,6 +30,12 @@ $themes: (
     'syn-function': #1d5fc4,
     'syn-number': #a64b08,
     'syn-param': #0f7b6c,
+    // Modale del Profilo (disegno 2D): asse, zona non ruotata, nodi, maniglie e riempimento
+    'profile-axis': #c2410c,
+    'profile-outside': rgba(214, 69, 69, 0.14),
+    'profile-node': #475569,
+    'profile-handle': #7a3fb5,
+    'profile-fill': rgba(79, 124, 230, 0.2),
   ),
   'dark': (
     'bg': #14171c,
@@ -56,6 +62,11 @@ $themes: (
     'syn-function': #82aaff,
     'syn-number': #f78c6c,
     'syn-param': #4ec9b0,
+    'profile-axis': #fb923c,
+    'profile-outside': rgba(255, 77, 77, 0.16),
+    'profile-node': #a8b3c4,
+    'profile-handle': #c792ea,
+    'profile-fill': rgba(77, 163, 255, 0.24),
   ),
 );
 
