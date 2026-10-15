@@ -156,8 +156,9 @@
       }
     }
 
-    // Primo nodo del contorno della Penna: un clic lo chiude
-    &--first {
+    // Primo nodo del contorno della Penna (un clic lo chiude) o estremo aperto che un clic riprende o unisce
+    &--first,
+    &--resume {
       rect,
       circle,
       polygon {
@@ -169,6 +170,38 @@
 
   &__canvas[data-tool='pen'] &__svg {
     cursor: crosshair;
+  }
+
+  &__canvas[data-tool='pan'] &__svg {
+    cursor: grab;
+  }
+
+  &__canvas[data-panning] &__svg {
+    cursor: grabbing;
+  }
+
+  // Pulsante per specchiare la vista, sotto la scritta della parte non ruotata
+  &__flip {
+    position: absolute;
+    transform: translateX(-50%);
+
+    button {
+      display: inline-flex;
+      align-items: center;
+      gap: $space-1;
+      padding: 3px $space-2;
+      border: 1px solid color('border');
+      border-radius: $radius-sm;
+      background: color('panel-raised');
+      color: color('text');
+      font-size: 11px;
+      white-space: nowrap;
+      @include focus-ring;
+
+      &:hover {
+        border-color: color('accent');
+      }
+    }
   }
 
   // Penna: anteprima del prossimo segmento e punto agganciato
@@ -279,6 +312,29 @@
     font-family: $font-mono;
     font-size: 11px;
     color: color('text-muted');
+    pointer-events: none;
+  }
+
+  // Etichetta del modificatore attivo durante il trascinamento (Alt: spigolo)
+  &__modifier {
+    position: absolute;
+    left: $space-3;
+    bottom: $space-2;
+    padding: 2px $space-2;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    color: color('text');
+    background: color('panel-raised');
+    border: 1px solid color('border');
+    pointer-events: none;
+  }
+
+  // Penna: pallino sul punto della curva in cui un clic inserirebbe un nodo
+  &__insert {
+    fill: color('accent');
+    stroke: color('panel');
+    stroke-width: 1.5;
     pointer-events: none;
   }
 

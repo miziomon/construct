@@ -12,7 +12,7 @@ import type { GridSettings, Tool } from './DrawingCanvas';
 import { clearDraft, flushDrafts, loadDraft, saveDraft } from './draft';
 import { createHistory } from './history';
 import type { History } from './history';
-import { closeContour, deleteNodes, draftContours, draftFromNode, dropLastNode, emptyDraft, moveHandle, moveNodes, pathCenter, setNodeKind, trimDuplicateTail } from './model';
+import { canCloseContour, closeContour, deleteNodes, draftContours, draftFromNode, dropLastNode, emptyDraft, moveHandle, moveNodes, pathCenter, setNodeKind, trimDuplicateTail } from './model';
 import type { Draft, NodeRef } from './model';
 import { useProfileEditor } from './profileEditorStore';
 import type { ProfileTarget } from './profileEditorStore';
@@ -128,6 +128,8 @@ function Editor({ target }: { target: ProfileTarget }) {
   const confirming = useRef(false);
   const dirty = draft !== init.draft;
   // Anteprima 3D: la dimensione della colonna, l'inquadratura (Adatta) e un contatore che ridisegna alla chiusura di un passo
+  // Vista specchiata in orizzontale (solo in rotazione, solo la vista: i dati non cambiano)
+  const [flipX, setFlipX] = useState(false);
   const [previewMode, setPreviewMode] = useState<PreviewMode>('normal');
   const [fitSignal, setFitSignal] = useState(0);
   const [, setSettled] = useState(0);
@@ -257,10 +259,18 @@ function Editor({ target }: { target: ProfileTarget }) {
   };
 
   // --- Penna ----------------------------------------------------------------------------------------------------------
+  /** Contorni subito dopo la ripresa di un contorno: se alla fine sono ancora quelli, il disegno non è cambiato. */
+  const resumedPaths = useRef<PathContour[] | null>(null);
   /** Termina il contorno della Penna in corso: un solo passo di cronologia per tutto il contorno. Con meno di 2 nodi sparisce. */
   const finishPen = () => {
     const { draft: current, pen: index } = stateRef.current;
     if (index === null) return;
+    // Ripresa di un contorno senza aggiungere nulla (al più invertito): niente passo di cronologia
+    if (resumedPaths.current === current.paths) {
+      resumedPaths.current = null;
+      dispatch({ type: 'replace', draft: committed.current, selection: [] });
+      return;
+    }
     const paths = trimDuplicateTail(current.paths, index);
     if ((paths[index]?.nodes.length ?? 0) < 2) {
       // Il contorno è l'unica cosa che la Penna aveva aggiunto: si torna all'ultimo disegno concluso
@@ -270,7 +280,14 @@ function Editor({ target }: { target: ProfileTarget }) {
     commitDraft({ ...current, paths }, []);
   };
   /** Clic sul primo nodo: il contorno si chiude e termina. */
-  const closePen = (index: number) => commitDraft({ ...stateRef.current.draft, paths: closeContour(stateRef.current.draft.paths, index) }, [{ path: index, node: 0 }]);
+  const closePen = (index: number, paths: PathContour[] = stateRef.current.draft.paths) => {
+    // Due punti uniti da rette non racchiudono un'area: il contorno resta aperto e si segnala
+    if (!paths[index] || !canCloseContour(paths[index])) {
+      notify.error('Due segmenti diritti non racchiudono un\'area: trascina dal primo punto per curvare la chiusura, o curva uno dei due segmenti');
+      return;
+    }
+    commitDraft({ ...stateRef.current.draft, paths: closeContour(paths, index) }, [{ path: index, node: 0 }]);
+  };
   /** Backspace: toglie l'ultimo nodo del contorno in corso. */
   const penBackspace = () => {
     const { draft: current, pen: index } = stateRef.current;
@@ -364,6 +381,7 @@ function Editor({ target }: { target: ProfileTarget }) {
     const { selection: sel, pen: penIndex } = stateRef.current;
     if (key === 'v') changeTool('select');
     else if (key === 'p') changeTool('pen');
+    else if (key === 'h') changeTool('pan');
     else if (key === 'enter') {
       // Invio termina il contorno della Penna (sui pulsanti conserva il suo significato)
       if (penIndex !== null && !(e.target instanceof HTMLButtonElement)) {
@@ -379,7 +397,8 @@ function Editor({ target }: { target: ProfileTarget }) {
       e.preventDefault();
       if (!sel.length || stateRef.current.tool !== 'select') return;
       const step = grid.step * (e.shiftKey ? 10 : 1);
-      const delta: Vec2 = key === 'arrowleft' ? [-step, 0] : key === 'arrowright' ? [step, 0] : key === 'arrowup' ? [0, step] : [0, -step];
+      const sx = draft.extrusion === 'rotate' && flipX ? -1 : 1;
+      const delta: Vec2 = key === 'arrowleft' ? [-step * sx, 0] : key === 'arrowright' ? [step * sx, 0] : key === 'arrowup' ? [0, step] : [0, -step];
       commitPaths(moveNodes(stateRef.current.draft.paths, sel, delta));
     } else if (e.key === ' ' && !(e.target instanceof HTMLButtonElement) && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLElement && e.target.tagName === 'SUMMARY')) {
       // Spazio: panoramica finché è premuto
@@ -435,11 +454,17 @@ function Editor({ target }: { target: ProfileTarget }) {
             spaceDown={spaceDown}
             tool={tool}
             onTool={changeTool}
+            flip={draft.extrusion === 'rotate' && flipX}
+            onFlip={() => setFlipX((f) => !f)}
             pen={pen}
             onLive={(paths, sel) => dispatch({ type: 'paths', paths, selection: sel })}
             onCommit={commitPaths}
             onSelect={(sel) => dispatch({ type: 'select', selection: sel })}
             onPenLive={(paths, current, sel) => dispatch({ type: 'paths', paths, selection: sel, pen: current })}
+            onPenResume={(paths, current, sel) => {
+              resumedPaths.current = paths;
+              dispatch({ type: 'paths', paths, selection: sel, pen: current });
+            }}
             onPenClose={closePen}
             onPenFinish={finishPen}
             onPenLimit={() => notify.info('Limite raggiunto: al massimo 500 nodi per contorno e 100 contorni. Termina il contorno (Invio) o chiudilo')}

@@ -60,7 +60,7 @@ I gesti della Penna che si ritrovano uguali ovunque, e che quindi conviene adott
 
 Il tasto che "spezza" la tangenza durante il trascinamento (Alt in alcuni programmi, Ctrl in altri) cambia da programma a
 programma e non è verificato in modo uniforme dalle fonti: in Construct la rottura si fa in modo esplicito dal pannello
-("Punto selezionato", tipo Spigolo) e, come scorciatoia opzionale, con Alt durante il trascinamento di una maniglia.
+("Punto selezionato", tipo Spigolo) e, come scorciatoia, con Alt durante il trascinamento di una maniglia: il tasto è momentaneo, il nodo è uno spigolo finché è premuto e torna al tipo di prima se lo si rilascia prima del mouse.
 
 ## 3. Modello dati
 
@@ -200,7 +200,8 @@ Le scorciatoie valgono solo con la modale aperta (`useShortcuts.ts` già blocca 
 
 | Strumento | Tasto | Come funziona |
 |---|---|---|
-| Seleziona | V | Trascina nodi e maniglie, riquadro di selezione, Maiusc per aggiungere, Canc per eliminare, clic su un segmento per inserire un nodo (de Casteljau, la forma non cambia), doppio clic su un nodo per scorrere i tipi |
+| Sposta vista | H | La mano: trascinando si sposta la vista (panoramica anche con Spazio e con il tasto centrale o destro). |
+| Seleziona | V | Trascina nodi e maniglie, riquadro di selezione, Maiusc per aggiungere, Canc per eliminare, clic su una curva per selezionare tutto il contorno (l'inserimento di un nodo con de Casteljau, a forma invariata, è della Penna), doppio clic su un nodo per scorrere i tipi |
 | Penna | P | Clic = spigolo, clic e trascina = nodo liscio, clic sul primo nodo = chiude, Invio o doppio clic = termina aperto, Backspace = toglie l'ultimo nodo, Esc = termina senza aggiungere |
 | Forme base | R, C, G | Rettangolo, cerchio, poligono regolare (con numero di lati): si trascinano dal centro e diventano contorni di nodi modificabili |
 | Mano | spazio | Panoramica; rotella per lo zoom sul puntatore |

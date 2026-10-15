@@ -233,11 +233,12 @@ test('Backspace nel campo X modifica il testo e non elimina il nodo; fuori dal c
   await expect(editor(page).locator('[data-node]')).toHaveCount(3);
 });
 
-test('il clic su un segmento curvo aggiunge un nodo senza cambiare la forma (volume entro 1e-3)', async ({ page }) => {
+test('Penna: il clic su un segmento curvo aggiunge un nodo senza cambiare la forma (volume entro 1e-3)', async ({ page }) => {
   const id = await addPath(page, PATHS);
   const volumeBefore = await volume(page);
   expect(volumeBefore).toBeGreaterThan(1000);
   await openEditor(page, id);
+  await editor(page).getByRole('button', { name: 'Penna' }).click();
   // Punto a metà del segmento B -> C: la cubica (40,0) (50,8) (50,22) (40,30) passa per (47,5, 15)
   const [a, b] = [await center(node(page, '0:0')), await center(node(page, '0:1'))];
   const k = (b.x - a.x) / 40;
@@ -249,6 +250,186 @@ test('il clic su un segmento curvo aggiunge un nodo senza cambiare la forma (vol
   await settled(page);
   expect(Math.abs((await volume(page)) - volumeBefore) / volumeBefore).toBeLessThan(1e-3);
   expect((await getNode(page, id)).paths[0].nodes).toHaveLength(5);
+});
+
+const selectedNodes = (page: Page) => editor(page).locator('.profile-editor__node--selected');
+const insertDot = (page: Page) => editor(page).locator('.profile-editor__insert');
+
+/** Due contorni aperti diritti, uno sopra l'altro: A (0,0)-(20,0)-(40,0) e B (0,30)-(20,30)-(40,30). */
+const TWO_OPEN = [
+  { closed: false, nodes: [{ p: [0, 0], kind: 'corner' }, { p: [20, 0], kind: 'corner' }, { p: [40, 0], kind: 'corner' }] },
+  { closed: false, nodes: [{ p: [0, 30], kind: 'corner' }, { p: [20, 30], kind: 'corner' }, { p: [40, 30], kind: 'corner' }] },
+];
+
+/** Apre l'editor su TWO_OPEN e restituisce i pixel per millimetro (tra A0 e A2, 40 mm). */
+async function openTwoOpen(page: Page) {
+  const id = await addPath(page, TWO_OPEN);
+  await openEditor(page, id);
+  return (((await center(node(page, '0:2'))).x - (await center(node(page, '0:0'))).x) / 40);
+}
+
+test('Seleziona: il clic su una curva seleziona tutto il contorno e non aggiunge nodi; Canc lo elimina in un solo passo', async ({ page }) => {
+  const k = await openTwoOpen(page);
+  const a = await center(node(page, '0:0'));
+  await page.mouse.click(a.x + 10 * k, a.y);
+  await expect(editor(page).locator('[data-node]')).toHaveCount(6);
+  await expect(selectedNodes(page)).toHaveCount(3);
+  await expect(editor(page).locator('[data-node="0:0"].profile-editor__node--selected')).toHaveCount(1);
+  await page.keyboard.press('Delete');
+  await expect(editor(page).locator('[data-node]')).toHaveCount(3);
+  await expect(editor(page).locator('[data-node="0:0"]')).toHaveAttribute('data-kind', 'corner');
+  // Un solo passo: Ctrl+Z riporta il contorno
+  await page.keyboard.press('Control+z');
+  await expect(editor(page).locator('[data-node]')).toHaveCount(6);
+});
+
+test('Seleziona: Maiusc+clic somma o toglie un contorno; il clic nel vuoto azzera', async ({ page }) => {
+  const k = await openTwoOpen(page);
+  const a = await center(node(page, '0:0'));
+  await page.mouse.click(a.x + 10 * k, a.y);
+  await page.keyboard.down('Shift');
+  await page.mouse.click(a.x + 10 * k, a.y - 30 * k);
+  await page.keyboard.up('Shift');
+  await expect(selectedNodes(page)).toHaveCount(6);
+  await page.keyboard.down('Shift');
+  await page.mouse.click(a.x + 10 * k, a.y);
+  await page.keyboard.up('Shift');
+  await expect(selectedNodes(page)).toHaveCount(3);
+  await page.mouse.click(a.x + 10 * k, a.y - 15 * k);
+  await expect(selectedNodes(page)).toHaveCount(0);
+});
+
+test('Seleziona: trascinare la curva sposta tutto il contorno in un solo passo', async ({ page }) => {
+  const k = await openTwoOpen(page);
+  const [a0, a2, b0] = [await center(node(page, '0:0')), await center(node(page, '0:2')), await center(node(page, '1:0'))];
+  await drag(page, { x: a0.x + 10 * k, y: a0.y }, { x: a0.x + 10 * k, y: a0.y - 10 * k });
+  const [m0, m2, n0] = [await center(node(page, '0:0')), await center(node(page, '0:2')), await center(node(page, '1:0'))];
+  expect(Math.abs(m0.y - (a0.y - 10 * k))).toBeLessThan(2);
+  expect(Math.abs(m2.y - (a2.y - 10 * k))).toBeLessThan(2);
+  expect(Math.abs(m0.x - a0.x)).toBeLessThan(2);
+  // L'altro contorno non si muove
+  expect(Math.abs(n0.y - b0.y)).toBeLessThan(1);
+  await page.keyboard.press('Control+z');
+  const back = await center(node(page, '0:0'));
+  expect(Math.abs(back.y - a0.y)).toBeLessThan(1);
+});
+
+test('Penna: il pallino compare sulla curva, sparisce lontano e con Ctrl premuto (anche a mouse fermo); con Ctrl il clic non inserisce', async ({ page }) => {
+  const k = await openTwoOpen(page);
+  await editor(page).getByRole('button', { name: 'Penna' }).click();
+  const a = await center(node(page, '0:0'));
+  await page.mouse.move(a.x + 10 * k, a.y + 2);
+  await expect(insertDot(page)).toHaveCount(1);
+  // Lontano dalle curve e vicino a un nodo non c'è
+  await page.mouse.move(a.x + 10 * k, a.y - 15 * k);
+  await expect(insertDot(page)).toHaveCount(0);
+  await page.mouse.move(a.x + 4, a.y + 2);
+  await expect(insertDot(page)).toHaveCount(0);
+  // Ctrl lo toglie a mouse fermo e lo riporta al rilascio
+  await page.mouse.move(a.x + 10 * k, a.y + 2);
+  await expect(insertDot(page)).toHaveCount(1);
+  await page.keyboard.down('Control');
+  await expect(insertDot(page)).toHaveCount(0);
+  await page.keyboard.up('Control');
+  await expect(insertDot(page)).toHaveCount(1);
+  // Il clic inserisce sulla curva, in un contorno già finito: 7 nodi, 2 contorni
+  await page.mouse.click(a.x + 10 * k, a.y + 2);
+  await expect(editor(page).locator('[data-node]')).toHaveCount(7);
+  await expect(editor(page).locator('[data-path]')).toHaveCount(2);
+});
+
+test('Penna: con Ctrl premuto il clic su una curva non inserisce, inizia un nuovo contorno', async ({ page }) => {
+  const k = await openTwoOpen(page);
+  await editor(page).getByRole('button', { name: 'Penna' }).click();
+  const a = await center(node(page, '0:0'));
+  await page.keyboard.down('Control');
+  await page.mouse.click(a.x + 10 * k, a.y + 2);
+  await page.keyboard.up('Control');
+  await expect(editor(page).locator('[data-path]')).toHaveCount(3);
+});
+
+test('Penna: con un contorno in corso le curve non inseriscono nodi, il clic prosegue il contorno', async ({ page }) => {
+  const k = await openTwoOpen(page);
+  await editor(page).getByRole('button', { name: 'Penna' }).click();
+  const a = await center(node(page, '0:0'));
+  // Nuovo contorno lontano, poi un clic sulla curva del contorno A: aggiunge un nodo al contorno in corso
+  await page.mouse.click(a.x - 20, a.y - 15 * k);
+  await expect(insertDot(page)).toHaveCount(0);
+  await page.mouse.move(a.x + 10 * k, a.y + 2);
+  await expect(insertDot(page)).toHaveCount(0);
+  await page.mouse.click(a.x + 10 * k, a.y + 2);
+  await expect(editor(page).locator('[data-path]')).toHaveCount(3);
+  await expect(editor(page).locator('[data-node]')).toHaveCount(8);
+});
+
+test('Penna: il clic su un estremo aperto riprende il contorno, anche dal primo nodo', async ({ page }) => {
+  const k = await openTwoOpen(page);
+  await editor(page).getByRole('button', { name: 'Penna' }).click();
+  const a0 = await center(node(page, '0:0'));
+  // Dall'ultimo nodo
+  const a2 = await center(node(page, '0:2'));
+  await page.mouse.move(a2.x, a2.y);
+  await expect(editor(page).locator('.profile-editor__node--resume')).toHaveCount(1);
+  await page.mouse.click(a2.x, a2.y);
+  await page.mouse.click(a2.x + 5 * k, a2.y - 8 * k);
+  await expect(editor(page).locator('[data-node]')).toHaveCount(7);
+  await expect(editor(page).locator('[data-path]')).toHaveCount(2);
+  await expect(editor(page).locator('[data-node="0:3"]')).toHaveCount(1);
+  await page.keyboard.press('Enter');
+  // Dal primo nodo: il nuovo nodo si accoda a quel lato
+  await page.mouse.click(a0.x, a0.y);
+  await page.mouse.click(a0.x - 6 * k, a0.y - 4 * k);
+  await page.keyboard.press('Enter');
+  await expect(editor(page).locator('[data-node]')).toHaveCount(8);
+  await expect(editor(page).locator('[data-path]')).toHaveCount(2);
+  // Il contorno si è invertito: il nuovo nodo è l'ultimo e sta a sinistra del vecchio primo nodo
+  const [oldFirst, added] = [await center(node(page, '0:3')), await center(node(page, '0:4'))];
+  expect(added.x).toBeLessThan(oldFirst.x);
+});
+
+test('Penna: riprendere un contorno e terminarlo senza aggiungere nulla lascia il disegno com\'era', async ({ page }) => {
+  await openTwoOpen(page);
+  await editor(page).getByRole('button', { name: 'Penna' }).click();
+  const a0 = await center(node(page, '0:0'));
+  await page.mouse.click(a0.x, a0.y);
+  await page.keyboard.press('Enter');
+  // Il contorno ha l'ordine originale e Ctrl+Z non ha passi da annullare
+  const after = await center(node(page, '0:0'));
+  expect(Math.abs(after.x - a0.x)).toBeLessThan(1);
+  await page.keyboard.press('Control+z');
+  await expect(editor(page).locator('[data-node]')).toHaveCount(6);
+  expect(Math.abs((await center(node(page, '0:0'))).x - a0.x)).toBeLessThan(1);
+});
+
+test('Penna: riprendere un estremo e trascinare ne disegna la maniglia in uscita, liscio (spigolo con Alt)', async ({ page }) => {
+  const k = await openTwoOpen(page);
+  await editor(page).getByRole('button', { name: 'Penna' }).click();
+  const a2 = await center(node(page, '0:2'));
+  await page.mouse.move(a2.x, a2.y);
+  await page.mouse.down();
+  for (let i = 1; i <= 6; i++) await page.mouse.move(a2.x + 3 * k * (i / 6) + 5, a2.y - 3 * k * (i / 6) - 5);
+  await expect(node(page, '0:2')).toHaveAttribute('data-kind', 'smooth');
+  await expect(editor(page).locator('[data-handle="0:2:out"]')).toHaveCount(1);
+  await page.keyboard.down('Alt');
+  await expect(node(page, '0:2')).toHaveAttribute('data-kind', 'corner');
+  await page.keyboard.up('Alt');
+  await expect(node(page, '0:2')).toHaveAttribute('data-kind', 'smooth');
+  await page.mouse.up();
+});
+
+test('Penna: con un contorno in corso, il clic sull\'estremo di un altro contorno aperto li unisce e il disegno prosegue', async ({ page }) => {
+  await openTwoOpen(page);
+  await editor(page).getByRole('button', { name: 'Penna' }).click();
+  const [a2, b2] = [await center(node(page, '0:2')), await center(node(page, '1:2'))];
+  await page.mouse.click(a2.x, a2.y);
+  await page.mouse.click(b2.x, b2.y);
+  await expect(editor(page).locator('[data-path]')).toHaveCount(1);
+  await expect(editor(page).locator('[data-node]')).toHaveCount(6);
+  // Il disegno prosegue dall'altro estremo di B
+  const b0 = await center(node(page, '5:0').or(node(page, '0:5')));
+  await page.mouse.click(b0.x - 30, b0.y - 30);
+  await expect(editor(page).locator('[data-node]')).toHaveCount(7);
+  await expect(editor(page).locator('[data-path]')).toHaveCount(1);
 });
 
 test('doppio clic su un nodo scorre il tipo; il cambio è un passo della cronologia locale', async ({ page }) => {
@@ -278,6 +459,127 @@ test('riquadro di selezione, Maiusc e frecce: i nodi selezionati si spostano di 
   // Spostando tutto insieme il disegno resta uguale: nessun cambio di misure, solo il centro (compensato)
   expect(after.paths[0].nodes[0].p).toEqual([1, 10]);
   expect(after.width).toBeCloseTo(40, 3);
+});
+
+test('Seleziona: un contorno selezionato si trascina anche dal riempimento; se non è selezionato lo stesso gesto è un riquadro', async ({ page }) => {
+  const id = await addPath(page);
+  await openEditor(page, id);
+  const [a, b] = [await center(node(page, '0:0')), await center(node(page, '0:1'))];
+  const k = (b.x - a.x) / 40;
+  const inside = { x: a.x + 20 * k, y: a.y - 10 * k };
+  // Non selezionato: il trascinamento dall'interno fa un riquadro e non sposta nulla
+  await drag(page, inside, { x: inside.x + 5 * k, y: inside.y - 3 * k });
+  expect(Math.abs((await center(node(page, '0:0'))).x - a.x)).toBeLessThan(1);
+  // Selezionato con un clic sulla curva: dall'interno lo si sposta, in un solo passo
+  await page.mouse.click(a.x + 20 * k, a.y);
+  await expect(selectedNodes(page)).toHaveCount(4);
+  await drag(page, inside, { x: inside.x + 10 * k, y: inside.y - 5 * k });
+  const moved = await center(node(page, '0:0'));
+  expect(Math.abs(moved.x - (a.x + 10 * k))).toBeLessThan(3);
+  expect(Math.abs(moved.y - (a.y - 5 * k))).toBeLessThan(3);
+  expect(Math.abs((await center(node(page, '0:2'))).x - (b.x + 10 * k))).toBeLessThan(3);
+  await page.keyboard.press('Control+z');
+  expect(Math.abs((await center(node(page, '0:0'))).x - a.x)).toBeLessThan(1);
+});
+
+test('Sposta vista: il tasto H attiva la mano, il trascinamento sposta la vista senza selezionare né spostare nodi; V torna a Seleziona', async ({ page }) => {
+  const id = await addPath(page);
+  await openEditor(page, id);
+  const a = await center(node(page, '0:0'));
+  await page.keyboard.press('h');
+  await expect(editor(page).getByRole('button', { name: 'Sposta vista' })).toHaveAttribute('aria-pressed', 'true');
+  await drag(page, { x: a.x + 30, y: a.y + 30 }, { x: a.x + 80, y: a.y + 10 });
+  const after = await center(node(page, '0:0'));
+  expect(Math.abs(after.x - (a.x + 50))).toBeLessThan(2);
+  expect(Math.abs(after.y - (a.y - 20))).toBeLessThan(2);
+  // Anche partendo da un nodo: la vista si sposta, il nodo non si seleziona e non si muove rispetto al disegno
+  await drag(page, after, { x: after.x - 40, y: after.y });
+  await expect(selectedNodes(page)).toHaveCount(0);
+  await page.keyboard.press('v');
+  await expect(editor(page).getByRole('button', { name: 'Seleziona' })).toHaveAttribute('aria-pressed', 'true');
+  // Con Sposta vista nulla è cambiato nei dati: il Profilo non ha passi nella scena
+  expect((await getNode(page, id)).paths[0].nodes.map((n) => n.p)).toEqual([[0, 0], [40, 0], [40, 20], [0, 20]]);
+});
+
+test('tasto destro + trascina: sposta la vista in tutto il disegno, anche nella parte non ruotata, senza cambiare la selezione', async ({ page }) => {
+  const id = await addPath(page);
+  await openEditor(page, id);
+  await node(page, '0:1').click();
+  const a = await center(node(page, '0:0'));
+  await page.mouse.move(a.x + 60, a.y + 60);
+  await page.mouse.down({ button: 'right' });
+  for (let i = 1; i <= 6; i++) await page.mouse.move(a.x + 60 + 10 * i, a.y + 60 - 5 * i);
+  await page.mouse.up({ button: 'right' });
+  const after = await center(node(page, '0:0'));
+  expect(Math.abs(after.x - (a.x + 60))).toBeLessThan(2);
+  expect(Math.abs(after.y - (a.y - 30))).toBeLessThan(2);
+  await expect(selectedNodes(page)).toHaveCount(1);
+  await expect(editor(page).locator('[data-node="0:1"].profile-editor__node--selected')).toHaveCount(1);
+});
+
+test('rotazione: la scritta sta al centro della parte non ruotata, "Inverti asse di simmetria" specchia solo la vista', async ({ page }) => {
+  const id = await addPath(page);
+  await openEditor(page, id);
+  await editor(page).getByRole('button', { name: 'Rotazionale' }).click();
+  const label = editor(page).getByText('Questa parte non viene ruotata');
+  const flipButton = editor(page).getByRole('button', { name: 'Inverti asse di simmetria' });
+  await expect(label).toBeVisible();
+  await expect(flipButton).toBeVisible();
+  const axis = async () => (await editor(page).locator('.profile-editor__axis--y').boundingBox())!.x;
+  const zone = async () => (await editor(page).locator('.profile-editor__outside rect').boundingBox())!;
+  const before = { node: await center(node(page, '0:1')), axis: await axis(), zone: await zone(), label: await center(label), button: await center(flipButton) };
+  // La zona è a sinistra dell'asse, la scritta è al suo centro e il pulsante sta sotto la scritta
+  expect(Math.abs(before.zone.x + before.zone.width - before.axis)).toBeLessThan(2);
+  expect(Math.abs(before.label.x - (before.zone.x + before.zone.width / 2))).toBeLessThan(4);
+  expect(before.button.y).toBeGreaterThan(before.label.y);
+  expect(Math.abs(before.button.x - before.label.x)).toBeLessThan(4);
+  expect(before.node.x).toBeGreaterThan(before.axis);
+  await flipButton.click();
+  // Specchiato: la zona passa a destra dell'asse e il disegno a sinistra, la scritta e il pulsante la seguono
+  const flipped = { node: await center(node(page, '0:1')), axis: await axis(), zone: await zone(), label: await center(label), button: await center(flipButton) };
+  expect(Math.abs(flipped.zone.x - flipped.axis)).toBeLessThan(2);
+  expect(flipped.node.x).toBeLessThan(flipped.axis);
+  expect(flipped.label.x).toBeGreaterThan(flipped.axis);
+  expect(Math.abs(flipped.label.x - (flipped.zone.x + flipped.zone.width / 2))).toBeLessThan(4);
+  expect(Math.abs(flipped.button.x - flipped.label.x)).toBeLessThan(4);
+  // Con la vista specchiata il trascinamento segue il mouse e le frecce seguono lo schermo
+  await node(page, '0:1').click();
+  await page.keyboard.press('ArrowRight');
+  expect((await center(node(page, '0:1'))).x).toBeGreaterThan(flipped.node.x);
+  await page.keyboard.press('Control+z');
+  await drag(page, flipped.node, { x: flipped.node.x - 40, y: flipped.node.y });
+  expect((await center(node(page, '0:1'))).x).toBeLessThan(flipped.node.x - 20);
+  await page.keyboard.press('Control+z');
+  // I dati non sono cambiati e un secondo clic ripristina la vista
+  await flipButton.click();
+  expect(Math.abs((await center(node(page, '0:1'))).x - before.node.x)).toBeLessThan(2);
+  await okButton(page).click();
+  await expect(editor(page)).toHaveCount(0);
+  await settled(page);
+  expect((await getNode(page, id)).paths[0].nodes.map((n) => n.p)).toEqual([[0, 0], [40, 0], [40, 20], [0, 20]]);
+});
+
+test('rotazione con il disegno vuoto: l\'asse resta al centro dell\'area (passando da Lineare a Rotazionale e con Adatta)', async ({ page }) => {
+  await page.evaluate(() => window.__construct!.profileEditor.getState().open({ new: true }));
+  await expect(editor(page)).toBeVisible();
+  const mid = async () => {
+    const box = (await canvas(page).boundingBox())!;
+    return box.x + box.width / 2;
+  };
+  const axis = async () => {
+    const box = (await editor(page).locator('.profile-editor__axis--y').boundingBox())!;
+    return box.x + box.width / 2;
+  };
+  expect(Math.abs((await axis()) - (await mid()))).toBeLessThan(3);
+  await editor(page).getByRole('button', { name: 'Rotazionale' }).click();
+  await expect(editor(page).getByText('asse di rotazione')).toBeVisible();
+  expect(Math.abs((await axis()) - (await mid()))).toBeLessThan(3);
+  // Con lo spazio per disegnare: a destra dell'asse c'è metà area
+  await editor(page).getByRole('button', { name: 'Adatta', exact: true }).click();
+  expect(Math.abs((await axis()) - (await mid()))).toBeLessThan(3);
+  await editor(page).getByRole('button', { name: 'Lineare' }).click();
+  await editor(page).getByRole('button', { name: 'Rotazionale' }).click();
+  expect(Math.abs((await axis()) - (await mid()))).toBeLessThan(3);
 });
 
 test('rotazionale: compare l\'asse di rotazione, l\'OK scrive extrusion rotate', async ({ page }) => {
@@ -429,6 +731,116 @@ test('Penna: quattro clic e un clic sul primo nodo chiudono il contorno, un solo
   expect(created.paths[0].nodes.every((n) => n.kind === 'corner')).toBe(true);
 });
 
+/** Tre clic e poi clic e trascina sul primo nodo (con eventuale Alt): chiude il contorno disegnando la maniglia del primo nodo. */
+async function closeWithDrag(page: Page, alt: 'none' | 'during' | 'released') {
+  await openNewWithPen(page);
+  await clicks(page, [[-100, 80], [100, 80], [100, -80]]);
+  const first = await center(node(page, '0:0'));
+  await page.mouse.move(first.x, first.y);
+  await page.mouse.down();
+  for (let i = 1; i <= 6; i++) await page.mouse.move(first.x + 6 * i, first.y - 10 * i);
+  if (alt !== 'none') {
+    await page.keyboard.down('Alt');
+    await page.mouse.move(first.x + 40, first.y - 70);
+    await expect(node(page, '0:0')).toHaveAttribute('data-kind', 'corner');
+  }
+  if (alt === 'released') await page.keyboard.up('Alt');
+  return first;
+}
+
+test('Penna: clic e trascina sul primo nodo chiude il contorno con la maniglia (liscio, in entrata opposta al mouse), un solo passo', async ({ page }) => {
+  const first = await closeWithDrag(page, 'none');
+  // Fino al rilascio il contorno è aperto
+  await expect(editor(page).locator('[data-path="0"]')).toContainText('Aperto');
+  await page.mouse.up();
+  await expect(editor(page).locator('[data-path="0"]')).toContainText('Chiuso');
+  await expect(node(page, '0:0')).toHaveAttribute('data-kind', 'smooth');
+  // Il mouse ha tirato verso l'alto a destra: l'entrata (segmento di chiusura) è dal lato opposto
+  const inn = await handleVector(page, '0:0:in');
+  expect(inn.x).toBeLessThan(0);
+  expect(inn.y).toBeGreaterThan(0);
+  expect(first.x).toBeGreaterThan(0);
+  // Un solo passo locale: Ctrl+Z toglie tutto il contorno
+  await page.keyboard.press('Control+z');
+  await expect(nodes(page)).toHaveCount(0);
+});
+
+test('Penna: chiudendo con il trascinamento, Alt rende il primo nodo uno spigolo; rilasciato prima del mouse torna liscio', async ({ page }) => {
+  await closeWithDrag(page, 'during');
+  await page.mouse.up();
+  await page.keyboard.up('Alt');
+  await expect(editor(page).locator('[data-path="0"]')).toContainText('Chiuso');
+  await expect(node(page, '0:0')).toHaveAttribute('data-kind', 'corner');
+});
+
+test('Penna: chiudendo con il trascinamento, Alt rilasciato prima del mouse riporta il nodo liscio', async ({ page }) => {
+  await closeWithDrag(page, 'released');
+  await expect(node(page, '0:0')).toHaveAttribute('data-kind', 'smooth');
+  await page.mouse.up();
+  await expect(editor(page).locator('[data-path="0"]')).toContainText('Chiuso');
+  await expect(node(page, '0:0')).toHaveAttribute('data-kind', 'smooth');
+});
+
+/** Clic e trascina della Penna dal punto dato (distanze dal centro dell'area) di un tratto verso destra e in alto. */
+async function penDrag(page: Page, dx: number, dy: number) {
+  const a = await at(page, dx, dy);
+  await page.mouse.move(a.x, a.y);
+  await page.mouse.down();
+  for (let i = 1; i <= 5; i++) await page.mouse.move(a.x + 8 * i, a.y - 6 * i);
+  await page.mouse.up();
+}
+
+const previewPath = (page: Page) => editor(page).locator('svg path.profile-editor__preview');
+
+test('Penna: due punti con due curve si chiudono con un clic sul primo', async ({ page }) => {
+  await openNewWithPen(page);
+  await penDrag(page, -100, 0);
+  await penDrag(page, 100, 0);
+  await page.mouse.click((await center(node(page, '0:0'))).x, (await center(node(page, '0:0'))).y);
+  await expect(editor(page).locator('[data-path="0"]')).toContainText('Chiuso');
+  await expect(nodes(page)).toHaveCount(2);
+});
+
+test('Penna: due punti uniti da rette non si chiudono con un clic, si segnala un errore; trascinando dal primo la chiusura è una curva e si chiude', async ({ page }) => {
+  await openNewWithPen(page);
+  await clicks(page, [[-100, 0], [100, 0]]);
+  const first = await center(node(page, '0:0'));
+  await page.mouse.click(first.x, first.y);
+  await expect(page.getByText('Due segmenti diritti non racchiudono')).toBeVisible();
+  await expect(editor(page).locator('[data-path="0"]')).toContainText('Aperto');
+  await expect(nodes(page)).toHaveCount(2);
+  // Trascinando dal primo nodo la chiusura diventa una curva: ora si chiude (una retta e una curva)
+  await page.mouse.move(first.x, first.y);
+  await page.mouse.down();
+  for (let i = 1; i <= 5; i++) await page.mouse.move(first.x + 4 * i, first.y - 12 * i);
+  await page.mouse.up();
+  await expect(editor(page).locator('[data-path="0"]')).toContainText('Chiuso');
+  await expect(nodes(page)).toHaveCount(2);
+});
+
+test('Penna: trascinando sul primo nodo per chiudere si vede sempre l\'anteprima della curva, con due punti e con più di due', async ({ page }) => {
+  await openNewWithPen(page);
+  await clicks(page, [[-100, 0], [100, 0]]);
+  const first = await center(node(page, '0:0'));
+  await page.mouse.move(first.x, first.y);
+  await page.mouse.down();
+  for (let i = 1; i <= 5; i++) await page.mouse.move(first.x + 4 * i, first.y - 12 * i);
+  await expect(previewPath(page)).toHaveCount(1);
+  expect(await previewPath(page).getAttribute('d')).toContain('C');
+  await page.mouse.up();
+  await expect(editor(page).locator('[data-path="0"]')).toContainText('Chiuso');
+  // Più di due punti: il contorno chiuso non è in corso, i clic iniziano un nuovo contorno
+  await clicks(page, [[-100, 90], [100, 90], [100, 60]]);
+  const f = await center(node(page, '1:0'));
+  await page.mouse.move(f.x, f.y);
+  await page.mouse.down();
+  for (let i = 1; i <= 5; i++) await page.mouse.move(f.x - 12 * i, f.y - 4 * i);
+  await expect(previewPath(page)).toHaveCount(1);
+  expect(await previewPath(page).getAttribute('d')).toContain('C');
+  await page.mouse.up();
+  await expect(editor(page).locator('[data-path="1"]')).toContainText('Chiuso');
+});
+
 test('Penna: Invio termina il contorno aperto; "Chiudi il contorno" nel piede lo chiude', async ({ page }) => {
   await openNewWithPen(page);
   await canvas(page).focus();
@@ -490,6 +902,118 @@ test('Penna: clic e trascina crea un nodo simmetrico con le maniglie; Maiusc vin
   await page.keyboard.up('Shift');
   const [n0, n1] = [await center(node(page, '0:0')), await center(node(page, '0:1'))];
   expect(Math.abs(Math.abs(n1.x - n0.x) - Math.abs(n1.y - n0.y))).toBeLessThan(2);
+});
+
+/** Posizione in pixel del punto della maniglia `ref` (es. `0:1:out`) e del suo nodo, per leggerne il vettore relativo. */
+async function handleVector(page: Page, ref: string) {
+  const [pi, ni] = ref.split(':');
+  const h = await center(editor(page).locator(`[data-handle="${ref}"] circle`));
+  const n = await center(node(page, `${pi}:${ni}`));
+  return { x: h.x - n.x, y: h.y - n.y };
+}
+
+test('Penna, Alt: premuto dopo il nodo congela la maniglia in entrata e il nodo diventa spigolo; resta spigolo se il mouse si rilascia con Alt', async ({ page }) => {
+  await openNewWithPen(page);
+  const steps = await history(page);
+  const a = await at(page, -100, 0);
+  await page.mouse.move(a.x, a.y);
+  await page.mouse.down();
+  for (let i = 1; i <= 6; i++) await page.mouse.move(a.x + 10 * i, a.y - 8 * i);
+  await expect(node(page, '0:0')).toHaveAttribute('data-kind', 'symmetric');
+  const inBefore = await handleVector(page, '0:0:in');
+  expect(inBefore.x).toBeLessThan(0);
+  // Alt a mouse fermo: il nodo diventa subito spigolo e la maniglia in entrata resta dov'è
+  await page.keyboard.down('Alt');
+  await expect(node(page, '0:0')).toHaveAttribute('data-kind', 'corner');
+  await expect(editor(page).locator('.profile-editor__modifier')).toHaveText('Alt: spigolo');
+  // L'uscita continua a seguire il mouse, l'entrata non si muove
+  for (let i = 7; i <= 10; i++) await page.mouse.move(a.x + 10 * i, a.y + 15 * (i - 5));
+  const inAlt = await handleVector(page, '0:0:in');
+  expect(Math.abs(inAlt.x - inBefore.x)).toBeLessThan(1.5);
+  expect(Math.abs(inAlt.y - inBefore.y)).toBeLessThan(1.5);
+  const out = await handleVector(page, '0:0:out');
+  expect(out.y).toBeGreaterThan(0);
+  // Il mouse si rilascia con Alt premuto: il nodo resta spigolo
+  await page.mouse.up();
+  await page.keyboard.up('Alt');
+  await expect(node(page, '0:0')).toHaveAttribute('data-kind', 'corner');
+  await expect(editor(page).locator('.profile-editor__modifier')).toHaveCount(0);
+  // Il contorno si termina con Invio: un solo passo locale e nessun passo nella scena
+  await page.keyboard.press('Enter');
+  expect(await history(page)).toBe(steps);
+});
+
+test('Penna, Alt: rilasciato prima del mouse il nodo torna simmetrico', async ({ page }) => {
+  await openNewWithPen(page);
+  const a = await at(page, -100, 0);
+  await page.mouse.move(a.x, a.y);
+  await page.mouse.down();
+  for (let i = 1; i <= 6; i++) await page.mouse.move(a.x + 10 * i, a.y - 8 * i);
+  await page.keyboard.down('Alt');
+  await page.mouse.move(a.x + 90, a.y + 30);
+  await expect(node(page, '0:0')).toHaveAttribute('data-kind', 'corner');
+  await page.keyboard.up('Alt');
+  // Subito, senza muovere il mouse: simmetrico, con le maniglie opposte
+  await expect(node(page, '0:0')).toHaveAttribute('data-kind', 'symmetric');
+  const [o, i] = [await handleVector(page, '0:0:out'), await handleVector(page, '0:0:in')];
+  expect(Math.abs(o.x + i.x)).toBeLessThan(1.5);
+  expect(Math.abs(o.y + i.y)).toBeLessThan(1.5);
+  await page.mouse.up();
+  await expect(node(page, '0:0')).toHaveAttribute('data-kind', 'symmetric');
+});
+
+test('Penna, Alt premuto prima del nodo: spigolo con la sola maniglia in uscita; rilasciandolo il nodo diventa simmetrico', async ({ page }) => {
+  await openNewWithPen(page);
+  const a = await at(page, -100, 0);
+  await page.keyboard.down('Alt');
+  await page.mouse.move(a.x, a.y);
+  await page.mouse.down();
+  for (let i = 1; i <= 6; i++) await page.mouse.move(a.x + 10 * i, a.y - 8 * i);
+  await expect(node(page, '0:0')).toHaveAttribute('data-kind', 'corner');
+  await expect(editor(page).locator('[data-handle]')).toHaveCount(1);
+  await expect(editor(page).locator('[data-handle="0:0:out"]')).toHaveCount(1);
+  await page.keyboard.up('Alt');
+  await expect(node(page, '0:0')).toHaveAttribute('data-kind', 'symmetric');
+  await expect(editor(page).locator('[data-handle]')).toHaveCount(2);
+  await page.mouse.up();
+  await expect(node(page, '0:0')).toHaveAttribute('data-kind', 'symmetric');
+});
+
+test('Seleziona, Alt su una maniglia: finché è premuto il nodo è spigolo e l\'altra maniglia resta; rilasciato torna al tipo di prima', async ({ page }) => {
+  const paths = [{ closed: false, nodes: [{ p: [0, 0], kind: 'corner' }, { p: [20, 0], in: [-6, 0], out: [6, 0], kind: 'symmetric' }, { p: [40, 0], kind: 'corner' }] }];
+  const id = await addPath(page, paths);
+  await openEditor(page, id);
+  await node(page, '0:1').click();
+  // Il primo e il secondo nodo distano 20 mm, non i 40 che pixelsPerMm suppone
+  const k = (await pixelsPerMm(page)) * 2;
+  const n = await center(node(page, '0:1'));
+  const out = { x: n.x + 6 * k, y: n.y };
+  await page.mouse.move(out.x, out.y);
+  await page.mouse.down();
+  for (let i = 1; i <= 4; i++) await page.mouse.move(out.x + 2 * i, out.y - 3 * i);
+  // Prima di Alt il nodo è simmetrico e l'entrata ha seguito l'uscita
+  await expect(node(page, '0:1')).toHaveAttribute('data-kind', 'symmetric');
+  const before = await handleVector(page, '0:1:in');
+  await page.keyboard.down('Alt');
+  await expect(node(page, '0:1')).toHaveAttribute('data-kind', 'corner');
+  for (let i = 5; i <= 8; i++) await page.mouse.move(out.x + 2 * i, out.y - 3 * 4 + 2 * (i - 4));
+  const during = await handleVector(page, '0:1:in');
+  expect(Math.abs(during.x - before.x)).toBeLessThan(1.5);
+  expect(Math.abs(during.y - before.y)).toBeLessThan(1.5);
+  // Alt rilasciato a mouse fermo: di nuovo simmetrico, l'entrata è opposta all'uscita
+  await page.keyboard.up('Alt');
+  await expect(node(page, '0:1')).toHaveAttribute('data-kind', 'symmetric');
+  const [o, i] = [await handleVector(page, '0:1:out'), await handleVector(page, '0:1:in')];
+  expect(Math.abs(o.x + i.x)).toBeLessThan(1.5);
+  expect(Math.abs(o.y + i.y)).toBeLessThan(1.5);
+  // Alt premuto di nuovo e il mouse rilasciato con Alt: il nodo resta spigolo, in un solo passo locale
+  await page.keyboard.down('Alt');
+  await page.mouse.move(out.x + 20, out.y + 10);
+  await page.mouse.up();
+  await page.keyboard.up('Alt');
+  await expect(node(page, '0:1')).toHaveAttribute('data-kind', 'corner');
+  await page.keyboard.press('Control+z');
+  await expect(node(page, '0:1')).toHaveAttribute('data-kind', 'symmetric');
 });
 
 test('rotazionale con un profilo aperto a destra dell\'asse: OK scrive extrusion rotate, niente Raggio né intersection()', async ({ page }) => {

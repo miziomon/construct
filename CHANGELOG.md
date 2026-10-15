@@ -18,6 +18,18 @@ I messaggi di commit seguono i [Conventional Commits](https://www.conventionalco
 
 ## [Non rilasciato]
 
+## [0.65.2] - 2026-10-15
+
+### Aggiunto
+- Modale del Profilo, Penna: tenendo premuto **Alt** (Opzione su Mac) mentre si trascina una maniglia il nodo è uno spigolo; rilasciato prima del mouse il nodo torna al tipo di prima (simmetrico, o liscio dopo una ripresa), rilasciando il mouse con Alt premuto resta uno spigolo. Agisce anche a mouse fermo, con l'etichetta "Alt: spigolo".
+- Penna: un clic su una curva inserisce un nodo senza cambiarne la forma (pallino di anteprima sulla curva; **Ctrl** o **⌘** sospendono). Con un contorno in corso le curve non inseriscono nodi. Un clic su un estremo aperto riprende quel contorno (trascinando se ne disegna la maniglia, liscia) e, con un contorno in corso, lo unisce all'altro.
+- Penna: un clic sul primo nodo chiude il contorno; trascinando si disegna prima la maniglia di quel nodo (liscio, spigolo con Alt) con l'anteprima del segmento di chiusura. Si chiude anche con due soli punti se almeno un segmento è curvo; con due rette il contorno resta aperto e si segnala un errore.
+- Nuovo strumento **Sposta vista** (mano, tasto H) e panoramica anche con il tasto destro. Un contorno selezionato si trascina anche dal riempimento.
+- In rotazione la scritta "Questa parte non viene ruotata" sta al centro della parte non ruotata, con il pulsante **Inverti asse di simmetria** che specchia la vista (i dati e il solido non cambiano). Passando a Rotazionale l'asse resta al centro con il disegno vuoto; con un disegno l'inquadratura lascia spazio a sinistra dell'asse.
+
+### Modificato
+- Seleziona: il clic su una curva seleziona tutto il contorno (Maiusc lo aggiunge o lo toglie, Canc lo elimina, trascinandolo lo si sposta) invece di inserire un nodo. Alt sulle maniglie è momentaneo come nella Penna.
+
 ## [0.61.0] - 2026-10-15
 
 ### Aggiunto

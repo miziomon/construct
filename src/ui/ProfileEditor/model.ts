@@ -200,6 +200,39 @@ export function nearestSegment(paths: PathContour[], tol: number, p: Vec2): { pa
   return best;
 }
 
+/**
+ * Vero se il punto `p` sta dentro il contorno (regola pari-dispari sul contorno campionato). Un contorno aperto si considera
+ * chiuso da un tratto retto, come fa l'estrusione lineare; sotto i 3 nodi non c'è area.
+ */
+export function contourContains(c: PathContour, p: Vec2): boolean {
+  if (c.nodes.length < 3) return false;
+  const poly: Vec2[] = [];
+  const count = c.closed ? c.nodes.length : c.nodes.length - 1;
+  for (let i = 0; i < count; i++) {
+    const { cubic, straight } = segmentOf(c, i);
+    poly.push(cubic[0]);
+    if (!straight) for (let k = 1; k < 16; k++) poly.push(cubicPoint(cubic, k / 16));
+  }
+  if (!c.closed) poly.push(c.nodes[c.nodes.length - 1].p);
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [a, b] = [poly[i], poly[j]];
+    if (a[1] > p[1] !== b[1] > p[1] && p[0] < ((b[0] - a[0]) * (p[1] - a[1])) / (b[1] - a[1]) + a[0]) inside = !inside;
+  }
+  return inside;
+}
+
+/**
+ * Vero se il contorno aperto `c` può chiudersi con un'area: da 3 nodi sempre; con 2 serve almeno un segmento curvo (due rette
+ * che vanno e tornano sullo stesso segmento non racchiudono nulla).
+ */
+export function canCloseContour(c: PathContour): boolean {
+  if (c.nodes.length >= 3) return true;
+  if (c.nodes.length < 2) return false;
+  const closed: PathContour = { ...c, closed: true };
+  return !segmentOf(closed, 0).straight || !segmentOf(closed, 1).straight;
+}
+
 /** Chiude il contorno `i` (l'ultimo nodo si unisce al primo); se non esiste, è già chiuso o ha meno di 2 nodi non cambia nulla. */
 export function closeContour(paths: PathContour[], i: number): PathContour[] {
   const c = paths[i];
@@ -210,10 +243,12 @@ export function closeContour(paths: PathContour[], i: number): PathContour[] {
 /**
  * Aggiunge alla Penna un nodo nel punto `p` al contorno aperto `current` (o ne inizia uno nuovo se `current` è null, non
  * esiste o è chiuso). Con `out` (clic e trascina: la maniglia come vettore relativo) il nodo è simmetrico con le maniglie
- * opposte; senza, è uno spigolo. Restituisce null se si superano i limiti (500 nodi per contorno, 100 contorni).
+ * opposte; senza, è uno spigolo. Con `corner` (Alt premuto durante il trascinamento) il nodo è sempre uno spigolo: `out`
+ * segue il puntatore e `in` è quella indicata da `corner.keepIn` (la maniglia che il nodo aveva quando Alt è stato premuto),
+ * o manca. Restituisce null se si superano i limiti (500 nodi per contorno, 100 contorni).
  */
-export function appendPenNode(paths: PathContour[], current: number | null, p: Vec2, out?: Vec2): { paths: PathContour[]; current: number; node: NodeRef } | null {
-  const node: PathNode = out && length(out) > EPS ? { p, in: scale(out, -1), out, kind: 'symmetric' } : { p, kind: 'corner' };
+export function appendPenNode(paths: PathContour[], current: number | null, p: Vec2, out?: Vec2, corner?: { keepIn?: Vec2 }): { paths: PathContour[]; current: number; node: NodeRef } | null {
+  const node: PathNode = corner ? makeNode(p, corner.keepIn, out, 'corner') : out && length(out) > EPS ? { p, in: scale(out, -1), out, kind: 'symmetric' } : { p, kind: 'corner' };
   const open = current !== null ? paths[current] : undefined;
   if (current === null || !open || open.closed) {
     if (paths.length >= MAX_PATH_CONTOURS) return null;
@@ -225,6 +260,46 @@ export function appendPenNode(paths: PathContour[], current: number | null, p: V
     current,
     node: { path: current, node: open.nodes.length },
   };
+}
+
+/** Contorno percorso al contrario: nodi in ordine inverso e maniglie `in` e `out` scambiate, la forma non cambia. */
+function reversed(c: PathContour): PathContour {
+  return { ...c, nodes: c.nodes.slice().reverse().map((n) => makeNode(n.p, n.out, n.in, n.kind)) };
+}
+
+/** Vero se `ref` è il primo o l'ultimo nodo di un contorno aperto (un estremo da cui riprendere il disegno). */
+export function isOpenEnd(paths: PathContour[], ref: NodeRef): boolean {
+  const c = paths[ref.path];
+  return !!c && !c.closed && c.nodes.length >= 1 && (ref.node === 0 || ref.node === c.nodes.length - 1);
+}
+
+/**
+ * Riprende il disegno di un contorno aperto da un estremo: l'estremo cliccato diventa l'ultimo nodo, quindi un contorno
+ * ripreso dal primo nodo si inverte (la forma non cambia). Restituisce i contorni e l'indice del contorno da continuare,
+ * oppure null se `ref` non è un estremo di un contorno aperto.
+ */
+export function resumeContour(paths: PathContour[], ref: NodeRef): { paths: PathContour[]; current: number } | null {
+  if (!isOpenEnd(paths, ref)) return null;
+  const c = paths[ref.path];
+  if (ref.node === c.nodes.length - 1) return { paths, current: ref.path };
+  return { paths: paths.map((x, i) => (i === ref.path ? reversed(x) : x)), current: ref.path };
+}
+
+/**
+ * Unisce al contorno aperto `active` quello a cui appartiene l'estremo `end`: i nodi del secondo si accodano al primo
+ * partendo dall'estremo cliccato (il secondo si inverte se è l'ultimo) e il disegno prosegue dal suo altro estremo. Il
+ * secondo contorno sparisce. Restituisce i contorni e il nuovo indice del contorno unito, oppure null se `end` non è un
+ * estremo di un altro contorno aperto o si superano i nodi consentiti.
+ */
+export function joinContours(paths: PathContour[], active: number, end: NodeRef): { paths: PathContour[]; current: number } | null {
+  const a = paths[active];
+  if (!a || a.closed || end.path === active || !isOpenEnd(paths, end)) return null;
+  const b = paths[end.path];
+  if (a.nodes.length + b.nodes.length > MAX_PATH_NODES) return null;
+  const tail = end.node === 0 ? b : reversed(b);
+  const merged: PathContour = { ...a, nodes: [...a.nodes, ...tail.nodes] };
+  const result = paths.map((c, i) => (i === active ? merged : c)).filter((_, i) => i !== end.path);
+  return { paths: result, current: end.path < active ? active - 1 : active };
 }
 
 /** Toglie l'ultimo nodo del contorno `i` (Backspace della Penna); un contorno che resta senza nodi sparisce. */

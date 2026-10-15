@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { appendPenNode, bakeScale, closeContour, cycleKind, deleteNodes, draftContours, draftFromNode, dropLastNode, emptyDraft, gridStep, insertNode, moveHandle, moveNodes, nearestSegment, pathCenter, setNodeKind, snapPoint, trimDuplicateTail } from './model';
+import { appendPenNode, bakeScale, canCloseContour, closeContour, contourContains, cycleKind, deleteNodes, draftContours, draftFromNode, dropLastNode, emptyDraft, gridStep, insertNode, isOpenEnd, joinContours, moveHandle, moveNodes, nearestSegment, pathCenter, resumeContour, setNodeKind, snapPoint, trimDuplicateTail } from './model';
 import { bboxOf, cubicPoint, segmentOf, signedArea, splitCubic } from '../../scene/bezier';
 import { pathContours, pathNaturalSize } from '../../scene/shapes2d';
 import { shape2dDefaults } from '../../scene/defaults';
@@ -78,6 +78,19 @@ describe('moveHandle', () => {
   it('Alt (breakTangent): il nodo diventa spigolo e l\'altra maniglia resta', () => {
     const moved = moveHandle(at('symmetric', [-4, 0], [4, 0]), ref('out'), [10, 9], true);
     expect(moved[0].nodes[1]).toEqual({ p: [10, 0], in: [-4, 0], out: [0, 9], kind: 'corner' });
+  });
+
+  it('Alt momentaneo: dallo stato congelato è spigolo, dallo stato di partenza il tipo torna quello di prima', () => {
+    const base = at('symmetric', [-4, 0], [4, 0]);
+    // Prima di Alt la maniglia è stata trascinata e l'opposta l'ha seguita
+    const before = moveHandle(base, ref('out'), [13, 3], false);
+    expect(before[0].nodes[1].in).toEqual([-3, -3]);
+    // Alt premuto: si parte da lì, l'opposta resta dov'era
+    const alt = moveHandle(before, ref('out'), [10, 9], true);
+    expect(alt[0].nodes[1]).toEqual({ p: [10, 0], in: [-3, -3], out: [0, 9], kind: 'corner' });
+    // Alt rilasciato: dallo stato di partenza il nodo è di nuovo simmetrico
+    const released = moveHandle(base, ref('out'), [10, 9], false);
+    expect(released[0].nodes[1]).toEqual({ p: [10, 0], in: [0, -9], out: [0, 9], kind: 'symmetric' });
   });
 
   it('una maniglia portata sul nodo sparisce (niente [0, 0])', () => {
@@ -271,6 +284,17 @@ describe('appendPenNode', () => {
     expect(appendPenNode(freeze([]), null, [5, 5], [0, 0])!.paths[0].nodes[0]).toEqual({ p: [5, 5], kind: 'corner' });
   });
 
+  it('con `corner` (Alt) il nodo è uno spigolo: out segue il trascinamento, in è quella conservata', () => {
+    const kept = appendPenNode(freeze([]), null, [5, 5], [3, 1], { keepIn: [-2, 0] })!;
+    expect(kept.paths[0].nodes[0]).toEqual({ p: [5, 5], in: [-2, 0], out: [3, 1], kind: 'corner' });
+    // Alt premuto prima del nodo: solo la maniglia out
+    expect(appendPenNode(freeze([]), null, [5, 5], [3, 1], {})!.paths[0].nodes[0]).toEqual({ p: [5, 5], out: [3, 1], kind: 'corner' });
+    // Senza trascinamento né maniglia conservata è un normale spigolo
+    expect(appendPenNode(freeze([]), null, [5, 5], undefined, {})!.paths[0].nodes[0]).toEqual({ p: [5, 5], kind: 'corner' });
+    // Lo stesso punto senza `corner` torna simmetrico
+    expect(appendPenNode(freeze([]), null, [5, 5], [3, 1])!.paths[0].nodes[0].kind).toBe('symmetric');
+  });
+
   it('un contorno chiuso come attivo ne fa iniziare uno nuovo', () => {
     const result = appendPenNode(freeze([square()]), 0, [1, 1])!;
     expect(result.current).toBe(1);
@@ -452,5 +476,92 @@ describe('dropLastNode e trimDuplicateTail', () => {
     expect(trimDuplicateTail(doubled, 0)[0].nodes).toHaveLength(2);
     const distinct = freeze([{ closed: false, nodes: [node([1, 1]), node([5, 5])] }]);
     expect(trimDuplicateTail(distinct, 0)).toBe(distinct);
+  });
+});
+
+describe('riprendere e unire i contorni aperti', () => {
+  const open = (x0: number): PathContour => ({
+    closed: false,
+    nodes: [{ p: [x0, 0], out: [1, 1], kind: 'smooth', in: [-1, -1] }, { p: [x0 + 5, 0], kind: 'corner' }, { p: [x0 + 10, 0], in: [-2, 0], kind: 'corner' }],
+  });
+
+  it('isOpenEnd: solo il primo e l\'ultimo nodo di un contorno aperto', () => {
+    const paths = freeze([open(0), square()]);
+    expect(isOpenEnd(paths, { path: 0, node: 0 })).toBe(true);
+    expect(isOpenEnd(paths, { path: 0, node: 2 })).toBe(true);
+    expect(isOpenEnd(paths, { path: 0, node: 1 })).toBe(false);
+    expect(isOpenEnd(paths, { path: 1, node: 0 })).toBe(false);
+    expect(isOpenEnd(paths, { path: 5, node: 0 })).toBe(false);
+  });
+
+  it('resumeContour: dall\'ultimo nodo non cambia nulla, dal primo il contorno si inverte con le maniglie scambiate', () => {
+    const paths = freeze([open(0)]);
+    const last = resumeContour(paths, { path: 0, node: 2 })!;
+    expect(last.paths).toBe(paths);
+    expect(last.current).toBe(0);
+    const first = resumeContour(paths, { path: 0, node: 0 })!;
+    expect(first.paths[0].nodes.map((n) => n.p)).toEqual([[10, 0], [5, 0], [0, 0]]);
+    expect(first.paths[0].nodes[0]).toEqual({ p: [10, 0], out: [-2, 0], kind: 'corner' });
+    expect(first.paths[0].nodes[2]).toEqual({ p: [0, 0], in: [1, 1], out: [-1, -1], kind: 'smooth' });
+    expect(resumeContour(paths, { path: 0, node: 1 })).toBeNull();
+    expect(resumeContour(freeze([square()]), { path: 0, node: 0 })).toBeNull();
+  });
+
+  it('joinContours: accoda i nodi dell\'altro contorno dall\'estremo cliccato e toglie il secondo', () => {
+    const paths = freeze([open(0), open(100)]);
+    const fromFirst = joinContours(paths, 0, { path: 1, node: 0 })!;
+    expect(fromFirst.paths).toHaveLength(1);
+    expect(fromFirst.current).toBe(0);
+    expect(fromFirst.paths[0].nodes.map((n) => n.p[0])).toEqual([0, 5, 10, 100, 105, 110]);
+    const fromLast = joinContours(paths, 0, { path: 1, node: 2 })!;
+    expect(fromLast.paths[0].nodes.map((n) => n.p[0])).toEqual([0, 5, 10, 110, 105, 100]);
+  });
+
+  it('joinContours: l\'indice si aggiorna se il contorno unito veniva prima; rifiuta nodi interni, contorni chiusi, se stesso e il limite', () => {
+    const paths = freeze([open(100), open(0)]);
+    expect(joinContours(paths, 1, { path: 0, node: 0 })!.current).toBe(0);
+    expect(joinContours(paths, 0, { path: 1, node: 1 })).toBeNull();
+    expect(joinContours(paths, 0, { path: 0, node: 0 })).toBeNull();
+    expect(joinContours(freeze([open(0), square()]), 0, { path: 1, node: 0 })).toBeNull();
+    const big: PathContour = { closed: false, nodes: Array.from({ length: 499 }, (_, i): PathNode => ({ p: [i, 0], kind: 'corner' })) };
+    expect(joinContours([big, open(0)], 0, { path: 1, node: 0 })).toBeNull();
+  });
+});
+
+describe('contourContains', () => {
+  it('dentro e fuori un quadrato', () => {
+    expect(contourContains(square(), [5, 5])).toBe(true);
+    expect(contourContains(square(), [-1, 5])).toBe(false);
+    expect(contourContains(square(), [5, 50])).toBe(false);
+  });
+
+  it('un contorno curvo: dentro il cerchio sì, nell\'angolo del suo riquadro no', () => {
+    expect(contourContains(circle(), [0, 0])).toBe(true);
+    expect(contourContains(circle(), [9.5, 0])).toBe(true);
+    expect(contourContains(circle(), [8, 8])).toBe(false);
+  });
+
+  it('un contorno aperto si chiude con un tratto retto; meno di 3 nodi non hanno area', () => {
+    const open: PathContour = { closed: false, nodes: [{ p: [0, 0], kind: 'corner' }, { p: [10, 0], kind: 'corner' }, { p: [10, 10], kind: 'corner' }] };
+    expect(contourContains(open, [8, 2])).toBe(true);
+    expect(contourContains(open, [2, 8])).toBe(false);
+    expect(contourContains({ closed: false, nodes: open.nodes.slice(0, 2) }, [5, 0])).toBe(false);
+  });
+});
+
+describe('canCloseContour', () => {
+  const two = (a: PathNode, b: PathNode): PathContour => ({ closed: false, nodes: [a, b] });
+
+  it('da tre nodi si chiude sempre; con meno di due mai', () => {
+    expect(canCloseContour({ closed: false, nodes: [node([0, 0]), node([5, 0]), node([5, 5])] })).toBe(true);
+    expect(canCloseContour({ closed: false, nodes: [node([0, 0])] })).toBe(false);
+  });
+
+  it('con due nodi serve almeno un segmento curvo: due rette no, una retta e una curva sì, due curve sì', () => {
+    expect(canCloseContour(two(node([0, 0]), node([10, 0])))).toBe(false);
+    // Solo la chiusura curva (maniglia in entrata del primo nodo)
+    expect(canCloseContour(two(node([0, 0], undefined, [-3, 3]), node([10, 0])))).toBe(true);
+    // Due curve (nodi simmetrici)
+    expect(canCloseContour(two(node([0, 0], [3, 3], [-3, -3], 'symmetric'), node([10, 0], [3, 3], [-3, -3], 'symmetric')))).toBe(true);
   });
 });
