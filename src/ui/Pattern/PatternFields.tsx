@@ -23,6 +23,8 @@ interface Props {
   simplified?: boolean;
   /** Se presente compare "Aggiorna all'ingombro": ricalcola l'area del disegno sulle misure attuali del pezzo. */
   onRefreshBounds?: () => void;
+  /** Se presente «Aggiorna all'ingombro» è spento e questo testo spiega perché. */
+  refreshBlocked?: string;
 }
 
 const KIND_LABELS: Record<PatternParams['kind'], string> = { voronoi: 'Voronoi', hexagon: 'Esagoni', circle: 'Cerchi', diamond: 'Rombi', triangle: 'Triangoli' };
@@ -33,7 +35,7 @@ const MIN_PRINTABLE_WALL = 0.8;
  * Campi di un Pattern: tipo, seme, celle, parete, margine, faccia e profondità. Li usano il pannello dello strumento
  * Pattern (con anteprima dal vivo) e il pannello delle proprietà del gruppo "Pattern" già creato.
  */
-export function PatternFields({ params: p, onChange, disabled, history = true, onPickFace, picking, onSimplified, simplified, onRefreshBounds }: Props) {
+export function PatternFields({ params: p, onChange, disabled, history = true, onPickFace, picking, onSimplified, simplified, onRefreshBounds, refreshBlocked }: Props) {
   const ms = useResultStore((s) => s.ms);
   // Id per collegare l'etichetta "Tipo" alla tendina
   const kindId = useId();
@@ -131,9 +133,9 @@ export function PatternFields({ params: p, onChange, disabled, history = true, o
       )}
 
       {onRefreshBounds && (
-        <div className="array-fields__row" title="Il disegno copre l'ingombro che il pezzo aveva quando è stato applicato: se il pezzo è cambiato, ricalcolalo.">
+        <div className="array-fields__row" title={refreshBlocked ?? "Il disegno copre l'ingombro che il pezzo aveva quando è stato applicato: se il pezzo è cambiato, ricalcolalo."}>
           <span className="array-fields__label" />
-          <button type="button" className="array-fields__button" disabled={disabled} onClick={onRefreshBounds}>
+          <button type="button" className="array-fields__button" disabled={disabled || !!refreshBlocked} onClick={onRefreshBounds}>
             Aggiorna all'ingombro
           </button>
         </div>

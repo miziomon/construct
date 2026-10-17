@@ -7,7 +7,7 @@ import type { Transform } from '../../scene/math';
 import { defaultPatternParams, hasPlanarFace, normalizePattern, thicknessAlong } from '../../scene/pattern';
 import { applyPattern, worldToLocal } from '../../scene/patternTool';
 import { localBounds } from '../../scene/shell';
-import { isLocked, labelled, useSceneStore, worldTransform } from '../../scene/store';
+import { isLocked, labelled, parentOf, useSceneStore, worldTransform } from '../../scene/store';
 import { isCutter } from '../../scene/treatment';
 import type { GroupNode, PatternFace, PatternParams, Scene, Vec3 } from '../../scene/types';
 
@@ -80,6 +80,21 @@ export function regionFor(meshes: NodeMesh[], faces: PatternFace[], world: Trans
 }
 
 /**
+ * Radice che contiene il gruppo se tra la radice e il gruppo ci sono solo Raggruppa (il kernel produce una mesh per ogni
+ * figlio solo attraverso di loro), altrimenti null: il pezzo di un Pattern dentro una booleana o un altro Pattern non ha una
+ * mesh propria e «Aggiorna all'ingombro» non può misurarlo.
+ */
+export function refreshRoot(scene: Scene, groupId: string): string | null {
+  let root = groupId;
+  for (let up = parentOf(scene, root); up; up = parentOf(scene, root)) {
+    const parent = scene.nodes[up];
+    if (parent.type !== 'group' || parent.op !== 'group') return null;
+    root = up;
+  }
+  return root;
+}
+
+/**
  * Nuovo ingombro e nuova regione di un Pattern già applicato. Il gruppo mostra il pezzo forato, quindi il pezzo intero si
  * ricava valutando una copia della scena dove il gruppo è un semplice Raggruppa; null se il pezzo non produce mesh.
  */
@@ -88,7 +103,10 @@ export async function refreshedPattern(scene: Scene, groupId: string): Promise<P
   const pattern = group?.pattern;
   if (!group || !pattern) return null;
   const { pattern: _removed, ...plain } = group;
-  const { meshes: all } = await getKernel().evaluateDetached({ ...scene, nodes: { ...scene.nodes, [groupId]: { ...plain, op: 'group' } } });
+  const root = refreshRoot(scene, groupId);
+  if (!root) return null;
+  // Basta la radice che contiene il gruppo: le mesh degli altri oggetti non servono
+  const { meshes: all } = await getKernel().evaluateDetached({ ...scene, rootIds: [root], nodes: { ...scene.nodes, [groupId]: { ...plain, op: 'group' } } });
   const target = group.children[0];
   const meshes = all.filter((m) => !m.empty && m.path.includes(target));
   if (!meshes.length) return null;

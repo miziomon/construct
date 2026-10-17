@@ -10,7 +10,7 @@ import { localToWorld, worldToLocal } from './patternTool';
 import { FACE_DIRECTIONS, defaultPatternParams, faceFrame, faceFromBounds, faceName, hasPlanarFace, isAxisFace, frameRect, normalizePattern, patternCells, PATTERN_MAX_CELLS, sameFace, thicknessAlong } from './pattern';
 import type { FaceDirection } from './pattern';
 import { PATTERN_ALGORITHM } from './voronoi';
-import type { PatternParams, PrimitiveNode, Scene, Vec3 } from './types';
+import type { GroupNode, PatternParams, PrimitiveNode, Scene, Vec3 } from './types';
 
 const bounds = { min: [-40, -30, -2.5] as Vec3, max: [40, 30, 2.5] as Vec3 };
 const params = (patch: Partial<PatternParams> = {}): PatternParams => ({ ...defaultPatternParams(bounds, 7), ...patch });
@@ -228,6 +228,34 @@ describe('hasPlanarFace', () => {
     if (!built.ok) throw new Error(built.error);
     const chamfered = evaluate(built.scene);
     for (const d of FACE_DIRECTIONS) expect(has(chamfered, d)).toBe(true);
+  });
+
+  it('scatola smussata: la faccia reale c\'è da z+ e da x+ e non ci sono altri piani con la stessa normale', () => {
+    const box = prim('box', { size: [20, 20, 20] });
+    const base = meshOf(box);
+    const map = faceMap(base);
+    const find = (n: Vec3) => map.faces.findIndex((f) => f.normal[0] === n[0] && f.normal[1] === n[1] && f.normal[2] === n[2]);
+    const edge = edgeBetween(base, map, find([0, 0, 1]), find([1, 0, 0]));
+    if (!edge.ok) throw new Error(edge.error);
+    const built = buildEdgeTreatment({ nodes: { p: box }, rootIds: ['p'] }, 'p', edge.geometry, { treatment: 'chamfer', radius: 1, distance1: 6, distance2: 6 });
+    if (!built.ok) throw new Error(built.error);
+    const chamfered = evaluate(built.scene);
+    expect(has(chamfered, 'z+')).toBe(true);
+    expect(has(chamfered, 'x+')).toBe(true);
+  });
+
+  it('pezzo a L e piastra con rilievo: più piani con la stessa normale, serve la silhouette', () => {
+    const box = (id: string, position: Vec3, size: Vec3) => ({ ...primitiveDefaults('box'), id, name: id, position, size }) as PrimitiveNode;
+    const union = (children: string[]) => ({ id: 'u', name: 'u', type: 'group', op: 'union', children, position: [0, 0, 0], rotation: [0, 0, 0], mode: 'solid', color: '#ffffff' }) as GroupNode;
+    // L: pavimento 60 x 20 x 10 e parete 20 x 20 x 30 sopra la sua parte sinistra
+    const l = evaluate({ nodes: { floor: box('floor', [0, 0, 5], [60, 20, 10]), wall: box('wall', [-20, 0, 25], [20, 20, 30]), u: union(['floor', 'wall']) }, rootIds: ['u'] });
+    expect(has(l, 'z+')).toBe(false);
+    expect(has(l, 'x+')).toBe(false);
+    // Piastra 40 x 40 x 4 con un rilievo 10 x 10 x 2 (come un testo o un logo in rilievo)
+    const plate = evaluate({ nodes: { plate: box('plate', [0, 0, 2], [40, 40, 4]), relief: box('relief', [0, 0, 5], [10, 10, 2]), u: union(['plate', 'relief']) }, rootIds: ['u'] });
+    expect(has(plate, 'z+')).toBe(false);
+    // Il fondo è un piano solo
+    expect(has(plate, 'z-')).toBe(true);
   });
 
   it('sfera e cilindro sdraiato: nessuna faccia piana nella direzione dell\'ingombro (serve la silhouette)', () => {

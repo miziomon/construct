@@ -167,8 +167,9 @@ export function normalizePattern(p: PatternParams): PatternParams {
 
 /**
  * Vero se tra le facce piane `faces` (di una mesh in coordinate mondo, vedi `faceMap`) ce n'è una sul piano e con la
- * normale di `face`, che è nel sistema del gruppo con trasformazione `world`: allora il Pattern può usare il contorno
- * di quella faccia ('face'), altrimenti serve l'ombra del pezzo ('silhouette': sfera, cilindro sdraiato...).
+ * normale di `face`, che è nel sistema del gruppo con trasformazione `world`, e nessun altro piano rivolto allo stesso
+ * modo a un'altra quota: allora il Pattern può usare il contorno di quella faccia ('face'), altrimenti serve l'ombra del
+ * pezzo ('silhouette': sfera, cilindro sdraiato, pezzi con gradini o rilievi).
  */
 export function hasPlanarFace(faces: { normal: Vec3; offset: number; planar: boolean }[], face: PatternFace, world: Transform): boolean {
   // 1) La faccia dal sistema del gruppo al mondo: mondo = R · D · v (+ posizione per un punto), con D lo specchio del gruppo
@@ -181,8 +182,12 @@ export function hasPlanarFace(faces: { normal: Vec3; offset: number; planar: boo
   const normal = toWorld(n, false);
   const point = toWorld(face.origin, true);
   const planeOffset = normal[0] * point[0] + normal[1] * point[1] + normal[2] * point[2];
+  const facing = (f: { normal: Vec3 }) => f.normal[0] * normal[0] + f.normal[1] * normal[1] + f.normal[2] * normal[2];
   // 2) Una faccia piana con la stessa normale (circa 1,8°) e lo stesso piano (0,05 mm, come la tolleranza di planarità)
-  return faces.some((f) => f.planar && f.normal[0] * normal[0] + f.normal[1] * normal[1] + f.normal[2] * normal[2] >= AXIS_ALIGNED && Math.abs(f.offset - planeOffset) < 0.05);
+  if (!faces.some((f) => f.planar && facing(f) >= AXIS_ALIGNED && Math.abs(f.offset - planeOffset) < 0.05)) return false;
+  // 3) E nessun altro piano rivolto allo stesso modo (normale quasi identica, così i triangoli di un raccordo suddiviso non
+  // contano) a un'altra quota: con gradini, rilievi o bordi rialzati la faccia più alta non è tutto il pezzo e serve l'ombra
+  return !faces.some((f) => facing(f) >= 1 - 1e-6 && Math.abs(f.offset - planeOffset) >= 0.05);
 }
 
 /** Numero massimo di celle a griglia: il passo si allarga se servirebbero di più. */
