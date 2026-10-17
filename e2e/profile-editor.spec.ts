@@ -1831,3 +1831,22 @@ test('Importa SVG con un contorno della Penna in corso: il contorno valido resta
   await expect(editor(page).locator('[data-path]')).toHaveCount(1);
   await expect(nodes(page)).toHaveCount(5);
 });
+
+test('forme base: una forma trascinata e riportata sul centro prima del rilascio non lascia modifiche (Esc chiude senza conferma)', async ({ page }) => {
+  await openNewDrawing(page);
+  await page.keyboard.press('r');
+  const from = await at(page, 0, 0);
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  for (let i = 1; i <= 5; i++) await page.mouse.move(from.x + 20 * i, from.y + 10 * i);
+  // La forma è visibile durante il trascinamento
+  await expect(nodes(page)).toHaveCount(4);
+  await page.mouse.move(from.x, from.y);
+  await expect(nodes(page)).toHaveCount(0);
+  await page.mouse.up();
+  await expect(nodes(page)).toHaveCount(0);
+  await canvas(page).focus();
+  await page.keyboard.press('Escape');
+  await expect(editor(page)).toHaveCount(0);
+  await expect(confirmBox(page)).toHaveCount(0);
+});

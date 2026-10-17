@@ -5,6 +5,8 @@ import { sceneToOpenScad } from '../codegen/openscad';
 import { Evaluator } from '../kernel/evaluate';
 import { canConvertToPath, convertToPath } from './convertPath';
 import { shape2dDefaults } from './defaults';
+import { pathNaturalSize } from './shapes2d';
+import { draftFromNode } from '../ui/ProfileEditor/model';
 import type { Scene, Shape2DKind, Shape2DNode } from './types';
 
 let wasm: ManifoldToplevel;
@@ -124,6 +126,23 @@ describe('convertToPath: il nodo', () => {
     const path = convert(node).node as unknown as Record<string, unknown>;
     expect(path).toMatchObject({ id: 's', name: 'Forma', type: 'shape2d', kind: 'path', color: '#123456', mode: 'hole', hidden: true, mirror: [true, false, false], rotation: [0, 0, 25], height: 6, offset: 1 });
     for (const key of ['radius', 'segments', 'cornerRadius', 'radiusY', 'revolveRadius']) expect(key in path).toBe(false);
+  });
+
+  it('approximate: solo il cerchio con più di 12 lati', () => {
+    expect(convert(shape('circle', { radius: 12, segments: 13 })).approximate).toBe(true);
+    expect(convert(shape('circle', { radius: 12, segments: 64 })).approximate).toBe(true);
+    expect(convert(shape('circle', { radius: 12, segments: 12 })).approximate).toBe(false);
+    expect(convert(shape('square')).approximate).toBe(false);
+    expect(convert(shape('star')).approximate).toBe(false);
+  });
+
+  it('width e depth sono la misura naturale dei nodi: aprire il Profilo convertito non incorpora nessuna scala', () => {
+    for (const segments of [5, 6, 7]) {
+      const { node } = convert(shape('circle', { radius: 12, segments }));
+      expect(node.width).toBe(pathNaturalSize(node).width);
+      expect(node.depth).toBe(pathNaturalSize(node).depth);
+      expect(draftFromNode(node).paths).toBe(node.paths);
+    }
   });
 
   it('il lucchetto delle proporzioni resta com\'era', () => {

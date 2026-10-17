@@ -501,6 +501,7 @@ function Editor({ target }: { target: ProfileTarget }) {
             onPenFinish={finishPen}
             onPenLimit={() => notify.info('Limite raggiunto: al massimo 500 nodi per contorno e 100 contorni. Termina il contorno (Invio) o chiudilo')}
             onShapeLimit={() => notify.info('Limite raggiunto: al massimo 100 contorni. Elimina un contorno per disegnarne un altro')}
+            onShapeCancel={() => dispatch({ type: 'replace', draft: committed.current, selection: [] })}
             onImportSvg={(file) => void importSvg(file)}
             fitRequest={fitRequest}
           />

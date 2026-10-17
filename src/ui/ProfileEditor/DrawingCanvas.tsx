@@ -55,6 +55,8 @@ interface Props {
   onPenLimit: () => void;
   /** Forme base: raggiunto il limite di contorni. */
   onShapeLimit: () => void;
+  /** Forme base: il gesto è finito senza una forma dopo averne mostrata una in anteprima; il disegno torna all'ultimo concluso. */
+  onShapeCancel: () => void;
   /** Importa SVG: il file scelto dall'utente. */
   onImportSvg: (file: File) => void;
   /** Contatore: a ogni aumento la vista inquadra tutto il disegno (dopo un import, quando i contorni sono già nello stato). */
@@ -129,13 +131,13 @@ type Drag =
   // Alt è momentaneo: `frozen` è lo stato nell'istante in cui è stato premuto (l'altra maniglia resta com'era), `to` il punto agganciato più recente
   | { type: 'handle'; ref: HandleRef; base: PathContour[]; last: PathContour[]; frozen: PathContour[]; to: Vec2 | null; sx: number; sy: number; moved: boolean; alt: boolean }
   | { type: 'box'; sx: number; sy: number; shift: boolean; base: NodeRef[]; moved: boolean }
+  // Forma base (rettangolo, ellisse, poligono) trascinata dal centro: `last` è il disegno con la forma in anteprima (`base` se non c'è ancora una misura), `live` dice se il disegno è già stato cambiato
+  | { type: 'shape'; tool: 'rect' | 'ellipse' | 'polygon'; center: Vec2; base: PathContour[]; last: PathContour[]; sx: number; sy: number; moved: boolean; live: boolean }
   // Penna, ripresa da un estremo (maniglia in uscita) o chiusura sul primo nodo (`close`, maniglia in entrata opposta al mouse): il trascinamento la disegna
   // (nodo liscio, spigolo con Alt); `last` parte dal nodo reso liscio
   | { type: 'resume'; ref: HandleRef; current: number; close: boolean; base: PathContour[]; last: PathContour[]; frozen: PathContour[]; to: Vec2 | null; sx: number; sy: number; moved: boolean; alt: boolean }
   // Penna: lo stato di partenza serve a ricalcolare il nodo (e la sua maniglia) a ogni movimento del trascinamento
   // Alt è momentaneo: `keepIn` è la maniglia in entrata che il nodo aveva quando è stato premuto, `out` la maniglia trascinata
-  // Forma base (rettangolo, ellisse, poligono) trascinata dal centro: `last` è il disegno con la forma in anteprima (`base` se non c'è ancora una misura)
-  | { type: 'shape'; tool: 'rect' | 'ellipse' | 'polygon'; center: Vec2; base: PathContour[]; last: PathContour[]; sx: number; sy: number; moved: boolean }
   | { type: 'pen'; base: PathContour[]; current: number | null; p: Vec2; sx: number; sy: number; moved: boolean; alt: boolean; keepIn: Vec2 | undefined; out: Vec2 | undefined };
 
 /**
@@ -146,7 +148,7 @@ type Drag =
  * zoom sul puntatore, Spazio o tasto centrale per la panoramica. Le modifiche passano da `onLive` (durante il gesto) e
  * `onCommit` (al rilascio): un gesto è un solo passo della cronologia.
  */
-export function DrawingCanvas({ draft, contours, crossings, holes, selection, grid, spaceDown, onLive, onCommit, onSelect, tool, onTool, flip, onFlip, pen, onPenLive, onPenResume, onPenClose, onPenFinish, onPenLimit, onShapeLimit, onImportSvg, fitRequest }: Props) {
+export function DrawingCanvas({ draft, contours, crossings, holes, selection, grid, spaceDown, onLive, onCommit, onSelect, tool, onTool, flip, onFlip, pen, onPenLive, onPenResume, onPenClose, onPenFinish, onPenLimit, onShapeLimit, onShapeCancel, onImportSvg, fitRequest }: Props) {
   const wrap = useRef<HTMLDivElement>(null);
   const svg = useRef<SVGSVGElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -175,9 +177,9 @@ export function DrawingCanvas({ draft, contours, crossings, holes, selection, gr
   const [closing, setClosing] = useState<number | null>(null);
   // Penna: punto (agganciato) in cui cadrebbe il prossimo nodo, per l'anteprima del segmento
   const [hover, setHover] = useState<Vec2 | null>(null);
-  // Schermo a dito: aree attive più grandi
   // Lati del poligono regolare (strumento Poligono)
   const [sides, setSides] = useState<number>(POLYGON_SIDES.default);
+  // Schermo a dito: aree attive più grandi
   const [coarse] = useState(() => typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches === true);
   const rotate = draft.extrusion === 'rotate';
   const nodeR = coarse ? 20 : 10;
@@ -363,7 +365,7 @@ export function DrawingCanvas({ draft, contours, crossings, holes, selection, gr
         onShapeLimit();
         return;
       }
-      drag.current = { type: 'shape', tool, center: snapped(w, e, allNodes()), base: draft.paths, last: draft.paths, sx, sy, moved: false };
+      drag.current = { type: 'shape', tool, center: snapped(w, e, allNodes()), base: draft.paths, last: draft.paths, sx, sy, moved: false, live: false };
       return;
     }
     if (tool === 'pen') {
@@ -585,6 +587,7 @@ export function DrawingCanvas({ draft, contours, crossings, holes, selection, gr
       const contour = baseShapeContour({ tool: d.tool, center: d.center, to: snapped(w, { ctrlKey: e.ctrlKey }, d.base.flatMap((c) => c.nodes.map((n) => n.p))), shift: e.shiftKey, sides });
       if (contour) {
         d.last = [...d.base, contour];
+        d.live = true;
         onLive(d.last, contour.nodes.map((_, node) => ({ path: d.base.length, node })));
       } else if (d.last !== d.base) {
         d.last = d.base;
@@ -616,6 +619,8 @@ export function DrawingCanvas({ draft, contours, crossings, holes, selection, gr
     } else if (d.type === 'shape') {
       // Il contorno nuovo resta selezionato e lo strumento resta attivo
       if (d.last !== d.base) onCommit(d.last, d.last[d.base.length].nodes.map((_, node) => ({ path: d.base.length, node })));
+      // Una forma mostrata e poi tornata a misura nulla: non c'è nulla da concludere, il disegno è quello di prima
+      else if (d.live) onShapeCancel();
     } else if (d.type === 'box') {
       if (!d.moved) {
         // Clic nel vuoto: azzera la selezione (con Maiusc la lascia)

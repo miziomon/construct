@@ -277,6 +277,17 @@ describe('readSvgPaths', () => {
     expect(c.nodes).toHaveLength(3);
   });
 
+  it('un cerchio a coordinate relative arrotondate che si chiude con un errore di 1e-3 ha 4 nodi simmetrici, non un nodo doppio', () => {
+    // L'ultimo punto cade a (20,001, 10) invece che a (20, 10): lo stesso nodo del primo
+    const relative = 'm 20,10 c 0,5.523 -4.477,10 -10,10 c -5.523,0 -10,-4.477 -10,-10 c 0,-5.523 4.477,-10 10,-10 c 5.523,0 10.001,4.477 10.001,10 z';
+    const [c] = readSvgPaths(svg(`<path d="${relative}"/>`), 'relativo');
+    expect(c.nodes).toHaveLength(4);
+    expect(c.nodes.every((n) => n.kind === 'symmetric')).toBe(true);
+    // Il primo nodo ha la maniglia in arrivo (dall'ultimo pezzo)
+    expect(c.nodes[0].in).toBeDefined();
+    expect(c.nodes[0].out).toBeDefined();
+  });
+
   it('più sottotracciati diventano più contorni, nell\'ordine del file', () => {
     const contours = readSvgPaths(svg('<path fill-rule="evenodd" d="M0 0 H40 V40 H0 Z M10 10 H30 V30 H10 Z"/>'), 'f');
     expect(contours).toHaveLength(2);

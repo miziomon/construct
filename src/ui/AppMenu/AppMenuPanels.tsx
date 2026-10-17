@@ -37,7 +37,7 @@ const SHORTCUTS: { title: string; rows: [string, string][] }[] = [
       ['A', 'Smusso angolare: clic su un vertice, Maiusc+clic per sceglierne altri (Invio conferma, Esc annulla)'],
       ['G', 'Guscio: svuota il solido selezionato, con la faccia aperta a scelta (Invio conferma, Esc annulla)'],
       ['Maiusc+P', 'Modifica profilo: apre la modale di disegno del Profilo selezionato (anche dal menu contestuale e dalle Proprietà)'],
-      ['Converti in profilo', 'Senza scorciatoia: dal menu contestuale o dalle Proprietà trasforma il cerchio, il quadrato, le forme poligonali, i profilati e gli SVG in un Profilo con lo stesso solido, modificabile nodo per nodo (un solo Annulla)'],
+      ['Converti in profilo', 'Senza scorciatoia: dal menu contestuale o dalle Proprietà trasforma il cerchio, il quadrato, le forme poligonali, i profilati e gli SVG in un Profilo modificabile nodo per nodo (un solo Annulla). Il solido resta uguale, tranne per i cerchi con più di 12 lati, che diventano una curva'],
       ['Maiusc+S', 'Dividi: taglia l\'oggetto in due con un piano perpendicolare a un asse, anche inclinato di un angolo, con connettori per rimontarlo (Invio conferma, Esc annulla)'],
       ['Doppio clic', 'Seleziona l\'oggetto e passa a Sposta'],
       ['Ctrl+G', 'Raggruppa (gli oggetti restano separati)'],

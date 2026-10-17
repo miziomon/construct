@@ -14,6 +14,8 @@ export const KAPPA = 0.5522847498;
 const EPS = 1e-9;
 /** Seno massimo dell'angolo tra due maniglie perché il nodo sia liscio (circa 1,1°). */
 const SMOOTH_SINE = 0.02;
+/** Distanza massima, in frazione della diagonale del riquadro dei nodi, perché l'ultimo punto di un contorno chiuso coincida con il primo. */
+const CLOSE_RATIO = 1e-4;
 /** Differenza relativa massima tra le lunghezze delle maniglie perché il nodo sia simmetrico. */
 const SYMMETRIC_RATIO = 0.01;
 
@@ -83,8 +85,12 @@ export function cubicsToContour(start: Vec2, segs: PathSeg[], closed: boolean): 
     ins.push(s.c2);
     outs.push(undefined);
   }
-  // Chiusura sul punto iniziale: l'ultimo nodo coincide con il primo, la sua maniglia in arrivo passa al primo
-  if (closed && points.length > 1 && len(sub(points[points.length - 1], start)) < EPS) {
+  // Chiusura sul punto iniziale: l'ultimo nodo coincide con il primo, la sua maniglia in arrivo passa al primo. La tolleranza è
+  // relativa alla misura del contorno: coordinate relative arrotondate (SVG) tornano al punto iniziale con un errore di millesimi
+  const xs = points.map((p) => p[0]);
+  const ys = points.map((p) => p[1]);
+  const closeTol = Math.max(EPS, CLOSE_RATIO * Math.hypot(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)));
+  if (closed && points.length > 1 && len(sub(points[points.length - 1], start)) < closeTol) {
     ins[0] = ins[points.length - 1];
     points.pop();
     ins.pop();

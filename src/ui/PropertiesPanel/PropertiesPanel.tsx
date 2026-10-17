@@ -865,7 +865,7 @@ function Shape2DFields({ node, patch, locked }: { node: Shape2DNode; patch: (p: 
         {canConvertToPath(node) && (
           <div className="properties__row">
             <span className="properties__label">Disegno</span>
-            <button type="button" className="properties__action" disabled={locked} onClick={() => useSceneStore.getState().convertToPath(node.id)} title="Trasforma la forma in un Profilo di Bézier con gli stessi contorni, modificabile nodo per nodo: il solido non cambia">
+            <button type="button" className="properties__action" disabled={locked} onClick={() => useSceneStore.getState().convertToPath(node.id)} title="Trasforma la forma in un Profilo di Bézier con gli stessi contorni, modificabile nodo per nodo. Il solido resta uguale, tranne per i cerchi con più di 12 lati, che diventano una curva">
               Converti in profilo
             </button>
           </div>

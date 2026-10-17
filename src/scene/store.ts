@@ -52,7 +52,7 @@ interface SceneState {
   /**
    * Converte una forma 2D (cerchio, quadrato, forme poligonali, profilati, SVG) nel Profilo di Bézier equivalente, in un solo
    * passo di Annulla ("Converti in profilo"): stesso id e stesso solido, i contorni diventano nodi modificabili (vedi
-   * convertPath.ts). Rifiuta (false, con un avviso) un nodo bloccato, il testo, un Profilo e un disegno oltre i tetti dei nodi.
+   * convertPath.ts; il cerchio con più di 12 lati diventa una curva e il solido cambia di poco). Rifiuta (false, con un avviso) un nodo bloccato, il testo, un Profilo e un disegno oltre i tetti dei nodi.
    */
   convertToPath: (id: string) => boolean;
   /** Aggiunge una mesh importata, appoggiata sul piatto e centrata in XY. */
@@ -410,6 +410,8 @@ export const useSceneStore = create<SceneState>()(
         act('Converti in profilo', (s) => {
           s.scene.nodes[id] = result.node;
         });
+        // Il cerchio con molti lati diventa una curva: il solido cambia di poco, l'utente lo sa
+        if (result.approximate) notify.info(`«${node.name}»: il cerchio con ${Math.round((node as { segments: number }).segments)} lati diventa una curva: il solido cambia di poco`);
         // I legami che il Profilo non può tenere (raggio, lati...) si perdono: l'utente lo sa
         if (result.dropped.length) notify.info(`«${node.name}»: ${result.dropped.length === 1 ? `il legame di ${result.dropped[0]} al parametro si perde` : `i legami di ${result.dropped.join(', ')} ai parametri si perdono`}`);
         return true;

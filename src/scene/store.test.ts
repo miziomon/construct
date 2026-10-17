@@ -449,6 +449,18 @@ describe('convertToPath: Converti in profilo', () => {
     expect((st().scene.nodes[id] as Shape2DNode).kind).toBe('svg');
   });
 
+  it('il cerchio con più di 12 lati diventa una curva e l\'utente lo sa; con 12 o meno no', () => {
+    st().addShape2D('circle');
+    const [id] = st().scene.rootIds;
+    st().updateNode(id, { segments: 12 });
+    expect(st().convertToPath(id)).toBe(true);
+    expect(toasts()).toEqual([]);
+    undo();
+    st().updateNode(id, { segments: 64 });
+    expect(st().convertToPath(id)).toBe(true);
+    expect(toasts().join(' ')).toContain('il cerchio con 64 lati diventa una curva: il solido cambia di poco');
+  });
+
   it('i legami che il Profilo non ha si perdono e l\'utente lo sa', () => {
     st().addShape2D('circle');
     const [id] = st().scene.rootIds;

@@ -62,10 +62,11 @@ const roundContour = (c: PathContour): PathContour => {
 /**
  * Converte una forma 2D nel Profilo di Bézier equivalente. Il solido resta lo stesso (stesso id, colore, rotazione,
  * estrusione): cambiano solo i contorni, che diventano nodi modificabili. Restituisce il nodo nuovo e i legami a un
- * parametro che il Profilo non può tenere (`dropped`, nomi dei campi), oppure un messaggio se non si può convertire.
+ * parametro che il Profilo non può tenere (`dropped`, nomi dei campi) e se la conversione è approssimata (`approximate`: il cerchio
+ * oltre 12 lati diventa una curva), oppure un messaggio se non si può convertire.
  * Il nodo si costruisce campo per campo: i campi propri della forma (raggio, lati, raccordo...) non devono restare.
  */
-export function convertToPath(node: Shape2DNode): { node: PathShape; dropped: string[] } | string {
+export function convertToPath(node: Shape2DNode): { node: PathShape; dropped: string[]; approximate: boolean } | string {
   if (node.kind === 'path') return 'È già un Profilo';
   if (node.kind === 'text') return 'Il testo non si converte in Profilo: i contorni dei font dipendono dal font e dal testo';
   let paths = localContours(node);
@@ -107,8 +108,9 @@ export function convertToPath(node: Shape2DNode): { node: PathShape; dropped: st
     kind: 'path',
     paths,
     tolerance: PATH_DEFAULT_TOLERANCE,
-    width: round(box.width, 4),
-    depth: round(box.depth, 4),
+    // La misura naturale delle curve, come `addPath` e `commitProfile`: arrotondata, all'apertura della modale il disegno si scalerebbe
+    width: box.width,
+    depth: box.depth,
     position,
     rotation: node.rotation,
     mode: node.mode,
@@ -128,5 +130,6 @@ export function convertToPath(node: Shape2DNode): { node: PathShape; dropped: st
     ...(node.revolveSegments !== undefined ? { revolveSegments: node.revolveSegments } : {}),
     ...(Object.keys(exprs).length ? { exprs } : {}),
   };
-  return { node: converted, dropped };
+  // L'unico caso non esatto: il cerchio oltre 12 lati diventa 4 nodi simmetrici
+  return { node: converted, dropped, approximate: node.kind === 'circle' && Math.max(3, Math.round(node.segments)) > MAX_EXACT_SIDES };
 }
