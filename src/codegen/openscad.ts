@@ -528,7 +528,7 @@ function patternLines(params: PatternParams, child: (depth: number) => string[],
     // Disegno 2D: Fori = celle dentro la regione, Solchi = regione meno le celle
     const shrink = n(p.wall / 2 + p.rounding);
     const cellShape = `for (c = ${names[i]}) ${p.rounding > 0 ? `offset(r = ${n(p.rounding)}, $fn = 32) ` : ''}offset(delta = -${shrink}) polygon(c);`;
-    const regionHead = `${p.margin > 0 ? `offset(delta = -${n(p.margin)}) ` : ''}${through && axisFace ? 'projection()' : 'projection(cut = true) translate([0, 0, 0.01])'}`;
+    const regionHead = `${p.margin > 0 ? `offset(delta = -${n(p.margin)}) ` : ''}${through && axisFace && p.region !== 'face' ? 'projection()' : 'projection(cut = true) translate([0, 0, 0.01])'}`;
     const region = [
       at(d + 1, `${regionHead} rotate(${vec(frame.euler)}) translate(${vec(frame.origin.map((v) => -v))}) {`),
       ...child(d + 2),

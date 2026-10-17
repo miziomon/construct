@@ -59,6 +59,24 @@
     }
   }
 
+  // Tendina: stesso aspetto di `.settings__select`, a tutta larghezza nella riga
+  &__select {
+    flex: 1;
+    min-width: 0;
+    padding: 4px $space-2;
+    border: 1px solid color('border');
+    border-radius: $radius-sm;
+    background: color('bg');
+    color: color('text');
+    font-size: 12px;
+    @include focus-ring;
+
+    &:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+  }
+
   &__button {
     flex: none;
     padding: 4px 8px;

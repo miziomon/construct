@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { addShape, dragGizmoAlongX, dragGizmoAxis, hoveredAxis, openApp, openMenuItem, project, readCode, sceneSaved, sceneState, settled } from './helpers';
 import { writeStl } from '../src/kernel/export/stl';
+import type { GroupNode } from '../src/scene/types';
 
 test.beforeEach(async ({ page }) => {
   await openApp(page);
@@ -2952,14 +2953,14 @@ test('Pattern: seme, tipo, profondità, rombi, triangoli e faccia si leggono e s
   await expect(page.locator('.outliner__row')).toHaveCount(2);
 
   // Esagoni: celle regolari e codice con la stessa riduzione per la parete
-  await page.getByRole('button', { name: 'Esagoni', exact: true }).click();
+  await page.getByLabel('Tipo').selectOption({ label: 'Esagoni' });
   await settled(page);
   expect((await pattern()).kind).toBe('hexagon');
   expect(await volume()).toBeLessThan(8000);
   expect(await readCode(page)).toContain('offset(delta = -');
 
   // Tasca da due lati: il cubo non è più bucato da parte a parte e resta valido
-  await page.getByRole('button', { name: 'Voronoi', exact: true }).click();
+  await page.getByLabel('Tipo').selectOption({ label: 'Voronoi' });
   const depth = page.locator('.slider-field').filter({ has: page.getByText('Profondità', { exact: true }) }).locator('.number-field__input');
   await depth.fill('4');
   await depth.press('Enter');
@@ -2970,10 +2971,10 @@ test('Pattern: seme, tipo, profondità, rombi, triangoli e faccia si leggono e s
   expect(await readCode(page)).toContain('for (z = [-4,');
 
   // Rombi e Triangoli: griglie regolari con la stessa riduzione per la parete
-  await page.getByRole('button', { name: 'Rombi', exact: true }).click();
+  await page.getByLabel('Tipo').selectOption({ label: 'Rombi' });
   await settled(page);
   expect((await pattern()).kind).toBe('diamond');
-  await page.getByRole('button', { name: 'Triangoli', exact: true }).click();
+  await page.getByLabel('Tipo').selectOption({ label: 'Triangoli' });
   await settled(page);
   expect((await pattern()).kind).toBe('triangle');
   await expect(page.locator('.status-bar')).toContainText('Mesh valida');
@@ -3040,6 +3041,68 @@ test('Pattern: Scegli faccia sostituisce la faccia con un clic, chiude la scelta
   expect(pattern.faces[0].normal).toEqual([0, -1, 0]);
   expect(pattern.preview).toBeUndefined();
   expect(await readCode(page)).toContain('cells = [');
+});
+
+test('Pattern passante su un pezzo smussato: nessuna cella sullo smusso, e "Aggiorna all\'ingombro" corregge un progetto vecchio', async ({ page }) => {
+  await addShape(page, 'Cubo');
+  // Smusso da 6 mm sullo spigolo tra la cima e la faccia anteriore (il cubo poggia sul piatto, z da 0 a 20: lo smusso occupa y in [-10, -4] e z in [14, 20])
+  await page.keyboard.press('s');
+  const chamfer = page.getByRole('region', { name: 'Smusso' });
+  await pickTopAndFront(page);
+  await settled(page);
+  const distance = chamfer.locator('.slider-field', { hasText: 'Distanza' }).locator('.number-field__input');
+  await distance.fill('6');
+  await distance.press('Enter');
+  await settled(page);
+  await chamfer.getByRole('button', { name: 'OK' }).click();
+  await settled(page);
+  const chamfered = (await sceneState(page)).rootIds[0];
+  await page.evaluate((id) => window.__construct!.store.setState({ selection: [id] }), chamfered);
+
+  // Pattern passante dalla cima, senza cornice: lo smusso non deve avere celle
+  await page.keyboard.press('z');
+  const panel = page.getByRole('region', { name: 'Pattern' });
+  await expect(panel).toBeVisible();
+  await settled(page);
+  await page.getByLabel('Tipo').selectOption({ label: 'Esagoni' });
+  const margin = panel.locator('.slider-field', { hasText: 'Margine' }).locator('.number-field__input');
+  await margin.fill('0');
+  await margin.press('Enter');
+  await settled(page);
+  await panel.getByRole('button', { name: 'OK' }).click();
+  await settled(page);
+  const group = (await sceneState(page)).rootIds[0];
+  const pattern = async () => (await sceneState(page)).nodes[group].pattern;
+  expect(await pattern()).toMatchObject({ kind: 'hexagon', depth: 0, region: 'face' });
+
+  /** Un foro passante sotto lo smusso lascia vertici con y in [-9,9, -4,1] sul fondo del pezzo (z < 3,9); senza fori lì non ce ne sono. */
+  const holesUnderChamfer = () =>
+    page.evaluate(() => {
+      const mesh = window.__construct!.results.getState().meshes[0];
+      let count = 0;
+      for (let i = 0; i < mesh.positions.length; i += 3) {
+        const y = mesh.positions[i + 1];
+        const z = mesh.positions[i + 2];
+        if (y > -9.9 && y < -4.1 && z < 3.9) count++;
+      }
+      return count;
+    });
+  const volume = () => page.evaluate(() => window.__construct!.results.getState().meshes[0].volume);
+  expect(await volume()).toBeLessThan(7640 - 100);
+  expect(await holesUnderChamfer()).toBe(0);
+
+  // Un progetto vecchio non ha region (= silhouette): lo smusso si fora. "Aggiorna all'ingombro" ricalcola la regione
+  await page.evaluate((id) => {
+    const store = window.__construct!.store.getState();
+    const { region: _removed, ...rest } = (store.scene.nodes[id] as GroupNode).pattern!;
+    store.updateNode(id, { pattern: rest } as Partial<GroupNode>);
+  }, group);
+  await settled(page);
+  expect(await holesUnderChamfer()).toBeGreaterThan(0);
+  await page.getByRole('button', { name: "Aggiorna all'ingombro" }).click();
+  await expect.poll(async () => (await pattern()).region).toBe('face');
+  await settled(page);
+  expect(await holesUnderChamfer()).toBe(0);
 });
 
 test('Pattern: una faccia inclinata si sceglie con il clic, e un secondo Pattern si applica sul gruppo', async ({ page }) => {

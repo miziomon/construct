@@ -1,13 +1,15 @@
 import { create } from 'zustand';
+import { getKernel } from '../../kernel/client';
 import type { NodeMesh } from '../../kernel/evaluate';
 import { useResultStore } from '../../kernel/useKernel';
 import { faceMap } from '../../scene/edgeTool';
-import { defaultPatternParams, normalizePattern, thicknessAlong } from '../../scene/pattern';
+import type { Transform } from '../../scene/math';
+import { defaultPatternParams, hasPlanarFace, normalizePattern, thicknessAlong } from '../../scene/pattern';
 import { applyPattern, worldToLocal } from '../../scene/patternTool';
 import { localBounds } from '../../scene/shell';
-import { isLocked, labelled, useSceneStore, worldTransform } from '../../scene/store';
+import { isLocked, labelled, parentOf, useSceneStore, worldTransform } from '../../scene/store';
 import { isCutter } from '../../scene/treatment';
-import type { PatternFace, PatternParams, Scene, Vec3 } from '../../scene/types';
+import type { GroupNode, PatternFace, PatternParams, Scene, Vec3 } from '../../scene/types';
 
 /** Faccia sotto il puntatore mentre si scelgono le facce da cui applicare il pattern. */
 export interface PatternHover {
@@ -67,6 +69,51 @@ export function localBoundsOf(scene: Scene, id: string): { min: Vec3; max: Vec3 
   return meshes.length ? localBounds(meshes, worldTransform(scene, id)) : null;
 }
 
+/**
+ * Regione del taglio per queste facce: 'face' (contorno della faccia reale) se su ogni faccia scelta una delle mesh del
+ * pezzo ha davvero una faccia piana su quel piano, altrimenti 'silhouette' (la faccia viene dall'ingombro: sfera, cilindro
+ * sdraiato...). `world` è la trasformazione del pezzo nel mondo, dove stanno le mesh.
+ */
+export function regionFor(meshes: NodeMesh[], faces: PatternFace[], world: Transform): 'face' | 'silhouette' {
+  const meshFaces = meshes.flatMap((m) => faceMap(m).faces);
+  return faces.every((face) => hasPlanarFace(meshFaces, face, world)) ? 'face' : 'silhouette';
+}
+
+/**
+ * Radice che contiene il gruppo se tra la radice e il gruppo ci sono solo Raggruppa (il kernel produce una mesh per ogni
+ * figlio solo attraverso di loro), altrimenti null: il pezzo di un Pattern dentro una booleana o un altro Pattern non ha una
+ * mesh propria e «Aggiorna all'ingombro» non può misurarlo.
+ */
+export function refreshRoot(scene: Scene, groupId: string): string | null {
+  let root = groupId;
+  for (let up = parentOf(scene, root); up; up = parentOf(scene, root)) {
+    const parent = scene.nodes[up];
+    if (parent.type !== 'group' || parent.op !== 'group') return null;
+    root = up;
+  }
+  return root;
+}
+
+/**
+ * Nuovo ingombro e nuova regione di un Pattern già applicato. Il gruppo mostra il pezzo forato, quindi il pezzo intero si
+ * ricava valutando una copia della scena dove il gruppo è un semplice Raggruppa; null se il pezzo non produce mesh.
+ */
+export async function refreshedPattern(scene: Scene, groupId: string): Promise<Pick<PatternParams, 'bounds' | 'region'> | null> {
+  const group = scene.nodes[groupId] as GroupNode | undefined;
+  const pattern = group?.pattern;
+  if (!group || !pattern) return null;
+  const { pattern: _removed, ...plain } = group;
+  const root = refreshRoot(scene, groupId);
+  if (!root) return null;
+  // Basta la radice che contiene il gruppo: le mesh degli altri oggetti non servono
+  const { meshes: all } = await getKernel().evaluateDetached({ ...scene, rootIds: [root], nodes: { ...scene.nodes, [groupId]: { ...plain, op: 'group' } } });
+  const target = group.children[0];
+  const meshes = all.filter((m) => !m.empty && m.path.includes(target));
+  if (!meshes.length) return null;
+  const world = worldTransform(scene, target);
+  return { bounds: localBounds(meshes, world), region: regionFor(meshes, pattern.faces, world) };
+}
+
 /** Stima del lavoro: celle del Voronoi (o 60 per le griglie, in media) per il numero di facce. */
 export function estimatedCells(p: PatternParams): number {
   return (p.kind === 'voronoi' ? p.cells : 60) * p.faces.length;
@@ -114,7 +161,11 @@ export const usePatternTool = create<PatternToolState>()((set, get) => {
       if (!bounds) return;
       // Seme casuale: ogni apertura propone un disegno diverso, che resta riproducibile dal seme
       const seed = Math.floor(Math.random() * 100000);
-      set({ ...INITIAL, active: true, targetId, params: defaultPatternParams(bounds, seed) });
+      const defaults = defaultPatternParams(bounds, seed);
+      // La faccia di partenza (+Z dell'ingombro): se è una faccia vera si forano solo i suoi punti (uno smusso accanto non si fora)
+      const meshes = useResultStore.getState().meshes.filter((m) => !m.empty && m.path.includes(targetId));
+      const region = regionFor(meshes, defaults.faces, worldTransform(scene, targetId));
+      set({ ...INITIAL, active: true, targetId, params: { ...defaults, region } });
       rebuild();
     },
 
@@ -185,7 +236,7 @@ export const usePatternTool = create<PatternToolState>()((set, get) => {
       const round = (v: number) => Math.round(v * 1e4) / 1e4 + 0;
       const picked: PatternFace = { origin: point.map(round) as Vec3, normal: normal.map(round) as Vec3, thickness: round(thicknessAlong(params.bounds, normal)) };
       // La faccia scelta sostituisce le precedenti: per forare altre facce si applica di nuovo il Pattern
-      set({ params: normalizePattern({ ...params, faces: [picked] }), picking: false, hover: null, error: null });
+      set({ params: normalizePattern({ ...params, faces: [picked], region: 'face' }), picking: false, hover: null, error: null });
       rebuild();
     },
   };

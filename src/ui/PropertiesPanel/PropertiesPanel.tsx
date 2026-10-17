@@ -26,7 +26,7 @@ import { useProfileEditor } from '../ProfileEditor/profileEditorStore';
 import { ArrayFields } from '../Array/ArrayFields';
 import { useArrayTool } from '../Array/arrayToolStore';
 import { PatternFields } from '../Pattern/PatternFields';
-import { localBoundsOf, usePatternTool } from '../Pattern/patternToolStore';
+import { localBoundsOf, refreshRoot, refreshedPattern, usePatternTool } from '../Pattern/patternToolStore';
 import { SliderField } from '../SliderField/SliderField';
 import { TIPS } from './tooltips';
 import { DIE_FACES, maxPolyhedronRadius, nearestDieFaces, polygonMaxRadius } from '../../scene/polyhedra';
@@ -61,6 +61,8 @@ export function PropertiesPanel() {
   const inAppGroup = useSceneStore((s) => s.selection.length === 1 && isAppGroup(s.scene.nodes[parentOf(s.scene, s.selection[0]) ?? '']));
   // Bloccato lui o un gruppo che lo contiene
   const locked = useSceneStore((s) => s.selection.length === 1 && isLocked(s.scene, s.selection[0]));
+  // Pattern dentro una booleana o un altro Pattern: «Aggiorna all'ingombro» non può misurare il pezzo
+  const patternRefreshBlocked = useSceneStore((s) => s.selection.length === 1 && s.scene.nodes[s.selection[0]]?.type === 'group' && refreshRoot(s.scene, s.selection[0]) === null);
   const arrayToolActive = useArrayTool((s) => s.active);
   const patternToolActive = usePatternTool((s) => s.active);
   // Metà piatto su X e Y: i cursori della posizione coprono tutto il piano
@@ -229,10 +231,15 @@ export function PropertiesPanel() {
             params={node.pattern}
             disabled={locked}
             onChange={(change) => patch({ pattern: { ...node.pattern!, ...change } })}
+            refreshBlocked={patternRefreshBlocked ? "Il pezzo sta dentro un'altra operazione (una booleana o un altro Pattern): la sua misura non si può ricalcolare da qui." : undefined}
             onRefreshBounds={() => {
-              // Ingombro attuale del pezzo (figlio) nel sistema del gruppo: il disegno si estende a tutta la nuova area
-              const bounds = localBoundsOf(useSceneStore.getState().scene, node.children[0]);
-              if (bounds) patch({ pattern: { ...node.pattern!, bounds } });
+              // Ingombro attuale del pezzo (figlio) nel sistema del gruppo: il disegno si estende a tutta la nuova area.
+              // Si ricalcola anche la regione (faccia reale o silhouette): così si correggono i progetti salvati prima
+              void refreshedPattern(useSceneStore.getState().scene, node.id).then((fresh) => {
+                // Il calcolo è asincrono: si rilegge il gruppo, così una modifica fatta nel frattempo non viene sovrascritta
+                const current = useSceneStore.getState().scene.nodes[node.id] as GroupNode | undefined;
+                if (fresh && current?.pattern) patch({ pattern: { ...current.pattern, ...fresh } });
+              });
             }}
           />
         </Section>
