@@ -18,6 +18,8 @@ I messaggi di commit seguono i [Conventional Commits](https://www.conventionalco
 
 ## [Non rilasciato]
 
+## [0.70.1] - 2026-10-17
+
 ### Corretto
 - **Il Pattern passante su un pezzo smussato non buca più lo smusso.** Con profondità 0 (passante) su una faccia parallela a un asse la regione da forare era l'ombra di tutto il pezzo lungo la normale, che su un pezzo smussato è ancora il rettangolo pieno e includeva la fascia sotto lo smusso. Ora i parametri del Pattern hanno il campo opzionale `region`: `face` usa il contorno della faccia reale (la sezione appena sotto la faccia), `silhouette` l'ombra del pezzo (serve quando la faccia viene dall'ingombro e non esiste come faccia piana: sfera, cilindro sdraiato). Lo strumento mette `face` se sulla mesh esiste una faccia piana su quel piano e non ci sono altri piani rivolti allo stesso modo a un'altra quota (un cubo smussato resta `face`; un pezzo a L, una piastra con rilievo o un coperchio con bordo rialzato restano `silhouette`, come prima), e «Scegli faccia» sempre `face`; il codice OpenSCAD segue la stessa scelta. Limite: un pezzo con gradini e smusso insieme continua a forare lo smusso, il rimedio è «Scegli faccia» sulla faccia voluta. Con profondità maggiore di 0 il difetto non c'era (la tasca usava già il contorno della faccia).
 - **I progetti già salvati non cambiano**: senza `region` vale `silhouette`, come prima. Per correggere un Pattern vecchio basta «Aggiorna all'ingombro» nelle proprietà del gruppo, che ora ricalcola anche la regione; prima il pulsante non trovava la mesh del pezzo (il gruppo mostra il pezzo già forato) e non faceva nulla, ora valuta il pezzo intero a parte (spento, con la spiegazione nel tooltip, se il gruppo sta dentro una booleana o un altro Pattern).
