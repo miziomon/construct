@@ -1,4 +1,4 @@
-import { MAX_PATH_CONTOURS, MAX_PATH_NODES, PATH_DEFAULT_TOLERANCE, cubicPoint, segmentOf, splitCubic } from '../../scene/bezier';
+import { MAX_PATH_CONTOURS, MAX_PATH_NODES, PATH_DEFAULT_TOLERANCE, bboxOf, cubicPoint, samplePaths, segmentOf, signedArea, splitCubic } from '../../scene/bezier';
 import { REVOLVE_DEFAULT_ANGLE, REVOLVE_DEFAULT_SEGMENTS, pathContours, pathNaturalBox } from '../../scene/shapes2d';
 import { hasBoundDimension } from '../../scene/resize';
 import { shape2dDefaults } from '../../scene/defaults';
@@ -191,6 +191,16 @@ export function nearestSegment(paths: PathContour[], tol: number, p: Vec2): { pa
   return best;
 }
 
+/** Vero se il punto `p` sta dentro il poligono (regola pari-dispari: un raggio verso destra che attraversa un numero dispari di lati). */
+export function pointInPolygon(poly: Vec2[], p: Vec2): boolean {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [a, b] = [poly[i], poly[j]];
+    if (a[1] > p[1] !== b[1] > p[1] && p[0] < ((b[0] - a[0]) * (p[1] - a[1])) / (b[1] - a[1]) + a[0]) inside = !inside;
+  }
+  return inside;
+}
+
 /**
  * Vero se il punto `p` sta dentro il contorno (regola pari-dispari sul contorno campionato). Un contorno aperto si considera
  * chiuso da un tratto retto, come fa l'estrusione lineare; sotto i 3 nodi non c'è area.
@@ -205,12 +215,47 @@ export function contourContains(c: PathContour, p: Vec2): boolean {
     if (!straight) for (let k = 1; k < 16; k++) poly.push(cubicPoint(cubic, k / 16));
   }
   if (!c.closed) poly.push(c.nodes[c.nodes.length - 1].p);
-  let inside = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const [a, b] = [poly[i], poly[j]];
-    if (a[1] > p[1] !== b[1] > p[1] && p[0] < ((b[0] - a[0]) * (p[1] - a[1])) / (b[1] - a[1]) + a[0]) inside = !inside;
-  }
-  return inside;
+  return pointInPolygon(poly, p);
+}
+
+/**
+ * Quali contorni sono fori: un elemento per contorno, nello stesso ordine di `d.paths` (`true` foro, `false` contorno,
+ * `null` senza area, che il kernel scarta). Si parte dagli stessi poligoni del kernel (stesso campionamento; in rotazione un
+ * contorno aperto si chiude sull'asse, a x = 0 nel sistema dell'editor, come in `pathContours`). Un contorno ha tanti
+ * livelli di annidamento quanti sono gli altri poligoni che contengono il suo primo punto: con riempimento pari-dispari
+ * un livello dispari è un foro.
+ */
+export function contourHoles(d: Pick<Draft, 'paths' | 'tolerance' | 'extrusion'>): (boolean | null)[] {
+  const rotational = d.extrusion === 'rotate';
+  // Poligono di ogni contorno (null se il kernel lo scarta: meno di 2 punti, o senza area)
+  const polygons = samplePaths(d.paths, d.tolerance).contours.map((c): Vec2[] | null => {
+    const points = c.points.slice();
+    if (points.length < 2) return null;
+    if (rotational && !c.closed) {
+      // Dall'ultimo punto all'asse e dall'asse al primo, senza punti doppi
+      const [first, last] = [points[0], points[points.length - 1]];
+      for (const q of [[0, last[1]], [0, first[1]]] as Vec2[]) {
+        const tail = points[points.length - 1];
+        if (q[0] !== tail[0] || q[1] !== tail[1]) points.push(q);
+      }
+      const end = points[points.length - 1];
+      if (end[0] === first[0] && end[1] === first[1]) points.pop();
+    }
+    return points.length >= 3 && Math.abs(signedArea(points)) > 1e-8 ? points : null;
+  });
+  // Riquadri: se il primo punto sta fuori dal riquadro di un poligono non serve provare i lati
+  const boxes = polygons.map((poly) => (poly ? bboxOf([poly]) : null));
+  return polygons.map((poly, i) => {
+    if (!poly) return null;
+    const probe = poly[0];
+    let depth = 0;
+    polygons.forEach((other, j) => {
+      const box = boxes[j];
+      if (j === i || !other || !box || probe[0] < box.minX || probe[0] > box.maxX || probe[1] < box.minY || probe[1] > box.maxY) return;
+      if (pointInPolygon(other, probe)) depth++;
+    });
+    return depth % 2 === 1;
+  });
 }
 
 /**

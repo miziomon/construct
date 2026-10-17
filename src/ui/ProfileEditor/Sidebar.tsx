@@ -9,6 +9,8 @@ import type { Draft, NodeRef } from './model';
 interface Props {
   draft: Draft;
   selection: NodeRef[];
+  /** Un elemento per contorno: `true` se è un foro (annidamento dispari). */
+  holes: (boolean | null)[];
   grid: GridSettings;
   /** Campionamento del disegno: punti totali, tolleranza usata davvero e se si è dovuta alzare per i tetti di punti. */
   sampling: { points: number; tolerance: number; capped: boolean };
@@ -45,7 +47,7 @@ const GRID_STEPS = [0.1, 0.5, 1, 5, 10];
 const comma = (n: number) => String(n).replace('.', ',');
 
 /** Colonna di destra della modale: estrusione, punto selezionato, percorsi, griglia e snap, qualità. */
-export function Sidebar({ draft, selection, grid, sampling, boundFields, onExtrusion, onLive, onPatch, onKind, onCoordinate, onHandle, onGrid, onSelectPath, onClosePath, onDeletePath }: Props) {
+export function Sidebar({ draft, selection, holes, grid, sampling, boundFields, onExtrusion, onLive, onPatch, onKind, onCoordinate, onHandle, onGrid, onSelectPath, onClosePath, onDeletePath }: Props) {
   // Il pannello del punto vale per un nodo solo (con più nodi si mostra il conteggio)
   const ref = selection.length === 1 ? selection[0] : null;
   const contour = ref ? draft.paths[ref.path] : undefined;
@@ -128,6 +130,7 @@ export function Sidebar({ draft, selection, grid, sampling, boundFields, onExtru
                   Percorso {i + 1}
                 </button>
                 <span className="profile-editor__badge">{c.closed ? 'Chiuso' : 'Aperto'}</span>
+                {holes[i] && <span className="profile-editor__badge profile-editor__badge--hole" title="Sta dentro un altro contorno: nel solido è un vuoto">Foro</span>}
                 {!c.closed && c.nodes.length >= 2 && (
                   <button type="button" className="profile-editor__mini" title="Chiudi il percorso: l'ultimo nodo si unisce al primo" onClick={() => onClosePath(i)}>
                     Chiudi

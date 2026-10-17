@@ -1533,3 +1533,61 @@ test('Converti in profilo dalle Proprietà: il pulsante c\'è per le forme 2D, n
   await settled(page);
   await expect(action).toHaveCount(0);
 });
+
+// --- Fori (fase 3) ------------------------------------------------------------------------------------------------------
+
+/** Rettangolo 40 × 20 con un quadrato 10 × 10 al centro (un foro per la regola pari-dispari). */
+const WITH_HOLE = [
+  ...RECT,
+  {
+    closed: true,
+    nodes: [
+      { p: [15, 5], kind: 'corner' },
+      { p: [25, 5], kind: 'corner' },
+      { p: [25, 15], kind: 'corner' },
+      { p: [15, 15], kind: 'corner' },
+    ],
+  },
+];
+
+test('fori: il contorno dentro un altro ha il badge Foro e la curva tratteggiata; il volume è quello del solido con il vuoto', async ({ page }) => {
+  const id = await addPath(page, WITH_HOLE);
+  // 40 × 20 × 5 meno 10 × 10 × 5
+  expect(await volume(page)).toBeCloseTo(3500, 0);
+  await openEditor(page, id);
+  const rows = editor(page).locator('[data-path]');
+  await expect(rows.nth(0)).not.toContainText('Foro');
+  await expect(rows.nth(1)).toContainText('Foro');
+  await expect(editor(page).locator('.profile-editor__curve')).toHaveCount(2);
+  await expect(editor(page).locator('.profile-editor__curve--hole')).toHaveCount(1);
+  // Eliminando il contorno esterno quello interno non è più un foro
+  await rows.nth(0).getByRole('button', { name: 'Elimina il percorso 1' }).click();
+  await expect(editor(page).locator('.profile-editor__curve--hole')).toHaveCount(0);
+  await expect(editor(page).locator('[data-path="0"]')).not.toContainText('Foro');
+});
+
+test('fori: la Penna nel riempimento apre un nuovo contorno che diventa un foro; Ctrl+Z locale lo toglie e l\'OK lo scrive nel solido', async ({ page }) => {
+  const id = await addPath(page, RECT);
+  await openEditor(page, id);
+  const k = await pixelsPerMm(page);
+  const origin = await center(node(page, '0:0'));
+  await editor(page).getByRole('button', { name: 'Penna' }).click();
+  // Quattro clic dentro il rettangolo (da 10 a 30 mm in X, da 5 a 15 in Y) e un clic sul primo nodo
+  const spots: [number, number][] = [[10, 5], [30, 5], [30, 15], [10, 15]];
+  for (const [x, y] of spots) await page.mouse.click(origin.x + x * k, origin.y - y * k);
+  await page.mouse.click(origin.x + 10 * k, origin.y - 5 * k);
+  await expect(editor(page).locator('[data-path="1"]')).toContainText('Chiuso');
+  await expect(editor(page).locator('[data-path="1"]')).toContainText('Foro');
+  await expect(editor(page).locator('[data-path="0"]')).not.toContainText('Foro');
+  await expect(editor(page).locator('.profile-editor__curve--hole')).toHaveCount(1);
+  // Annulla locale: il contorno sparisce e con lui il badge
+  await page.keyboard.press('Control+z');
+  await expect(editor(page).locator('[data-path]')).toHaveCount(1);
+  await page.keyboard.press('Control+Shift+z');
+  await expect(editor(page).locator('[data-path="1"]')).toContainText('Foro');
+  await okButton(page).click();
+  await expect(editor(page)).toHaveCount(0);
+  await settled(page);
+  // 40 × 20 × 5 meno il foro 20 × 10 × 5
+  expect(await volume(page)).toBeCloseTo(3000, 0);
+});

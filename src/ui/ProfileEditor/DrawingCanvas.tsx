@@ -24,6 +24,8 @@ interface Props {
   contours: Vec2[][];
   /** Punti in cui i contorni si attraversano. */
   crossings: Vec2[];
+  /** Un elemento per contorno: `true` se è un foro (annidamento dispari), `null` se non ha area. */
+  holes: (boolean | null)[];
   selection: NodeRef[];
   grid: GridSettings;
   /** Vero mentre è premuta la barra spaziatrice (la tastiera la legge la radice della modale): il trascinamento sposta la vista. */
@@ -135,7 +137,7 @@ type Drag =
  * zoom sul puntatore, Spazio o tasto centrale per la panoramica. Le modifiche passano da `onLive` (durante il gesto) e
  * `onCommit` (al rilascio): un gesto è un solo passo della cronologia.
  */
-export function DrawingCanvas({ draft, contours, crossings, selection, grid, spaceDown, onLive, onCommit, onSelect, tool, onTool, flip, onFlip, pen, onPenLive, onPenResume, onPenClose, onPenFinish, onPenLimit }: Props) {
+export function DrawingCanvas({ draft, contours, crossings, holes, selection, grid, spaceDown, onLive, onCommit, onSelect, tool, onTool, flip, onFlip, pen, onPenLive, onPenResume, onPenClose, onPenFinish, onPenLimit }: Props) {
   const wrap = useRef<HTMLDivElement>(null);
   const svg = useRef<SVGSVGElement>(null);
   const [size, setSize] = useState({ w: 600, h: 400 });
@@ -691,7 +693,7 @@ export function DrawingCanvas({ draft, contours, crossings, selection, grid, spa
         )}
         <path className="profile-editor__fill" fillRule="evenodd" d={fill} />
         {draft.paths.map((c, pi) => (
-          <path key={pi} className="profile-editor__curve" d={contourPath(c, toS)} />
+          <path key={pi} className={`profile-editor__curve${holes[pi] ? ' profile-editor__curve--hole' : ''}`} d={contourPath(c, toS)} />
         ))}
         {/* Maniglie dei nodi selezionati e dei loro vicini */}
         {[...shown].map((key) => {

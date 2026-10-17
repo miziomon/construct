@@ -97,7 +97,7 @@ describe.each(['light', 'dark'])('contrasto del tema %s', (name) => {
 
   // Disegno 2D della modale del Profilo: il canvas sta sul pannello. Nodi, maniglie e asse sono elementi grafici (almeno 3:1);
   // il testo dell'asse e dell'avviso nella zona non ruotata (sulla tinta rossa) segue la soglia dei testi (4,5:1)
-  it.each(['profile-axis', 'profile-node', 'profile-handle', 'accent'])('disegno del Profilo: %s sul pannello: almeno 3:1', (token) => {
+  it.each(['profile-axis', 'profile-node', 'profile-handle', 'accent', 'hole'])('disegno del Profilo: %s sul pannello: almeno 3:1', (token) => {
     expect(contrast(c(token), c('panel'))).toBeGreaterThanOrEqual(3);
   });
 

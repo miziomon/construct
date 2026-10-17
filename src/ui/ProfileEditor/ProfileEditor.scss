@@ -121,6 +121,12 @@
     stroke-linejoin: round;
   }
 
+  // Un contorno dentro un altro è un foro: tratteggiato e con il colore del foro (il significato non è affidato solo al colore)
+  &__curve--hole {
+    stroke: color('hole');
+    stroke-dasharray: 6 3;
+  }
+
   &__handle {
     line {
       stroke: color('profile-handle');
@@ -528,6 +534,11 @@
     border-radius: 999px;
     font-size: 11px;
     color: color('text-muted');
+  }
+
+  &__badge--hole {
+    border-color: color('hole');
+    color: color('danger');
   }
 
   &__mini {

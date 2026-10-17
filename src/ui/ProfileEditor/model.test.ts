@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { appendPenNode, bakeScale, canCloseContour, closeContour, contourContains, cycleKind, deleteNodes, draftContours, draftFromNode, dropLastNode, emptyDraft, gridStep, insertNode, isOpenEnd, joinContours, moveHandle, moveNodes, nearestSegment, pathCenter, resumeContour, setNodeKind, snapPoint, trimDuplicateTail } from './model';
+import { appendPenNode, bakeScale, canCloseContour, closeContour, contourContains, contourHoles, cycleKind, deleteNodes, draftContours, draftFromNode, dropLastNode, emptyDraft, gridStep, insertNode, isOpenEnd, joinContours, moveHandle, moveNodes, nearestSegment, pathCenter, pointInPolygon, resumeContour, setNodeKind, snapPoint, trimDuplicateTail } from './model';
 import { bboxOf, cubicPoint, segmentOf, signedArea, splitCubic } from '../../scene/bezier';
 import { pathContours, pathNaturalSize } from '../../scene/shapes2d';
 import { shape2dDefaults } from '../../scene/defaults';
@@ -563,5 +563,58 @@ describe('canCloseContour', () => {
     expect(canCloseContour(two(node([0, 0], undefined, [-3, 3]), node([10, 0])))).toBe(true);
     // Due curve (nodi simmetrici)
     expect(canCloseContour(two(node([0, 0], [3, 3], [-3, -3], 'symmetric'), node([10, 0], [3, 3], [-3, -3], 'symmetric')))).toBe(true);
+  });
+});
+
+describe('pointInPolygon', () => {
+  it('regola pari-dispari sul poligono: dentro, fuori, e concavo', () => {
+    const poly: Vec2[] = [[0, 0], [10, 0], [10, 10], [5, 4], [0, 10]];
+    expect(pointInPolygon(poly, [2, 2])).toBe(true);
+    // Nel vano della concavità in alto
+    expect(pointInPolygon(poly, [5, 8])).toBe(false);
+    expect(pointInPolygon(poly, [-1, 2])).toBe(false);
+    expect(pointInPolygon(poly, [20, 2])).toBe(false);
+  });
+});
+
+describe('contourHoles', () => {
+  /** Quadrato di lato `side` con l'angolo in basso a sinistra in (x, y). */
+  const box = (x: number, y: number, side: number): PathContour => ({ closed: true, nodes: [node([x, y]), node([x + side, y]), node([x + side, y + side]), node([x, y + side])] });
+  const holes = (paths: PathContour[], extrusion: 'linear' | 'rotate' = 'linear') => contourHoles({ paths: freeze(paths), tolerance: 0.05, extrusion });
+
+  it('un solo contorno non è un foro; uno dentro l\'altro sì, qualunque sia l\'ordine', () => {
+    expect(holes([box(0, 0, 20)])).toEqual([false]);
+    expect(holes([box(0, 0, 20), box(5, 5, 5)])).toEqual([false, true]);
+    expect(holes([box(5, 5, 5), box(0, 0, 20)])).toEqual([true, false]);
+  });
+
+  it('tre livelli: contorno, foro, isola; contorni affiancati o esterni non sono fori', () => {
+    expect(holes([box(0, 0, 40), box(5, 5, 30), box(10, 10, 5)])).toEqual([false, true, false]);
+    expect(holes([box(0, 0, 10), box(20, 0, 10)])).toEqual([false, false]);
+    expect(holes([box(2, 2, 10), box(0, 0, 40), box(50, 50, 5)])).toEqual([true, false, false]);
+  });
+
+  it('un cerchio di Bézier dentro un quadrato è un foro', () => {
+    const c = circle();
+    const outer = box(-30, -30, 60);
+    expect(holes([outer, c])).toEqual([false, true]);
+  });
+
+  it('un contorno senza area (due punti con rette) è null e non conta come contenitore', () => {
+    const line: PathContour = { closed: false, nodes: [node([0, 0]), node([40, 0])] };
+    expect(holes([line, box(5, -5, 5)])).toEqual([null, false]);
+  });
+
+  it('un contorno aperto in rotazione si chiude sull\'asse: ciò che sta tra l\'asse e la curva è dentro, in lineare no', () => {
+    // Da (10, 0) a (10, 20) a (30, 20): in rotazione chiude a (0, 20), (0, 0); in lineare è il triangolo (10,0), (10,20), (30,20)
+    const open: PathContour = { closed: false, nodes: [node([10, 0]), node([10, 20]), node([30, 20])] };
+    const inner = box(2, 5, 4);
+    expect(holes([open, inner], 'linear')).toEqual([false, false]);
+    expect(holes([open, inner], 'rotate')).toEqual([false, true]);
+  });
+
+  it('non modifica i contorni e restituisce un elemento per contorno', () => {
+    const paths = freeze([box(0, 0, 20), box(5, 5, 5), { closed: false, nodes: [node([1, 1])] } as PathContour]);
+    expect(contourHoles({ paths, tolerance: 0.05, extrusion: 'linear' })).toHaveLength(3);
   });
 });

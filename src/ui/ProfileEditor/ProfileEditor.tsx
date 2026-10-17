@@ -12,7 +12,7 @@ import type { GridSettings, Tool } from './DrawingCanvas';
 import { clearDraft, flushDrafts, loadDraft, saveDraft } from './draft';
 import { createHistory } from './history';
 import type { History } from './history';
-import { canCloseContour, closeContour, deleteNodes, draftContours, draftFromNode, dropLastNode, emptyDraft, moveHandle, moveNodes, pathCenter, setNodeKind, trimDuplicateTail } from './model';
+import { canCloseContour, closeContour, contourHoles, deleteNodes, draftContours, draftFromNode, dropLastNode, emptyDraft, moveHandle, moveNodes, pathCenter, setNodeKind, trimDuplicateTail } from './model';
 import type { Draft, NodeRef } from './model';
 import { useProfileEditor } from './profileEditorStore';
 import type { ProfileTarget } from './profileEditorStore';
@@ -320,6 +320,7 @@ function Editor({ target }: { target: ProfileTarget }) {
 
   const contours = useMemo(() => draftContours(draft), [draft]);
   const crossings = useMemo(() => selfIntersections(contours), [contours]);
+  const holes = useMemo(() => contourHoles(draft), [draft]);
   const sampling = useMemo(() => {
     const sampled = samplePaths(draft.paths, draft.tolerance);
     return { points: sampled.contours.reduce((n, c) => n + c.points.length, 0), tolerance: sampled.tolerance, capped: sampled.capped };
@@ -451,6 +452,7 @@ function Editor({ target }: { target: ProfileTarget }) {
             draft={draft}
             contours={contours}
             crossings={crossings}
+            holes={holes}
             selection={selection}
             grid={grid}
             spaceDown={spaceDown}
@@ -475,6 +477,7 @@ function Editor({ target }: { target: ProfileTarget }) {
           <Sidebar
             draft={draft}
             selection={selection}
+            holes={holes}
             grid={grid}
             sampling={sampling}
             boundFields={init.boundFields}
