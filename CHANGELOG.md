@@ -18,6 +18,18 @@ I messaggi di commit seguono i [Conventional Commits](https://www.conventionalco
 
 ## [Non rilasciato]
 
+## [0.69.0] - 2026-10-17
+
+### Aggiunto
+- **Profilo di Bézier, fase 3.** Nella modale del Profilo tre strumenti per le forme base: **Rettangolo** (`R`), **Ellisse** (`C`) e **Poligono** (`G`, con il campo Lati da 3 a 24). Si preme sul centro e si trascina, con gli agganci della Penna (Ctrl li sospende); Maiusc fa il quadrato e il cerchio (nel Poligono arrotonda l'angolo a 15°). Ogni forma è un contorno di nodi modificabili e un solo passo della cronologia locale; con 100 contorni compare un avviso.
+- **Fori**: nell'elenco dei percorsi il badge **Foro** segna i contorni dentro altri (regola pari-dispari, in rotazione con i contorni aperti chiusi sull'asse) e nel disegno la loro curva è tratteggiata. Disegnare un foro con la Penna funzionava già: un clic nel riempimento apre un nuovo contorno.
+- **Importa SVG** nella modale: conserva le curve (tracciati M, L, H, V, C, S, Q, T, A, Z relativi e assoluti, `rect` anche con angoli arrotondati, `circle`, `ellipse`, `line`, `polyline`, `polygon`, tutte le `transform` affini, anche tracciati con solo tratto). I nodi si accodano al disegno, restano selezionati e la vista si adatta; il tipo di nodo (spigolo, liscio, simmetrico) si deduce dalle maniglie. Oltre 500 nodi per contorno o 100 contorni l'import si rifiuta con un messaggio. `<style>` e `<use>` non si leggono.
+- **Converti in profilo** (menu contestuale e pulsante nelle Proprietà, nessuna scorciatoia): trasforma cerchio, quadrato (anche con angoli arrotondati), forme poligonali, profilati, tubolari e SVG importato in un Profilo con lo stesso solido (volume e riquadro uguali, posizione compensata), un solo passo di Annulla. Il cerchio fino a 12 lati diventa N spigoli, oltre diventa 4 curve e il solido cambia di poco (lo dice un avviso). I legami ai parametri dei campi che il Profilo non ha si tolgono con un avviso. Il Testo, un SVG oltre i tetti dei nodi e un poligono a lati dispari con torsione o scala della cima non si convertono.
+
+### Modificato
+- La chiusura di un sottotracciato SVG usa una tolleranza relativa alla misura del disegno: le coordinate relative arrotondate dei file di Inkscape e Illustrator non lasciano più un nodo doppio.
+- `unitScale` di `src/import/svg.ts` è esportata; il codice OpenSCAD, il kernel e il formato del file di progetto non cambiano.
+
 ## [0.68.0] - 2026-10-16
 
 ### Aggiunto

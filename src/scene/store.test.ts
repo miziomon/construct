@@ -458,7 +458,7 @@ describe('convertToPath: Converti in profilo', () => {
     undo();
     st().updateNode(id, { segments: 64 });
     expect(st().convertToPath(id)).toBe(true);
-    expect(toasts().join(' ')).toContain('il cerchio con 64 lati diventa una curva: il solido cambia di poco');
+    expect(toasts().join(' ')).toContain('il cerchio con 64 lati diventa una curva e il solido cambia di poco');
   });
 
   it('i legami che il Profilo non ha si perdono e l\'utente lo sa', () => {

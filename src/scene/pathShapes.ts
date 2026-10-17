@@ -87,9 +87,15 @@ export function cubicsToContour(start: Vec2, segs: PathSeg[], closed: boolean): 
   }
   // Chiusura sul punto iniziale: l'ultimo nodo coincide con il primo, la sua maniglia in arrivo passa al primo. La tolleranza è
   // relativa alla misura del contorno: coordinate relative arrotondate (SVG) tornano al punto iniziale con un errore di millesimi
-  const xs = points.map((p) => p[0]);
-  const ys = points.map((p) => p[1]);
-  const closeTol = Math.max(EPS, CLOSE_RATIO * Math.hypot(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)));
+  // Il riquadro si calcola con un ciclo: `Math.max(...punti)` va in errore con centinaia di migliaia di punti
+  let [minX, maxX, minY, maxY] = [Infinity, -Infinity, Infinity, -Infinity];
+  for (const [x, y] of points) {
+    minX = Math.min(minX, x);
+    maxX = Math.max(maxX, x);
+    minY = Math.min(minY, y);
+    maxY = Math.max(maxY, y);
+  }
+  const closeTol = Math.max(EPS, CLOSE_RATIO * Math.hypot(maxX - minX, maxY - minY));
   if (closed && points.length > 1 && len(sub(points[points.length - 1], start)) < closeTol) {
     ins[0] = ins[points.length - 1];
     points.pop();

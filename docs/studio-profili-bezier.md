@@ -179,6 +179,22 @@ Prese realizzando il modello e il kernel; dove si discostano dal testo sopra, va
 - **D4-D7 in pratica (0.61.0).** Il nodo nuovo nasce solo con l'OK (D4); `Modal` ha `onEscape` e il disegno chiede conferma con Esc anche senza modifiche alla scena (D5); "Modifica profilo" sta nel menu contestuale, nelle Proprietà e su Maiusc+P, senza pulsante di barra (D6, campo `toolbar: false` nel registro dei comandi); bozza in `localStorage` per nodo, tetti a 500 nodi e 100 contorni (D7). L'anteprima 3D è il kernel vero (`evaluateDetached`, una richiesta in volo, al più una ogni 100 ms, subito al rilascio) in un secondo Canvas a richiesta, e usa gli stessi contorni arrotondati che l'OK scrive: dopo l'OK la mesh della scena ha gli stessi triangoli e lo stesso volume dell'ultima anteprima. L'anteprima sta nella colonna destra sopra le opzioni (a una colonna, sopra il disegno).
 - **D7. Risposte alle domande aperte del §10.** Tolleranza predefinita 0,05 mm; profilo oltre l'asse accettato solo con un avviso; bozza in `localStorage` per nodo (`construct:profile-draft:<id>` o `:new`); al massimo 500 nodi per contorno (e 100 contorni); il nodo `svg` resta com'è.
 
+### Decisioni della fase 3 (0.69.0)
+
+- **D8. Forme base.** Strumenti Rettangolo (R), Ellisse (C) e Poligono (G): si preme sul centro e si trascina, con gli stessi agganci della Penna (Ctrl li sospende). Un gesto è un solo passo della cronologia locale; il contorno nuovo resta selezionato e lo strumento resta attivo. Un clic senza trascinamento non crea nulla; con 100 contorni compare un avviso.
+- **D9.** Maiusc fa il quadrato e il cerchio (lato maggiore). L'Ellisse ha 4 nodi simmetrici con costante 0,5522847498.
+- **D10. Poligono.** Il raggio è la distanza dal centro e il primo vertice punta al cursore; Maiusc arrotonda l'angolo a 15 gradi. Il campo Lati (da 3 a 24, predefinito 6) compare solo con il Poligono attivo.
+- **D11. Fori.** `contourHoles` calcola l'annidamento dagli stessi poligoni del kernel (in rotazione un contorno aperto si chiude sull'asse); profondità dispari = foro. Badge «Foro» nell'elenco dei percorsi e curva tratteggiata nel disegno, così il significato non dipende solo dal colore.
+- **D12. Penna per i fori.** Nessun gesto nuovo: un clic della Penna dentro un riempimento apre già un nuovo contorno. È stato aggiunto il riscontro (badge, tratteggio) e un test e2e.
+- **D13.** Una sola `arcCubics` (pezzi di al più 90 gradi) per gli archi degli SVG, l'Ellisse e gli angoli arrotondati della conversione.
+- **D14. Importa SVG nella modale.** Parser dei tracciati scritto in casa (`src/import/svgPaths.ts`: M, L, H, V, C, S, Q, T, A, Z, relativi e assoluti; Q diventa una cubica esatta; archi in al più 4 cubiche), più `rect` (anche con `rx`/`ry`), `circle`, `ellipse`, `line`, `polyline`, `polygon` e tutte le `transform` affini. Si leggono anche i tracciati con solo tratto (la linea del tornio di Inkscape). Si scartano `defs`, `clipPath`, `mask`, `symbol`, `marker`, `pattern` e gli elementi nascosti; `<style>` e `<use>` non si leggono. La x del file resta com'è (x = 0 è l'asse), la y si ribalta e il fondo va a y = 0. Il tipo di nodo si deduce dalle maniglie. Oltre 500 nodi per contorno o 100 contorni totali l'import si rifiuta per intero.
+- **D15. Converti in profilo.** Comando `toPath` senza scorciatoia (nessuna lettera libera), solo menu contestuale e Proprietà.
+- **D16. Solido invariato.** Stesso id e un solo passo «Converti in profilo». Il nodo si costruisce campo per campo (niente `radius`, `segments`, `cornerRadius`, `radiusY`, `revolveRadius` del vecchio); i nodi si traslano in x del raggio di rotazione di prima e la posizione si compensa con `compensatePosition`.
+- **D17. Per forma.** Quadrato: 4 spigoli (con raggio, 8 nodi). Cerchio fino a 12 lati: N spigoli identici; oltre 12 lati: 4 nodi simmetrici, l'unico caso approssimato (con avviso a schermo). Forme poligonali, profilati, tubolari e SVG: spigoli dai contorni già calcolati. Un poligono a lati dispari con torsione o scala della cima non si converte (il centro del riquadro non coincide con quello del cerchio). Il testo non si converte.
+- **D18.** Un SVG della scena oltre i tetti (500 nodi, 100 contorni) non si converte: il messaggio rimanda all'import nella modale, che conserva le curve.
+- **D19.** I legami ai parametri dei campi che il Profilo non ha (raggio, lati, raggio degli angoli...) si tolgono con un avviso; restano quelli di posizione, rotazione, altezza, torsione, scala della cima, angolo, segmenti e contorno.
+- **D20.** Kernel e codice OpenSCAD non cambiano e `VERSION` di `persistence.ts` resta com'è: il tipo `path` esiste già.
+
 ## 5. Esperienza d'uso (UX)
 
 ### Punti di ingresso
@@ -403,7 +419,7 @@ Le stime sono di ordine di grandezza (giornate di lavoro, con test e documentazi
 |---|---|---|
 | 1. Modello e kernel | Tipo `path`, `bezier.ts` (campionamento, chiusura sull'asse, orientamento, rilevamento delle autointersezioni), ramo in `evaluate.ts` e in `openscad.ts`, `resize.ts`, test (errore di campionamento sotto la tolleranza, contorni a x ≥ 0, coerenza tra kernel e codice, salvataggio) | 3 giorni |
 | 2. Modale | Stato locale con cronologia, canvas SVG (griglia, zoom, pan), Penna e Seleziona, maniglie, tipi di nodo, inserimento ed eliminazione, sidebar, anteprima con il kernel, OK in un solo passo, compensazione della posizione, test e2e | 6 a 8 giorni |
-| 3. Contorni e fori, forme base, import SVG con curve, "Converti in profilo" | Parser SVG, forme base, fori con annidamento | 3 a 4 giorni |
+| 3. Contorni e fori, forme base, import SVG con curve, "Converti in profilo" | Parser SVG, forme base, fori con annidamento | 3 a 4 giorni (fatta in 0.69.0) |
 | 4. Miglioramenti | Linea con spessore, simmetria, raccordo per nodo | a richiesta |
 
 La fase 1 si può rilasciare da sola (nodi creati da "Converti in profilo" e importati da OpenSCAD) e riduce il rischio della

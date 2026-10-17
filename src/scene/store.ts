@@ -411,7 +411,7 @@ export const useSceneStore = create<SceneState>()(
           s.scene.nodes[id] = result.node;
         });
         // Il cerchio con molti lati diventa una curva: il solido cambia di poco, l'utente lo sa
-        if (result.approximate) notify.info(`«${node.name}»: il cerchio con ${Math.round((node as { segments: number }).segments)} lati diventa una curva: il solido cambia di poco`);
+        if (result.approximate) notify.info(`«${node.name}»: il cerchio con ${Math.round((node as { segments: number }).segments)} lati diventa una curva e il solido cambia di poco`);
         // I legami che il Profilo non può tenere (raggio, lati...) si perdono: l'utente lo sa
         if (result.dropped.length) notify.info(`«${node.name}»: ${result.dropped.length === 1 ? `il legame di ${result.dropped[0]} al parametro si perde` : `i legami di ${result.dropped.join(', ')} ai parametri si perdono`}`);
         return true;

@@ -155,12 +155,20 @@ Dalla 0.27.0 l'importazione legge anche `let`/`assign`, le liste per comprension
 
 Chiusi dalla fase 2: modale di disegno con Penna e Seleziona, anteprima 3D, voce in libreria, menu del vuoto, Proprietà e comando `profile` (Maiusc+P), compensazione della posizione, scala incorporata, bozza, tolleranza effettiva e avviso dei troppi punti. Restano:
 
-- **Fase 3 dello studio**: forme base (rettangolo, cerchio, poligono regolare) nella modale, import di un SVG con le curve conservate, "Converti in profilo" da cerchio, quadrato e SVG, elenco dei fori (oggi il foro è solo l'effetto del riempimento pari-dispari) e Penna per i fori.
+- **Fase 3 dello studio**: chiusa nella 0.69.0 (forme base, fori, Importa SVG con le curve, Converti in profilo). Restano i punti della sezione qui sotto.
 - **Anteprima a ogni gesto**: durante un trascinamento il kernel ricalcola al massimo ogni 100 ms con una sola richiesta in volo; con profili molto fitti (migliaia di punti) l'anteprima può restare indietro. Si potrebbe campionare più grossolano durante il gesto.
 - **Controlli dei componenti**: la modale si prova solo da e2e (Vitest gira in ambiente node): i gesti del canvas non hanno test unitari, solo le funzioni pure di `model.ts`.
 - **Attese fisse negli e2e** (0.66.2: quelle che aspettavano il salvataggio automatico ora usano `sceneSaved` in `e2e/helpers.ts`): restano `waitForTimeout` che sono pause vere (distanza tra due clic, prove di assenza come "la bozza non torna", un frame dopo l'attivazione del gizmo, il generatore di immagini `docs-images.spec.ts`).
 - **Screenshot dei due temi** della modale: il piano li voleva allegati alla PR; per ora c'è solo `docs/images/profilo-editor.png`.
 - **Annulla della bozza ripristinata**: dopo "Ripristina" Ctrl+Z torna al disegno della scena, non ai singoli passi fatti prima della chiusura (la bozza salva solo lo stato finale).
+
+## Profili Bézier: punti aperti dalla fase 3 (0.69.0)
+
+- **Importa SVG**: `<style>` e `<use>` non si leggono (un tracciato che dipende da una classe CSS o da un simbolo riusato si perde). Un SVG oltre 500 nodi per contorno o 100 contorni si rifiuta per intero invece di semplificarsi; servirebbe una semplificazione dei punti (Ramer-Douglas-Peucker).
+- **Converti in profilo**: il Testo non si converte (usa il riempimento NonZero e dipende dai font); un SVG della scena oltre i tetti si rifiuta (conviene importare il file nella modale); un poligono a lati dispari con torsione o scala della cima non si converte; il cerchio con più di 12 lati diventa 4 curve e il solido cambia di poco (area -0,16% a 64 lati, fino a circa +4% a 13).
+- **Chunk della modale**: `svgPaths.ts` importa `unitScale` da `svg.ts` e con esso `SVGLoader` di three; spostare `unitScale` e `MM_PER_UNIT` in un modulo piccolo alleggerirebbe il chunk.
+- **Fori**: `contourHoles` usa il primo punto campionato di ogni contorno; se due contorni si toccano proprio lì l'esito è ambiguo.
+- **Chiusura dei sottotracciati SVG**: la tolleranza di 1e-4 della diagonale guarda solo i nodi e non le maniglie; una "goccia" fatta di una sola curva chiusa con un piccolo errore resta di 2 nodi.
 
 ## Font non presenti su Google Fonts
 
