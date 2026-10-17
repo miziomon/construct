@@ -3045,7 +3045,7 @@ test('Pattern: Scegli faccia sostituisce la faccia con un clic, chiude la scelta
 
 test('Pattern passante su un pezzo smussato: nessuna cella sullo smusso, e "Aggiorna all\'ingombro" corregge un progetto vecchio', async ({ page }) => {
   await addShape(page, 'Cubo');
-  // Smusso da 6 mm sullo spigolo tra la cima e la faccia anteriore (occupa y in [-10, -4] e z in [4, 10])
+  // Smusso da 6 mm sullo spigolo tra la cima e la faccia anteriore (il cubo poggia sul piatto, z da 0 a 20: lo smusso occupa y in [-10, -4] e z in [14, 20])
   await page.keyboard.press('s');
   const chamfer = page.getByRole('region', { name: 'Smusso' });
   await pickTopAndFront(page);
@@ -3075,7 +3075,7 @@ test('Pattern passante su un pezzo smussato: nessuna cella sullo smusso, e "Aggi
   const pattern = async () => (await sceneState(page)).nodes[group].pattern;
   expect(await pattern()).toMatchObject({ kind: 'hexagon', depth: 0, region: 'face' });
 
-  /** Un foro sotto lo smusso lascia vertici con y in [-9,9, -4,1] e z sotto la sua quota (la faccia dello smusso sta a z >= 4). */
+  /** Un foro passante sotto lo smusso lascia vertici con y in [-9,9, -4,1] sul fondo del pezzo (z < 3,9); senza fori lì non ce ne sono. */
   const holesUnderChamfer = () =>
     page.evaluate(() => {
       const mesh = window.__construct!.results.getState().meshes[0];
