@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type MutableRefObject, type PointerEvent as ReactPointerEvent } from 'react';
-import { Circle, FlipHorizontal2, Hand, Hexagon, Maximize, MousePointer2, PenTool, Square, ZoomIn, ZoomOut } from 'lucide-react';
+import { Circle, FlipHorizontal2, Hand, Hexagon, Maximize, MousePointer2, PenTool, Square, Upload, ZoomIn, ZoomOut } from 'lucide-react';
 import { MAX_PATH_CONTOURS, cubicPoint, segmentOf } from '../../scene/bezier';
 import type { PathContour, PathNode, Vec2 } from '../../scene/types';
 import { NumberField } from '../NumberField/NumberField';
@@ -55,6 +55,10 @@ interface Props {
   onPenLimit: () => void;
   /** Forme base: raggiunto il limite di contorni. */
   onShapeLimit: () => void;
+  /** Importa SVG: il file scelto dall'utente. */
+  onImportSvg: (file: File) => void;
+  /** Contatore: a ogni aumento la vista inquadra tutto il disegno (dopo un import, quando i contorni sono già nello stato). */
+  fitRequest: number;
 }
 
 /** Vista: centro (mm) e zoom (pixel per mm). La Y del disegno va verso l'alto. */
@@ -142,9 +146,10 @@ type Drag =
  * zoom sul puntatore, Spazio o tasto centrale per la panoramica. Le modifiche passano da `onLive` (durante il gesto) e
  * `onCommit` (al rilascio): un gesto è un solo passo della cronologia.
  */
-export function DrawingCanvas({ draft, contours, crossings, holes, selection, grid, spaceDown, onLive, onCommit, onSelect, tool, onTool, flip, onFlip, pen, onPenLive, onPenResume, onPenClose, onPenFinish, onPenLimit, onShapeLimit }: Props) {
+export function DrawingCanvas({ draft, contours, crossings, holes, selection, grid, spaceDown, onLive, onCommit, onSelect, tool, onTool, flip, onFlip, pen, onPenLive, onPenResume, onPenClose, onPenFinish, onPenLimit, onShapeLimit, onImportSvg, fitRequest }: Props) {
   const wrap = useRef<HTMLDivElement>(null);
   const svg = useRef<SVGSVGElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
   const [size, setSize] = useState({ w: 600, h: 400 });
   const [view, setView] = useState<View>({ cx: 0, cy: 10, s: 8 });
   // Copie per i listener nativi (rotella, osservatore della dimensione), che non vedono lo stato più recente
@@ -192,6 +197,11 @@ export function DrawingCanvas({ draft, contours, crossings, holes, selection, gr
   const fit = useCallback(() => {
     changeView(fitView(latest.current.paths, latest.current.rotate, sizeRef.current.w, sizeRef.current.h));
   }, [changeView]);
+
+  // Adatta chiesto da fuori (dopo un import): l'effetto che aggiorna `latest` sta più in alto, quindi vede già i contorni nuovi
+  useEffect(() => {
+    if (fitRequest > 0) fit();
+  }, [fitRequest, fit]);
 
   // Passando alla rotazione si inquadra di nuovo: serve spazio a sinistra dell'asse per la parte non ruotata
   const wasRotate = useRef(rotate);
@@ -807,6 +817,23 @@ export function DrawingCanvas({ draft, contours, crossings, holes, selection, gr
             <NumberField label="Lati" min={POLYGON_SIDES.min} max={POLYGON_SIDES.max} integer value={sides} onCommit={setSides} />
           </div>
         )}
+        <button type="button" title="Importa SVG: aggiunge al disegno i contorni di un file SVG conservandone le curve (in millimetri, con la X del file e il fondo a y = 0)" onClick={() => fileInput.current?.click()}>
+          <Upload size={16} />
+          <span>Importa SVG</span>
+        </button>
+        <input
+          ref={fileInput}
+          type="file"
+          accept=".svg,image/svg+xml"
+          hidden
+          aria-label="File SVG da importare"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            // Si azzera il campo: lo stesso file si può importare di nuovo
+            e.target.value = '';
+            if (file) onImportSvg(file);
+          }}
+        />
       </div>
       {rotate && outsideWidth >= OUTSIDE_LABEL_MIN && (
         <div className="profile-editor__flip" style={{ left: outsideX + outsideWidth / 2, top: size.h / 2 + 14 }}>

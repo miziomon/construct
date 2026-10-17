@@ -23,7 +23,7 @@ const MM_PER_UNIT: Record<string, number> = { mm: 1, cm: 10, in: 25.4, pt: 25.4 
  * e un viewBox, l'unità utente vale larghezza / viewBox. Altrimenti 1 unità = 1 mm (px e unità assenti non hanno una
  * dimensione fisica affidabile: la forma resta ridimensionabile dal pannello).
  */
-function unitScale(root: Element): number {
+export function unitScale(root: Element): number {
   const viewBox = root.getAttribute('viewBox')?.trim().split(/[\s,]+/).map(Number);
   const declared = /^\s*([\d.]+)\s*([a-z]*)\s*$/i.exec(root.getAttribute('width') ?? '');
   const mmPerUnit = declared ? MM_PER_UNIT[declared[2].toLowerCase()] : undefined;

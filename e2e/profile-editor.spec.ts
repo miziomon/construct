@@ -1738,3 +1738,72 @@ test('forme base: il doppio clic su un nodo non cambia il tipo e il disegno vuot
   await expect(nodes(page)).toHaveCount(4);
   expect(await node(page, '0:0').getAttribute('data-kind')).toBe('corner');
 });
+
+// --- Importa SVG (fase 3) ----------------------------------------------------------------------------------------------
+
+const svgFile = (page: Page, name: string, content: string) => editor(page).locator('input[type="file"]').setInputFiles({ name, mimeType: 'image/svg+xml', buffer: Buffer.from(content) });
+
+/** Un tracciato con una cubica (C), un arco (A: una semicirconferenza, due pezzi) e un lato dritto. */
+const SVG_WITH_CURVES = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path d="M10 10 C30 0 50 0 70 10 A20 20 0 0 1 70 50 L10 50 Z"/></svg>';
+
+test('Importa SVG: i contorni arrivano con le curve (C e A), selezionati e inquadrati, in un solo passo locale; l\'OK li scrive nel Profilo', async ({ page }) => {
+  await openNewDrawing(page);
+  await svgFile(page, 'curve.svg', SVG_WITH_CURVES);
+  // Nodi: partenza, fine della cubica, metà dell'arco, fine dell'arco, lato dritto
+  await expect(nodes(page)).toHaveCount(5);
+  await expect(editor(page).locator('[data-path="0"]')).toContainText('Chiuso');
+  await expect(selectedCount(page)).toHaveCount(5);
+  // La metà dell'arco è un nodo con le maniglie opposte e uguali: simmetrico
+  expect(await nodes(page).evaluateAll((els) => els.map((el) => el.getAttribute('data-kind')).filter((k) => k !== 'corner'))).toContain('symmetric');
+  // La vista inquadra il disegno: tutti i nodi stanno dentro l'area
+  const area = (await canvas(page).boundingBox())!;
+  for (const handle of await nodes(page).all()) {
+    const box = (await handle.boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(area.x);
+    expect(box.y).toBeGreaterThanOrEqual(area.y);
+    expect(box.x + box.width).toBeLessThanOrEqual(area.x + area.width);
+    expect(box.y + box.height).toBeLessThanOrEqual(area.y + area.height);
+  }
+  // Un solo passo locale
+  await canvas(page).focus();
+  await page.keyboard.press('Control+z');
+  await expect(nodes(page)).toHaveCount(0);
+  await page.keyboard.press('Control+Shift+z');
+  await expect(nodes(page)).toHaveCount(5);
+  await okButton(page).click();
+  await expect(editor(page)).toHaveCount(0);
+  await settled(page);
+  const scene = await sceneState(page);
+  const created = scene.nodes[scene.rootIds[0]] as unknown as { kind: string; paths: { closed: boolean; nodes: { p: [number, number]; in?: unknown; out?: unknown }[] }[] };
+  expect(created.kind).toBe('path');
+  expect(created.paths[0].closed).toBe(true);
+  expect(created.paths[0].nodes).toHaveLength(5);
+  // Le curve sono rimaste curve: ci sono maniglie
+  expect(created.paths[0].nodes.some((n) => n.in || n.out)).toBe(true);
+  // Il fondo del disegno è a y = 0 (il file ha Y verso il basso)
+  expect(Math.min(...created.paths[0].nodes.map((n) => n.p[1]))).toBeCloseTo(0, 3);
+  expect(Math.min(...created.paths[0].nodes.map((n) => n.p[0]))).toBeCloseTo(10, 3);
+});
+
+test('Importa SVG su un disegno esistente: i contorni si accodano e un foro dentro un altro contorno è riconosciuto', async ({ page }) => {
+  const id = await addPath(page, RECT);
+  await openEditor(page, id);
+  // Un cerchio di 10 mm di diametro: nel file sta a x 15..25; il fondo va a y = 0, quindi dentro il rettangolo (0..20)
+  await svgFile(page, 'cerchio.svg', '<svg xmlns="http://www.w3.org/2000/svg"><circle cx="20" cy="5" r="5"/></svg>');
+  await expect(editor(page).locator('[data-path]')).toHaveCount(2);
+  await expect(nodes(page)).toHaveCount(8);
+  await expect(editor(page).locator('[data-path="1"]')).toContainText('Foro');
+  // Lo stesso file si può importare di nuovo
+  await svgFile(page, 'cerchio.svg', '<svg xmlns="http://www.w3.org/2000/svg"><circle cx="20" cy="5" r="5"/></svg>');
+  await expect(editor(page).locator('[data-path]')).toHaveCount(3);
+});
+
+test('Importa SVG: un file rotto o senza tracciati utilizzabili dà un avviso e non cambia il disegno', async ({ page }) => {
+  await openNewDrawing(page);
+  await svgFile(page, 'rotto.svg', 'questo non è xml <<<');
+  await expect(page.getByText('"rotto" non è un file SVG valido.')).toBeVisible();
+  await svgFile(page, 'vuoto.svg', '<svg xmlns="http://www.w3.org/2000/svg"><rect width="5" height="5" fill="none"/></svg>');
+  await expect(page.getByText('"vuoto" non contiene tracciati utilizzabili')).toBeVisible();
+  await expect(nodes(page)).toHaveCount(0);
+  await expect(okButton(page)).toBeDisabled();
+});
