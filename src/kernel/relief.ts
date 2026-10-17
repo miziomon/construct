@@ -8,6 +8,7 @@ import {
   normalizeRelief,
   plankLayout,
   reliefDepth,
+  rustMaxDepth,
   sampleGrid,
   studGrid,
   studHeight,
@@ -203,7 +204,7 @@ export function reliefCutter(wasm: ManifoldToplevel, region: CrossSection, param
   const segments = options.segments ?? DEFAULT_SEGMENTS;
   const rect = options.rect ?? regionRect(region);
   // Quanto in basso arriva al massimo il taglio, per il prisma di ritaglio
-  const zMin = -(p.kind === 'rust' ? p.baseDepth + p.roughness + p.craterDepth : p.kind === 'hammered' ? p.depth * (1 + p.jitter) + 0.1 : p.kind === 'wood' ? Math.max(p.gapDepth, p.grainDepth) : p.depth) - 1;
+  const zMin = -(p.kind === 'rust' ? rustMaxDepth(p) : p.kind === 'hammered' ? p.depth * (1 + p.jitter) + 0.1 : p.kind === 'wood' ? Math.max(p.gapDepth, p.grainDepth) : p.depth) - 1;
 
   // Mappa di altezze (anche per il legno in modo 'heightmap', con le fughe nella mappa)
   if (engine === 'heightmap') return clipToRegion(wasm, depthMapCutter(wasm, rect, step, reliefDepth(rect, p)), region, zMin, ABOVE + 1);

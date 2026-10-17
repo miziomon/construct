@@ -191,7 +191,7 @@ describe.skipIf(!process.env.BENCH)('benchmark kernel', { timeout: 300_000 }, ()
 describe.skipIf(!process.env.BENCH)('benchmark texture in rilievo', { timeout: 600_000 }, () => {
   const steps = [0.8, 0.5, 0.3];
   // `size`: lati della faccia in mm (predefinita 80 x 60); in coda quattro prove su una faccia grande 160 x 120
-  const cases: { kind: ReliefKind; engine: ReliefEngine; step?: number; size?: [number, number] }[] = [
+  const cases: { kind: ReliefKind; engine: ReliefEngine; step?: number; size?: [number, number]; patch?: Record<string, number> }[] = [
     { kind: 'brick', engine: 'csg' },
     ...steps.map((step) => ({ kind: 'brick' as const, engine: 'heightmap' as const, step })),
     { kind: 'wood', engine: 'csg' },
@@ -207,12 +207,14 @@ describe.skipIf(!process.env.BENCH)('benchmark texture in rilievo', { timeout: 6
     { kind: 'hammered', engine: 'heightmap', step: 0.5, size: [160, 120] },
     { kind: 'rust', engine: 'heightmap', step: 0.5, size: [160, 120] },
     { kind: 'wood', engine: 'hybrid', step: 0.5, size: [160, 120] },
+    // Il caso peggiore del rame in CSG: diametro minimo (2 mm), cioè il tetto di 500 martellate, su 80 x 60 mm
+    { kind: 'hammered', engine: 'csg', patch: { size: 2 } },
   ];
 
-  it.each(cases)('$kind, motore $engine, passo $step, faccia $size', ({ kind, engine, step, size = [80, 60] }) => {
+  it.each(cases)('$kind, motore $engine, passo $step, faccia $size', ({ kind, engine, step, size = [80, 60], patch }) => {
     const rect = { minX: -size[0] / 2, minY: -size[1] / 2, maxX: size[0] / 2, maxY: size[1] / 2 };
     const region = wasm.CrossSection.square(size, true);
-    const params = reliefDefaults(kind);
+    const params = { ...reliefDefaults(kind), ...patch } as ReturnType<typeof reliefDefaults>;
     const additive = kind === 'studs';
     const cube = wasm.Manifold.cube([size[0], size[1], 5], true);
     const panel = cube.translate([0, 0, -2.5]);
@@ -228,7 +230,7 @@ describe.skipIf(!process.env.BENCH)('benchmark texture in rilievo', { timeout: 6
     };
     const ms = median(run, 7, 2);
     const scad = reliefScad(rect, params, engine, step ?? 0.5).length;
-    const label = `rilievo ${kind} ${engine}${step ? ` ${step} mm` : ''}${size[0] > 80 ? ` ${size[0]}x${size[1]}` : ''}`;
+    const label = `rilievo ${kind} ${engine}${step ? ` ${step} mm` : ''}${size[0] > 80 ? ` ${size[0]}x${size[1]}` : ''}${patch ? ' 500 martellate' : ''}`;
     const line = `BENCH ${label.padEnd(36)} ${ms.toFixed(1).padStart(8)} ms  ${String(triangles).padStart(7)} tri  STL ${((84 + 50 * triangles) / 1024).toFixed(0).padStart(6)} KB  OpenSCAD ${(scad / 1024).toFixed(1).padStart(8)} KB`;
     console.log(line);
     if (process.env.BENCH_OUT) appendFileSync(process.env.BENCH_OUT, `${line}\n`);

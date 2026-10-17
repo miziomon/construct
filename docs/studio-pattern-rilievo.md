@@ -106,7 +106,7 @@ borchie CSG coincidono (24.563,6 mm³) perché la griglia è centrata e tutte le
 borchia è scritto con quattro decimali: con due decimali la differenza era 1,9 mm³. (Una versione precedente dello studio aveva
 la griglia non centrata, con le borchie dell'ultima colonna 0,5 mm fuori dalla faccia: il kernel le ritagliava, il codice
 OpenSCAD no, e il pezzo esportato sporgeva. Più di metà di quella differenza di volume veniva da lì, non dall'arrotondamento.)
-Tempo di rendering in OpenSCAD tra 0,1 e 0,9 s per tutti i casi. Non si è verificato il ritaglio sulla regione con un margine
+Due casi in più con passo 0,7 mm, che non divide i lati (ruggine e borchie in mappa), coincidono anch'essi entro 0,01 mm³. Tempo di rendering in OpenSCAD tra 0,1 e 0,9 s per tutti i casi. Non si è verificato il ritaglio sulla regione con un margine
 (nel test la regione è l'intera faccia): con il margine le borchie vengono scelte dal kernel e si scrivono come elenco
 (`studsInRegion` e il parametro `centers` di `reliefScad`), le altre texture richiedono l'`intersection()` descritta più sotto.
 
@@ -114,7 +114,7 @@ Tempo di rendering in OpenSCAD tra 0,1 e 0,9 s per tutti i casi. Non si è verif
 
 | Texture | Motore | Perché |
 |---|---|---|
-| Mattoni | **CSG** | Sono rettangoli: bordi esatti, 456 triangoli, 0,3 KB di codice (un ciclo `for` a due indici, nemmeno una lista di dati). La mappa dà la stessa forma con bordi a gradini, da 6 a 14 volte i triangoli e da 130 a 330 volte il codice. |
+| Mattoni | **CSG** | Sono rettangoli: bordi esatti, 456 triangoli, 0,3 KB di codice (un ciclo `for` a due indici, nemmeno una lista di dati). La mappa dà la stessa forma con bordi a gradini, da 6 a 14 volte i triangoli (a 0,8 e 0,5 mm) e da 60 a 160 volte il codice (19 e 47 KB contro 0,3 KB). |
 | Tavola di legno | **Ibrido** | Le fughe (0,8 mm) sono rettangoli: in CSG sono esatte, in mappa a 0,5 mm sarebbero larghe 1 o 2 celle e frastagliate. La venatura è un campo continuo (anelli deformati dal rumore) e solo la mappa lo esprime. L'ibrido unisce i due: stessi triangoli della mappa e circa una volta e mezza il tempo (211 contro 142 ms a 0,5 mm, per l'unione in più), ma fughe pulite. |
 | Ruggine | **Mappa** | Non esiste una versione CSG fedele: la ruvidità frattale è il rumore stesso, e i soli crateri (274 ms, 27.000 triangoli) lasciano la faccia liscia, esattamente ciò che si vuole evitare. |
 | Borchie | **CSG** | Disgiunte: `Manifold.compose` senza booleane, 35 ms, 0,3 KB (un `for` e un profilo). Sfaccettature controllabili con i segmenti. La mappa a 0,8 mm rende le calotte a scalini. |
@@ -237,7 +237,7 @@ cicli con `rotate_extrude` sulla griglia centrata (0,3 KB; con un margine o una 
 rimasti, una riga per borchia); rame e crateri, un elenco `dents = [[x, y, r, d], ...]` (una riga per martellata) e un
 modulo `dent(r, d)` che ricostruisce l'arco con la stessa formula del kernel (3,2 KB); ruggine e venatura, una
 `zmap` con tutti i valori della griglia **in centesimi di mm interi** (un terzo di caratteri in meno: la ruggine passa da 114 a
-78 KB a 0,5 mm) e un `polyhedron(pts, faces)` con `pts` e `faces` calcolati da cicli (32, 78 o 212 KB a 0,8, 0,5 o 0,3 mm). Nel codice finale si userebbe come per i Pattern: `translate(origine) rotate(inverseEuler) { ... }` dentro un
+78 KB a 0,5 mm) e un `polyhedron(pts, faces)` con `pts` e `faces` calcolati da cicli (origine e passi della griglia scritti con la precisione piena, così l'ultimo nodo cade sul bordo anche quando il passo non divide il lato) (32, 78 o 212 KB a 0,8, 0,5 o 0,3 mm). Nel codice finale si userebbe come per i Pattern: `translate(origine) rotate(inverseEuler) { ... }` dentro un
 `difference()` (o un `union()` per le borchie), con la regione (margine) fatta da `offset`/`projection` e intersecata con
 `intersection()`. Nel prototipo il modulo `relief()` copre tutto il rettangolo e non ritaglia sulla regione (margine): l'`intersection()`
 con `offset(delta = -margine) projection()` come in `patternLines` va aggiunta in integrazione (e verificata, vedi sopra).
@@ -261,8 +261,8 @@ rigenerare la mappa.
    raggio delle borchie 0,5 mm, altezza 0,2 mm), fughe almeno 0,2 mm, profondità almeno 0,05 mm, densità dei crateri al più 20
    ogni 100 mm² (e al più 2.000 crateri), martellate al più 500 (diametro medio almeno 2 mm), variazione al più 0,9,
    borchie al più circa 2.000 (il passo si allarga), **mappa di altezze al più 250.000 nodi** (il passo si allarga: a 0,3 mm sono
-   circa 22.000 mm² di faccia), passo minimo 0,05 mm. I valori non finiti tornano a quelli di partenza. Con le misure a zero le
-   funzioni finiscono comunque (test), ma una faccia grande con tutti i minimi può costare secondi (500 martellate in CSG: circa 4 s).
+   circa 22.000 mm² di faccia), passo minimo 0,05 mm. Il prisma di ritaglio della ruggine arriva alla profondità massima possibile (`rustMaxDepth`: quota base + 1,4 volte la ruvidità + cratere), così il fondo non si appiattisce nemmeno con ruvidità alta, e coincide con l'export OpenSCAD. I valori non finiti tornano a quelli di partenza. Con le misure a zero le
+   funzioni finiscono comunque (test), ma una faccia grande con tutti i minimi può costare secondi (500 martellate in CSG su 80 × 60 mm: 1.383 ms e 95.190 triangoli, misurati con il benchmark; un diametro medio di 2 mm porta al tetto di 500).
 3. **Kernel** (`src/kernel/pattern.ts`): estrarre da `cutterFor` il tratto "porta nel riferimento della faccia, calcola la
    regione, ridotta del margine" (è quello che cambia con il branch B) e farlo seguire da `reliefCutter` o `reliefAddition`;
    poi stessa rotazione e traslazione di ritorno dei cutter attuali. Per le borchie `buildPattern` fa

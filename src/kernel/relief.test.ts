@@ -6,7 +6,7 @@ import { BEST_ENGINE, heightSolid, reliefAddition, reliefCutter, studsInRegion }
 import type { ReliefEngine } from './relief';
 import { writeStl } from './export/stl';
 import { reliefScad } from '../codegen/reliefScad';
-import { reliefDefaults, rustDepth, sampleGrid, studCenters } from '../scene/relief';
+import { reliefDefaults, rustDepth, rustMaxDepth, sampleGrid, studCenters } from '../scene/relief';
 import type { ReliefKind, ReliefParams, RustParams, StudParams } from '../scene/relief';
 
 let wasm: ManifoldToplevel;
@@ -244,6 +244,22 @@ describe('ancoraggio al rettangolo della faccia', () => {
   });
 });
 
+describe('ruggine con ruvidità alta', () => {
+  it('il prisma di ritaglio comprende tutta la profondità possibile (grana fine compresa): il fondo non si appiattisce', () => {
+    const params = { ...(reliefDefaults('rust') as RustParams), roughness: 8 };
+    // Il vecchio limite (base + ruvidità + cratere + 1 mm) non basta più: la grana fine da sola vale 0,4 volte la ruvidità
+    expect(rustMaxDepth(params)).toBeGreaterThan(params.baseDepth + params.roughness + params.craterDepth + 1);
+    const rect = { minX: -40, minY: -30, maxX: 40, maxY: 30 };
+    const depth = rustDepth(rect, params);
+    const grid = sampleGrid(rect, 0.8, (x, y) => 0.02 - depth(x, y));
+    // Nessun campione scende sotto il limite e il taglio arriva esattamente fino al punto più profondo
+    expect(Math.min(...grid.z)).toBeGreaterThanOrEqual(0.02 - rustMaxDepth(params));
+    const cutter = reliefCutter(wasm, region, params, { engine: 'heightmap', step: 0.8 })!;
+    expect(cutter.boundingBox().min[2]).toBeCloseTo(Math.min(...grid.z), 2);
+    cutter.delete();
+  });
+});
+
 describe('regione ridotta', () => {
   it('il taglio resta dentro la regione (cornice intatta)', () => {
     const inner = region.offset(-5, 'Miter', 2, 8);
@@ -289,6 +305,14 @@ describe('codice OpenSCAD', () => {
     expect(() => reliefScad(rect, reliefDefaults('rust'), 'hybrid')).toThrow(/hybrid/);
   });
 
+  it("quando il passo non divide il lato l'ultimo nodo della mappa cade esattamente sul bordo (nessuna lamella)", () => {
+    const code = reliefScad(rect, reliefDefaults('rust'), 'heightmap', 0.7);
+    const value = (name: string) => Number(new RegExp(`${name} = ([-\\d.e]+);`).exec(code)![1]);
+    // x0 + (nx - 1) * dx = bordo destro; y0 + (ny - 1) * dy = bordo alto (coordinate scritte con la precisione piena)
+    expect(value('x0') + (value('nx') - 1) * value('dx')).toBeCloseTo(rect.maxX, 10);
+    expect(value('y0') + (value('ny') - 1) * value('dy')).toBeCloseTo(rect.maxY, 10);
+  });
+
   it('con lo stesso seme il codice è identico', () => {
     const p = reliefDefaults('hammered');
     expect(reliefScad(rect, p, 'csg')).toBe(reliefScad(rect, p, 'csg'));
@@ -323,23 +347,26 @@ describe.skipIf(!process.env.RELIEF_SCAD_DIR)('file per la verifica OpenSCAD', (
     const dir = process.env.RELIEF_SCAD_DIR!;
     mkdirSync(dir, { recursive: true });
     const rect = { minX: -40, minY: -30, maxX: 40, maxY: 30 };
-    const cases: [ReliefKind, ReliefEngine][] = [
+    // L'ultimo valore è il passo della mappa (0,5 se manca); 0,7 non divide i lati: prova l'aggancio dell'ultimo nodo al bordo
+    const cases: [ReliefKind, ReliefEngine, number?][] = [
       ['brick', 'csg'], ['brick', 'heightmap'], ['wood', 'csg'], ['wood', 'hybrid'], ['wood', 'heightmap'],
       ['rust', 'csg'], ['rust', 'heightmap'], ['hammered', 'csg'], ['hammered', 'heightmap'], ['studs', 'csg'], ['studs', 'heightmap'],
+      ['rust', 'heightmap', 0.7], ['studs', 'heightmap', 0.7],
     ];
     const expected: Record<string, number> = {};
-    for (const [kind, engine] of cases) {
+    for (const [kind, engine, step = 0.5] of cases) {
+      const name = step === 0.5 ? `${kind}_${engine}` : `${kind}_${engine}_${step}`;
       const params = reliefDefaults(kind);
       const additive = kind === 'studs';
       const base = wasm.Manifold.cube([80, 60, 5], true);
       const panelSolid = base.translate([0, 0, -2.5]);
       base.delete();
-      const tool = additive ? reliefAddition(wasm, region, params, { engine, step: 0.5 })! : reliefCutter(wasm, region, params, { engine, step: 0.5 })!;
+      const tool = additive ? reliefAddition(wasm, region, params, { engine, step })! : reliefCutter(wasm, region, params, { engine, step })!;
       const result = additive ? panelSolid.add(tool) : panelSolid.subtract(tool);
-      expected[`${kind}_${engine}`] = result.volume();
+      expected[name] = result.volume();
       // Il pezzo in OpenSCAD è lo stesso pannello (faccia su z = 0), poi unione (borchie) o differenza
-      const scad = `${reliefScad(rect, params, engine, 0.5)}\n${additive ? 'union' : 'difference'}() {\n  translate([-40, -30, -5]) cube([80, 60, 5]);\n  relief();\n}\n`;
-      writeFileSync(`${dir}/${kind}_${engine}.scad`, scad);
+      const scad = `${reliefScad(rect, params, engine, step)}\n${additive ? 'union' : 'difference'}() {\n  translate([-40, -30, -5]) cube([80, 60, 5]);\n  relief();\n}\n`;
+      writeFileSync(`${dir}/${name}.scad`, scad);
       [panelSolid, tool, result].forEach((m) => m.delete());
     }
     writeFileSync(`${dir}/expected.json`, JSON.stringify(expected, null, 1));

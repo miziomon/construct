@@ -37,7 +37,7 @@ function polyhedronLines(grid: HeightGrid, planeZ: number, side: HeightSide): st
   for (let j = 0; j < ny; j++) rows.push(`  [${Array.from(z.subarray(j * nx, (j + 1) * nx), (v) => Math.round(v * 100)).join(',')}]`);
   const plane = n(planeZ);
   return [
-    `nx = ${nx}; ny = ${ny}; x0 = ${n(x0)}; y0 = ${n(y0)}; dx = ${dx.toFixed(4)}; dy = ${dy.toFixed(4)};`,
+    `nx = ${nx}; ny = ${ny}; x0 = ${x0}; y0 = ${y0}; dx = ${dx}; dy = ${dy};`,
     '// Quote in centesimi di mm',
     'zmap = [',
     rows.join(',\n'),

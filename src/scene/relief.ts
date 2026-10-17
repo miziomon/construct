@@ -362,6 +362,16 @@ export function craterList(rect: Rect, params: RustParams): Crater[] {
   return craters;
 }
 
+/**
+ * Profondità massima possibile della ruggine (mm): quota base, fBm fino a `roughness`, grana fine fino a 0,4 volte la
+ * ruvidità e cratere più profondo. Serve al kernel per dimensionare il prisma di ritaglio, che non deve appiattire il fondo
+ * della superficie (con ruvidità alta la grana da sola supera il margine di 1 mm).
+ */
+export function rustMaxDepth(params: RustParams): number {
+  const p = normalizeRelief(params);
+  return p.baseDepth + 1.4 * p.roughness + p.craterDepth;
+}
+
 /** Profondità di un cratere a distanza `dist` dal centro: conca liscia con bordo a pendenza nulla. */
 const craterProfile = (c: Crater, dist: number) => (dist >= c.r ? 0 : c.d * (1 - (dist / c.r) ** 2) ** 2);
 

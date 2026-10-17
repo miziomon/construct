@@ -4,11 +4,11 @@
 //   node scripts/relief-render.mjs [cartella dei PNG, predefinita docs/studio-rilievo] [vista: a = tre quarti, b = più vicina]
 // Serve il Chrome installato (come i test e2e) e il pacchetto three già presente in node_modules.
 import { createServer } from 'node:http';
-import { readFileSync, existsSync } from 'node:fs';
-import { extname, join } from 'node:path';
+import { readFileSync, existsSync, statSync } from 'node:fs';
+import { extname, join, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-const ROOT = process.cwd();
+const ROOT = resolve(process.cwd());
 const { chromium } = await import(pathToFileURL(join(ROOT, 'node_modules/@playwright/test/index.mjs')).href);
 
 const page = `<!doctype html><html><body style="margin:0;background:#1d2127">
@@ -48,21 +48,27 @@ const server = createServer((req, res) => {
     res.setHeader('content-type', 'text/html');
     return res.end(page);
   }
-  const file = join(ROOT, decodeURIComponent(url.pathname));
-  if (!existsSync(file)) {
+  // Il percorso decodificato deve restare dentro la cartella servita (niente `..` nemmeno codificati)
+  const file = resolve(ROOT, `.${decodeURIComponent(url.pathname)}`);
+  if (file !== ROOT && !file.startsWith(ROOT + sep)) {
+    res.statusCode = 403;
+    return res.end('vietato');
+  }
+  if (!existsSync(file) || statSync(file).isDirectory()) {
     res.statusCode = 404;
     return res.end('no');
   }
   res.setHeader('content-type', types[extname(file)] || 'application/octet-stream');
   res.end(readFileSync(file));
-}).listen(4555);
+  // Solo l'interfaccia locale: il server non è raggiungibile dalla rete
+}).listen(4555, '127.0.0.1');
 
 const browser = await chromium.launch({ channel: 'chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
 const p = await browser.newPage({ viewport: { width: 1000, height: 640 } });
 p.on('console', (m) => console.log('console', m.text()));
 p.on('pageerror', (e) => console.log('pageerror', e.message));
 for (const name of ['brick', 'wood', 'rust', 'studs', 'hammered']) {
-  await p.goto(`http://localhost:4555/r.html?n=${name}&v=${process.argv[3] || 'a'}`);
+  await p.goto(`http://127.0.0.1:4555/r.html?n=${name}&v=${process.argv[3] || 'a'}`);
   await p.waitForFunction(() => window.__done, null, { timeout: 60000 });
   await p.locator('#c').screenshot({ path: join(process.argv[2] || join(ROOT, 'docs/studio-rilievo'), `${name}.png`) });
   console.log('ok', name);
