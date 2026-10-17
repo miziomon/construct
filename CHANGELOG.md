@@ -18,6 +18,9 @@ I messaggi di commit seguono i [Conventional Commits](https://www.conventionalco
 
 ## [Non rilasciato]
 
+### Aggiunto
+- **Studio di fattibilità e prototipo dei Pattern in rilievo** (`docs/studio-pattern-rilievo.md`): cinque texture su una faccia piana (muro di mattoni, tavola di legno con venature, lamiera arrugginita, borchie additive, rame battuto) con due motori a confronto (CSG di celle e mappa di altezze), benchmark, stampabilità FDM, export OpenSCAD verificato e raccomandazione di rilascio. Solo documento, codice di studio (`src/scene/relief.ts`, `src/kernel/relief.ts`, `src/codegen/reliefScad.ts`), test ed esempi in `docs/studio-rilievo/`: **non ancora nell'app**, nessun cambio di versione.
+
 ## [0.71.0] - 2026-10-17
 
 ### Modificato

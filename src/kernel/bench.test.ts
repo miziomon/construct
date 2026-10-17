@@ -10,6 +10,11 @@ import { writeStl } from './export/stl';
 import { write3mf } from './export/threemf';
 import { primitiveDefaults } from '../scene/defaults';
 import type { GroupNode, PrimitiveNode, Scene } from '../scene/types';
+import { reliefAddition, reliefCutter } from './relief';
+import type { ReliefEngine } from './relief';
+import { reliefScad } from '../codegen/reliefScad';
+import { reliefDefaults } from '../scene/relief';
+import type { ReliefKind } from '../scene/relief';
 
 let wasm: ManifoldToplevel;
 
@@ -177,5 +182,50 @@ describe.skipIf(!process.env.BENCH)('benchmark kernel', { timeout: 300_000 }, ()
     report('write3mf (73728 triangoli, un oggetto)', median(() => write3mf([{ name: 's', color: '#fff', positions: m.positions, indices: m.indices, plate: 0 }], ['Piatto 1']), 9, 2));
     solid.delete();
     ev.dispose();
+  });
+});
+
+// Studio delle texture in rilievo (docs/studio-pattern-rilievo.md): una faccia 80 x 60 mm su un pannello di 5 mm.
+// Per ogni texture e motore: tempo del solido da togliere (o unire) più la booleana sul pannello e l'estrazione della mesh,
+// triangoli del pezzo risultante, dimensione stimata dell'STL (84 + 50 byte per triangolo) e lunghezza del codice OpenSCAD.
+describe.skipIf(!process.env.BENCH)('benchmark texture in rilievo', { timeout: 600_000 }, () => {
+  const rect = { minX: -40, minY: -30, maxX: 40, maxY: 30 };
+  const steps = [0.8, 0.5, 0.3];
+  const cases: { kind: ReliefKind; engine: ReliefEngine; step?: number }[] = [
+    { kind: 'brick', engine: 'csg' },
+    ...steps.map((step) => ({ kind: 'brick' as const, engine: 'heightmap' as const, step })),
+    { kind: 'wood', engine: 'csg' },
+    ...steps.map((step) => ({ kind: 'wood' as const, engine: 'hybrid' as const, step })),
+    ...steps.map((step) => ({ kind: 'wood' as const, engine: 'heightmap' as const, step })),
+    { kind: 'rust', engine: 'csg' },
+    ...steps.map((step) => ({ kind: 'rust' as const, engine: 'heightmap' as const, step })),
+    { kind: 'studs', engine: 'csg' },
+    ...steps.map((step) => ({ kind: 'studs' as const, engine: 'heightmap' as const, step })),
+    { kind: 'hammered', engine: 'csg' },
+    ...steps.map((step) => ({ kind: 'hammered' as const, engine: 'heightmap' as const, step })),
+  ];
+
+  it.each(cases)('$kind, motore $engine, passo $step', ({ kind, engine, step }) => {
+    const region = wasm.CrossSection.square([80, 60], true);
+    const params = reliefDefaults(kind);
+    const additive = kind === 'studs';
+    const panel = wasm.Manifold.cube([80, 60, 5], true).translate([0, 0, -2.5]);
+    let triangles = 0;
+    const run = () => {
+      const tool = additive ? reliefAddition(wasm, region, params, { engine, step }) : reliefCutter(wasm, region, params, { engine, step });
+      const result = additive ? panel.add(tool!) : panel.subtract(tool!);
+      // Come nel kernel vero: la mesh va estratta per mostrarla
+      triangles = result.getMesh().triVerts.length / 3;
+      tool!.delete();
+      result.delete();
+    };
+    const ms = median(run, 5, 1);
+    const scad = reliefScad(rect, params, engine, step ?? 0.5).length;
+    const label = `rilievo ${kind} ${engine}${step ? ` ${step} mm` : ''}`;
+    const line = `BENCH ${label.padEnd(36)} ${ms.toFixed(1).padStart(8)} ms  ${String(triangles).padStart(7)} tri  STL ${((84 + 50 * triangles) / 1024).toFixed(0).padStart(6)} KB  OpenSCAD ${(scad / 1024).toFixed(1).padStart(8)} KB`;
+    console.log(line);
+    if (process.env.BENCH_OUT) appendFileSync(process.env.BENCH_OUT, `${line}\n`);
+    panel.delete();
+    region.delete();
   });
 });
