@@ -51,42 +51,44 @@ garantirebbe lo stesso disegno del kernel.
 
 ## Misure (faccia 80 × 60 mm su pannello di 5 mm)
 
-Tempo mediano di 5 esecuzioni (più un giro di riscaldamento) di: costruzione del solido, booleana sul pannello ed estrazione
-della mesh. Il portatile di sviluppo non era scarico: i tempi hanno circa ±30 % di rumore tra una prova e l'altra, i
-triangoli e le dimensioni no. STL = 84 + 50 byte per triangolo (formato binario, come `writeStl`). Codice OpenSCAD = lunghezza
+Tempo mediano di 7 esecuzioni (più 2 giri di riscaldamento) di: costruzione del solido, booleana sul pannello ed estrazione
+della mesh. Il computer di sviluppo non era dedicato al benchmark: tra due esecuzioni complete i tempi
+sono variati fino a circa ±30 % (la prima esecuzione, con 5 giri, dava per esempio 167 ms invece di 62 ms per il legno in mappa a
+0,8 mm), i triangoli e le dimensioni non variano. Conta l'ordine di grandezza e i rapporti, non il millisecondo. STL = 84 + 50 byte per triangolo (formato binario, come `writeStl`). Codice OpenSCAD = lunghezza
 della stringa generata da `reliefScad`. Parametri: i predefiniti di `reliefDefaults`. Comando:
 `$env:BENCH='1'; $env:BENCH_OUT='bench.txt'; npx vitest run src/kernel/bench.test.ts -t "texture in rilievo"`.
 
 | Texture | Motore | Passo | Tempo (ms) | Triangoli | STL (KB) | OpenSCAD (KB) |
 |---|---|---|---:|---:|---:|---:|
-| Mattoni | **CSG** | | 5,8 | 456 | 22 | 0,3 |
-| Mattoni | mappa | 0,8 | 81 | 2.688 | 131 | 40 |
-| Mattoni | mappa | 0,5 | 149 | 6.596 | 322 | 100 |
-| Mattoni | mappa | 0,3 | 402 | 18.222 | 890 | 274 |
-| Legno | CSG (solo fughe, senza venatura) | | 2,3 | 196 | 10 | 0,6 |
-| Legno | **ibrido** (fughe CSG, venatura mappa) | 0,8 | 148 | 17.450 | 852 | 43 |
-| Legno | **ibrido** | 0,5 | 308 | 38.328 | 1.872 | 109 |
-| Legno | ibrido | 0,3 | 780 | 98.772 | 4.823 | 297 |
-| Legno | mappa (fughe incluse) | 0,8 | 167 | 15.908 | 777 | 43 |
-| Legno | mappa | 0,5 | 155 | 37.862 | 1.849 | 110 |
-| Legno | mappa | 0,3 | 376 | 100.460 | 4.905 | 300 |
-| Ruggine | CSG (solo crateri, senza ruvidità) | | 258 | 27.002 | 1.319 | 4,6 |
-| Ruggine | **mappa** | 0,8 | 53 | 15.338 | 749 | 46 |
-| Ruggine | **mappa** | 0,5 | 121 | 38.916 | 1.900 | 114 |
-| Ruggine | mappa | 0,3 | 336 | 107.500 | 5.249 | 312 |
-| Borchie | **CSG** | | 36 | 10.192 | 498 | 0,3 |
-| Borchie | mappa | 0,8 | 54 | 3.678 | 180 | 20 |
-| Borchie | mappa | 0,5 | 123 | 7.436 | 363 | 47 |
-| Borchie | mappa | 0,3 | 333 | 19.894 | 971 | 129 |
-| Rame battuto | **CSG** | | 219 | 18.312 | 894 | 3,2 |
-| Rame battuto | mappa | 0,8 | 54 | 15.700 | 767 | 46 |
-| Rame battuto | mappa | 0,5 | 125 | 39.246 | 1.916 | 114 |
-| Rame battuto | mappa | 0,3 | 340 | 107.284 | 5.239 | 312 |
+| Mattoni | **CSG** | | 4,0 | 456 | 22 | 0,3 |
+| Mattoni | mappa | 0,8 | 48 | 2.688 | 131 | 40 |
+| Mattoni | mappa | 0,5 | 108 | 6.596 | 322 | 100 |
+| Mattoni | mappa | 0,3 | 267 | 18.222 | 890 | 274 |
+| Legno | CSG (solo fughe, senza venatura) | | 1,3 | 196 | 10 | 0,6 |
+| Legno | **ibrido** (fughe CSG, venatura mappa) | 0,8 | 99 | 17.450 | 852 | 43 |
+| Legno | **ibrido** | 0,5 | 209 | 38.328 | 1.872 | 109 |
+| Legno | ibrido | 0,3 | 567 | 98.772 | 4.823 | 297 |
+| Legno | mappa (fughe incluse) | 0,8 | 62 | 15.908 | 777 | 43 |
+| Legno | mappa | 0,5 | 138 | 37.862 | 1.849 | 110 |
+| Legno | mappa | 0,3 | 391 | 100.460 | 4.905 | 300 |
+| Ruggine | CSG (solo crateri, senza ruvidità) | | 265 | 27.002 | 1.319 | 4,6 |
+| Ruggine | **mappa** | 0,8 | 50 | 15.338 | 749 | 46 |
+| Ruggine | **mappa** | 0,5 | 127 | 38.916 | 1.900 | 114 |
+| Ruggine | mappa | 0,3 | 354 | 107.500 | 5.249 | 312 |
+| Borchie | **CSG** | | 37 | 10.192 | 498 | 0,3 |
+| Borchie | mappa | 0,8 | 55 | 3.678 | 180 | 20 |
+| Borchie | mappa | 0,5 | 138 | 7.436 | 363 | 47 |
+| Borchie | mappa | 0,3 | 367 | 19.894 | 971 | 129 |
+| Rame battuto | **CSG** | | 240 | 18.312 | 894 | 3,2 |
+| Rame battuto | mappa | 0,8 | 56 | 15.700 | 767 | 46 |
+| Rame battuto | mappa | 0,5 | 138 | 39.246 | 1.916 | 114 |
+| Rame battuto | mappa | 0,3 | 360 | 107.284 | 5.239 | 312 |
 
-Faccia grande (160 × 120 mm, 4 volte l'area, tre esecuzioni): rame battuto CSG circa 1.300 ms (73.000 triangoli), rame battuto
-mappa 0,5 circa 800 ms (157.000), ruggine mappa 0,5 circa 600 ms (155.000), legno ibrido 0,5 circa 1.100 ms (151.000). Il
-CSG del rame cresce con il numero di martellate (circa 95 su 80 × 60 mm, circa 380 su 160 × 120 mm), la mappa con l'area e con
-1/passo²: **sulle facce grandi la mappa a 0,5 mm diventa più veloce del CSG per le calotte.**
+Faccia grande (160 × 120 mm, 4 volte l'area; stesso benchmark, righe in coda): rame battuto CSG 1.224 ms (73.254 triangoli,
+OpenSCAD 11,6 KB), rame battuto mappa a 0,5 mm 570 ms (156.932 triangoli, OpenSCAD 447 KB), ruggine mappa a 0,5 mm 500 ms
+(154.678 triangoli, OpenSCAD 448 KB), legno ibrido a 0,5 mm 916 ms (151.254 triangoli, OpenSCAD 428 KB). Il CSG del rame cresce
+con il numero di martellate (circa 95 su 80 × 60 mm, circa 380 su 160 × 120 mm), la mappa con l'area e con 1/passo²: **sulle
+facce grandi la mappa a 0,5 mm diventa più veloce del CSG per le calotte** (ma il suo codice OpenSCAD è 40 volte più lungo).
 
 **Verifica del codice OpenSCAD** (OpenSCAD 2025.11.30 con backend Manifold; tutti gli 11 casi mattoni, legno, ruggine, borchie
 e rame in ogni motore, a passo 0,5 mm, pezzo = pannello 80 × 60 × 5 mm; il volume del solido esportato si misura sull'STL di
@@ -100,21 +102,22 @@ la regione è l'intera faccia).
 
 | Texture | Motore | Perché |
 |---|---|---|
-| Mattoni | **CSG** | Sono rettangoli: bordi esatti, 456 triangoli, 0,3 KB di codice (due cicli `for`, nemmeno una lista di dati). La mappa dà la stessa forma con bordi a gradini, 12 volte i triangoli e 300 volte il codice. |
-| Tavola di legno | **Ibrido** | Le fughe (0,8 mm) sono rettangoli: in CSG sono esatte, in mappa a 0,5 mm sarebbero larghe 1 o 2 celle e frastagliate. La venatura è un campo continuo (anelli deformati dal rumore) e solo la mappa lo esprime. L'ibrido unisce i due: costa quanto la mappa e ha fughe pulite. |
-| Ruggine | **Mappa** | Non esiste una versione CSG fedele: la ruvidità frattale è il rumore stesso, e i soli crateri (258 ms, 27.000 triangoli) lasciano la faccia liscia, esattamente ciò che si vuole evitare. |
-| Borchie | **CSG** | Disgiunte: `Manifold.compose` senza booleane, 36 ms, 0,3 KB (un `for` e un profilo). Sfaccettature controllabili con i segmenti. La mappa a 0,8 mm rende le calotte a scalini. |
+| Mattoni | **CSG** | Sono rettangoli: bordi esatti, 456 triangoli, 0,3 KB di codice (un ciclo `for` a due indici, nemmeno una lista di dati). La mappa dà la stessa forma con bordi a gradini, da 6 a 14 volte i triangoli e da 130 a 330 volte il codice. |
+| Tavola di legno | **Ibrido** | Le fughe (0,8 mm) sono rettangoli: in CSG sono esatte, in mappa a 0,5 mm sarebbero larghe 1 o 2 celle e frastagliate. La venatura è un campo continuo (anelli deformati dal rumore) e solo la mappa lo esprime. L'ibrido unisce i due: stessi triangoli della mappa e circa una volta e mezza il tempo (209 contro 138 ms a 0,5 mm, per l'unione in più), ma fughe pulite. |
+| Ruggine | **Mappa** | Non esiste una versione CSG fedele: la ruvidità frattale è il rumore stesso, e i soli crateri (265 ms, 27.000 triangoli) lasciano la faccia liscia, esattamente ciò che si vuole evitare. |
+| Borchie | **CSG** | Disgiunte: `Manifold.compose` senza booleane, 37 ms, 0,3 KB (un `for` e un profilo). Sfaccettature controllabili con i segmenti. La mappa a 0,8 mm rende le calotte a scalini. |
 | Rame battuto | **CSG** (mappa a 0,8 mm come anteprima) | Il CSG dà calotte esatte e 3 KB di codice; la mappa è 4 volte più veloce a 0,8 mm ma pesa 46 KB e le martellate sono meno nitide. Su facce grandi il CSG supera il secondo e conviene l'anteprima in mappa. |
 
 Le sfere intere (`Manifold.sphere`) sono state scartate in partenza, senza misurarle: una calotta di raggio 4 mm e
-profondità 0,5 mm ha un raggio di curvatura di 16 mm, quindi usarebbe solo una piccola parte di una sfera, mentre il resto
+profondità 0,5 mm ha un raggio di curvatura di 16 mm, quindi userebbe solo una piccola parte di una sfera, mentre il resto
 starebbe sopra la faccia. La rivoluzione dell'arco (4 anelli × 24 segmenti, circa 200 triangoli a calotta) è più leggera e
 controllabile.
 
 ## Le cinque texture
 
-Esempi in `docs/studio-rilievo/` (STL e PNG, pannello 40 × 30 × 4 mm, luce radente da sinistra per far risaltare il rilievo;
-`RELIEF_SAMPLES=1 npx vitest run src/kernel/relief.test.ts -t esempi` rigenera gli STL).
+Esempi in `docs/studio-rilievo/` (STL e PNG; pannello 40 × 30 × 4 mm, motore scelto per la texture, mappe di altezze a 0,4 mm; luce radente da sinistra per far
+risaltare il rilievo). `RELIEF_SAMPLES=1 npx vitest run src/kernel/relief.test.ts -t esempi` rigenera gli STL; i PNG sono stati
+fotografati con uno script di rendering (three.js in Chrome) fuori dal repository, non incluso in questo studio.
 
 ### 1. Muro di mattoni
 
@@ -154,8 +157,8 @@ senza lasciare piani lisci. Il test misura la ruvidità (deviazione standard > 0
 di più di 1 µm).
 
 Parametri per la UI: **Quota base** (0,5 mm), **Ruvidità** (0,35 mm), **Crateri ogni 100 mm²** (3), **Profondità crateri**
-(0,5 mm), **Scaglie** (0 a 1, 0,4), **Seme**. Limite: a 0,5 mm di passo un cratere piccolo (diametro 1,2 mm) occupa 2 o 3
-campioni e appare a scalini (si vede nell'immagine); a 0,3 mm migliora ma costa 107.000 triangoli e 5 MB di STL.
+(0,5 mm), **Scaglie** (0 a 1, 0,4), **Seme**. Limite: a 0,4 mm di passo (quello dell'immagine) un cratere piccolo (diametro 1,2 mm) occupa 3
+campioni e appare a scalini; a 0,3 mm migliora ma costa 107.000 triangoli e 5 MB di STL.
 
 ### 4. Borchie (additiva)
 
@@ -255,6 +258,9 @@ rigenerare la mappa.
   un'estrusione per mattone (circa 100 prismi: da misurare) oppure passare alla mappa.
 - **Legno:** una sola specie di venatura (anelli di tavola segata tangenzialmente, senza nodi).
 - **Ruggine:** la qualità dipende dal passo (scalini a 0,5 mm, vedi l'immagine) e il codice OpenSCAD è grande.
+- **Precisione numerica tra motori JavaScript:** `Math.cos`, `Math.pow` e `Math.asin` non sono garantiti identici al bit tra
+  browser diversi, quindi l'arrotondamento a 0,01 mm può cambiare al limite tra due valori. Il codice OpenSCAD non è toccato
+  (contiene i valori già calcolati); il kernel potrebbe differire di un centesimo di mm in pochi punti.
 - **Stabilità nel tempo:** rumore, ordine delle estrazioni e arrotondamento a 0,01 mm sono parte del formato: vanno bloccati con
   un campo di versione (punto 1).
 
@@ -266,7 +272,7 @@ Rilasciare in quattro tappe, dalla più sicura alla più costosa, ognuna con una
    codice OpenSCAD di 0,3 KB, nessun rischio di compatibilità. Include tutto il lavoro di integrazione (tipi, normalize, branch
    additivo in `buildPattern`, `patternLines`, UI). **Stima: 3 a 4 giorni** (2 per l'integrazione e il modo additivo, 1 per ogni
    texture con test e documentazione).
-2. **Rame battuto** (CSG, anteprima in mappa a 0,8 mm sulle facce oltre circa 100 × 80 mm): 219 ms su 80 × 60 mm. **Stima:
+2. **Rame battuto** (CSG, anteprima in mappa a 0,8 mm sulle facce oltre circa 100 × 80 mm): 240 ms su 80 × 60 mm. **Stima:
    1,5 giorni** (la mappa di altezze come anteprima si può rimandare).
 3. **Tavole di legno** (ibrido): richiede `heightSolid` e `sampleGrid`, già nel prototipo. **Stima: 2 giorni**, più la
    decisione sui parametri della venatura guardando stampe reali.

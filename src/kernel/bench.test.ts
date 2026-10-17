@@ -189,9 +189,9 @@ describe.skipIf(!process.env.BENCH)('benchmark kernel', { timeout: 300_000 }, ()
 // Per ogni texture e motore: tempo del solido da togliere (o unire) più la booleana sul pannello e l'estrazione della mesh,
 // triangoli del pezzo risultante, dimensione stimata dell'STL (84 + 50 byte per triangolo) e lunghezza del codice OpenSCAD.
 describe.skipIf(!process.env.BENCH)('benchmark texture in rilievo', { timeout: 600_000 }, () => {
-  const rect = { minX: -40, minY: -30, maxX: 40, maxY: 30 };
   const steps = [0.8, 0.5, 0.3];
-  const cases: { kind: ReliefKind; engine: ReliefEngine; step?: number }[] = [
+  // `size`: lati della faccia in mm (predefinita 80 x 60); in coda quattro prove su una faccia grande 160 x 120
+  const cases: { kind: ReliefKind; engine: ReliefEngine; step?: number; size?: [number, number] }[] = [
     { kind: 'brick', engine: 'csg' },
     ...steps.map((step) => ({ kind: 'brick' as const, engine: 'heightmap' as const, step })),
     { kind: 'wood', engine: 'csg' },
@@ -203,13 +203,18 @@ describe.skipIf(!process.env.BENCH)('benchmark texture in rilievo', { timeout: 6
     ...steps.map((step) => ({ kind: 'studs' as const, engine: 'heightmap' as const, step })),
     { kind: 'hammered', engine: 'csg' },
     ...steps.map((step) => ({ kind: 'hammered' as const, engine: 'heightmap' as const, step })),
+    { kind: 'hammered', engine: 'csg', size: [160, 120] },
+    { kind: 'hammered', engine: 'heightmap', step: 0.5, size: [160, 120] },
+    { kind: 'rust', engine: 'heightmap', step: 0.5, size: [160, 120] },
+    { kind: 'wood', engine: 'hybrid', step: 0.5, size: [160, 120] },
   ];
 
-  it.each(cases)('$kind, motore $engine, passo $step', ({ kind, engine, step }) => {
-    const region = wasm.CrossSection.square([80, 60], true);
+  it.each(cases)('$kind, motore $engine, passo $step, faccia $size', ({ kind, engine, step, size = [80, 60] }) => {
+    const rect = { minX: -size[0] / 2, minY: -size[1] / 2, maxX: size[0] / 2, maxY: size[1] / 2 };
+    const region = wasm.CrossSection.square(size, true);
     const params = reliefDefaults(kind);
     const additive = kind === 'studs';
-    const panel = wasm.Manifold.cube([80, 60, 5], true).translate([0, 0, -2.5]);
+    const panel = wasm.Manifold.cube([size[0], size[1], 5], true).translate([0, 0, -2.5]);
     let triangles = 0;
     const run = () => {
       const tool = additive ? reliefAddition(wasm, region, params, { engine, step }) : reliefCutter(wasm, region, params, { engine, step });
@@ -219,9 +224,9 @@ describe.skipIf(!process.env.BENCH)('benchmark texture in rilievo', { timeout: 6
       tool!.delete();
       result.delete();
     };
-    const ms = median(run, 5, 1);
+    const ms = median(run, 7, 2);
     const scad = reliefScad(rect, params, engine, step ?? 0.5).length;
-    const label = `rilievo ${kind} ${engine}${step ? ` ${step} mm` : ''}`;
+    const label = `rilievo ${kind} ${engine}${step ? ` ${step} mm` : ''}${size[0] > 80 ? ` ${size[0]}x${size[1]}` : ''}`;
     const line = `BENCH ${label.padEnd(36)} ${ms.toFixed(1).padStart(8)} ms  ${String(triangles).padStart(7)} tri  STL ${((84 + 50 * triangles) / 1024).toFixed(0).padStart(6)} KB  OpenSCAD ${(scad / 1024).toFixed(1).padStart(8)} KB`;
     console.log(line);
     if (process.env.BENCH_OUT) appendFileSync(process.env.BENCH_OUT, `${line}\n`);
