@@ -374,6 +374,13 @@ export interface PatternParams {
   depth: number;
   /** Da una faccia sola o anche dalla faccia opposta (stessa profondità). */
   sides: 'one' | 'both';
+  /**
+   * Regione che il taglio può forare: 'face' = contorno della faccia reale (sezione appena sotto la faccia, così uno
+   * smusso o un raccordo vicino non si fora); 'silhouette' = ombra di tutto il pezzo lungo la normale (serve quando la
+   * faccia viene dall'ingombro e non esiste come faccia piana: sfera, cilindro sdraiato...). Se manca vale 'silhouette',
+   * così i progetti salvati prima non cambiano geometria. Conta solo per il taglio passante su una faccia sugli assi.
+   */
+  region?: 'face' | 'silhouette';
   /** Solo durante lo strumento: anteprima con meno segmenti (più veloce). Non si salva e non cambia il codice. */
   preview?: boolean;
   /** Ingombro del pezzo nel sistema del gruppo al momento dell'applicazione: dove si generano le celle. */

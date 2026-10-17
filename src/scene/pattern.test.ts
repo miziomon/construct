@@ -1,9 +1,16 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
+import Module from 'manifold-3d';
+import type { ManifoldToplevel } from 'manifold-3d';
+import { Evaluator } from '../kernel/evaluate';
+import type { NodeMesh } from '../kernel/evaluate';
+import { primitiveDefaults } from './defaults';
+import { buildEdgeTreatment, edgeBetween, faceMap } from './edgeTool';
 import { apply, eulerToMatrix } from './math';
 import { localToWorld, worldToLocal } from './patternTool';
-import { FACE_DIRECTIONS, defaultPatternParams, faceFrame, faceFromBounds, faceName, isAxisFace, frameRect, normalizePattern, patternCells, PATTERN_MAX_CELLS, sameFace, thicknessAlong } from './pattern';
+import { FACE_DIRECTIONS, defaultPatternParams, faceFrame, faceFromBounds, faceName, hasPlanarFace, isAxisFace, frameRect, normalizePattern, patternCells, PATTERN_MAX_CELLS, sameFace, thicknessAlong } from './pattern';
+import type { FaceDirection } from './pattern';
 import { PATTERN_ALGORITHM } from './voronoi';
-import type { PatternParams, Vec3 } from './types';
+import type { PatternParams, PrimitiveNode, Scene, Vec3 } from './types';
 
 const bounds = { min: [-40, -30, -2.5] as Vec3, max: [40, 30, 2.5] as Vec3 };
 const params = (patch: Partial<PatternParams> = {}): PatternParams => ({ ...defaultPatternParams(bounds, 7), ...patch });
@@ -173,5 +180,75 @@ describe('dal mondo al gruppo', () => {
     // E il percorso inverso
     near(localToWorld(world, local, true), rotated.map((v, i) => v + world.position[i]));
     near(localToWorld(world, local, false), rotated);
+  });
+});
+
+describe('region del Pattern', () => {
+  it('normalizePattern: senza region (progetti vecchi) vale silhouette, con face resta face', () => {
+    const { region: _unused, ...old } = params();
+    expect(normalizePattern(old as PatternParams).region).toBe('silhouette');
+    expect(normalizePattern(params({ region: 'silhouette' })).region).toBe('silhouette');
+    expect(normalizePattern(params({ region: 'face' })).region).toBe('face');
+  });
+});
+
+describe('hasPlanarFace', () => {
+  let wasm: ManifoldToplevel;
+  beforeAll(async () => {
+    wasm = await Module();
+    wasm.setup();
+  });
+  const evaluate = (scene: Scene) => new Evaluator(wasm).evaluate(scene).meshes[0];
+  const prim = (kind: 'box' | 'sphere' | 'cylinder', extra: Partial<PrimitiveNode>) => ({ ...primitiveDefaults(kind), id: 'p', name: 'p', position: [0, 0, 0], ...extra }) as PrimitiveNode;
+  const meshOf = (node: PrimitiveNode) => evaluate({ nodes: { p: node }, rootIds: ['p'] });
+  const identity = { position: [0, 0, 0] as Vec3, rotation: [0, 0, 0] as Vec3 };
+  /** Ha una faccia piana nella direzione dell'ingombro? */
+  const has = (mesh: NodeMesh, direction: FaceDirection, world = identity) => hasPlanarFace(faceMap(mesh).faces, faceFromBounds(mesh.bbox, direction), world);
+
+  it('scatola: tutte e sei le facce dell\'ingombro esistono come facce piane', () => {
+    const mesh = meshOf(prim('box', { size: [20, 10, 6] }));
+    for (const d of FACE_DIRECTIONS) expect(has(mesh, d)).toBe(true);
+  });
+
+  it('un piano diverso o una normale diversa non contano', () => {
+    const mesh = meshOf(prim('box', { size: [20, 10, 6] }));
+    const top = faceFromBounds(mesh.bbox, 'z+');
+    expect(hasPlanarFace(faceMap(mesh).faces, { ...top, origin: [0, 0, 2] }, identity)).toBe(false);
+    expect(hasPlanarFace(faceMap(mesh).faces, { ...top, normal: [0, 1, 0] }, identity)).toBe(false);
+  });
+
+  it('scatola smussata: le sei facce dell\'ingombro esistono ancora (più piccole, lo smusso è una settima faccia)', () => {
+    const box = prim('box', { size: [20, 20, 20] });
+    const base = meshOf(box);
+    const map = faceMap(base);
+    const find = (n: Vec3) => map.faces.findIndex((f) => f.normal[0] === n[0] && f.normal[1] === n[1] && f.normal[2] === n[2]);
+    const edge = edgeBetween(base, map, find([0, 0, 1]), find([1, 0, 0]));
+    if (!edge.ok) throw new Error(edge.error);
+    const built = buildEdgeTreatment({ nodes: { p: box }, rootIds: ['p'] }, 'p', edge.geometry, { treatment: 'chamfer', radius: 1, distance1: 6, distance2: 6 });
+    if (!built.ok) throw new Error(built.error);
+    const chamfered = evaluate(built.scene);
+    for (const d of FACE_DIRECTIONS) expect(has(chamfered, d)).toBe(true);
+  });
+
+  it('sfera e cilindro sdraiato: nessuna faccia piana nella direzione dell\'ingombro (serve la silhouette)', () => {
+    const sphere = meshOf(prim('sphere', { radius: 15 }));
+    for (const d of FACE_DIRECTIONS) expect(has(sphere, d)).toBe(false);
+    // Il cilindro sdraiato (asse X) ha le basi piane a x±, ma il fianco curvo non ha una faccia a z+ o y+
+    const cylinder = meshOf(prim('cylinder', { radius: 10, height: 30, rotation: [0, 90, 0] }));
+    expect(has(cylinder, 'x+')).toBe(true);
+    expect(has(cylinder, 'z+')).toBe(false);
+  });
+
+  it('tiene conto della trasformazione del gruppo: rotazione e posizione', () => {
+    const mesh = meshOf(prim('box', { size: [20, 10, 6] }));
+    const faces = faceMap(mesh).faces;
+    // Gruppo ruotato di 90° attorno a Y: la sua +Z locale guarda +X nel mondo, dove la scatola ha la faccia a x = 10
+    const turned = { position: [0, 0, 0] as Vec3, rotation: [0, 90, 0] as Vec3 };
+    expect(hasPlanarFace(faces, { origin: [0, 0, 10], normal: [0, 0, 1], thickness: 20 }, turned)).toBe(true);
+    expect(hasPlanarFace(faces, { origin: [0, 0, 3], normal: [0, 0, 1], thickness: 20 }, turned)).toBe(false);
+    // Gruppo spostato a x = 4: la faccia a x locale 6 sta a x = 10 nel mondo
+    const moved = { position: [4, 0, 0] as Vec3, rotation: [0, 0, 0] as Vec3 };
+    expect(hasPlanarFace(faces, { origin: [6, 0, 0], normal: [1, 0, 0], thickness: 20 }, moved)).toBe(true);
+    expect(hasPlanarFace(faces, { origin: [10, 0, 0], normal: [1, 0, 0], thickness: 20 }, moved)).toBe(false);
   });
 });

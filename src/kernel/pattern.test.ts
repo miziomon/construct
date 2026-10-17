@@ -4,8 +4,11 @@ import type { ManifoldToplevel } from 'manifold-3d';
 import { Evaluator } from './evaluate';
 import { sceneToOpenScad } from '../codegen/openscad';
 import { primitiveDefaults } from '../scene/defaults';
+import { buildEdgeTreatment, edgeBetween, faceMap } from '../scene/edgeTool';
 import { defaultPatternParams, faceFromBounds, thicknessAlong } from '../scene/pattern';
-import type { GroupNode, PatternParams, PrimitiveNode, Scene, Vec3 } from '../scene/types';
+import type { FaceDirection } from '../scene/pattern';
+import { applyPattern } from '../scene/patternTool';
+import type { GroupNode, PatternParams, PrimitiveNode, Scene, SceneNode, Vec3 } from '../scene/types';
 
 let wasm: ManifoldToplevel;
 
@@ -218,5 +221,118 @@ describe('Pattern nel codice OpenSCAD', () => {
     expect(code).toContain('for (c = cells_2)');
     expect(code.split('{').length).toBe(code.split('}').length);
     expect(code).not.toContain('preview');
+  });
+});
+
+describe('Pattern: regione del taglio (faccia reale o silhouette)', () => {
+  const box = (id: string, position: Vec3, size: Vec3): PrimitiveNode => ({ ...primitiveDefaults('box'), id, name: id, position, size }) as PrimitiveNode;
+  /** Griglia di esagoni fitta e senza margine: se la regione include lo smusso, lo smusso si fora di sicuro. */
+  const grid: Partial<PatternParams> = { kind: 'hexagon', size: 6, wall: 1.2, rounding: 0, margin: 0 };
+  /** Pezzo a L: pavimento 60 x 20 x 10 e parete 20 x 20 x 30 sopra la sua parte sinistra (la faccia z+ più alta è solo la parete). */
+  const lNodes = (): Record<string, SceneNode> => ({
+    floor: box('floor', [0, 0, 5], [60, 20, 10]),
+    wall: box('wall', [-20, 0, 25], [20, 20, 30]),
+    l: { id: 'l', name: 'l', type: 'group', op: 'union', children: ['floor', 'wall'], position: [0, 0, 0], rotation: [0, 0, 0], mode: 'solid', color: '#ffffff' } as GroupNode,
+  });
+
+  /** Scena con il pezzo `rootId` avvolto in un Pattern sulla faccia indicata; l'ingombro viene dalla mesh del pezzo. */
+  function patterned(nodes: Record<string, SceneNode>, rootId: string, direction: FaceDirection, patch: Partial<PatternParams>): Scene {
+    const base: Scene = { nodes, rootIds: [rootId] };
+    const { bbox } = run(base);
+    const result = applyPattern(base, rootId, { ...defaultPatternParams(bbox, 7), ...grid, faces: [faceFromBounds(bbox, direction)], ...patch });
+    if (!result.ok) throw new Error(result.error);
+    return result.scene;
+  }
+
+  /** Cubo 20 mm con uno smusso da 6 mm sullo spigolo tra +Z e +X, come lo crea lo strumento (gruppo Differenza, pezzo per primo). */
+  function chamferedCube() {
+    const scene: Scene = { nodes: { a: box('a', [0, 0, 0], [20, 20, 20]) }, rootIds: ['a'] };
+    const mesh = run(scene);
+    const map = faceMap(mesh);
+    const find = (n: Vec3) => map.faces.findIndex((f) => f.normal[0] === n[0] && f.normal[1] === n[1] && f.normal[2] === n[2]);
+    const edge = edgeBetween(mesh, map, find([0, 0, 1]), find([1, 0, 0]));
+    if (!edge.ok) throw new Error(edge.error);
+    const built = buildEdgeTreatment(scene, 'a', edge.geometry, { treatment: 'chamfer', radius: 1, distance1: 6, distance2: 6 });
+    if (!built.ok) throw new Error(built.error);
+    return { scene: built.scene, rootId: built.groupId };
+  }
+
+  /** Volume di ciò che sta dentro il riquadro `[min, max]` dopo aver intersecato la scena (radice `rootId`) con esso. */
+  function volumeIn(nodes: Record<string, SceneNode>, rootId: string, [min, max]: [Vec3, Vec3]): number {
+    const size = max.map((v, i) => v - min[i]) as Vec3;
+    const position = max.map((v, i) => (v + min[i]) / 2) as Vec3;
+    const clip: GroupNode = { id: 'clip', name: 'clip', type: 'group', op: 'intersection', children: [rootId, 'band'], position: [0, 0, 0], rotation: [0, 0, 0], mode: 'solid', color: '#ffffff' };
+    return run({ nodes: { ...nodes, band: box('band', position, size), clip }, rootIds: ['clip'] }).volume;
+  }
+
+  // Lo smusso occupa x in [4, 10] e z in [4, 10]: le bande sotto di esso, oltre il bordo della faccia piana (con un po' di margine)
+  const BAND_X: [Vec3, Vec3] = [[4.3, -50, -50], [50, 50, 50]];
+  const BAND_Z: [Vec3, Vec3] = [[-50, -50, 4.3], [50, 50, 50]];
+  const FACES: [FaceDirection, [Vec3, Vec3]][] = [['z+', BAND_X], ['x+', BAND_Z]];
+
+  it.each(FACES)('region face, passante da %s: lo smusso resta intatto', (direction, band) => {
+    const { scene, rootId } = chamferedCube();
+    const reference = volumeIn(scene.nodes, rootId, band);
+    expect(reference).toBeGreaterThan(0);
+    const through = patterned(scene.nodes, rootId, direction, { region: 'face' });
+    expect(run(through).status).toBe('NoError');
+    // Il Pattern ha forato davvero la faccia (c'è meno volume del pezzo)...
+    expect(run(through).volume).toBeLessThan(run(scene).volume - 1);
+    // ...ma nella banda dello smusso il volume è quello del pezzo senza Pattern
+    expect(volumeIn(through.nodes, through.rootIds[0], band)).toBeCloseTo(reference, 3);
+  });
+
+  it.each(FACES)('region face, profondità 3 mm da %s: lo smusso resta intatto', (direction, band) => {
+    const { scene, rootId } = chamferedCube();
+    const reference = volumeIn(scene.nodes, rootId, band);
+    const pocket = patterned(scene.nodes, rootId, direction, { region: 'face', depth: 3 });
+    expect(run(pocket).volume).toBeLessThan(run(scene).volume - 1);
+    expect(volumeIn(pocket.nodes, pocket.rootIds[0], band)).toBeCloseTo(reference, 3);
+  });
+
+  it('senza region (progetti vecchi) il passante buca ancora lo smusso, come prima, e coincide con silhouette', () => {
+    const { scene, rootId } = chamferedCube();
+    const reference = volumeIn(scene.nodes, rootId, BAND_X);
+    const old = patterned(scene.nodes, rootId, 'z+', {});
+    const silhouette = patterned(scene.nodes, rootId, 'z+', { region: 'silhouette' });
+    expect(volumeIn(old.nodes, old.rootIds[0], BAND_X)).toBeLessThan(reference - 1);
+    expect(run(old).volume).toBeCloseTo(run(silhouette).volume, 6);
+  });
+
+  it('con profondità > 0 la tasca da z+ non tocca lo smusso nemmeno senza region (la sezione sotto la faccia è già il contorno vero)', () => {
+    const { scene, rootId } = chamferedCube();
+    const reference = volumeIn(scene.nodes, rootId, BAND_X);
+    const pocket = patterned(scene.nodes, rootId, 'z+', { depth: 3 });
+    expect(volumeIn(pocket.nodes, pocket.rootIds[0], BAND_X)).toBeCloseTo(reference, 3);
+  });
+
+  it('sfera, cilindro sdraiato e pezzo a L: con region assente o silhouette il passante toglie lo stesso volume di prima', () => {
+    const sphere = { ...primitiveDefaults('sphere'), id: 's', name: 's', position: [0, 0, 0], radius: 15 } as PrimitiveNode;
+    const cylinder = { ...primitiveDefaults('cylinder'), id: 'y', name: 'y', position: [0, 0, 0], rotation: [0, 90, 0], radius: 10, height: 30 } as PrimitiveNode;
+    const cases: [Record<string, SceneNode>, string][] = [[{ s: sphere }, 's'], [{ y: cylinder }, 'y'], [lNodes(), 'l']];
+    for (const [nodes, rootId] of cases) {
+      const before = run({ nodes, rootIds: [rootId] }).volume;
+      const absent = run(patterned(nodes, rootId, 'z+', {})).volume;
+      const silhouette = run(patterned(nodes, rootId, 'z+', { region: 'silhouette' })).volume;
+      expect(silhouette).toBeCloseTo(absent, 6);
+      expect(absent).toBeLessThan(before - 1);
+    }
+  });
+
+  it('pezzo a L: la silhouette toglie più della faccia reale', () => {
+    const silhouette = run(patterned(lNodes(), 'l', 'z+', { region: 'silhouette' })).volume;
+    const face = run(patterned(lNodes(), 'l', 'z+', { region: 'face' })).volume;
+    expect(silhouette).toBeLessThan(face);
+  });
+
+  it('il codice OpenSCAD segue la regione: silhouette con projection(), face con la sezione sotto la faccia', () => {
+    const silhouette = sceneToOpenScad(scene({ cells: 6, region: 'silhouette' }));
+    expect(silhouette).toContain('projection() rotate(');
+    expect(silhouette).not.toContain('projection(cut = true)');
+    const face = sceneToOpenScad(scene({ cells: 6, region: 'face' }));
+    expect(face).toContain('projection(cut = true) translate([0, 0, 0.01]) rotate(');
+    expect(face).not.toContain('projection() rotate(');
+    // Senza region (progetti vecchi) il codice resta quello di prima
+    expect(sceneToOpenScad(scene({ cells: 6 }))).toContain('projection() rotate(');
   });
 });

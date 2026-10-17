@@ -26,7 +26,7 @@ import { useProfileEditor } from '../ProfileEditor/profileEditorStore';
 import { ArrayFields } from '../Array/ArrayFields';
 import { useArrayTool } from '../Array/arrayToolStore';
 import { PatternFields } from '../Pattern/PatternFields';
-import { localBoundsOf, usePatternTool } from '../Pattern/patternToolStore';
+import { localBoundsOf, refreshedPattern, usePatternTool } from '../Pattern/patternToolStore';
 import { SliderField } from '../SliderField/SliderField';
 import { TIPS } from './tooltips';
 import { DIE_FACES, maxPolyhedronRadius, nearestDieFaces, polygonMaxRadius } from '../../scene/polyhedra';
@@ -230,9 +230,11 @@ export function PropertiesPanel() {
             disabled={locked}
             onChange={(change) => patch({ pattern: { ...node.pattern!, ...change } })}
             onRefreshBounds={() => {
-              // Ingombro attuale del pezzo (figlio) nel sistema del gruppo: il disegno si estende a tutta la nuova area
-              const bounds = localBoundsOf(useSceneStore.getState().scene, node.children[0]);
-              if (bounds) patch({ pattern: { ...node.pattern!, bounds } });
+              // Ingombro attuale del pezzo (figlio) nel sistema del gruppo: il disegno si estende a tutta la nuova area.
+              // Si ricalcola anche la regione (faccia reale o silhouette): così si correggono i progetti salvati prima
+              void refreshedPattern(useSceneStore.getState().scene, node.id).then((fresh) => {
+                if (fresh) patch({ pattern: { ...node.pattern!, ...fresh } });
+              });
             }}
           />
         </Section>

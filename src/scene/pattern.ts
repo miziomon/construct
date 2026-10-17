@@ -1,5 +1,5 @@
-import { apply, matrixToEuler, round, transpose } from './math';
-import type { Mat3 } from './math';
+import { apply, eulerToMatrix, matrixToEuler, round, transpose } from './math';
+import type { Mat3, Transform } from './math';
 import { rotationToDown } from './layFlat';
 import { PATTERN_ALGORITHM, randomVoronoi } from './voronoi';
 import type { Rect, Vec2 } from './voronoi';
@@ -159,8 +159,30 @@ export function normalizePattern(p: PatternParams): PatternParams {
     rounding: Math.max(0, num(p.rounding, 0)),
     margin: Math.max(0, num(p.margin, 0)),
     depth: Math.max(0, num(p.depth, 0)),
+    // Senza region (progetti salvati prima) l'ombra del pezzo, come allora
+    region: p.region === 'face' ? 'face' : 'silhouette',
     faces,
   };
+}
+
+/**
+ * Vero se tra le facce piane `faces` (di una mesh in coordinate mondo, vedi `faceMap`) ce n'è una sul piano e con la
+ * normale di `face`, che è nel sistema del gruppo con trasformazione `world`: allora il Pattern può usare il contorno
+ * di quella faccia ('face'), altrimenti serve l'ombra del pezzo ('silhouette': sfera, cilindro sdraiato...).
+ */
+export function hasPlanarFace(faces: { normal: Vec3; offset: number; planar: boolean }[], face: PatternFace, world: Transform): boolean {
+  // 1) La faccia dal sistema del gruppo al mondo: mondo = R · D · v (+ posizione per un punto), con D lo specchio del gruppo
+  const toWorld = (v: Vec3, isPoint: boolean): Vec3 => {
+    const mirrored = v.map((x, axis) => (world.mirror?.[axis] ? -x : x)) as Vec3;
+    const rotated = apply(eulerToMatrix(world.rotation), mirrored);
+    return isPoint ? (rotated.map((x, i) => x + world.position[i]) as Vec3) : rotated;
+  };
+  const n = normalizeFace(face).normal;
+  const normal = toWorld(n, false);
+  const point = toWorld(face.origin, true);
+  const planeOffset = normal[0] * point[0] + normal[1] * point[1] + normal[2] * point[2];
+  // 2) Una faccia piana con la stessa normale (circa 1,8°) e lo stesso piano (0,05 mm, come la tolleranza di planarità)
+  return faces.some((f) => f.planar && f.normal[0] * normal[0] + f.normal[1] * normal[1] + f.normal[2] * normal[2] >= AXIS_ALIGNED && Math.abs(f.offset - planeOffset) < 0.05);
 }
 
 /** Numero massimo di celle a griglia: il passo si allarga se servirebbero di più. */

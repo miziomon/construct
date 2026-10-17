@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import { useResultStore } from '../../kernel/useKernel';
 import { PATTERN_MAX_CELLS, faceName, isAxisFace } from '../../scene/pattern';
 import type { PatternParams } from '../../scene/types';
@@ -34,6 +35,8 @@ const MIN_PRINTABLE_WALL = 0.8;
  */
 export function PatternFields({ params: p, onChange, disabled, history = true, onPickFace, picking, onSimplified, simplified, onRefreshBounds }: Props) {
   const ms = useResultStore((s) => s.ms);
+  // Id per collegare l'etichetta "Tipo" alla tendina
+  const kindId = useId();
   /** Pulsanti alternativi (come i selettori della Ripetizione). */
   const choice = <T extends string>(label: string, tip: string, value: T | null, options: [T, string][], set: (v: T) => void) => (
     <div className="array-fields__row" title={tip}>
@@ -60,7 +63,15 @@ export function PatternFields({ params: p, onChange, disabled, history = true, o
 
   return (
     <div className="array-fields">
-      {choice('Tipo', 'Voronoi: celle casuali riproducibili dal seme; Esagoni, Cerchi, Rombi e Triangoli: griglia regolare.', p.kind, (Object.keys(KIND_LABELS) as PatternParams['kind'][]).map((k) => [k, KIND_LABELS[k]]), (kind) => onChange({ kind }))}
+      {/* Il tipo è una tendina: cinque scelte non stanno bene in una riga di pulsanti */}
+      <div className="array-fields__row" title="Voronoi: celle casuali riproducibili dal seme; Esagoni, Cerchi, Rombi e Triangoli: griglia regolare.">
+        <label className="array-fields__label" htmlFor={kindId}>Tipo</label>
+        <select id={kindId} className="array-fields__select" value={p.kind} disabled={disabled} onChange={(e) => onChange({ kind: e.target.value as PatternParams['kind'] })}>
+          {(Object.keys(KIND_LABELS) as PatternParams['kind'][]).map((k) => (
+            <option key={k} value={k}>{KIND_LABELS[k]}</option>
+          ))}
+        </select>
+      </div>
 
       {p.kind === 'voronoi' && (
         <div className="array-fields__row" title="Il seme decide il disegno: lo stesso seme dà sempre lo stesso risultato, anche nel codice OpenSCAD.">

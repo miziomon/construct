@@ -29,7 +29,8 @@ function shrunk(wasm: ManifoldToplevel, cell: [number, number][], wall: number, 
 /**
  * Il solido da togliere per una faccia, nel riferimento del pezzo (o null se la faccia non taglia nulla).
  * Passi: 1) si porta il pezzo nel riferimento della faccia (faccia su z = 0, pezzo sotto); 2) la regione da forare è la
- * silhouette del pezzo (passante) o la sua sezione appena sotto la faccia, ridotta del margine; 3) le celle si riducono
+ * silhouette del pezzo (passante con `region` 'silhouette') o la sua sezione appena sotto la faccia (il contorno vero della
+ * faccia, anche con `region` 'face'), ridotta del margine; 3) le celle si riducono
  * per la parete, si arrotondano e si intersecano con la regione (Fori) oppure si tolgono da essa (Solchi); 4) si estrude
  * a partire dalla faccia (e dalla faccia opposta con `sides: 'both'`) e si riporta nel riferimento del pezzo.
  */
@@ -44,8 +45,9 @@ function cutterFor(wasm: ManifoldToplevel, child: Manifold, p: PatternParams, fa
   // Faccia inclinata: la silhouette del pezzo lungo la normale invaderebbe le facce vicine, quindi la regione è sempre il
   // contorno della faccia e il taglio parte solo da lì (niente faccia opposta)
   const axisFace = isAxisFace(face);
-  // Passante su una faccia sugli assi: silhouette di tutto il pezzo; altrimenti sezione appena sotto la faccia (il contorno della faccia)
-  let region: CrossSection = through && axisFace ? inFrame.project() : inFrame.slice(-0.01);
+  // Passante su una faccia sugli assi senza region 'face': silhouette di tutto il pezzo; altrimenti sezione appena sotto la
+  // faccia (il contorno della faccia: così uno smusso accanto alla faccia non si fora)
+  let region: CrossSection = through && axisFace && p.region !== 'face' ? inFrame.project() : inFrame.slice(-0.01);
   inFrame.delete();
   if (p.margin > 0) {
     const inset = region.offset(-p.margin, 'Miter', 2, segments);
