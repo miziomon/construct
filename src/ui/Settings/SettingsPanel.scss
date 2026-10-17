@@ -18,6 +18,8 @@
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: $space-4;
   align-items: start;
+  // Con l'altezza definita le righe restano in alto: lo spazio libero non si distribuisce tra le schede
+  align-content: start;
 
   section {
     display: flex;
