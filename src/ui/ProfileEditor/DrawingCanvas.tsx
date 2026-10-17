@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type MutableRefObject, type PointerEvent as ReactPointerEvent } from 'react';
-import { FlipHorizontal2, Hand, Maximize, MousePointer2, PenTool, ZoomIn, ZoomOut } from 'lucide-react';
-import { cubicPoint, segmentOf } from '../../scene/bezier';
+import { Circle, FlipHorizontal2, Hand, Hexagon, Maximize, MousePointer2, PenTool, Square, ZoomIn, ZoomOut } from 'lucide-react';
+import { MAX_PATH_CONTOURS, cubicPoint, segmentOf } from '../../scene/bezier';
 import type { PathContour, PathNode, Vec2 } from '../../scene/types';
-import { appendPenNode, contourContains, cycleKind, gridStep, insertNode, joinContours, moveHandle, moveNodes, nearestSegment, resumeContour, setNodeKind, snapPoint } from './model';
+import { NumberField } from '../NumberField/NumberField';
+import { POLYGON_SIDES, appendPenNode, baseShapeContour, contourContains, cycleKind, gridStep, insertNode, joinContours, moveHandle, moveNodes, nearestSegment, resumeContour, setNodeKind, snapPoint } from './model';
 import type { Draft, HandleRef, NodeRef, SegmentRef } from './model';
 
 /** Aggancio e griglia: il passo (mm) serve anche a disegnare le righe; gli interruttori dicono a cosa ci si aggancia. */
@@ -16,7 +17,7 @@ export interface GridSettings {
   showAxis: boolean;
 }
 
-export type Tool = 'select' | 'pen' | 'pan';
+export type Tool = 'select' | 'pen' | 'pan' | 'rect' | 'ellipse' | 'polygon';
 
 interface Props {
   draft: Draft;
@@ -52,6 +53,8 @@ interface Props {
   onPenFinish: () => void;
   /** Penna: raggiunto il limite di nodi o di contorni. */
   onPenLimit: () => void;
+  /** Forme base: raggiunto il limite di contorni. */
+  onShapeLimit: () => void;
 }
 
 /** Vista: centro (mm) e zoom (pixel per mm). La Y del disegno va verso l'alto. */
@@ -127,6 +130,8 @@ type Drag =
   | { type: 'resume'; ref: HandleRef; current: number; close: boolean; base: PathContour[]; last: PathContour[]; frozen: PathContour[]; to: Vec2 | null; sx: number; sy: number; moved: boolean; alt: boolean }
   // Penna: lo stato di partenza serve a ricalcolare il nodo (e la sua maniglia) a ogni movimento del trascinamento
   // Alt è momentaneo: `keepIn` è la maniglia in entrata che il nodo aveva quando è stato premuto, `out` la maniglia trascinata
+  // Forma base (rettangolo, ellisse, poligono) trascinata dal centro: `last` è il disegno con la forma in anteprima (`base` se non c'è ancora una misura)
+  | { type: 'shape'; tool: 'rect' | 'ellipse' | 'polygon'; center: Vec2; base: PathContour[]; last: PathContour[]; sx: number; sy: number; moved: boolean }
   | { type: 'pen'; base: PathContour[]; current: number | null; p: Vec2; sx: number; sy: number; moved: boolean; alt: boolean; keepIn: Vec2 | undefined; out: Vec2 | undefined };
 
 /**
@@ -137,7 +142,7 @@ type Drag =
  * zoom sul puntatore, Spazio o tasto centrale per la panoramica. Le modifiche passano da `onLive` (durante il gesto) e
  * `onCommit` (al rilascio): un gesto è un solo passo della cronologia.
  */
-export function DrawingCanvas({ draft, contours, crossings, holes, selection, grid, spaceDown, onLive, onCommit, onSelect, tool, onTool, flip, onFlip, pen, onPenLive, onPenResume, onPenClose, onPenFinish, onPenLimit }: Props) {
+export function DrawingCanvas({ draft, contours, crossings, holes, selection, grid, spaceDown, onLive, onCommit, onSelect, tool, onTool, flip, onFlip, pen, onPenLive, onPenResume, onPenClose, onPenFinish, onPenLimit, onShapeLimit }: Props) {
   const wrap = useRef<HTMLDivElement>(null);
   const svg = useRef<SVGSVGElement>(null);
   const [size, setSize] = useState({ w: 600, h: 400 });
@@ -166,6 +171,8 @@ export function DrawingCanvas({ draft, contours, crossings, holes, selection, gr
   // Penna: punto (agganciato) in cui cadrebbe il prossimo nodo, per l'anteprima del segmento
   const [hover, setHover] = useState<Vec2 | null>(null);
   // Schermo a dito: aree attive più grandi
+  // Lati del poligono regolare (strumento Poligono)
+  const [sides, setSides] = useState<number>(POLYGON_SIDES.default);
   const [coarse] = useState(() => typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches === true);
   const rotate = draft.extrusion === 'rotate';
   const nodeR = coarse ? 20 : 10;
@@ -340,6 +347,15 @@ export function DrawingCanvas({ draft, contours, crossings, holes, selection, gr
     }
     if (e.button !== 0) return;
     const w = toW(sx, sy);
+    if (tool === 'rect' || tool === 'ellipse' || tool === 'polygon') {
+      // Forma base: si preme sul centro (agganciato; Ctrl sospende) e si trascina. Con 100 contorni non c'è posto per un altro
+      if (draft.paths.length >= MAX_PATH_CONTOURS) {
+        onShapeLimit();
+        return;
+      }
+      drag.current = { type: 'shape', tool, center: snapped(w, e, allNodes()), base: draft.paths, last: draft.paths, sx, sy, moved: false };
+      return;
+    }
     if (tool === 'pen') {
       setHover(null);
       setInsertAt(null);
@@ -552,6 +568,18 @@ export function DrawingCanvas({ draft, contours, crossings, holes, selection, gr
       const target = snapped(w, e, undefined, d.p);
       d.out = [target[0] - d.p[0], target[1] - d.p[1]];
       applyPen(d);
+    } else if (d.type === 'shape') {
+      if (!d.moved && Math.hypot(sx - d.sx, sy - d.sy) < DRAG_THRESHOLD) return;
+      d.moved = true;
+      // L'anteprima è la forma vera nel disegno (un passo locale solo al rilascio); senza misura il disegno torna com'era. Maiusc: quadrato, cerchio, angolo a 15°
+      const contour = baseShapeContour({ tool: d.tool, center: d.center, to: snapped(w, { ctrlKey: e.ctrlKey }, d.base.flatMap((c) => c.nodes.map((n) => n.p))), shift: e.shiftKey, sides });
+      if (contour) {
+        d.last = [...d.base, contour];
+        onLive(d.last, contour.nodes.map((_, node) => ({ path: d.base.length, node })));
+      } else if (d.last !== d.base) {
+        d.last = d.base;
+        onLive(d.base, []);
+      }
     } else if (d.type === 'box') {
       if (!d.moved && Math.hypot(sx - d.sx, sy - d.sy) < DRAG_THRESHOLD) return;
       d.moved = true;
@@ -575,6 +603,9 @@ export function DrawingCanvas({ draft, contours, crossings, holes, selection, gr
       if (d.close) onPenClose(d.current, d.moved ? d.last : undefined);
     } else if (d.type === 'handle') {
       if (d.moved) onCommit(d.last, selection);
+    } else if (d.type === 'shape') {
+      // Il contorno nuovo resta selezionato e lo strumento resta attivo
+      if (d.last !== d.base) onCommit(d.last, d.last[d.base.length].nodes.map((_, node) => ({ path: d.base.length, node })));
     } else if (d.type === 'box') {
       if (!d.moved) {
         // Clic nel vuoto: azzera la selezione (con Maiusc la lascia)
@@ -597,7 +628,7 @@ export function DrawingCanvas({ draft, contours, crossings, holes, selection, gr
 
   // Doppio clic su un nodo: scorre il tipo (spigolo, liscio, simmetrico)
   const onDoubleClick = (e: ReactMouseEvent<SVGSVGElement>) => {
-    if (tool === 'pan') return;
+    if (tool === 'pan' || tool === 'rect' || tool === 'ellipse' || tool === 'polygon') return;
     // Penna: il doppio clic termina il contorno (il nodo doppio lo toglie chi termina)
     if (tool === 'pen') {
       onPenFinish();
@@ -759,6 +790,23 @@ export function DrawingCanvas({ draft, contours, crossings, holes, selection, gr
           <Hand size={16} />
           <span>Sposta vista</span>
         </button>
+        <button type="button" aria-pressed={tool === 'rect'} title="Rettangolo (R): premi sul centro e trascina (Maiusc: quadrato). Nasce con quattro spigoli, modificabili come ogni contorno" onClick={() => onTool('rect')}>
+          <Square size={16} />
+          <span>Rettangolo</span>
+        </button>
+        <button type="button" aria-pressed={tool === 'ellipse'} title="Ellisse (C): premi sul centro e trascina (Maiusc: cerchio). Nasce con quattro nodi simmetrici" onClick={() => onTool('ellipse')}>
+          <Circle size={16} />
+          <span>Ellisse</span>
+        </button>
+        <button type="button" aria-pressed={tool === 'polygon'} title="Poligono regolare (G): premi sul centro e trascina, il primo vertice va verso il puntatore (Maiusc: angolo a multipli di 15°). Il numero di lati si sceglie nel campo Lati" onClick={() => onTool('polygon')}>
+          <Hexagon size={16} />
+          <span>Poligono</span>
+        </button>
+        {tool === 'polygon' && (
+          <div className="profile-editor__sides">
+            <NumberField label="Lati" min={POLYGON_SIDES.min} max={POLYGON_SIDES.max} integer value={sides} onCommit={setSides} />
+          </div>
+        )}
       </div>
       {rotate && outsideWidth >= OUTSIDE_LABEL_MIN && (
         <div className="profile-editor__flip" style={{ left: outsideX + outsideWidth / 2, top: size.h / 2 + 14 }}>
@@ -770,7 +818,7 @@ export function DrawingCanvas({ draft, contours, crossings, holes, selection, gr
       )}
       {draft.paths.length === 0 && (
         <div className="profile-editor__empty" role="note">
-          {tool === 'pen' ? 'Fai clic nel disegno per aggiungere il primo punto' : 'Scegli la Penna e fai clic per iniziare'}
+          {tool === 'pen' ? 'Fai clic nel disegno per aggiungere il primo punto' : tool === 'rect' || tool === 'ellipse' || tool === 'polygon' ? 'Premi sul centro e trascina per disegnare la forma' : 'Scegli la Penna e fai clic per iniziare, oppure parti da una forma base (R, C, G) o da un SVG'}
         </div>
       )}
       <div className="profile-editor__zoom" role="toolbar" aria-label="Vista del disegno">

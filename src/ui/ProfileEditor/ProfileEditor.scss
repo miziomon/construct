@@ -174,7 +174,10 @@
     }
   }
 
-  &__canvas[data-tool='pen'] &__svg {
+  &__canvas[data-tool='pen'] &__svg,
+  &__canvas[data-tool='rect'] &__svg,
+  &__canvas[data-tool='ellipse'] &__svg,
+  &__canvas[data-tool='polygon'] &__svg {
     cursor: crosshair;
   }
 
@@ -269,6 +272,16 @@
         font-weight: 600;
       }
     }
+  }
+
+  // Campo Lati accanto agli strumenti, solo con il Poligono attivo
+  &__sides {
+    display: flex;
+    align-items: center;
+    padding: 0 $space-2;
+    border: 1px solid color('border');
+    border-radius: $radius-sm;
+    background: color('panel-raised');
   }
 
   // Disegno vuoto: suggerimento al centro

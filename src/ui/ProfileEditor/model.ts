@@ -1,4 +1,5 @@
 import { MAX_PATH_CONTOURS, MAX_PATH_NODES, PATH_DEFAULT_TOLERANCE, bboxOf, cubicPoint, samplePaths, segmentOf, signedArea, splitCubic } from '../../scene/bezier';
+import { ellipseContour, polygonContour, regularPolygon } from '../../scene/pathShapes';
 import { REVOLVE_DEFAULT_ANGLE, REVOLVE_DEFAULT_SEGMENTS, pathContours, pathNaturalBox } from '../../scene/shapes2d';
 import { hasBoundDimension } from '../../scene/resize';
 import { shape2dDefaults } from '../../scene/defaults';
@@ -420,6 +421,45 @@ export function gridStep(base: number, pxPerMm: number): number {
   let step = base;
   while (step * pxPerMm < 10) step *= 5;
   return step;
+}
+
+/** Limiti del numero di lati del poligono regolare e valore iniziale. */
+export const POLYGON_SIDES = { min: 3, max: 24, default: 6 };
+
+/**
+ * Forma base trascinata dal centro con uno strumento della modale: `center` è il punto premuto, `to` il puntatore (entrambi
+ * già agganciati). Rettangolo ed ellisse hanno per semiassi le distanze in X e in Y; il poligono ha per raggio la distanza e il
+ * primo vertice verso il puntatore. Con `shift`: quadrato e cerchio (lato maggiore) o, per il poligono, l'angolo a multipli di 15°.
+ */
+export interface BaseShape {
+  tool: 'rect' | 'ellipse' | 'polygon';
+  center: Vec2;
+  to: Vec2;
+  shift: boolean;
+  /** Lati del poligono (3-24). */
+  sides: number;
+}
+
+/** Misura minima (mm) sotto cui una forma base non esiste: un clic senza trascinamento non crea nulla. */
+const MIN_SHAPE = 1e-6;
+
+/** Contorno chiuso della forma base, con le sue coordinate nel sistema dell'editor; null se la misura è nulla. */
+export function baseShapeContour(s: BaseShape): PathContour | null {
+  const [dx, dy] = sub(s.to, s.center);
+  if (s.tool === 'polygon') {
+    const radius = Math.hypot(dx, dy);
+    if (radius <= MIN_SHAPE) return null;
+    const angle = Math.atan2(dy, dx);
+    // Con Maiusc il primo vertice sta a multipli di 15 gradi
+    const first = s.shift ? Math.round(angle / (Math.PI / 12)) * (Math.PI / 12) : angle;
+    return polygonContour(regularPolygon(Math.min(POLYGON_SIDES.max, Math.max(POLYGON_SIDES.min, Math.round(s.sides))), radius, first, s.center));
+  }
+  // Semiassi: con Maiusc il maggiore dei due (quadrato, cerchio)
+  const [hx, hy] = s.shift ? [Math.max(Math.abs(dx), Math.abs(dy)), Math.max(Math.abs(dx), Math.abs(dy))] : [Math.abs(dx), Math.abs(dy)];
+  if (hx <= MIN_SHAPE || hy <= MIN_SHAPE) return null;
+  if (s.tool === 'ellipse') return ellipseContour(s.center[0], s.center[1], hx, hy);
+  const [cx, cy] = s.center;
+  return polygonContour([[cx - hx, cy - hy], [cx + hx, cy - hy], [cx + hx, cy + hy], [cx - hx, cy + hy]]);
 }
 
 /** Centro del riquadro naturale del disegno (le sole curve), o l'origine se è vuoto: è il punto che finisce nell'origine del nodo. */

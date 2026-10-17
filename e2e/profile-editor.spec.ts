@@ -1591,3 +1591,150 @@ test('fori: la Penna nel riempimento apre un nuovo contorno che diventa un foro;
   // 40 × 20 × 5 meno il foro 20 × 10 × 5
   expect(await volume(page)).toBeCloseTo(3000, 0);
 });
+
+// --- Forme base (fase 3) -----------------------------------------------------------------------------------------------
+
+/** Apre la modale su un Profilo nuovo, con il fuoco nel disegno (i tasti R, C, G sono della modale). */
+async function openNewDrawing(page: Page) {
+  await page.evaluate(() => window.__construct!.profileEditor.getState().open({ new: true }));
+  await expect(editor(page)).toBeVisible();
+  await canvas(page).focus();
+}
+
+const toolButton = (page: Page, name: string) => editor(page).getByRole('button', { name, exact: true });
+const selectedCount = (page: Page) => editor(page).locator('.profile-editor__node--selected');
+
+/** Larghezza e profondità di ogni contorno di un Profilo (dai nodi). */
+const extents = (paths: { nodes: { p: [number, number] }[] }[]) =>
+  paths.map((c) => ({ w: Math.max(...c.nodes.map((n) => n.p[0])) - Math.min(...c.nodes.map((n) => n.p[0])), d: Math.max(...c.nodes.map((n) => n.p[1])) - Math.min(...c.nodes.map((n) => n.p[1])) }));
+
+test('Rettangolo (R): trascinando dal centro nasce un contorno di 4 spigoli selezionato, un solo passo locale; Maiusc un quadrato; un clic senza trascinare non crea nulla', async ({ page }) => {
+  await openNewDrawing(page);
+  await page.keyboard.press('r');
+  await expect(toolButton(page, 'Rettangolo')).toHaveAttribute('aria-pressed', 'true');
+  await drag(page, await at(page, -150, -20), await at(page, -50, 60));
+  await expect(nodes(page)).toHaveCount(4);
+  await expect(editor(page).locator('[data-path="0"]')).toContainText('Chiuso');
+  // Il contorno nuovo resta selezionato e lo strumento resta attivo
+  await expect(selectedCount(page)).toHaveCount(4);
+  await expect(toolButton(page, 'Rettangolo')).toHaveAttribute('aria-pressed', 'true');
+  expect(await nodes(page).evaluateAll((els) => els.every((el) => el.getAttribute('data-kind') === 'corner'))).toBe(true);
+  // Un solo passo locale: Ctrl+Z toglie tutto il rettangolo
+  await page.keyboard.press('Control+z');
+  await expect(nodes(page)).toHaveCount(0);
+  await page.keyboard.press('Control+Shift+z');
+  await expect(nodes(page)).toHaveCount(4);
+  // Maiusc: quadrato (lato maggiore)
+  await page.keyboard.down('Shift');
+  await drag(page, await at(page, 100, -20), await at(page, 150, 60));
+  await page.keyboard.up('Shift');
+  await expect(nodes(page)).toHaveCount(8);
+  // Un clic senza trascinare non crea nulla
+  const click = await at(page, 150, 120);
+  await page.mouse.click(click.x, click.y);
+  await expect(nodes(page)).toHaveCount(8);
+  await okButton(page).click();
+  await expect(editor(page)).toHaveCount(0);
+  await settled(page);
+  const scene = await sceneState(page);
+  const created = scene.nodes[scene.rootIds[0]] as unknown as { paths: { nodes: { p: [number, number] }[] }[] };
+  expect(created.paths).toHaveLength(2);
+  const [a, b] = extents(created.paths);
+  // Il primo ha le due misure diverse, il secondo (Maiusc) è un quadrato
+  expect(Math.abs(a.w - a.d)).toBeGreaterThan(1);
+  expect(b.w).toBeCloseTo(b.d, 6);
+});
+
+test('Ellisse (C): quattro nodi simmetrici; Maiusc un cerchio (semiasse maggiore)', async ({ page }) => {
+  await openNewDrawing(page);
+  await page.keyboard.press('c');
+  await expect(toolButton(page, 'Ellisse')).toHaveAttribute('aria-pressed', 'true');
+  await drag(page, await at(page, -100, 0), await at(page, -20, 40));
+  await expect(nodes(page)).toHaveCount(4);
+  expect(await nodes(page).evaluateAll((els) => els.every((el) => el.getAttribute('data-kind') === 'symmetric'))).toBe(true);
+  await page.keyboard.down('Shift');
+  await drag(page, await at(page, 100, 0), await at(page, 180, 30));
+  await page.keyboard.up('Shift');
+  await expect(nodes(page)).toHaveCount(8);
+  await okButton(page).click();
+  await settled(page);
+  const scene = await sceneState(page);
+  const created = scene.nodes[scene.rootIds[0]] as unknown as { paths: { nodes: { p: [number, number]; kind: string }[] }[] };
+  expect(created.paths.every((c) => c.nodes.length === 4 && c.nodes.every((n) => n.kind === 'symmetric'))).toBe(true);
+  const [a, b] = extents(created.paths);
+  expect(Math.abs(a.w - a.d)).toBeGreaterThan(1);
+  expect(b.w).toBeCloseTo(b.d, 3);
+});
+
+test('Poligono (G): il campo Lati compare solo con lo strumento, i tasti R, C, G non agiscono mentre si scrive, 5 lati danno 5 spigoli', async ({ page }) => {
+  await openNewDrawing(page);
+  const sides = editor(page).locator('.profile-editor__sides input');
+  await expect(sides).toHaveCount(0);
+  await page.keyboard.press('g');
+  await expect(toolButton(page, 'Poligono')).toHaveAttribute('aria-pressed', 'true');
+  await expect(sides).toHaveValue('6');
+  // Scrivendo nel campo le lettere non cambiano strumento
+  await sides.focus();
+  await page.keyboard.type('rc');
+  await expect(toolButton(page, 'Poligono')).toHaveAttribute('aria-pressed', 'true');
+  await sides.fill('5');
+  await sides.press('Enter');
+  await expect(sides).toHaveValue('5');
+  await drag(page, await at(page, 0, 0), await at(page, 90, 0));
+  await expect(nodes(page)).toHaveCount(5);
+  await expect(editor(page).locator('[data-path="0"]')).toContainText('Chiuso');
+  // Cambiando strumento il campo sparisce
+  await canvas(page).focus();
+  await page.keyboard.press('v');
+  await expect(sides).toHaveCount(0);
+  await okButton(page).click();
+  await settled(page);
+  const scene = await sceneState(page);
+  const created = scene.nodes[scene.rootIds[0]] as unknown as { paths: { nodes: { kind: string }[] }[] };
+  expect(created.paths[0].nodes).toHaveLength(5);
+  expect(created.paths[0].nodes.every((n) => n.kind === 'corner')).toBe(true);
+});
+
+test('un\'ellisse disegnata dentro un rettangolo è un foro: badge, tratteggio e il volume cala', async ({ page }) => {
+  const id = await addPath(page, RECT);
+  await openEditor(page, id);
+  await canvas(page).focus();
+  const k = await pixelsPerMm(page);
+  const origin = await center(node(page, '0:0'));
+  await page.keyboard.press('c');
+  // Dal centro del rettangolo (20, 10) con semiassi 10 e 5 mm
+  await drag(page, { x: origin.x + 20 * k, y: origin.y - 10 * k }, { x: origin.x + 30 * k, y: origin.y - 15 * k });
+  await expect(editor(page).locator('[data-path="1"]')).toContainText('Foro');
+  await expect(editor(page).locator('.profile-editor__curve--hole')).toHaveCount(1);
+  await okButton(page).click();
+  await settled(page);
+  // 40 × 20 × 5 meno l'ellisse (π · 10 · 5) × 5, entro l'approssimazione del campionamento
+  expect(Math.abs((await volume(page)) - (4000 - Math.PI * 50 * 5))).toBeLessThan(20);
+});
+
+test('forme base: con 100 contorni compare l\'avviso e non nasce nulla', async ({ page }) => {
+  const contour = (i: number) => ({ closed: false, nodes: [{ p: [i, 0], kind: 'corner' }, { p: [i, 5], kind: 'corner' }] });
+  const draft = { paths: Array.from({ length: 100 }, (_, i) => contour(i)), tolerance: 0.05, extrusion: 'linear', height: 5, twist: 0, scaleTop: 1, revolveAngle: 360, revolveSegments: 64 };
+  await page.evaluate((d) => localStorage.setItem('construct:profile-draft:new', JSON.stringify({ v: 1, draft: d })), draft);
+  await page.evaluate(() => window.__construct!.profileEditor.getState().open({ new: true }));
+  await confirmBox(page).getByRole('button', { name: 'Ripristina' }).click();
+  await expect(editor(page).locator('[data-path]')).toHaveCount(100);
+  await toolButton(page, 'Rettangolo').click();
+  await drag(page, await at(page, 0, 120), await at(page, 60, 160));
+  await expect(page.getByText('Limite raggiunto: al massimo 100 contorni')).toBeVisible();
+  await expect(editor(page).locator('[data-path]')).toHaveCount(100);
+});
+
+test('forme base: il doppio clic su un nodo non cambia il tipo e il disegno vuoto suggerisce le forme', async ({ page }) => {
+  await page.evaluate(() => window.__construct!.profileEditor.getState().open({ new: true }));
+  await expect(editor(page)).toBeVisible();
+  await expect(editor(page).getByText('oppure parti da una forma base (R, C, G) o da un SVG')).toBeVisible();
+  await toolButton(page, 'Rettangolo').click();
+  await expect(editor(page).getByText('Premi sul centro e trascina per disegnare la forma')).toBeVisible();
+  await drag(page, await at(page, -80, -40), await at(page, 80, 40));
+  await expect(nodes(page)).toHaveCount(4);
+  const c = await center(node(page, '0:0'));
+  await page.mouse.dblclick(c.x, c.y);
+  await expect(nodes(page)).toHaveCount(4);
+  expect(await node(page, '0:0').getAttribute('data-kind')).toBe('corner');
+});

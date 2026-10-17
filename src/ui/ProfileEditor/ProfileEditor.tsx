@@ -385,6 +385,9 @@ function Editor({ target }: { target: ProfileTarget }) {
     if (key === 'v') changeTool('select');
     else if (key === 'p') changeTool('pen');
     else if (key === 'h') changeTool('pan');
+    else if (key === 'r') changeTool('rect');
+    else if (key === 'c') changeTool('ellipse');
+    else if (key === 'g') changeTool('polygon');
     else if (key === 'enter') {
       // Invio termina il contorno della Penna (sui pulsanti conserva il suo significato)
       if (penIndex !== null && !(e.target instanceof HTMLButtonElement)) {
@@ -472,6 +475,7 @@ function Editor({ target }: { target: ProfileTarget }) {
             onPenClose={closePen}
             onPenFinish={finishPen}
             onPenLimit={() => notify.info('Limite raggiunto: al massimo 500 nodi per contorno e 100 contorni. Termina il contorno (Invio) o chiudilo')}
+            onShapeLimit={() => notify.info('Limite raggiunto: al massimo 100 contorni. Elimina un contorno per disegnarne un altro')}
           />
           <ProfilePreview {...preview} mode={previewMode} onMode={setPreviewMode} fitSignal={fitSignal} onFit={() => setFitSignal((n) => n + 1)} />
           <Sidebar

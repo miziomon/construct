@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { appendPenNode, bakeScale, canCloseContour, closeContour, contourContains, contourHoles, cycleKind, deleteNodes, draftContours, draftFromNode, dropLastNode, emptyDraft, gridStep, insertNode, isOpenEnd, joinContours, moveHandle, moveNodes, nearestSegment, pathCenter, pointInPolygon, resumeContour, setNodeKind, snapPoint, trimDuplicateTail } from './model';
+import { POLYGON_SIDES, appendPenNode, bakeScale, baseShapeContour, canCloseContour, closeContour, contourContains, contourHoles, cycleKind, deleteNodes, draftContours, draftFromNode, dropLastNode, emptyDraft, gridStep, insertNode, isOpenEnd, joinContours, moveHandle, moveNodes, nearestSegment, pathCenter, pointInPolygon, resumeContour, setNodeKind, snapPoint, trimDuplicateTail } from './model';
 import { bboxOf, cubicPoint, segmentOf, signedArea, splitCubic } from '../../scene/bezier';
 import { pathContours, pathNaturalSize } from '../../scene/shapes2d';
 import { shape2dDefaults } from '../../scene/defaults';
@@ -616,5 +616,69 @@ describe('contourHoles', () => {
   it('non modifica i contorni e restituisce un elemento per contorno', () => {
     const paths = freeze([box(0, 0, 20), box(5, 5, 5), { closed: false, nodes: [node([1, 1])] } as PathContour]);
     expect(contourHoles({ paths, tolerance: 0.05, extrusion: 'linear' })).toHaveLength(3);
+  });
+});
+
+describe('baseShapeContour', () => {
+  const shapeAt = (tool: 'rect' | 'ellipse' | 'polygon', to: Vec2, shift = false, sides = 6) => baseShapeContour({ tool, center: [10, 10], to, shift, sides });
+  const points = (c: PathContour | null) => c!.nodes.map((n) => n.p);
+
+  it('rettangolo: i semiassi sono le distanze dal centro, in qualunque direzione; quattro spigoli chiusi', () => {
+    const c = shapeAt('rect', [15, 18])!;
+    expect(c.closed).toBe(true);
+    expect(c.nodes.every((n) => n.kind === 'corner' && !n.in && !n.out)).toBe(true);
+    expect(points(c)).toEqual([[5, 2], [15, 2], [15, 18], [5, 18]]);
+    // Trascinando dall'altra parte il rettangolo è lo stesso
+    expect(points(shapeAt('rect', [5, 2]))).toEqual(points(c));
+  });
+
+  it('Maiusc: quadrato sul lato maggiore, e un trascinamento in sola orizzontale basta', () => {
+    expect(points(shapeAt('rect', [15, 18], true))).toEqual([[2, 2], [18, 2], [18, 18], [2, 18]]);
+    expect(points(shapeAt('rect', [14, 10], true))).toEqual([[6, 6], [14, 6], [14, 14], [6, 14]]);
+  });
+
+  it('ellisse: 4 nodi simmetrici sugli assi; con Maiusc un cerchio del semiasse maggiore', () => {
+    const c = shapeAt('ellipse', [20, 14])!;
+    expect(c.nodes).toHaveLength(4);
+    expect(c.nodes.every((n) => n.kind === 'symmetric')).toBe(true);
+    const xs = points(c).map((p) => p[0]);
+    const ys = points(c).map((p) => p[1]);
+    expect(Math.max(...xs)).toBeCloseTo(20, 9);
+    expect(Math.min(...xs)).toBeCloseTo(0, 9);
+    expect(Math.max(...ys)).toBeCloseTo(14, 9);
+    expect(Math.min(...ys)).toBeCloseTo(6, 9);
+    const circleShape = shapeAt('ellipse', [20, 14], true)!;
+    expect(Math.max(...points(circleShape).map((p) => p[1]))).toBeCloseTo(20, 9);
+  });
+
+  it('poligono: n spigoli sul raggio, il primo vertice verso il puntatore', () => {
+    const c = shapeAt('polygon', [10, 20], false, 5)!;
+    expect(c.nodes).toHaveLength(5);
+    expect(points(c)[0][0]).toBeCloseTo(10, 9);
+    expect(points(c)[0][1]).toBeCloseTo(20, 9);
+    for (const [x, y] of points(c)) expect(Math.hypot(x - 10, y - 10)).toBeCloseTo(10, 9);
+  });
+
+  it('poligono con Maiusc: l\'angolo del primo vertice è un multiplo di 15 gradi, il raggio resta la distanza', () => {
+    // Il puntatore è a circa 5,7 gradi: si arrotonda a 0
+    const c = shapeAt('polygon', [20, 11], true)!;
+    expect(points(c)[0][1]).toBeCloseTo(10, 9);
+    expect(points(c)[0][0]).toBeCloseTo(10 + Math.hypot(10, 1), 9);
+    // A circa 40 gradi: 45
+    const d = shapeAt('polygon', [10 + 7.66, 10 + 6.43], true)!;
+    expect(Math.atan2(points(d)[0][1] - 10, points(d)[0][0] - 10) * (180 / Math.PI)).toBeCloseTo(45, 6);
+  });
+
+  it('i lati del poligono restano tra 3 e 24', () => {
+    expect(shapeAt('polygon', [20, 10], false, 1)!.nodes).toHaveLength(POLYGON_SIDES.min);
+    expect(shapeAt('polygon', [20, 10], false, 100)!.nodes).toHaveLength(POLYGON_SIDES.max);
+  });
+
+  it('misura nulla: nessuna forma (un clic, una linea, il poligono con raggio zero)', () => {
+    expect(shapeAt('rect', [10, 10])).toBeNull();
+    expect(shapeAt('ellipse', [10, 10], true)).toBeNull();
+    expect(shapeAt('rect', [20, 10])).toBeNull();
+    expect(shapeAt('ellipse', [10, 30])).toBeNull();
+    expect(shapeAt('polygon', [10, 10])).toBeNull();
   });
 });
