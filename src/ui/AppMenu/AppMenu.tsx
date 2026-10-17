@@ -149,7 +149,7 @@ export function AppMenu() {
         </div>
       )}
 
-      <Modal open={panel !== null} title={panel ? TITLES[panel] : ''} onClose={close} size={panel === 'shortcuts' || panel === 'news' || panel === 'docs' || panel === 'params' ? 'large' : panel === 'about' || panel === 'examples' ? 'wide' : 'default'}>
+      <Modal open={panel !== null} title={panel ? TITLES[panel] : ''} onClose={close} size={panel === 'shortcuts' || panel === 'news' || panel === 'docs' || panel === 'params' || panel === 'settings' ? 'large' : panel === 'about' || panel === 'examples' ? 'wide' : 'default'}>
         {panel && (
           <Suspense fallback={<p>Caricamento…</p>}>
             {panel === 'docs' ? <DocsPanel /> : panel === 'params' ? <ParamsPanel /> : panel === 'examples' ? <ExamplesPanel run={run} /> : <AppMenuPanels panel={panel} run={run} />}

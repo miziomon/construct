@@ -1,30 +1,56 @@
 @use '../../styles/abstracts' as *;
 
+// Il pannello Impostazioni usa tutto il corpo della modale: il padding lo gestisce lui
+.modal__body:has(> .settings) {
+  padding: 0;
+  overflow: hidden;
+}
+
 .settings {
-  display: flex;
-  flex-direction: column;
+  // Il pannello occupa tutto il corpo della modale grande e scorre da solo: il padding passa qui dal corpo
+  flex: 1;
+  min-height: 0;
+  padding: $space-5;
+  overflow-y: auto;
+
+  // Schede su più colonne: tante quante ne stanno con almeno 320 px ciascuna
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: $space-4;
+  align-items: start;
+  // Con l'altezza definita le righe restano in alto: lo spazio libero non si distribuisce tra le schede
+  align-content: start;
 
   section {
     display: flex;
     flex-direction: column;
     gap: $space-2;
-    padding-bottom: $space-4;
-    border-bottom: 1px solid color('border');
-
-    &:last-child {
-      padding-bottom: 0;
-      border-bottom: 0;
-    }
+    padding: $space-4;
+    border: 1px solid color('border');
+    border-radius: $radius-lg;
+    background: color('panel-raised');
   }
 
   h3 {
+    display: flex;
+    align-items: center;
+    gap: $space-2;
     margin: 0 0 $space-1;
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: color('accent');
+  }
+
+  // Scheda a tutta larghezza in fondo (salvataggio e dati)
+  &__wide {
+    grid-column: 1 / -1;
+  }
+
+  // Sotto i 700 px una colonna sola
+  @media (max-width: 700px) {
+    grid-template-columns: 1fr;
   }
 
   // Le etichette dei campi numerici sono più lunghe della lettera singola prevista di norma
