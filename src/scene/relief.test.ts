@@ -7,6 +7,9 @@ import {
   dentList,
   fbm,
   grainDepth,
+  MAX_GRID_NODES,
+  MAX_STUDS,
+  normalizeRelief,
   plankLayout,
   reliefDefaults,
   rustDepth,
@@ -47,6 +50,37 @@ describe('rumore', () => {
 
   it('è continuo: due punti vicinissimi hanno valori quasi uguali', () => {
     expect(Math.abs(fbm(3.2, 4.1, 1) - fbm(3.2001, 4.1, 1))).toBeLessThan(0.01);
+  });
+});
+
+describe('limiti sui parametri', () => {
+  it('le misure a zero o non finite tornano ai minimi e ai valori di partenza; i valori validi non cambiano', () => {
+    const brickOk = normalizeRelief(brick);
+    expect(brickOk).toEqual(brick);
+    const bad = normalizeRelief({ ...brick, brickW: 0, brickH: -3, mortar: Number.NaN, depth: 0 });
+    expect(bad.brickW).toBe(2);
+    expect(bad.brickH).toBe(2);
+    expect(bad.mortar).toBe(brick.mortar);
+    expect(bad.depth).toBe(0.05);
+    expect(normalizeRelief({ ...studs, pitch: 0, radius: 0 }).pitch).toBe(2);
+    expect(normalizeRelief({ ...wood, plankW: 0, plankL: 0, gap: 0 })).toMatchObject({ plankW: 2, plankL: 5, gap: 0.2 });
+    expect(normalizeRelief({ ...rust, craterDensity: 1e9, flakes: 7 })).toMatchObject({ craterDensity: 20, flakes: 1 });
+  });
+
+  it('i generatori con misure a zero terminano e restituiscono elenchi finiti', () => {
+    expect(brickLayout(RECT, { ...brick, brickW: 0, brickH: 0, mortar: 0 }).length).toBeGreaterThan(0);
+    expect(plankLayout(RECT, { ...wood, plankW: 0, plankL: 0, gap: 0 }).flat().length).toBeGreaterThan(0);
+    expect(studCenters(RECT, { ...studs, pitch: 0 }).length).toBeLessThanOrEqual(MAX_STUDS * 1.1);
+    expect(dentList(RECT, { ...hammered, size: 0 }).length).toBeLessThanOrEqual(500);
+  });
+
+  it('la mappa di altezze ha un tetto di nodi: il passo si allarga', () => {
+    const big = sampleGrid({ minX: 0, minY: 0, maxX: 200, maxY: 200 }, 0.3, () => 0);
+    expect(big.nx * big.ny).toBeLessThanOrEqual(MAX_GRID_NODES * 1.05);
+    // Passo non valido: si usa quello di partenza e il minimo
+    expect(() => sampleGrid({ minX: 0, minY: 0, maxX: 10, maxY: 10 }, 0, () => 0)).not.toThrow();
+    // Rettangolo vuoto o non finito: errore chiaro invece di una griglia infinita
+    expect(() => sampleGrid({ minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }, 0.5, () => 0)).toThrow();
   });
 });
 
@@ -140,6 +174,25 @@ describe('ruggine', () => {
     expect(differing / pairs).toBeGreaterThan(0.8);
   });
 
+  it('è ruvida e butterata in ogni riquadro di 5 × 5 mm (anche sfalsati di 2,5 mm), non solo in media (escursione di quota almeno 0,2 mm)', () => {
+    const flat: string[] = [];
+    for (const seed of [1, 2, 3, 4, 5]) {
+      for (const flakes of [0, rust.flakes, 1]) {
+        const depth = rustDepth(RECT, { ...rust, seed, flakes });
+        for (let wy = RECT.minY + 2.5; wy < RECT.maxY - 5; wy += 2.5) {
+          for (let wx = RECT.minX + 2.5; wx < RECT.maxX - 5; wx += 2.5) {
+            // 13 × 13 campioni a passo 0,4 mm dentro il riquadro
+            const values: number[] = [];
+            for (let j = 0; j < 13; j++) for (let i = 0; i < 13; i++) values.push(depth(wx + i * 0.4, wy + j * 0.4));
+            const range = Math.max(...values) - Math.min(...values);
+            if (range < 0.2) flat.push(`seed ${seed} flakes ${flakes} (${wx}, ${wy}): ${range.toFixed(3)}`);
+          }
+        }
+      }
+    }
+    expect(flat).toEqual([]);
+  });
+
   it('profondità sempre almeno 0,05 mm e con più ruvidità aumenta la deviazione standard', () => {
     const calm = grid({ ...rust, roughness: 0.1, craterDensity: 0, flakes: 0 });
     const rough = grid({ ...rust, roughness: 0.5, craterDensity: 0, flakes: 0 });
@@ -158,17 +211,41 @@ describe('ruggine', () => {
 });
 
 describe('borchie', () => {
-  it('centri sulla griglia, tutti dentro il rettangolo, deterministici', () => {
+  it('griglia centrata e borchie tutte intere dentro il rettangolo, deterministica', () => {
     const centers = studCenters(RECT, studs);
-    // 7 colonne (x = -34, -22, ..., 38) per 5 file (y = -24, ..., 24)
+    // 7 colonne (x = -36, -24, ..., 36) per 5 file (y = -24, ..., 24)
     expect(centers.length).toBe(35);
     for (const [x, y] of centers) {
-      expect(x).toBeGreaterThan(RECT.minX);
-      expect(x).toBeLessThan(RECT.maxX);
-      expect(y).toBeGreaterThan(RECT.minY);
-      expect(y).toBeLessThan(RECT.maxY);
+      expect(x - studs.radius).toBeGreaterThanOrEqual(RECT.minX);
+      expect(x + studs.radius).toBeLessThanOrEqual(RECT.maxX);
+      expect(y - studs.radius).toBeGreaterThanOrEqual(RECT.minY);
+      expect(y + studs.radius).toBeLessThanOrEqual(RECT.maxY);
     }
+    // Centrata: i margini a sinistra e a destra (e in basso e in alto) coincidono
+    const xs = centers.map((c) => c[0]);
+    const ys = centers.map((c) => c[1]);
+    expect(Math.min(...xs) - RECT.minX).toBeCloseTo(RECT.maxX - Math.max(...xs), 6);
+    expect(Math.min(...ys) - RECT.minY).toBeCloseTo(RECT.maxY - Math.max(...ys), 6);
     expect(studCenters(RECT, studs)).toEqual(centers);
+  });
+
+  it('nessuna borchia se la faccia è più stretta del diametro; il passo si allarga oltre il tetto di borchie', () => {
+    expect(studCenters({ minX: 0, minY: 0, maxX: 4, maxY: 40 }, studs)).toEqual([]);
+    expect(studCenters({ minX: 0, minY: 0, maxX: 1000, maxY: 1000 }, { ...studs, pitch: 2 }).length).toBeLessThanOrEqual(MAX_STUDS * 1.1);
+  });
+
+  it('con borchie sovrapposte la mappa vale il massimo delle altezze e non disegna borchie che non esistono', () => {
+    const dense = { ...studs, pitch: 3 };
+    const centers = studCenters(RECT, dense);
+    const height = studHeight(RECT, dense, centers);
+    // Tra due centri a 3 mm (raggio 2,5) la quota è quella della più alta delle due calotte
+    const [a, b] = centers;
+    const mid = height((a[0] + b[0]) / 2, a[1]);
+    expect(mid).toBeGreaterThan(0);
+    expect(mid).toBeLessThan(dense.height);
+    // Fuori dalla griglia (oltre il raggio dall'ultima borchia) niente spicchi
+    const last = centers[centers.length - 1];
+    expect(height(last[0] + dense.radius + 0.3, last[1])).toBe(0);
   });
 
   it("il profilo della calotta va dall'apice alla base e la funzione di altezza lo rispetta", () => {

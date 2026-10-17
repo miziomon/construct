@@ -214,7 +214,9 @@ describe.skipIf(!process.env.BENCH)('benchmark texture in rilievo', { timeout: 6
     const region = wasm.CrossSection.square(size, true);
     const params = reliefDefaults(kind);
     const additive = kind === 'studs';
-    const panel = wasm.Manifold.cube([size[0], size[1], 5], true).translate([0, 0, -2.5]);
+    const cube = wasm.Manifold.cube([size[0], size[1], 5], true);
+    const panel = cube.translate([0, 0, -2.5]);
+    cube.delete();
     let triangles = 0;
     const run = () => {
       const tool = additive ? reliefAddition(wasm, region, params, { engine, step }) : reliefCutter(wasm, region, params, { engine, step });

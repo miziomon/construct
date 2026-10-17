@@ -5,15 +5,16 @@ import {
   dentList,
   grainDepth,
   isAdditive,
+  normalizeRelief,
   plankLayout,
   reliefDepth,
   sampleGrid,
-  studCenters,
+  studGrid,
   studHeight,
   studProfile,
 } from '../scene/relief';
 import type { Box, HeightGrid, ReliefParams } from '../scene/relief';
-import type { Rect } from '../scene/voronoi';
+import type { Rect, Vec2 } from '../scene/voronoi';
 
 /**
  * Texture in rilievo su una faccia piana (studio di fattibilità, non ancora collegato all'app). Tutto avviene nel
@@ -77,47 +78,53 @@ function prism(wasm: ManifoldToplevel, section: CrossSection, z0: number, z1: nu
 // Mappa di altezze: griglia chiusa in un solido
 // ---------------------------------------------------------------------------------------------------------------------
 
+/** Da che parte della superficie sta il materiale di `heightSolid`: sotto (il piano di chiusura è più in basso) o sopra. */
+export type HeightSide = 'below' | 'above';
+
 /**
- * Solido chiuso tra la superficie z = f(x, y) della griglia e il piano orizzontale `planeZ`. I vertici sono quelli della
- * griglia più i quattro angoli del piano: le pareti riusano gli indici dei vertici di bordo, quindi la mesh è a tenuta
- * senza fusione di vertici. Il piano sta sotto la superficie (solido "sotto la superficie") oppure sopra (solido "sopra"):
- * nel secondo caso si invertono i triangoli. La superficie e il piano non devono toccarsi (pareti degeneri).
+ * Solido chiuso tra la superficie z = f(x, y) della griglia e il piano orizzontale `planeZ`, con il materiale `side` della
+ * superficie ('below': piano sotto, per le borchie; 'above': piano sopra, per i tagli). Le pareti sono verticali: ogni vertice
+ * del bordo della superficie ha il suo gemello sul piano, quindi le pareti sono strisce di quadrilateri che non si
+ * rovesciano mai, qualunque sia la superficie. Il piano di chiusura è un ventaglio dal suo centro ai vertici del bordo
+ * (nessun triangolo degenere: il centro non sta mai su un lato). Tutti i vertici sono condivisi, quindi la mesh è a tenuta
+ * senza fusione. La superficie e il piano non devono toccarsi.
  */
-export function heightSolid(wasm: ManifoldToplevel, grid: HeightGrid, planeZ: number): Manifold {
+export function heightSolid(wasm: ManifoldToplevel, grid: HeightGrid, planeZ: number, side: HeightSide): Manifold {
   const { nx, ny, x0, y0, dx, dy, z } = grid;
   const n = nx * ny;
-  const vertices = new Float32Array((n + 4) * 3);
-  for (let j = 0; j < ny; j++) {
-    for (let i = 0; i < nx; i++) vertices.set([x0 + i * dx, y0 + j * dy, z[j * nx + i]], (j * nx + i) * 3);
-  }
-  // Angoli del piano, in senso antiorario visto dall'alto: c00, c10, c11, c01
-  const [c00, c10, c11, c01] = [n, n + 1, n + 2, n + 3];
-  const x1 = x0 + (nx - 1) * dx;
-  const y1 = y0 + (ny - 1) * dy;
-  vertices.set([x0, y0, planeZ, x1, y0, planeZ, x1, y1, planeZ, x0, y1, planeZ], n * 3);
-
-  const tris: number[] = [];
   const v = (i: number, j: number) => j * nx + i;
+  // Bordo della griglia in senso antiorario visto dall'alto: lato basso, destro, alto, sinistro (senza ripetere gli angoli)
+  const loop: number[] = [];
+  for (let i = 0; i < nx; i++) loop.push(v(i, 0));
+  for (let j = 1; j < ny; j++) loop.push(v(nx - 1, j));
+  for (let i = nx - 2; i >= 0; i--) loop.push(v(i, ny - 1));
+  for (let j = ny - 2; j >= 1; j--) loop.push(v(0, j));
+  const count = loop.length;
+
+  // Vertici: griglia, poi un gemello sul piano per ogni vertice del bordo (indice n + k), poi il centro del piano
+  const vertices = new Float32Array((n + count + 1) * 3);
+  for (let j = 0; j < ny; j++) {
+    for (let i = 0; i < nx; i++) vertices.set([x0 + i * dx, y0 + j * dy, z[v(i, j)]], v(i, j) * 3);
+  }
+  loop.forEach((s, k) => vertices.set([vertices[s * 3], vertices[s * 3 + 1], planeZ], (n + k) * 3));
+  const centre = n + count;
+  vertices.set([x0 + ((nx - 1) * dx) / 2, y0 + ((ny - 1) * dy) / 2, planeZ], centre * 3);
+
+  // Orientazione "sotto": normali verso l'esterno con i vertici antiorari visti da fuori
+  const tris: number[] = [];
   // Superficie: due triangoli per cella, antiorari visti dall'alto (normale verso +Z)
   for (let j = 0; j < ny - 1; j++) {
     for (let i = 0; i < nx - 1; i++) tris.push(v(i, j), v(i + 1, j), v(i + 1, j + 1), v(i, j), v(i + 1, j + 1), v(i, j + 1));
   }
-  // Piano di chiusura (normale verso -Z)
-  tris.push(c10, c00, c01, c10, c01, c11);
-  // Pareti: per ogni lato, ventaglio dall'angolo di partenza del piano verso i vertici di bordo (ordine antiorario del bordo)
-  const side = (cA: number, cB: number, edge: number[]) => {
-    tris.push(cA, cB, edge[edge.length - 1]);
-    for (let k = edge.length - 1; k >= 1; k--) tris.push(cA, edge[k], edge[k - 1]);
-  };
-  const range = (count: number) => Array.from({ length: count }, (_, k) => k);
-  side(c00, c10, range(nx).map((i) => v(i, 0)));
-  side(c10, c11, range(ny).map((j) => v(nx - 1, j)));
-  side(c11, c01, range(nx).map((i) => v(nx - 1 - i, ny - 1)));
-  side(c01, c00, range(ny).map((j) => v(0, ny - 1 - j)));
-
-  // Solido "sopra la superficie": stessa mesh con i triangoli rovesciati
-  const above = planeZ > z[0];
-  if (above) for (let t = 0; t < tris.length; t += 3) [tris[t + 1], tris[t + 2]] = [tris[t + 2], tris[t + 1]];
+  for (let k = 0; k < count; k++) {
+    const next = (k + 1) % count;
+    // Parete: quadrilatero verticale sotto il lato k del bordo (verso opposto a quello del lato nella superficie)
+    tris.push(loop[next], loop[k], n + k, loop[next], n + k, n + next);
+    // Piano di chiusura (normale verso -Z): ventaglio dal centro
+    tris.push(centre, n + next, n + k);
+  }
+  // Materiale sopra la superficie: stessa mesh con i triangoli rovesciati
+  if (side === 'above') for (let t = 0; t < tris.length; t += 3) [tris[t + 1], tris[t + 2]] = [tris[t + 2], tris[t + 1]];
   const mesh = new wasm.Mesh({ numProp: 3, vertProperties: vertices, triVerts: new Uint32Array(tris) });
   return new wasm.Manifold(mesh);
 }
@@ -126,7 +133,7 @@ export function heightSolid(wasm: ManifoldToplevel, grid: HeightGrid, planeZ: nu
 function depthMapCutter(wasm: ManifoldToplevel, rect: Rect, step: number, depth: (x: number, y: number) => number): Manifold {
   // Dove la profondità è sotto FLOOR la superficie resta sopra la faccia e non taglia nulla
   const grid = sampleGrid(rect, step, (x, y) => FLOOR - depth(x, y));
-  return heightSolid(wasm, grid, ABOVE + 1);
+  return heightSolid(wasm, grid, ABOVE + 1, 'above');
 }
 
 /** Intersezione con il prisma della regione e pulizia: restituisce null se non resta nulla. */
@@ -183,10 +190,15 @@ function dentCutter(wasm: ManifoldToplevel, r: number, d: number, R: number, seg
  * Il solido da togliere dal pezzo per le texture sottrattive (mattoni, legno, ruggine, rame battuto), nel riferimento della
  * faccia, già ritagliato sulla regione. Restituisce null se non toglie nulla.
  */
-export function reliefCutter(wasm: ManifoldToplevel, region: CrossSection, p: ReliefParams, options: ReliefOptions = {}): Manifold | null {
-  if (isAdditive(p)) throw new Error('Texture additiva: usare reliefAddition');
+export function reliefCutter(wasm: ManifoldToplevel, region: CrossSection, params: ReliefParams, options: ReliefOptions = {}): Manifold | null {
+  if (isAdditive(params)) throw new Error('Texture additiva: usare reliefAddition');
   const { Manifold } = wasm;
+  const p = normalizeRelief(params);
   const engine = options.engine ?? BEST_ENGINE[p.kind];
+  // Il motore ibrido esiste solo per il legno: per le altre texture è un errore, non un ripiego silenzioso sul CSG
+  if (engine === 'hybrid' && p.kind !== 'wood') throw new Error(`Motore 'hybrid' non disponibile per la texture '${p.kind}'`);
+  // Regione vuota (margine troppo grande, faccia senza area): niente da fare, e senza limiti finiti i cicli non finirebbero
+  if (region.isEmpty()) return null;
   const step = options.step ?? DEFAULT_STEP;
   const segments = options.segments ?? DEFAULT_SEGMENTS;
   const rect = options.rect ?? regionRect(region);
@@ -248,31 +260,72 @@ function regionSection(wasm: ManifoldToplevel, rect: Rect): CrossSection {
   return moved;
 }
 
+/** Vero se il punto sta dentro i contorni (regola pari-dispari: i fori contano). */
+function insideRings(rings: Vec2[][], x: number, y: number): boolean {
+  let inside = false;
+  for (const ring of rings) {
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [xi, yi] = ring[i];
+      const [xj, yj] = ring[j];
+      if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+  }
+  return inside;
+}
+
+/**
+ * I centri delle borchie la cui base sta tutta dentro la regione: il centro deve cadere nella regione ridotta del raggio.
+ * Senza margine e con la faccia rettangolare sono tutti quelli della griglia centrata; con un margine o una faccia di
+ * forma diversa alcuni vengono scartati (le mezze borchie lasciano pareti sottili e sono brutte).
+ */
+export function studsInRegion(region: CrossSection, rect: Rect, params: ReliefParams): Vec2[] {
+  const p = normalizeRelief(params);
+  if (p.kind !== 'studs') return [];
+  const g = studGrid(rect, p);
+  // Tolleranza di un decimo di micrometro: una borchia che tocca il bordo esatto della regione resta
+  const inner = region.offset(-(p.radius - 1e-4), 'Round', 2, 32);
+  const rings = inner.toPolygons() as Vec2[][];
+  inner.delete();
+  const centers: Vec2[] = [];
+  for (let j = 0; j < g.rows; j++) {
+    for (let i = 0; i < g.cols; i++) {
+      const c: Vec2 = [g.x0 + i * g.pitch, g.y0 + j * g.pitch];
+      if (insideRings(rings, c[0], c[1])) centers.push(c);
+    }
+  }
+  return centers;
+}
+
 /**
  * Il solido da unire al pezzo per le texture additive (borchie), nel riferimento della faccia, ritagliato sulla regione:
  * entra di `EMBED` mm nel pezzo, così l'unione non lascia fessure. Restituisce null se non resta nulla.
  */
-export function reliefAddition(wasm: ManifoldToplevel, region: CrossSection, p: ReliefParams, options: ReliefOptions = {}): Manifold | null {
-  if (p.kind !== 'studs') throw new Error('Texture sottrattiva: usare reliefCutter');
+export function reliefAddition(wasm: ManifoldToplevel, region: CrossSection, params: ReliefParams, options: ReliefOptions = {}): Manifold | null {
+  if (params.kind !== 'studs') throw new Error('Texture sottrattiva: usare reliefCutter');
   const { Manifold } = wasm;
+  const p = normalizeRelief(params);
   const engine = options.engine ?? BEST_ENGINE.studs;
+  if (engine === 'hybrid') throw new Error("Motore 'hybrid' non disponibile per la texture 'studs'");
+  if (region.isEmpty()) return null;
   const rect = options.rect ?? regionRect(region);
   const top = p.height + 1;
+  // Solo le borchie che stanno intere nella regione: nessuna borchia tagliata a metà, e il codice OpenSCAD coincide
+  const centers = studsInRegion(region, rect, p);
+  if (centers.length === 0) return null;
 
   if (engine === 'heightmap') {
     // La mappa sta sopra il piano a -EMBED; fuori dalle borchie la superficie resta un po' sotto la faccia
-    const height = studHeight(rect, p);
+    const height = studHeight(rect, p, centers);
     const grid = sampleGrid(rect, options.step ?? DEFAULT_STEP, (x, y) => Math.max(height(x, y), -FLOOR));
-    return clipToRegion(wasm, heightSolid(wasm, grid, -EMBED), region, -EMBED, top);
+    return clipToRegion(wasm, heightSolid(wasm, grid, -EMBED, 'below'), region, -EMBED, top);
   }
 
   // CSG: una borchia per rivoluzione del profilo (con il piede che entra nel pezzo), copiata nei centri
   const stud = revolved(wasm, studProfile(p), -EMBED, options.segments ?? DEFAULT_SEGMENTS);
-  const copies = studCenters(rect, p).map((c) => stud.translate([c[0], c[1], 0]));
+  const copies = centers.map((c) => stud.translate([c[0], c[1], 0]));
   stud.delete();
-  if (copies.length === 0) return null;
   // Con le borchie che si toccano serve l'unione; altrimenti basta compose (nessuna booleana)
-  const joined = p.pitch > 2 * p.radius ? Manifold.compose(copies) : Manifold.union(copies);
+  const joined = studGrid(rect, p).pitch > 2 * p.radius ? Manifold.compose(copies) : Manifold.union(copies);
   copies.forEach((c) => c.delete());
   return clipToRegion(wasm, joined, region, -EMBED, top);
 }

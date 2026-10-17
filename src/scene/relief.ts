@@ -97,6 +97,36 @@ export function reliefDefaults(kind: ReliefKind): ReliefParams {
   }
 }
 
+/** Nodi massimi di una mappa di altezze: oltre, il passo si allarga (a 0,3 mm sono circa 22 mila mm² di faccia). */
+export const MAX_GRID_NODES = 250_000;
+
+/**
+ * Parametri entro i limiti, da applicare prima di ogni calcolo: valori non finiti sostituiti da quelli di partenza, misure
+ * minime (passi, lunghezze e raggi almeno 1 mm o 2 mm, fughe almeno 0,2 mm, profondità almeno 0,05 mm) che evitano cicli che
+ * non finiscono, densità, variazioni e scaglie nei loro intervalli, semi interi. I valori già validi non cambiano.
+ */
+export function normalizeRelief<T extends ReliefParams>(p: T): T {
+  const base = reliefDefaults(p.kind) as unknown as Record<string, number | string>;
+  const raw = p as unknown as Record<string, number | string>;
+  // Numero finito dentro [min, max]; un valore non finito torna a quello di partenza
+  const num = (key: string, min: number, max = Infinity) => {
+    const v = typeof raw[key] === 'number' && Number.isFinite(raw[key]) ? (raw[key] as number) : (base[key] as number);
+    return Math.min(max, Math.max(min, v));
+  };
+  switch (p.kind) {
+    case 'brick':
+      return { ...p, brickW: num('brickW', 2), brickH: num('brickH', 2), mortar: num('mortar', 0.2), depth: num('depth', 0.05) };
+    case 'wood':
+      return { ...p, seed: Math.round(num('seed', 0, 2 ** 31)), plankW: num('plankW', 2), plankL: num('plankL', 5), gap: num('gap', 0.2), gapDepth: num('gapDepth', 0.05), grainDepth: num('grainDepth', 0), ringSpacing: num('ringSpacing', 0.5) } as T;
+    case 'rust':
+      return { ...p, seed: Math.round(num('seed', 0, 2 ** 31)), baseDepth: num('baseDepth', 0.1), roughness: num('roughness', 0), craterDensity: num('craterDensity', 0, 20), craterDepth: num('craterDepth', 0), flakes: num('flakes', 0, 1) } as T;
+    case 'studs':
+      return { ...p, pitch: num('pitch', 2), radius: num('radius', 0.5), height: num('height', 0.2), chamfer: num('chamfer', 0), shape: p.shape === 'chamfered' ? 'chamfered' : 'dome' } as T;
+    case 'hammered':
+      return { ...p, seed: Math.round(num('seed', 0, 2 ** 31)), size: num('size', 2), depth: num('depth', 0.05), jitter: num('jitter', 0, 0.9), regularity: num('regularity', 0, 100) } as T;
+  }
+}
+
 // ---------------------------------------------------------------------------------------------------------------------
 // Rumore
 // ---------------------------------------------------------------------------------------------------------------------
@@ -157,9 +187,14 @@ export interface HeightGrid {
 }
 
 /** Campiona `f` su una griglia di passo (al più) `step` che copre tutto il rettangolo; i valori sono arrotondati al centesimo di mm. */
-export function sampleGrid(rect: Rect, step: number, f: (x: number, y: number) => number): HeightGrid {
-  const nx = Math.max(2, Math.ceil((rect.maxX - rect.minX) / step) + 1);
-  const ny = Math.max(2, Math.ceil((rect.maxY - rect.minY) / step) + 1);
+export function sampleGrid(rect: Rect, requestedStep: number, f: (x: number, y: number) => number): HeightGrid {
+  const width = rect.maxX - rect.minX;
+  const height = rect.maxY - rect.minY;
+  if (!(width > 0 && height > 0 && Number.isFinite(width) && Number.isFinite(height))) throw new Error('Rettangolo vuoto o non finito');
+  // Passo minimo 0,05 mm e al più MAX_GRID_NODES nodi: se servirebbero di più il passo si allarga
+  const step = Math.max(Number.isFinite(requestedStep) ? requestedStep : 0.5, 0.05, Math.sqrt((width * height) / MAX_GRID_NODES));
+  const nx = Math.max(2, Math.ceil(width / step) + 1);
+  const ny = Math.max(2, Math.ceil(height / step) + 1);
   const dx = (rect.maxX - rect.minX) / (nx - 1);
   const dy = (rect.maxY - rect.minY) / (ny - 1);
   const z = new Float32Array(nx * ny);
@@ -213,7 +248,8 @@ export const brickPitch = (p: BrickParams): Vec2 => [p.brickW + p.mortar, p.bric
 const brickRowStart = (rect: Rect, p: BrickParams, row: number) => rect.minX - (row % 2 === 0 ? 0 : brickPitch(p)[0] / 2);
 
 /** I mattoni che toccano il rettangolo (la fuga sta a cavallo dei bordi del passo, quindi il primo mattone parte a metà fuga). */
-export function brickLayout(rect: Rect, p: BrickParams): Box[] {
+export function brickLayout(rect: Rect, params: BrickParams): Box[] {
+  const p = normalizeRelief(params);
   const [px, py] = brickPitch(p);
   const boxes: Box[] = [];
   const rows = Math.ceil((rect.maxY - rect.minY) / py);
@@ -225,7 +261,8 @@ export function brickLayout(rect: Rect, p: BrickParams): Box[] {
 }
 
 /** Profondità delle fughe: `depth` dentro la fuga, 0 sul mattone (versione analitica, per la mappa di altezze). */
-export function brickDepth(rect: Rect, p: BrickParams): (x: number, y: number) => number {
+export function brickDepth(rect: Rect, params: BrickParams): (x: number, y: number) => number {
+  const p = normalizeRelief(params);
   const [px, py] = brickPitch(p);
   return (x, y) => {
     const row = Math.floor((y - rect.minY) / py);
@@ -251,7 +288,8 @@ export interface Plank {
  * aureo 0,382 della lunghezza, più un piccolo scarto casuale) e le doghe hanno lunghezza media `plankL` +/- 15 %, quindi i
  * giunti di file vicine non cadono mai allo stesso punto. Restituisce un elenco per fila.
  */
-export function plankLayout(rect: Rect, p: WoodParams): Plank[][] {
+export function plankLayout(rect: Rect, params: WoodParams): Plank[][] {
+  const p = normalizeRelief(params);
   const pitch = p.plankW + p.gap;
   const rows = Math.ceil((rect.maxY - rect.minY) / pitch);
   const out: Plank[][] = [];
@@ -277,7 +315,8 @@ export function plankLayout(rect: Rect, p: WoodParams): Plank[][] {
  * dipende dalla distanza dal centro della doga, deformata da un rumore lento lungo la doga (le curve degli anelli); sopra
  * si somma una fibra fine (rumore molto più lungo che largo). Se `withGaps` anche le fughe valgono `gapDepth`.
  */
-export function grainDepth(rect: Rect, p: WoodParams, withGaps = false): (x: number, y: number) => number {
+export function grainDepth(rect: Rect, params: WoodParams, withGaps = false): (x: number, y: number) => number {
+  const p = normalizeRelief(params);
   const layout = plankLayout(rect, p);
   const pitch = p.plankW + p.gap;
   return (x, y) => {
@@ -308,7 +347,8 @@ export interface Crater extends Disc {
 }
 
 /** Crateri sparsi: posizioni uniformi, raggio 0,6 - 2 mm (più spesso i piccoli) e profondità 40-100 % del massimo. */
-export function craterList(rect: Rect, p: RustParams): Crater[] {
+export function craterList(rect: Rect, params: RustParams): Crater[] {
+  const p = normalizeRelief(params);
   const area = (rect.maxX - rect.minX) * (rect.maxY - rect.minY);
   const count = Math.min(2000, Math.round((p.craterDensity * area) / 100));
   const random = mulberry32(p.seed * 31 + 5);
@@ -326,24 +366,28 @@ export function craterList(rect: Rect, p: RustParams): Crater[] {
 const craterProfile = (c: Crater, dist: number) => (dist >= c.r ? 0 : c.d * (1 - (dist / c.r) ** 2) ** 2);
 
 /**
- * Profondità della ruggine (mm, sempre almeno 0,05): quota base + rumore frattale (ruvidità) + crateri, ridotta dove ci
+ * Profondità della ruggine (mm, sempre almeno 0,05): quota base + rumore frattale (ruvidità) + crateri, diminuita di una quota fissa dove ci
  * sono scaglie/pustole (placche che restano alte). Tutta la faccia sta quindi circa `baseDepth` sotto il piano originale.
  */
-export function rustDepth(rect: Rect, p: RustParams): (x: number, y: number) => number {
+export function rustDepth(rect: Rect, params: RustParams): (x: number, y: number) => number {
+  const p = normalizeRelief(params);
   const near = binDiscs(craterList(rect, p), rect);
   return (x, y) => {
-    // Ruvidità: 4 ottave a partire da 0,25 cicli/mm, centrata sulla quota base
-    let depth = p.baseDepth + p.roughness * (2 * fbm(x * 0.25, y * 0.25, p.seed, 4) - 1);
+    // Ruvidità: fBm di 4 ottave da 0,3 cicli/mm (guadagno 0,6: le ottave fini pesano) centrato sulla quota base, più una
+    // grana fine a 0,9 cicli/mm che garantisce un'escursione minima anche dove il rumore lento è quasi costante
+    let depth = p.baseDepth + p.roughness * (2 * fbm(x * 0.3, y * 0.3, p.seed, 4, 0.6) - 1);
+    depth += 0.4 * p.roughness * (2 * valueNoise(x * 0.9 + 7.7, y * 0.9 - 3.1, p.seed + 13) - 1);
     // Vaiolatura: vale il cratere più profondo tra quelli che coprono il punto
     let pit = 0;
     near(x, y, (c) => {
       pit = Math.max(pit, craterProfile(c, Math.hypot(x - c.x, y - c.y)));
     });
     depth += pit;
-    // Scaglie: dove il rumore lento supera una soglia la superficie risale (soglia più bassa con più `flakes`)
+    // Scaglie: dove il rumore lento supera una soglia la superficie risale di una quota fissa (metà della quota base): così
+    // la ruvidità e i crateri restano interi sulle placche (soglia più bassa con più `flakes`)
     const threshold = 0.75 - 0.25 * Math.min(1, Math.max(0, p.flakes));
     const flake = smoothstep(threshold, threshold + 0.05, fbm(x * 0.1 + 31, y * 0.1, p.seed + 77, 2));
-    depth *= 1 - 0.75 * flake;
+    depth -= flake * 0.5 * p.baseDepth;
     return Math.max(0.05, depth);
   };
 }
@@ -352,12 +396,39 @@ export function rustDepth(rect: Rect, p: RustParams): (x: number, y: number) => 
 // Borchie
 // ---------------------------------------------------------------------------------------------------------------------
 
-/** Centri delle borchie: griglia quadrata di passo `pitch` che parte a mezzo passo dall'angolo, solo dentro il rettangolo. */
+/** Borchie massime sulla faccia (circa, più una fila e una colonna di arrotondamento): oltre, il passo si allarga. */
+export const MAX_STUDS = 2000;
+
+/** Griglia delle borchie: colonne, file, centro della prima e passo effettivo. */
+export interface StudGrid {
+  cols: number;
+  rows: number;
+  x0: number;
+  y0: number;
+  pitch: number;
+}
+
+/**
+ * La griglia quadrata delle borchie, **centrata** nel rettangolo e con tutte le borchie intere dentro: `cols = floor((w - 2r) /
+ * passo) + 1` (0 se il lato è più corto del diametro), partenza a metà dello spazio che avanza. Il passo si allarga se le borchie
+ * sarebbero più di MAX_STUDS.
+ */
+export function studGrid(rect: Rect, params: StudParams): StudGrid {
+  const p = normalizeRelief(params);
+  const w = rect.maxX - rect.minX;
+  const h = rect.maxY - rect.minY;
+  const pitch = Math.max(p.pitch, Math.sqrt((w * h) / MAX_STUDS));
+  const count = (length: number) => (length < 2 * p.radius ? 0 : Math.floor((length - 2 * p.radius) / pitch) + 1);
+  const cols = count(w);
+  const rows = count(h);
+  return { cols, rows, x0: rect.minX + (w - (cols - 1) * pitch) / 2, y0: rect.minY + (h - (rows - 1) * pitch) / 2, pitch };
+}
+
+/** Centri delle borchie (vedi `studGrid`), per file dal basso. */
 export function studCenters(rect: Rect, p: StudParams): Vec2[] {
+  const g = studGrid(rect, p);
   const centers: Vec2[] = [];
-  for (let y = rect.minY + p.pitch / 2; y < rect.maxY; y += p.pitch) {
-    for (let x = rect.minX + p.pitch / 2; x < rect.maxX; x += p.pitch) centers.push([x, y]);
-  }
+  for (let j = 0; j < g.rows; j++) for (let i = 0; i < g.cols; i++) centers.push([g.x0 + i * g.pitch, g.y0 + j * g.pitch]);
   return centers;
 }
 
@@ -365,7 +436,8 @@ export function studCenters(rect: Rect, p: StudParams): Vec2[] {
  * Profilo di una borchia come punti (raggio, quota) dall'asse al bordo della base, con la base a z = 0. Calotta sferica:
  * altezza al massimo pari al raggio (oltre, la borchia avrebbe un sottosquadro); cilindro: tetto piatto con smusso a 45°.
  */
-export function studProfile(p: StudParams, arcPoints = 6): Vec2[] {
+export function studProfile(params: StudParams, arcPoints = 6): Vec2[] {
+  const p = normalizeRelief(params);
   const r = p.radius;
   if (p.shape === 'chamfered') {
     const c = Math.min(p.chamfer, p.height, r);
@@ -385,23 +457,31 @@ export function studProfile(p: StudParams, arcPoints = 6): Vec2[] {
   return points;
 }
 
-/** Quota delle borchie in un punto (mm sopra la faccia, 0 fuori dalle borchie), per la mappa di altezze. */
-export function studHeight(rect: Rect, p: StudParams): (x: number, y: number) => number {
+/**
+ * Quota delle borchie in un punto (mm sopra la faccia, 0 fuori dalle borchie), per la mappa di altezze. Vale la borchia più
+ * alta tra quelle che coprono il punto (come l'unione del CSG, anche con borchie sovrapposte); `centers` sono quelli
+ * effettivamente scritti (di solito `studCenters`, o quelli rimasti dentro la regione).
+ */
+export function studHeight(rect: Rect, params: StudParams, centers: Vec2[] = studCenters(rect, params)): (x: number, y: number) => number {
+  const p = normalizeRelief(params);
   const profile = studProfile(p, 24);
+  const near = binDiscs(centers.map(([x, y]) => ({ x, y, r: p.radius })), rect);
   return (x, y) => {
-    const i = Math.round((x - rect.minX - p.pitch / 2) / p.pitch);
-    const j = Math.round((y - rect.minY - p.pitch / 2) / p.pitch);
-    const r = Math.hypot(x - (rect.minX + p.pitch / 2 + i * p.pitch), y - (rect.minY + p.pitch / 2 + j * p.pitch));
-    if (r >= p.radius) return 0;
-    // Interpolazione lineare sul profilo (il raggio dei punti cresce)
-    for (let k = 1; k < profile.length; k++) {
-      if (r <= profile[k][0]) {
-        const [r0, z0] = profile[k - 1];
-        const [r1, z1] = profile[k];
-        return r1 === r0 ? z1 : z0 + ((z1 - z0) * (r - r0)) / (r1 - r0);
+    let height = 0;
+    near(x, y, (c) => {
+      const r = Math.hypot(x - c.x, y - c.y);
+      if (r >= p.radius) return;
+      // Interpolazione lineare sul profilo (il raggio dei punti cresce)
+      for (let k = 1; k < profile.length; k++) {
+        if (r <= profile[k][0]) {
+          const [r0, z0] = profile[k - 1];
+          const [r1, z1] = profile[k];
+          height = Math.max(height, r1 === r0 ? z1 : z0 + ((z1 - z0) * (r - r0)) / (r1 - r0));
+          return;
+        }
       }
-    }
-    return 0;
+    });
+    return height;
   };
 }
 
@@ -420,7 +500,8 @@ export interface Dent extends Disc {
  * le calotte si sovrappongono) e varia di +/- `jitter` insieme alla profondità. I numeri casuali si estraggono in ordine
  * fisso (due per cella), quindi stesso seme = stesse martellate.
  */
-export function dentList(rect: Rect, p: HammeredParams): Dent[] {
+export function dentList(rect: Rect, params: HammeredParams): Dent[] {
+  const p = normalizeRelief(params);
   const area = (rect.maxX - rect.minX) * (rect.maxY - rect.minY);
   const count = Math.min(500, Math.max(3, Math.round(area / (0.785 * p.size * p.size))));
   const random = mulberry32(p.seed * 131 + 9);
@@ -433,7 +514,8 @@ export function dentList(rect: Rect, p: HammeredParams): Dent[] {
 }
 
 /** Profondità del rame battuto: la martellata più profonda tra quelle che coprono il punto. */
-export function copperDepth(rect: Rect, p: HammeredParams): (x: number, y: number) => number {
+export function copperDepth(rect: Rect, params: HammeredParams): (x: number, y: number) => number {
+  const p = normalizeRelief(params);
   const near = binDiscs(dentList(rect, p), rect);
   return (x, y) => {
     let depth = 0;
