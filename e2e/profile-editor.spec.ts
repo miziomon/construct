@@ -1807,3 +1807,25 @@ test('Importa SVG: un file rotto o senza tracciati utilizzabili dà un avviso e 
   await expect(nodes(page)).toHaveCount(0);
   await expect(okButton(page)).toBeDisabled();
 });
+
+test('Importa SVG con un contorno della Penna in corso: il contorno valido resta (passo a parte), quello con un solo nodo non lascia un percorso spurio', async ({ page }) => {
+  // Tre nodi in corso: il contorno si conclude e resta, l'import è un passo a parte
+  await openNewWithPen(page);
+  await clicks(page, [[-100, 80], [100, 80], [100, -80]]);
+  await svgFile(page, 'curve.svg', SVG_WITH_CURVES);
+  await expect(editor(page).locator('[data-path]')).toHaveCount(2);
+  await expect(nodes(page)).toHaveCount(8);
+  await expect(editor(page).locator('[data-path="0"]')).toContainText('Aperto');
+  await canvas(page).focus();
+  await page.keyboard.press('Control+z');
+  await expect(editor(page).locator('[data-path]')).toHaveCount(1);
+  await expect(nodes(page)).toHaveCount(3);
+  await page.keyboard.press('Control+z');
+  await expect(nodes(page)).toHaveCount(0);
+  // Un solo nodo in corso: non è un contorno, l'import lascia solo i suoi
+  await clicks(page, [[-100, 80]]);
+  await expect(nodes(page)).toHaveCount(1);
+  await svgFile(page, 'curve.svg', SVG_WITH_CURVES);
+  await expect(editor(page).locator('[data-path]')).toHaveCount(1);
+  await expect(nodes(page)).toHaveCount(5);
+});

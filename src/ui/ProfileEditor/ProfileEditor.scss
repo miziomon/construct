@@ -247,6 +247,9 @@
     top: $space-2;
     left: $space-2;
     display: flex;
+    flex-wrap: wrap;
+    // Gli strumenti vanno a capo prima di coprire i pulsanti dello zoom, in alto a destra
+    max-width: calc(100% - 130px);
     gap: $space-1;
 
     button {

@@ -313,13 +313,16 @@ function Editor({ target }: { target: ProfileTarget }) {
   const importSvg = async (file: File) => {
     try {
       const imported = readSvgPaths(await file.text(), file.name.replace(/\.svg$/i, ''));
-      const current = stateRef.current.draft.paths;
-      if (current.length + imported.length > MAX_PATH_CONTOURS) {
+      // Un contorno della Penna in corso si conclude prima. `stateRef` si aggiorna solo al render successivo: se c'era un contorno
+      // in corso la base è l'ultimo disegno concluso (`committed`, già aggiornato da `finishPen`), altrimenti lo stato attuale
+      const penning = stateRef.current.pen !== null;
+      finishPen();
+      const base = penning ? committed.current.paths : stateRef.current.draft.paths;
+      if (base.length + imported.length > MAX_PATH_CONTOURS) {
         notify.error(`Con i ${imported.length} contorni del file il disegno supererebbe il massimo di ${MAX_PATH_CONTOURS} contorni`);
         return;
       }
-      finishPen();
-      commitPaths([...stateRef.current.draft.paths, ...imported], imported.flatMap((c, i) => c.nodes.map((_, node) => ({ path: current.length + i, node }))));
+      commitPaths([...base, ...imported], imported.flatMap((c, i) => c.nodes.map((_, node) => ({ path: base.length + i, node }))));
       setFitRequest((n) => n + 1);
     } catch (error) {
       notify.error(error instanceof ImportError ? error.message : 'Impossibile leggere il file SVG');
