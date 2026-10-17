@@ -4039,7 +4039,7 @@ test('Impostazioni: la voce del menu apre la modale con le sezioni e le opzioni 
   await openMenuItem(page, 'Impostazioni');
   const dialog = page.getByRole('dialog', { name: 'Impostazioni' });
   await expect(dialog).toBeVisible();
-  for (const section of ['Aspetto', 'Piano di stampa', 'Modifica', 'Salvataggio e dati']) await expect(dialog.getByRole('heading', { name: section })).toBeVisible();
+  for (const section of ['Aspetto', 'Piano di stampa', 'Vista e modifica', 'Passi e aggancio', 'Stampabilità', 'Funzioni sperimentali', 'Salvataggio e dati']) await expect(dialog.getByRole('heading', { name: section })).toBeVisible();
 
   // Tema (il predefinito è lo scuro)
   await dialog.getByRole('button', { name: 'Chiaro' }).click();
@@ -4067,6 +4067,22 @@ test('Impostazioni: la voce del menu apre la modale con le sezioni e le opzioni 
   await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe('light');
   const saved = JSON.parse((await page.evaluate(() => localStorage.getItem('construct:ui'))) ?? '{}').state;
   expect(saved).toMatchObject({ showDimensions: false, nudgeStep: 5, bedMode: 'none', theme: 'light' });
+});
+
+test('Impostazioni: modale grande come la Documentazione, con le schede su più colonne', async ({ page }) => {
+  // Finestra larga: due schede almeno affiancate (stessa y, x diverse)
+  await page.setViewportSize({ width: 1500, height: 900 });
+  await openMenuItem(page, 'Impostazioni');
+  const dialog = page.getByRole('dialog', { name: 'Impostazioni' });
+  await expect(dialog).toBeVisible();
+  const viewport = page.viewportSize()!;
+  const box = await dialog.boundingBox();
+  expect(box!.width).toBeGreaterThan(viewport.width * 0.78);
+  expect(box!.height).toBeGreaterThan(viewport.height * 0.78);
+  const a = await dialog.locator('.settings > section').nth(0).boundingBox();
+  const b = await dialog.locator('.settings > section').nth(1).boundingBox();
+  expect(Math.abs(a!.y - b!.y)).toBeLessThan(2);
+  expect(b!.x).toBeGreaterThan(a!.x + 100);
 });
 
 test('Impostazioni: il ripristino riporta le opzioni ai valori predefiniti senza toccare la scena', async ({ page }) => {

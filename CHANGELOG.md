@@ -18,6 +18,11 @@ I messaggi di commit seguono i [Conventional Commits](https://www.conventionalco
 
 ## [Non rilasciato]
 
+## [0.71.0] - 2026-10-17
+
+### Modificato
+- **Impostazioni a schede su più colonne**: la modale Impostazioni ha ora le stesse dimensioni della Documentazione (80% della finestra) e le opzioni sono raccolte in schede con icona, affiancate su più colonne (una sola sotto i 700 px): Aspetto, Piano di stampa, Vista e modifica, Passi e aggancio, Stampabilità, Funzioni sperimentali e, a tutta larghezza in fondo, Salvataggio e dati. Controlli e testi non cambiano.
+
 ## [0.70.1] - 2026-10-17
 
 ### Corretto

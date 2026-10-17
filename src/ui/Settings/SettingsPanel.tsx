@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { RotateCcw, Trash2 } from 'lucide-react';
+import { Database, Eye, FlaskConical, Magnet, Palette, Printer, RotateCcw, ShieldCheck, Trash2 } from 'lucide-react';
 import { NumberField } from '../NumberField/NumberField';
 import { confirmDialog } from '../notify/notifyStore';
 import { SETTING_LIMITS, useUiStore } from '../uiStore';
@@ -28,8 +28,8 @@ function Toggle({ id, label, hint, checked, onChange }: { id: string; label: str
 const formatBytes = (n: number) => (n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1).replace('.', ',')} MB`);
 
 /**
- * Impostazioni: aspetto, piano di stampa, modifica (quote, passi di spostamento e rotazione), salvataggio. In fondo il
- * ripristino delle opzioni e la pulizia completa dei dati salvati nel browser.
+ * Impostazioni a schede su più colonne: aspetto, piano di stampa, vista e modifica, passi e aggancio, stampabilità,
+ * funzioni sperimentali, salvataggio. In fondo il ripristino delle opzioni e la pulizia completa dei dati salvati nel browser.
  */
 export function SettingsPanel({ run }: { run: (action: () => void | Promise<void>) => () => void }) {
   const ui = useUiStore();
@@ -55,7 +55,7 @@ export function SettingsPanel({ run }: { run: (action: () => void | Promise<void
   return (
     <div className="settings">
       <section>
-        <h3>Aspetto</h3>
+        <h3><Palette size={14} />Aspetto</h3>
         <div className="settings__row">
           <span>Tema</span>
           <div className="settings__segmented" role="group" aria-label="Tema">
@@ -70,7 +70,7 @@ export function SettingsPanel({ run }: { run: (action: () => void | Promise<void
       </section>
 
       <section>
-        <h3>Piano di stampa</h3>
+        <h3><Printer size={14} />Piano di stampa</h3>
         <div className="settings__row">
           <label htmlFor="set-bed-mode">Visualizzazione</label>
           <select id="set-bed-mode" className="settings__select" value={ui.bedMode} onChange={(e) => useUiStore.setState({ bedMode: e.target.value as BedMode })}>
@@ -86,9 +86,14 @@ export function SettingsPanel({ run }: { run: (action: () => void | Promise<void
       </section>
 
       <section>
-        <h3>Modifica</h3>
+        <h3><Eye size={14} />Vista e modifica</h3>
         <Toggle id="set-dims" label="Quote sull'oggetto selezionato" hint="Le misure X, Y e Z cliccabili nella vista 3D." checked={ui.showDimensions} onChange={set('showDimensions')} />
         <Toggle id="set-ghost" label="Operandi delle booleane in trasparenza" hint="Come il # di OpenSCAD (tasto X)." checked={ui.ghostOps} onChange={() => ui.toggleGhostOps()} />
+      </section>
+
+      {/* Passi di spostamento e di aggancio, in una scheda a parte */}
+      <section>
+        <h3><Magnet size={14} />Passi e aggancio</h3>
         <NumberField label="Frecce" unit="mm" value={ui.nudgeStep} min={SETTING_LIMITS.nudgeStep.min} max={SETTING_LIMITS.nudgeStep.max} step={0.1} onCommit={set('nudgeStep')} />
         <p className="settings__hint">Passo delle frecce della tastiera; con Maiusc è dieci volte tanto.</p>
         <NumberField label="Aggancio" unit="mm" value={ui.snapMove} min={SETTING_LIMITS.snapMove.min} max={SETTING_LIMITS.snapMove.max} step={0.1} onCommit={set('snapMove')} />
@@ -98,7 +103,7 @@ export function SettingsPanel({ run }: { run: (action: () => void | Promise<void
       </section>
 
       <section>
-        <h3>Stampabilità</h3>
+        <h3><ShieldCheck size={14} />Stampabilità</h3>
         <Toggle id="set-print-checks" label="Controlli di stampabilità" hint="La sezione Avvisi segnala oggetti sospesi, fuori dal piano o sotto di esso, sbalzi e mesh non valide." checked={ui.printChecks} onChange={set('printChecks')} />
         <NumberField label="Sbalzo" unit="°" value={ui.overhangAngle} min={SETTING_LIMITS.overhangAngle.min} max={SETTING_LIMITS.overhangAngle.max} step={1} disabled={!ui.printChecks} onCommit={set('overhangAngle')} />
         <p className="settings__hint">Angolo dalla verticale oltre cui una superficie rivolta in basso è uno sbalzo (45° è il valore tipico della stampa FDM).</p>
@@ -109,12 +114,12 @@ export function SettingsPanel({ run }: { run: (action: () => void | Promise<void
       </section>
 
       <section>
-        <h3>Funzioni sperimentali</h3>
+        <h3><FlaskConical size={14} />Funzioni sperimentali</h3>
         <Toggle id="set-experimental-plan" label="Sagoma di rotazione del Profilo" hint="Nella modale del Profilo compare la vista Sagoma: la rotazione segue una forma vista dall'alto (poligoni, stelle, squircle, forme libere con simmetria). Con OK la sagoma si salva nel Profilo e il solido la segue (anche nel codice OpenSCAD, come poliedro)." checked={ui.experimentalPlan} onChange={set('experimentalPlan')} />
       </section>
 
-      <section>
-        <h3>Salvataggio e dati</h3>
+      <section className="settings__wide">
+        <h3><Database size={14} />Salvataggio e dati</h3>
         <Toggle id="set-autosave" label="Salvataggio automatico nel browser" hint="La scena si salva a ogni modifica e si ritrova al prossimo avvio. Spento, vale solo Salva progetto." checked={ui.autosave} onChange={set('autosave')} />
         <p className="settings__hint">
           L&apos;app ha salvato {local.keys} {local.keys === 1 ? 'voce' : 'voci'} di preferenze ({formatBytes(local.bytes)}){usage !== null && <>, e in tutto il browser usa {formatBytes(usage)} tra progetto, mesh importate e cache offline</>}.
