@@ -82,6 +82,11 @@ export function cycleKind(k: PathNode['kind']): PathNode['kind'] {
  * terzo della distanza dal più vicino); con una sola, l'altra è la sua opposta; con due si allinea la seconda alla prima.
  * Verso spigolo cambia solo il tipo: le maniglie restano, la forma non cambia.
  */
+/** Cambia il tipo di più nodi insieme (selezione multipla), con le stesse regole di `setNodeKind` per ciascuno. */
+export function setNodesKind(paths: PathContour[], refs: NodeRef[], kind: PathNode['kind']): PathContour[] {
+  return refs.reduce((acc, r) => (acc[r.path]?.nodes[r.node] ? setNodeKind(acc, r, kind) : acc), paths);
+}
+
 export function setNodeKind(paths: PathContour[], r: NodeRef, kind: PathNode['kind']): PathContour[] {
   const contour = paths[r.path];
   return mapNode(paths, r, (n) => {

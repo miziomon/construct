@@ -109,6 +109,11 @@ export function SettingsPanel({ run }: { run: (action: () => void | Promise<void
       </section>
 
       <section>
+        <h3>Funzioni sperimentali</h3>
+        <Toggle id="set-experimental-plan" label="Sagoma di rotazione del Profilo" hint="Nella modale del Profilo compare la vista Sagoma: la rotazione segue una forma vista dall'alto (poligoni, stelle, squircle, forme libere con simmetria). Con OK la sagoma si salva nel Profilo e il solido la segue (anche nel codice OpenSCAD, come poliedro)." checked={ui.experimentalPlan} onChange={set('experimentalPlan')} />
+      </section>
+
+      <section>
         <h3>Salvataggio e dati</h3>
         <Toggle id="set-autosave" label="Salvataggio automatico nel browser" hint="La scena si salva a ogni modifica e si ritrova al prossimo avvio. Spento, vale solo Salva progetto." checked={ui.autosave} onChange={set('autosave')} />
         <p className="settings__hint">

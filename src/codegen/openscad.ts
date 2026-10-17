@@ -12,6 +12,8 @@ import { isScaled, scaleOf } from '../scene/groupScale';
 import { circularStep, linearStep, normalizeArray } from '../scene/arrayPattern';
 import { cutReach, faceFrame, frameRect, isAxisFace, normalizePattern, patternCells } from '../scene/pattern';
 import { isRotational, pathContours, revolveParams, shapeContours, svgContours } from '../scene/shapes2d';
+import { hasPlan, planSolid } from '../scene/planSolid';
+import type { PlanSolid } from '../scene/planSolid';
 import { encodePathMeta } from '../scene/bezier';
 import { isProfileShape, profileContours } from '../scene/profiles';
 import { fontInfo, fontsUsed, scadFontName } from '../scene/fontCatalog';
@@ -142,6 +144,32 @@ function pathFitsAxis(p: Extract<Shape2DNode, { kind: 'path' }>): boolean {
 }
 
 /**
+ * Profilo ruotato lungo una sagoma: `polyhedron` con i punti e i triangoli della mesh del kernel (`planSolid`), le facce in
+ * senso orario viste da fuori come vuole OpenSCAD, e con un angolo parziale l'intersezione con il settore. Il commento
+ * `construct:plan` conserva la sagoma (la rilettura del file per ora non la ricostruisce).
+ */
+function planLines(p: Extract<Shape2DNode, { kind: 'path' }>, solid: PlanSolid): string[] {
+  const { positions, indices } = solid.mesh;
+  const points = Array.from({ length: positions.length / 3 }, (_, i) => [round(positions[i * 3], 4), round(positions[i * 3 + 1], 4), round(positions[i * 3 + 2], 4)]);
+  const faces = Array.from({ length: indices.length / 3 }, (_, i) => [indices[i * 3], indices[i * 3 + 2], indices[i * 3 + 1]]);
+  const poly = ['polyhedron(', `${IND}points = [`, ...vectorRows(points, IND + IND), `${IND}],`, `${IND}faces = [`, ...vectorRows(faces, IND + IND), `${IND}]`, ');'];
+  const meta = `// construct:plan ${JSON.stringify(p.plan)}`;
+  if (!solid.wedge) return [meta, ...poly];
+  const { polygon, z0, z1 } = solid.wedge;
+  return [
+    meta,
+    'intersection() {',
+    ...poly.map((l) => IND + l),
+    `${IND}translate([0, 0, ${n(z0)}])`,
+    `${IND}linear_extrude(height = ${n(z1 - z0)})`,
+    `${IND}polygon([`,
+    ...vectorRows(polygon.map(([x, y]) => [round(x, 4), round(y, 4)]), IND + IND),
+    `${IND}]);`,
+    '}',
+  ];
+}
+
+/**
  * Forma 2D estrusa: `linear_extrude` oppure, per l'estrusione rotazionale, `rotate_extrude`. In questo caso il profilo
  * si sposta di `radius` dall'asse e si tiene solo la parte con x >= 0 (come fa il kernel), perché OpenSCAD ignora le
  * forme che attraversano l'asse.
@@ -152,6 +180,9 @@ function shape2dLines(p: Shape2DNode): string[] {
   const offset = p.offset ?? 0;
   const lines = offset === 0 ? base : [base[0], p.offsetJoin === 'sharp' ? `offset(delta = ${n(offset)})` : `offset(r = ${n(offset)}, $fn = 32)`, ...base.slice(1)];
   if (!isRotational(p)) return lines;
+  // Rotazione lungo una sagoma (sperimentale): lo stesso solido del kernel, come poliedro
+  const plan = hasPlan(p) ? planSolid(p) : null;
+  if (plan && p.kind === 'path') return planLines(p, plan);
   const { angle, radius, segments } = revolveParams(p);
   // Profilo di Bézier tutto oltre l'asse: basta spostarlo, il ritaglio sarebbe superfluo (e il file si rilegge come Profilo)
   if (p.kind === 'path' && pathFitsAxis(p)) return [`rotate_extrude(angle = ${n(angle)}, $fn = ${segments})`, `translate([${n(radius)}, 0])`, ...lines.slice(1)];

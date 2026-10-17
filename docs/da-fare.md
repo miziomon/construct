@@ -170,6 +170,21 @@ Chiusi dalla fase 2: modale di disegno con Penna e Seleziona, anteprima 3D, voce
 - **Fori**: `contourHoles` usa il primo punto campionato di ogni contorno; se due contorni si toccano proprio lì l'esito è ambiguo.
 - **Chiusura dei sottotracciati SVG**: la tolleranza di 1e-4 della diagonale guarda solo i nodi e non le maniglie; una "goccia" fatta di una sola curva chiusa con un piccolo errore resta di 2 nodi.
 
+## Sagoma di rotazione: punti aperti dalla prima versione (0.70.0)
+
+Studio e prototipo: `docs/prototipi/profilo-sagoma.html` (geometria) e la modale del Profilo con la funzione sperimentale (interfaccia). Il solido è salvato e costruito dal kernel (`src/scene/planSolid.ts`, la stessa mesh del codice OpenSCAD). Restano:
+
+- **Ritorno da OpenSCAD**: il codice ha la sagoma nel commento `construct:plan`, ma l'import non legge `polyhedron` né ricostruisce il Profilo; riletto, il solido si perde (come oggi per le forme non gestite).
+- **Peso del codice**: il poliedro ha un punto per ogni raggio (da 128 a 720, secondo i segmenti) e ogni vertice del profilo: con profili curvi il file arriva a decine di migliaia di punti.
+- **Contorno 2D (`offset`)**: con la sagoma non si applica (né nel kernel né nel codice).
+- **Forme non stellate**: oggi si rifiutano con un avviso e si tiene l'ultima valida; nel kernel la sagoma non valida torna al giro circolare.
+- **Larghezza e spessori**: con «Profilo segue sagoma» e il modello equidistante le pareti si scalano con la larghezza (2 mm diventano 3,6 mm a ×1,79): serve una variante a spessori fissi in mm?
+- **Bozza**: la sagoma non entra nella bozza di `localStorage` e si perde se la modale si chiude senza OK.
+- **Cronologia per vista**: Annulla agisce sul disegno su cui si è lavorato per ultimo; con due disegni visibili non c'è un passo comune.
+- **Gizmo e Proprietà** con una sagoma non circolare: larghezza e profondità del nodo non descrivono ancora la forma vista dall'alto, e le Proprietà non mostrano la sagoma.
+- **Angolo continuo**: è una cubica con tangenti lunghe 1,5 volte, non l'algoritmo esatto di Figma.
+- **Icona di Specchia** nella barra della scena: usa ancora `FlipHorizontal2`, che in lucide 1.52 ha l'asse orizzontale.
+
 ## Font non presenti su Google Fonts
 
 Dalla cartella `C:\Users\maurizio.MAVIDA\Dropbox\openscad\fonts` (0.30.0) sono entrati nel catalogo i font che si trovano su Google Fonts (Bilbo Swash Caps, Boogaloo, Calistoga, Dancing Script Regular, Marck Script, Meow Script, Modak, Niconne, Playfair Display Regular, Roboto Black, Sriracha; Pacifico c'era già). Questi no, perché non risultano su Google Fonts:

@@ -299,4 +299,20 @@ test.describe('immagini di esempio', () => {
     await page.waitForTimeout(600);
     await page.screenshot({ path: 'docs/images/profilo-editor.png' });
   });
+
+  test('immagine della sagoma di rotazione nella modale del Profilo', async ({ page }) => {
+    // Un bicchiere (parete di 2 mm) ruotato lungo uno squircle, con profilo e sagoma affiancati
+    const cup = [{ closed: true, nodes: [[0, 0], [30, 0], [30, 50], [28, 50], [28, 3], [0, 3]].map(([x, y]) => ({ p: [x, y], kind: 'corner' })) }];
+    await page.evaluate(() => window.__construct!.ui.setState({ experimentalPlan: true }));
+    const id = await page.evaluate((p) => window.__construct!.store.getState().addPath({ paths: p as never, extrusion: 'rotate', height: 5 }), cup);
+    await settled(page);
+    await page.evaluate((nodeId) => window.__construct!.profileEditor.getState().open({ nodeId }), id);
+    const dialog = page.locator('dialog.modal[open]');
+    await dialog.getByRole('group', { name: 'Disegni mostrati' }).getByRole('button', { name: 'Entrambe' }).click();
+    await dialog.locator('.profile-editor__canvas[data-closed-only]').click({ position: { x: 20, y: 60 } });
+    await dialog.getByRole('group', { name: 'Forme pronte' }).getByRole('button', { name: 'Squircle', exact: true }).click();
+    await dialog.locator('section[data-state="ready"]').waitFor();
+    await page.waitForTimeout(700);
+    await page.screenshot({ path: 'docs/images/profilo-sagoma.png' });
+  });
 });

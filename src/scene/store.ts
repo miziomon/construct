@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import { current } from 'immer';
 import { temporal } from 'zundo';
+import type { PlanDraft } from './planShape';
 import type { ScadImport } from '../import/scad/toScene';
 import type { Binding, CornerNode, Draft, EdgeNode, GroupNode, GroupOp, MeshNode, Param, PathContour, PrimitiveKind, PrimitiveNode, Scene, SceneNode, Shape2DKind, Shape2DNode, Vec2, Vec3 } from './types';
 import { notify } from '../ui/notify/notifyStore';
@@ -41,7 +42,7 @@ interface SceneState {
    * Aggiunge un Profilo di Bézier (forma 2D `path`) dai contorni dati, appoggiato sul piatto. I nodi si arrotondano a 4
    * decimali; larghezza e profondità sono quelle naturali delle curve. Per ora nasce solo da qui (test) e dall'import di .scad.
    */
-  addPath: (input: { paths: PathContour[]; tolerance?: number; extrusion?: 'linear' | 'rotate'; height?: number; twist?: number; scaleTop?: number; revolveAngle?: number; revolveSegments?: number; at?: [number, number]; name?: string }) => string;
+  addPath: (input: { paths: PathContour[]; tolerance?: number; extrusion?: 'linear' | 'rotate'; height?: number; twist?: number; scaleTop?: number; revolveAngle?: number; revolveSegments?: number; plan?: PlanDraft; at?: [number, number]; name?: string }) => string;
   /**
    * Applica il disegno della modale a un Profilo esistente in un solo passo di Annulla ("Profilo"): contorni a 4 decimali,
    * parametri di estrusione, `width × depth` = misure naturali del disegno (non scritte se qualche misura è legata a un
@@ -388,6 +389,10 @@ export const useSceneStore = create<SceneState>()(
           const kept = holdBound(target, patch);
           held = kept.held;
           Object.assign(target, kept.patch);
+          // Sagoma di rotazione: quella della modale, oppure nessuna (cerchio)
+          const path = target as Extract<Shape2DNode, { kind: 'path' }>;
+          if (draft.plan) path.plan = draft.plan;
+          else delete path.plan;
         });
         // Come in updateNode: se un campo legato doveva cambiare, l'utente lo sa invece di vederlo restare com'era
         if (held) noteHeld(node.name);

@@ -23,9 +23,62 @@
     min-height: 0;
   }
 
-  &__canvas {
+  // Colonna del disegno: la barra strumenti sopra e l'area di disegno (uno o due disegni) sotto
+  &__left {
+    display: flex;
+    flex-direction: column;
     grid-column: 1;
     grid-row: 1 / -1;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  &__stage {
+    display: grid;
+    flex: 1;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1px;
+    min-height: 0;
+    background: color('border');
+  }
+
+  &__stage--both {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  // Un disegno con la sua etichetta; con due disegni quello attivo è evidenziato
+  &__pane {
+    position: relative;
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+
+    .profile-editor__canvas {
+      flex: 1;
+    }
+  }
+
+  &__stage--both &__pane--active::after {
+    position: absolute;
+    inset: 0;
+    border: 2px solid color('accent');
+    content: '';
+    pointer-events: none;
+  }
+
+  &__pane-tag {
+    position: absolute;
+    top: $space-2;
+    left: $space-2;
+    z-index: 1;
+    padding: 1px $space-2;
+    border-radius: 999px;
+    background: color('panel-raised');
+    color: color('text-muted');
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    pointer-events: none;
+    text-transform: uppercase;
   }
 
   // Anteprima ingrandita: occupa tutta la colonna e le opzioni si nascondono
@@ -96,6 +149,67 @@
     fill: color('profile-axis');
     font-size: 11px;
     font-weight: 600;
+  }
+
+  // Sagoma: gli assi sono solo di riferimento (l'asse di rotazione è quello del profilo)
+  &__canvas--plan &__axis {
+    stroke: color('text-muted');
+    stroke-width: 1;
+    opacity: 0.45;
+  }
+
+  // Quota di sezione: un colore suo, diverso da quello dell'asse di rotazione
+  &__section {
+    line {
+      stroke: color('profile-section');
+      stroke-dasharray: 7 4;
+      stroke-width: 1.5;
+    }
+
+    text {
+      fill: color('profile-section');
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    &--hot line {
+      stroke-width: 3;
+    }
+
+    // Con un altro strumento la quota non si trascina: resta visibile ma attenuata
+    &--off {
+      opacity: 0.55;
+    }
+  }
+
+  // Pastiglia con la quota all'estremità della linea: è il punto da afferrare
+  &__section-pill {
+    rect {
+      fill: color('profile-section');
+      stroke: none;
+    }
+
+    text {
+      fill: color('panel');
+      font-weight: 700;
+    }
+  }
+
+  &__section--hot &__section-pill rect {
+    filter: brightness(1.15);
+  }
+
+  &__plan-slice-label {
+    fill: color('profile-section');
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  &__section-control {
+    display: flex;
+    flex-direction: column;
+    gap: $space-1;
+    margin-top: $space-2;
   }
 
   // Parte a sinistra dell'asse in rotazione
@@ -242,10 +356,18 @@
   }
 
   // Strumenti (Seleziona, Penna) in alto a sinistra del disegno
-  &__tools {
-    position: absolute;
-    top: $space-2;
-    left: $space-2;
+  // Barra degli strumenti sopra i disegni: strumenti, annulla e ripeti, vista
+  &__toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: $space-2 $space-4;
+    align-items: center;
+    padding: $space-2;
+    border-bottom: 1px solid color('border');
+    background: color('panel');
+  }
+
+  &__toolgroup {
     display: flex;
     flex-wrap: wrap;
     // Gli strumenti vanno a capo prima di coprire i pulsanti dello zoom, in alto a destra
@@ -264,8 +386,13 @@
       font-size: 12px;
       @include focus-ring;
 
-      &:hover {
+      &:hover:not(:disabled) {
         border-color: color('accent');
+      }
+
+      &:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
       }
 
       &[aria-pressed='true'] {
@@ -285,6 +412,83 @@
     border: 1px solid color('border');
     border-radius: $radius-sm;
     background: color('panel-raised');
+  }
+
+  &__toolgroup--icons button {
+    padding: 5px 7px;
+  }
+
+  // Sagoma: ingombro (area più scura), livelli, sezione alla quota e assi di simmetria
+  &__plan-ing {
+    fill: color('accent');
+    fill-opacity: 0.3;
+  }
+
+  &__plan-level {
+    fill: none;
+    stroke: color('text-muted');
+    stroke-width: 1;
+    opacity: 0.5;
+  }
+
+  &__plan-slice {
+    fill: color('profile-section');
+    fill-opacity: 0.28;
+    stroke: color('profile-section');
+    stroke-linejoin: round;
+    stroke-width: 1.5;
+  }
+
+  &__plan-sym {
+    stroke: color('accent');
+    stroke-dasharray: 8 5;
+    stroke-width: 1.2;
+  }
+
+  // Colonna di destra con la sagoma: scelta della forma a più righe, forme pronte, elenco delle misure
+  &__segmented--wrap {
+    flex-wrap: wrap;
+  }
+
+  &__minirow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: $space-1;
+    margin-top: $space-2;
+  }
+
+  &__select {
+    width: 100%;
+    padding: 4px $space-2;
+    border: 1px solid color('border');
+    border-radius: $radius-sm;
+    background: color('panel-raised');
+    color: color('text');
+    font-size: 12px;
+    @include focus-ring;
+  }
+
+  &__measures {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 2px $space-2;
+    margin: 0;
+    font-size: 12px;
+
+    dt {
+      color: color('text-muted');
+    }
+
+    dd {
+      margin: 0;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+  }
+
+  &__measure-wall {
+    color: color('profile-section');
+    font-weight: 600;
   }
 
   // Disegno vuoto: suggerimento al centro
@@ -709,8 +913,19 @@
       height: 300px;
     }
 
-    &__canvas {
+    &__left {
+      display: contents;
+    }
+
+    &__stage {
       flex: none;
+    }
+
+    &__stage--both {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    &__pane {
       height: 340px;
       min-height: 320px;
     }

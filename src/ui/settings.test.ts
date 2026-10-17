@@ -26,6 +26,13 @@ describe('impostazioni', () => {
     expect(cleanSettings({ welcomeAlways: false }).welcomeAlways).toBe(false);
   });
 
+  it('la sagoma di rotazione è sperimentale: spenta di default, accesa solo se salvata come vero', () => {
+    expect(DEFAULT_SETTINGS.experimentalPlan).toBe(false);
+    expect(cleanSettings({}).experimentalPlan).toBe(false);
+    expect(cleanSettings({ experimentalPlan: 'sì' }).experimentalPlan).toBe(false);
+    expect(cleanSettings({ experimentalPlan: true }).experimentalPlan).toBe(true);
+  });
+
   it('setSettings cambia solo quanto richiesto e rispetta i limiti', () => {
     useUiStore.getState().setSettings({ nudgeStep: 2.5, autosave: false });
     const s = useUiStore.getState();

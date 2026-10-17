@@ -1,5 +1,5 @@
 import { PATH_MAX_TOLERANCE, PATH_MIN_TOLERANCE } from '../../scene/bezier';
-import type { PathNode } from '../../scene/types';
+import type { PathContour, PathNode } from '../../scene/types';
 import { NumberField } from '../NumberField/NumberField';
 import { SliderField } from '../SliderField/SliderField';
 import { TIPS } from '../PropertiesPanel/tooltips';
@@ -31,6 +31,8 @@ interface Props {
   onSelectPath: (index: number) => void;
   onClosePath: (index: number) => void;
   onDeletePath: (index: number) => void;
+  /** Quota di sezione della sagoma (solo con la funzione sperimentale e in rotazione). */
+  section?: SectionProps;
 }
 
 /** Tipi di nodo: il simbolo ripete la forma che il nodo ha nel disegno. */
@@ -46,12 +48,125 @@ const GRID_STEPS = [0.1, 0.5, 1, 5, 10];
 /** Valore con la virgola decimale italiana. */
 const comma = (n: number) => String(n).replace('.', ',');
 
-/** Colonna di destra della modale: estrusione, punto selezionato, percorsi, griglia e snap, qualità. */
-export function Sidebar({ draft, selection, holes, grid, sampling, boundFields, onExtrusion, onLive, onPatch, onKind, onCoordinate, onHandle, onGrid, onSelectPath, onClosePath, onDeletePath }: Props) {
-  // Il pannello del punto vale per un nodo solo (con più nodi si mostra il conteggio)
+/** «Punto selezionato»: coordinate, tipo di nodo e maniglie del nodo scelto (con più nodi solo il conteggio). Condivisa da profilo e sagoma. */
+export function NodeSection({ paths, selection, onKind, onCoordinate, onHandle }: { paths: PathContour[]; selection: NodeRef[]; onKind: Props['onKind']; onCoordinate: Props['onCoordinate']; onHandle: Props['onHandle'] }) {
   const ref = selection.length === 1 ? selection[0] : null;
-  const contour = ref ? draft.paths[ref.path] : undefined;
+  const contour = ref ? paths[ref.path] : undefined;
   const node = ref && contour ? contour.nodes[ref.node] : undefined;
+  return (
+    <section className="profile-editor__section">
+      <h3 className="profile-editor__section-title">Punto selezionato</h3>
+      {node && ref && contour ? (
+        <>
+          <NumberField label="X" unit="mm" value={node.p[0]} onCommit={(v) => onCoordinate(0, v)} />
+          <NumberField label="Y" unit="mm" value={node.p[1]} onCommit={(v) => onCoordinate(1, v)} />
+          <div className="profile-editor__segmented" role="group" aria-label="Tipo di nodo">
+            {KINDS.map((k) => (
+              <button key={k.kind} type="button" aria-pressed={node.kind === k.kind} onClick={() => onKind(k.kind)}>
+                <span aria-hidden="true">{k.symbol}</span> {k.label}
+              </button>
+            ))}
+          </div>
+          {(['in', 'out'] as const).map((side) => {
+            const h = node[side];
+            const length = h ? Math.hypot(h[0], h[1]) : 0;
+            const angle = h ? (Math.atan2(h[1], h[0]) * 180) / Math.PI : 0;
+            // Il primo nodo di un contorno aperto non ha segmento prima di sé, l'ultimo non l'ha dopo: la maniglia non serve
+            const unused = !contour.closed && (side === 'in' ? ref.node === 0 : ref.node === contour.nodes.length - 1);
+            return (
+              <div key={side} className="profile-editor__handle-row" role="group" aria-label={side === 'in' ? 'Maniglia di entrata' : 'Maniglia di uscita'} data-handle-row={side}>
+                <span className="profile-editor__handle-name">{side === 'in' ? 'Entrata' : 'Uscita'}</span>
+                <NumberField label="Lung." unit="mm" min={0} disabled={unused} value={length} onCommit={(v) => onHandle(side, v, angle)} />
+                <NumberField label="Ang." unit="°" disabled={unused} value={angle} onCommit={(v) => onHandle(side, length, v)} />
+              </div>
+            );
+          })}
+        </>
+      ) : (
+        selection.length > 1 ? (
+          <>
+            <p className="profile-editor__hint">{selection.length} nodi selezionati: il tipo vale per tutti.</p>
+            <div className="profile-editor__segmented" role="group" aria-label="Tipo dei nodi selezionati">
+              {KINDS.map((k) => {
+                const kinds = selection.map((r) => paths[r.path]?.nodes[r.node]?.kind);
+                return (
+                  <button key={k.kind} type="button" aria-pressed={kinds.every((x) => x === k.kind)} onClick={() => onKind(k.kind)}>
+                    <span aria-hidden="true">{k.symbol}</span> {k.label}
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        ) : (
+          <p className="profile-editor__hint">Seleziona un nodo per leggerne e cambiarne le coordinate. Doppio clic su un nodo: cambia il tipo.</p>
+        )
+      )}
+    </section>
+  );
+}
+
+/** «Griglia e snap»: passo, agganci e assi. Condivisa da profilo e sagoma. */
+export function GridSection({ grid, onGrid }: { grid: GridSettings; onGrid: Props['onGrid'] }) {
+  return (
+    <section className="profile-editor__section">
+      <h3 className="profile-editor__section-title">Griglia e snap</h3>
+      <div className="profile-editor__segmented" role="group" aria-label="Passo della griglia">
+        {GRID_STEPS.map((s) => (
+          <button key={s} type="button" aria-pressed={grid.step === s} title={`Passo della griglia: ${comma(s)} mm`} onClick={() => onGrid({ step: s })}>
+            {comma(s)}
+          </button>
+        ))}
+      </div>
+      <label className="profile-editor__check">
+        <input type="checkbox" checked={grid.snapGrid} onChange={(e) => onGrid({ snapGrid: e.target.checked })} />
+        Aggancia alla griglia
+      </label>
+      <label className="profile-editor__check">
+        <input type="checkbox" checked={grid.snapNodes} onChange={(e) => onGrid({ snapNodes: e.target.checked })} />
+        Aggancia ai nodi
+      </label>
+      <label className="profile-editor__check">
+        <input type="checkbox" checked={grid.snapOrtho} onChange={(e) => onGrid({ snapOrtho: e.target.checked })} />
+        Allinea in orizzontale e verticale
+      </label>
+      <label className="profile-editor__check">
+        <input type="checkbox" checked={grid.showAxis} onChange={(e) => onGrid({ showAxis: e.target.checked })} />
+        Mostra asse
+      </label>
+      <p className="profile-editor__hint">Maiusc vincola a 45°, Ctrl sospende l&apos;aggancio.</p>
+    </section>
+  );
+}
+
+/** Quota di sezione: valore in mm entro le quote del profilo e interruttore per mostrarla. */
+export interface SectionProps {
+  z: number;
+  min: number;
+  max: number;
+  show: boolean;
+  onZ: (z: number) => void;
+  onShow: (show: boolean) => void;
+}
+
+/**
+ * Cursore della quota di sezione e casella per mostrarla: la stessa quota della linea ciano nel profilo e degli anelli
+ * nella sagoma. Non è un passo della cronologia (è una vista, come lo zoom).
+ */
+export function SectionControl({ z, min, max, show, onZ, onShow }: SectionProps) {
+  return (
+    <div className="profile-editor__section-control" data-section-control="">
+      <label className="profile-editor__check">
+        <input type="checkbox" checked={show} onChange={(e) => onShow(e.target.checked)} />
+        Mostra la sezione
+      </label>
+      <SliderField label="Quota" unit="mm" min={min} max={max} step={0.5} hardMin={min} hardMax={max} tooltip="Quota della sezione orizzontale: nel profilo è la linea ciano (trascinala con Seleziona), nella sagoma sono gli anelli ciano." history={false} disabled={!show} value={Math.round(z * 100) / 100} onCommit={onZ} />
+      <p className="profile-editor__hint">Trascina la linea ciano nel profilo (strumento Seleziona) o usa il cursore.</p>
+    </div>
+  );
+}
+
+/** Colonna di destra della modale: estrusione, punto selezionato, percorsi, griglia e snap, qualità. */
+export function Sidebar({ draft, selection, holes, grid, sampling, boundFields, onExtrusion, onLive, onPatch, onKind, onCoordinate, onHandle, onGrid, onSelectPath, onClosePath, onDeletePath, section }: Props) {
   const rotate = draft.extrusion === 'rotate';
   // Uno slider legato a un parametro non si muove da qui: la formula decide il valore (si cambia dalle Proprietà)
   const bound = (field: string) => boundFields.includes(field);
@@ -83,40 +198,10 @@ export function Sidebar({ draft, selection, holes, grid, sampling, boundFields, 
           </>
         )}
         {anyBound && <p className="profile-editor__hint">I campi legati a un parametro si cambiano dalle Proprietà: da qui restano come sono.</p>}
+        {rotate && section && <SectionControl {...section} />}
       </section>
 
-      <section className="profile-editor__section">
-        <h3 className="profile-editor__section-title">Punto selezionato</h3>
-        {node && ref && contour ? (
-          <>
-            <NumberField label="X" unit="mm" value={node.p[0]} onCommit={(v) => onCoordinate(0, v)} />
-            <NumberField label="Y" unit="mm" value={node.p[1]} onCommit={(v) => onCoordinate(1, v)} />
-            <div className="profile-editor__segmented" role="group" aria-label="Tipo di nodo">
-              {KINDS.map((k) => (
-                <button key={k.kind} type="button" aria-pressed={node.kind === k.kind} onClick={() => onKind(k.kind)}>
-                  <span aria-hidden="true">{k.symbol}</span> {k.label}
-                </button>
-              ))}
-            </div>
-            {(['in', 'out'] as const).map((side) => {
-              const h = node[side];
-              const length = h ? Math.hypot(h[0], h[1]) : 0;
-              const angle = h ? (Math.atan2(h[1], h[0]) * 180) / Math.PI : 0;
-              // Il primo nodo di un contorno aperto non ha segmento prima di sé, l'ultimo non l'ha dopo: la maniglia non serve
-              const unused = !contour.closed && (side === 'in' ? ref.node === 0 : ref.node === contour.nodes.length - 1);
-              return (
-                <div key={side} className="profile-editor__handle-row" role="group" aria-label={side === 'in' ? 'Maniglia di entrata' : 'Maniglia di uscita'} data-handle-row={side}>
-                  <span className="profile-editor__handle-name">{side === 'in' ? 'Entrata' : 'Uscita'}</span>
-                  <NumberField label="Lung." unit="mm" min={0} disabled={unused} value={length} onCommit={(v) => onHandle(side, v, angle)} />
-                  <NumberField label="Ang." unit="°" disabled={unused} value={angle} onCommit={(v) => onHandle(side, length, v)} />
-                </div>
-              );
-            })}
-          </>
-        ) : (
-          <p className="profile-editor__hint">{selection.length > 1 ? `${selection.length} nodi selezionati.` : 'Seleziona un nodo per leggerne e cambiarne le coordinate. Doppio clic su un nodo: cambia il tipo.'}</p>
-        )}
-      </section>
+      <NodeSection paths={draft.paths} selection={selection} onKind={onKind} onCoordinate={onCoordinate} onHandle={onHandle} />
 
       <section className="profile-editor__section">
         <h3 className="profile-editor__section-title">Percorsi</h3>
@@ -145,33 +230,7 @@ export function Sidebar({ draft, selection, holes, grid, sampling, boundFields, 
         )}
       </section>
 
-      <section className="profile-editor__section">
-        <h3 className="profile-editor__section-title">Griglia e snap</h3>
-        <div className="profile-editor__segmented" role="group" aria-label="Passo della griglia">
-          {GRID_STEPS.map((s) => (
-            <button key={s} type="button" aria-pressed={grid.step === s} title={`Passo della griglia: ${comma(s)} mm`} onClick={() => onGrid({ step: s })}>
-              {comma(s)}
-            </button>
-          ))}
-        </div>
-        <label className="profile-editor__check">
-          <input type="checkbox" checked={grid.snapGrid} onChange={(e) => onGrid({ snapGrid: e.target.checked })} />
-          Aggancia alla griglia
-        </label>
-        <label className="profile-editor__check">
-          <input type="checkbox" checked={grid.snapNodes} onChange={(e) => onGrid({ snapNodes: e.target.checked })} />
-          Aggancia ai nodi
-        </label>
-        <label className="profile-editor__check">
-          <input type="checkbox" checked={grid.snapOrtho} onChange={(e) => onGrid({ snapOrtho: e.target.checked })} />
-          Allinea in orizzontale e verticale
-        </label>
-        <label className="profile-editor__check">
-          <input type="checkbox" checked={grid.showAxis} onChange={(e) => onGrid({ showAxis: e.target.checked })} />
-          Mostra asse
-        </label>
-        <p className="profile-editor__hint">Maiusc vincola a 45°, Ctrl sospende l&apos;aggancio.</p>
-      </section>
+      <GridSection grid={grid} onGrid={onGrid} />
 
       <section className="profile-editor__section">
         <details className="profile-editor__details">

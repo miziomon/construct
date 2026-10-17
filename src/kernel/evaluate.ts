@@ -9,6 +9,7 @@ import { brushSegments, minkowskiOf } from './minkowski';
 import { arrayCopies } from '../scene/arrayPattern';
 import type { CopyTransform } from '../scene/arrayPattern';
 import { isRotational, pathContours, revolveParams, shapeContours, svgContours } from '../scene/shapes2d';
+import { hasPlan, planSolid } from '../scene/planSolid';
 import { isProfileShape, profileContours } from '../scene/profiles';
 import { textContours } from '../scene/fontOutline';
 import { fontInfo } from '../scene/fontCatalog';
@@ -439,6 +440,14 @@ export class Evaluator {
       section.delete();
       section = grown;
     }
+    if (isRotational(p) && hasPlan(p)) {
+      // Rotazione lungo una sagoma (sperimentale): la mesh ad anelli, la stessa del codice OpenSCAD
+      const solid = this.planManifold(p);
+      if (solid) {
+        section.delete();
+        return solid;
+      }
+    }
     if (isRotational(p)) {
       // Estrusione rotazionale (rotate_extrude): il profilo si sposta di `radius` dall'asse e gira attorno a Z; la Y del
       // profilo diventa Z e la X il raggio. Manifold tiene solo la parte con x > 0 (quella oltre l'asse si scarta)
@@ -462,6 +471,39 @@ export class Evaluator {
     if (profile !== section) profile.delete();
     section.delete();
     return solid;
+  }
+
+  /**
+   * Solido di un Profilo ruotato lungo una sagoma: la mesh ad anelli (vertici uniti per posizione, i triangoli piatti li
+   * collassa manifold) e, con un angolo parziale, l'intersezione con il settore. Null se la sagoma non è valida o la mesh
+   * non è una varietà: si ripiega sulla rotazione circolare.
+   */
+  private planManifold(p: Shape2DNode): Manifold | null {
+    const { Manifold, Mesh, CrossSection } = this.wasm;
+    const solid = planSolid(p);
+    if (!solid) return null;
+    try {
+      const mesh = new Mesh({ numProp: 3, vertProperties: solid.mesh.positions, triVerts: solid.mesh.indices });
+      mesh.merge();
+      let m = new Manifold(mesh);
+      if (m.status() !== 'NoError') {
+        m.delete();
+        return null;
+      }
+      if (solid.wedge) {
+        const { polygon, z0, z1 } = solid.wedge;
+        const cs = new CrossSection([polygon], 'Positive');
+        const prism = Manifold.extrude(cs, z1 - z0).translate([0, 0, z0]);
+        const cut = m.intersect(prism);
+        cs.delete();
+        prism.delete();
+        m.delete();
+        m = cut;
+      }
+      return m;
+    } catch {
+      return null;
+    }
   }
 
   /** Restituisce il Manifold del nodo (già trasformato nello spazio del genitore). Di proprietà della cache. */

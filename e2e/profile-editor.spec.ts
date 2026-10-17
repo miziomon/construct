@@ -698,7 +698,7 @@ async function openNewWithPen(page: Page) {
 
 const SQUARE: [number, number][] = [[-100, 80], [100, 80], [100, -80], [-100, -80]];
 
-test('Penna: quattro clic e un clic sul primo nodo chiudono il contorno, un solo passo locale; l\'OK crea il Profilo', async ({ page }) => {
+test('Penna: quattro clic e un clic sul primo nodo chiudono il contorno, un passo locale per nodo; l\'OK crea il Profilo', async ({ page }) => {
   const steps = await history(page);
   await page.evaluate(() => window.__construct!.profileEditor.getState().open({ new: true }));
   await expect(editor(page)).toBeVisible();
@@ -714,11 +714,16 @@ test('Penna: quattro clic e un clic sul primo nodo chiudono il contorno, un solo
   await expect(nodes(page)).toHaveCount(4);
   await expect(editor(page).locator('[data-path="0"]')).toContainText('Chiuso');
   await expect(editor(page).getByText('1 contorno, 4 nodi')).toBeVisible();
-  // Un solo passo per tutto il contorno: un Ctrl+Z lo toglie, Ctrl+Maiusc+Z lo rimette
+  // Un passo per nodo: Ctrl+Z riapre il contorno, un altro toglie l'ultimo nodo; Ctrl+Maiusc+Z li rimette uno alla volta
   await page.keyboard.press('Control+z');
-  await expect(nodes(page)).toHaveCount(0);
+  await expect(nodes(page)).toHaveCount(4);
+  await expect(editor(page).locator('[data-path="0"]')).toContainText('Aperto');
+  await page.keyboard.press('Control+z');
+  await expect(nodes(page)).toHaveCount(3);
   await page.keyboard.press('Control+Shift+z');
   await expect(nodes(page)).toHaveCount(4);
+  await page.keyboard.press('Control+Shift+z');
+  await expect(editor(page).locator('[data-path="0"]')).toContainText('Chiuso');
   await okButton(page).click();
   await expect(editor(page)).toHaveCount(0);
   await settled(page);
@@ -750,7 +755,7 @@ async function closeWithDrag(page: Page, alt: 'none' | 'during' | 'released') {
   return first;
 }
 
-test('Penna: clic e trascina sul primo nodo chiude il contorno con la maniglia (liscio, in entrata opposta al mouse), un solo passo', async ({ page }) => {
+test('Penna: clic e trascina sul primo nodo chiude il contorno con la maniglia (liscio, in entrata opposta al mouse), un passo', async ({ page }) => {
   const first = await closeWithDrag(page, 'none');
   // Fino al rilascio il contorno è aperto
   await expect(editor(page).locator('[data-path="0"]')).toContainText('Aperto');
@@ -762,9 +767,11 @@ test('Penna: clic e trascina sul primo nodo chiude il contorno con la maniglia (
   expect(inn.x).toBeLessThan(0);
   expect(inn.y).toBeGreaterThan(0);
   expect(first.x).toBeGreaterThan(0);
-  // Un solo passo locale: Ctrl+Z toglie tutto il contorno
+  // La chiusura è un passo: Ctrl+Z riapre il contorno e lascia i nodi
+  const count = await nodes(page).count();
   await page.keyboard.press('Control+z');
-  await expect(nodes(page)).toHaveCount(0);
+  await expect(editor(page).locator('[data-path="0"]')).toContainText('Aperto');
+  await expect(nodes(page)).toHaveCount(count);
 });
 
 test('Penna: chiudendo con il trascinamento, Alt rende il primo nodo uno spigolo; rilasciato prima del mouse torna liscio', async ({ page }) => {
@@ -876,9 +883,13 @@ test('Penna: Backspace toglie l\'ultimo nodo, Esc termina il contorno senza chie
   await expect(confirmBox(page)).toHaveCount(0);
   await expect(editor(page)).toBeVisible();
   await expect(nodes(page)).toHaveCount(2);
-  // Il contorno è un passo solo: Ctrl+Z lo toglie tutto
+  // Ogni nodo e il Backspace sono passi: Ctrl+Z riporta il nodo tolto, poi toglie i nodi uno alla volta
   await page.keyboard.press('Control+z');
-  await expect(nodes(page)).toHaveCount(0);
+  await expect(nodes(page)).toHaveCount(3);
+  for (const left of [2, 1, 0]) {
+    await page.keyboard.press('Control+z');
+    await expect(nodes(page)).toHaveCount(left);
+  }
   // Doppio clic: termina e il nodo doppio sparisce
   const first = await at(page, -120, 0);
   await page.mouse.click(first.x, first.y);
@@ -1580,10 +1591,10 @@ test('fori: la Penna nel riempimento apre un nuovo contorno che diventa un foro;
   await expect(editor(page).locator('[data-path="1"]')).toContainText('Foro');
   await expect(editor(page).locator('[data-path="0"]')).not.toContainText('Foro');
   await expect(editor(page).locator('.profile-editor__curve--hole')).toHaveCount(1);
-  // Annulla locale: il contorno sparisce e con lui il badge
-  await page.keyboard.press('Control+z');
+  // Annulla locale, un passo per nodo e uno per la chiusura: dopo cinque il contorno sparisce e con lui il badge
+  for (let i = 0; i < 5; i++) await page.keyboard.press('Control+z');
   await expect(editor(page).locator('[data-path]')).toHaveCount(1);
-  await page.keyboard.press('Control+Shift+z');
+  for (let i = 0; i < 5; i++) await page.keyboard.press('Control+Shift+z');
   await expect(editor(page).locator('[data-path="1"]')).toContainText('Foro');
   await okButton(page).click();
   await expect(editor(page)).toHaveCount(0);
@@ -1614,7 +1625,8 @@ test('Rettangolo (R): trascinando dal centro nasce un contorno di 4 spigoli sele
   await openNewDrawing(page);
   await page.keyboard.press('r');
   await expect(toolButton(page, 'Rettangolo')).toHaveAttribute('aria-pressed', 'true');
-  await drag(page, await at(page, -150, -20), await at(page, -50, 60));
+  // Larghezza e profondità ben diverse: con l'aggancio alla griglia (5 mm a questo zoom) il rettangolo non deve diventare un quadrato per caso
+  await drag(page, await at(page, -150, -20), await at(page, -30, 30));
   await expect(nodes(page)).toHaveCount(4);
   await expect(editor(page).locator('[data-path="0"]')).toContainText('Chiuso');
   // Il contorno nuovo resta selezionato e lo strumento resta attivo
@@ -1822,8 +1834,11 @@ test('Importa SVG con un contorno della Penna in corso: il contorno valido resta
   await page.keyboard.press('Control+z');
   await expect(editor(page).locator('[data-path]')).toHaveCount(1);
   await expect(nodes(page)).toHaveCount(3);
-  await page.keyboard.press('Control+z');
-  await expect(nodes(page)).toHaveCount(0);
+  // I nodi della Penna sono passi uno per uno
+  for (const left of [2, 1, 0]) {
+    await page.keyboard.press('Control+z');
+    await expect(nodes(page)).toHaveCount(left);
+  }
   // Un solo nodo in corso: non è un contorno, l'import lascia solo i suoi
   await clicks(page, [[-100, 80]]);
   await expect(nodes(page)).toHaveCount(1);
@@ -1849,4 +1864,40 @@ test('forme base: una forma trascinata e riportata sul centro prima del rilascio
   await page.keyboard.press('Escape');
   await expect(editor(page)).toHaveCount(0);
   await expect(confirmBox(page)).toHaveCount(0);
+});
+
+test('Penna a metà contorno: Ctrl+Z toglie l\'ultimo punto e la Penna continua lo stesso contorno; Ctrl+Maiusc+Z lo rimette', async ({ page }) => {
+  await openNewWithPen(page);
+  await clicks(page, [[-100, 60], [0, -60], [100, 60], [100, -60]]);
+  await expect(nodes(page)).toHaveCount(4);
+  await page.keyboard.press('Control+z');
+  await expect(nodes(page)).toHaveCount(3);
+  await page.keyboard.press('Control+z');
+  await expect(nodes(page)).toHaveCount(2);
+  await page.keyboard.press('Control+Shift+z');
+  await expect(nodes(page)).toHaveCount(3);
+  // Il clic successivo continua lo stesso contorno (nessun percorso nuovo)
+  await clicks(page, [[-60, -100]]);
+  await expect(nodes(page)).toHaveCount(4);
+  await expect(editor(page).locator('[data-path]')).toHaveCount(1);
+  await expect(editor(page).locator('[data-path="0"]')).toContainText('Aperto');
+});
+
+test('più nodi selezionati: il tipo si cambia per tutti insieme, in un solo passo locale', async ({ page }) => {
+  const id = await addPath(page, RECT);
+  await openEditor(page, id);
+  // Riquadro di selezione attorno a tutto il rettangolo
+  const a = await center(node(page, '0:0'));
+  const c = await center(node(page, '0:2'));
+  await drag(page, { x: a.x - 30, y: a.y + 30 }, { x: c.x + 30, y: c.y - 30 });
+  await expect(editor(page).locator('.profile-editor__node--selected')).toHaveCount(4);
+  const group = editor(page).getByRole('group', { name: 'Tipo dei nodi selezionati' });
+  await expect(group.getByRole('button', { name: /Spigolo/ })).toHaveAttribute('aria-pressed', 'true');
+  await group.getByRole('button', { name: /Liscio/ }).click();
+  expect(await nodes(page).evaluateAll((els) => els.map((e) => e.getAttribute('data-kind')))).toEqual(['smooth', 'smooth', 'smooth', 'smooth']);
+  await expect(group.getByRole('button', { name: /Liscio/ })).toHaveAttribute('aria-pressed', 'true');
+  // Un solo passo: Ctrl+Z li riporta tutti spigoli
+  await canvas(page).focus();
+  await page.keyboard.press('Control+z');
+  await expect.poll(() => nodes(page).evaluateAll((els) => els.map((e) => e.getAttribute('data-kind')))).toEqual(['corner', 'corner', 'corner', 'corner']);
 });

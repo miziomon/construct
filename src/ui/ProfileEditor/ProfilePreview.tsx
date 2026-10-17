@@ -9,6 +9,7 @@ import { boundingSphere, CAMERA_FOV, fitDistance, PRESET_DIRECTIONS } from '../.
 import { LIGHTS } from '../../viewport/lights';
 import { meshGeometry } from '../../viewport/meshGeometry';
 import { useViewportPalette } from '../../viewport/palette';
+import { useUiStore } from '../uiStore';
 import type { PreviewResult } from './usePreviewMesh';
 
 /** Come si mostra l'anteprima: a dimensione normale, ingrandita (la sidebar mostra solo lei) o compressa (solo l'intestazione). */
@@ -20,6 +21,8 @@ interface Props extends PreviewResult {
   /** Ogni valore nuovo riporta la camera sull'inquadratura iniziale (pulsante Adatta). */
   fitSignal: number;
   onFit: () => void;
+  /** Anelli della quota di sezione (coordinate xyz consecutive, nello spazio della mesh): chiusi con il giro intero. */
+  rings?: { points: Float32Array; closed: boolean }[];
 }
 
 /** La mesh del solido (Z verso l'alto, come nella vista principale) con lo stesso materiale degli oggetti della scena. */
@@ -36,6 +39,27 @@ function PreviewSolid({ mesh }: { mesh: NodeMesh }) {
       <meshStandardMaterial color={mesh.color} flatShading roughness={0.55} metalness={0.05} />
     </mesh>
   );
+}
+
+/** Un anello della quota di sezione: sempre visibile (senza test di profondità), con il colore della quota del disegno. */
+function SectionRing({ points, closed, color }: { points: Float32Array; closed: boolean; color: string }) {
+  const invalidate = useThree((s) => s.invalidate);
+  const line = useMemo(() => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(points, 3));
+    const m = new THREE.LineBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.95 });
+    const l = closed ? new THREE.LineLoop(g, m) : new THREE.Line(g, m);
+    l.renderOrder = 10;
+    return l;
+  }, [points, closed, color]);
+  useEffect(() => {
+    invalidate();
+    return () => {
+      line.geometry.dispose();
+      (line.material as THREE.Material).dispose();
+    };
+  }, [line, invalidate]);
+  return <primitive object={line} />;
 }
 
 /**
@@ -74,13 +98,16 @@ function FitCamera({ mesh, fitSignal }: { mesh: NodeMesh | null; fitSignal: numb
  * WebGL (`forceContextLoss`: la modale si apre e si chiude spesso e i browser ne ammettono pochi); un secondo rilascio
  * esplicito darebbe l'avviso "context already lost" (l'e2e delle dieci aperture lo verifica).
  */
-export function ProfilePreview({ mesh, state, mode, onMode, fitSignal, onFit }: Props) {
+export function ProfilePreview({ mesh, state, mode, onMode, fitSignal, onFit, rings = [] }: Props) {
   const palette = useViewportPalette();
+  const theme = useUiStore((s) => s.theme);
+  // Lo stesso ciano della quota nel disegno (token profile-section), che cambia con il tema
+  const sectionColor = useMemo(() => (typeof document === 'undefined' ? '#0e7490' : getComputedStyle(document.documentElement).getPropertyValue('--color-profile-section').trim() || '#0e7490'), [theme]);
   const triangles = mesh ? mesh.indices.length / 3 : 0;
   const large = mode === 'large';
 
   return (
-    <section className={`profile-editor__preview profile-editor__preview--${mode}`} aria-label="Anteprima 3D" data-state={state} data-triangles={triangles} data-volume={mesh ? mesh.volume : 0}>
+    <section className={`profile-editor__preview profile-editor__preview--${mode}`} aria-label="Anteprima 3D" data-state={state} data-triangles={triangles} data-rings={rings.length} data-volume={mesh ? mesh.volume : 0}>
       <header className="profile-editor__preview-head">
         <h3 className="profile-editor__section-title">Anteprima 3D</h3>
         <span className={`profile-editor__spinner${state === 'busy' ? ' profile-editor__spinner--on' : ''}`} role="status" aria-label={state === 'busy' ? 'Calcolo in corso' : state === 'error' ? 'Errore nel calcolo' : 'Anteprima pronta'} />
@@ -104,6 +131,9 @@ export function ProfilePreview({ mesh, state, mode, onMode, fitSignal, onFit }: 
             <directionalLight position={LIGHTS.key.position} intensity={LIGHTS.key.intensity} />
             <directionalLight position={LIGHTS.fill.position} intensity={LIGHTS.fill.intensity} />
             {mesh && <PreviewSolid mesh={mesh} />}
+            {rings.map((r, i) => (
+              <SectionRing key={i} points={r.points} closed={r.closed} color={sectionColor} />
+            ))}
             <OrbitControls makeDefault enableDamping={false} />
             <FitCamera mesh={mesh} fitSignal={fitSignal} />
           </Canvas>

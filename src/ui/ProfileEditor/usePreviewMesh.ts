@@ -37,6 +37,8 @@ export function previewScene(draft: Draft, base: PathShape | null, size: { width
     scaleTop: draft.scaleTop,
     revolveAngle: draft.revolveAngle,
     revolveSegments: draft.revolveSegments,
+    // La sagoma della modale (assente = cerchio): non quella del nodo esistente
+    plan: draft.plan,
     width: size?.width ?? natural.width,
     depth: size?.depth ?? natural.depth,
   } as Shape2DNode;
@@ -56,7 +58,7 @@ export function usePreviewMesh(draft: Draft, base: PathShape | null, size: { wid
     () => (enabled ? previewScene(draft, base, size) : null),
     // Solo ciò che cambia la forma: il resto del Draft (nulla) non esiste
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [enabled, draft.paths, draft.tolerance, draft.extrusion, draft.height, draft.twist, draft.scaleTop, draft.revolveAngle, draft.revolveSegments, base, size?.width, size?.depth],
+    [enabled, draft.paths, draft.tolerance, draft.extrusion, draft.height, draft.twist, draft.scaleTop, draft.revolveAngle, draft.revolveSegments, draft.plan, base, size?.width, size?.depth],
   );
 
   useEffect(() => {

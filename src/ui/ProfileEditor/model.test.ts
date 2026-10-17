@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { POLYGON_SIDES, appendPenNode, bakeScale, baseShapeContour, canCloseContour, closeContour, contourContains, contourHoles, cycleKind, deleteNodes, draftContours, draftFromNode, dropLastNode, emptyDraft, gridStep, insertNode, isOpenEnd, joinContours, moveHandle, moveNodes, nearestSegment, pathCenter, pointInPolygon, resumeContour, setNodeKind, snapPoint, trimDuplicateTail } from './model';
+import { POLYGON_SIDES, appendPenNode, bakeScale, baseShapeContour, canCloseContour, closeContour, contourContains, contourHoles, cycleKind, deleteNodes, draftContours, draftFromNode, dropLastNode, emptyDraft, gridStep, insertNode, isOpenEnd, joinContours, moveHandle, moveNodes, nearestSegment, pathCenter, pointInPolygon, resumeContour, setNodeKind, setNodesKind, snapPoint, trimDuplicateTail } from './model';
 import { bboxOf, cubicPoint, segmentOf, signedArea, splitCubic } from '../../scene/bezier';
 import { pathContours, pathNaturalSize } from '../../scene/shapes2d';
 import { shape2dDefaults } from '../../scene/defaults';
@@ -104,6 +104,18 @@ describe('moveHandle', () => {
   it('un riferimento inesistente non cambia nulla', () => {
     const paths = at('corner');
     expect(moveHandle(paths, { path: 5, node: 0, side: 'out' }, [1, 1], false)).toBe(paths);
+  });
+});
+
+describe('setNodesKind', () => {
+  it('cambia il tipo di tutti i nodi indicati e lascia gli altri', () => {
+    const paths: PathContour[] = [{ closed: true, nodes: [{ p: [0, 0], kind: 'corner' }, { p: [10, 0], kind: 'corner' }, { p: [10, 10], kind: 'corner' }, { p: [0, 10], kind: 'corner' }] }];
+    const out = setNodesKind(paths, [{ path: 0, node: 0 }, { path: 0, node: 2 }], 'smooth')[0].nodes;
+    expect(out.map((n) => n.kind)).toEqual(['smooth', 'corner', 'smooth', 'corner']);
+    // Liscio da spigolo: nascono le maniglie (come per un nodo solo)
+    expect(out[0].in && out[0].out).toBeTruthy();
+    // Riferimenti che non esistono più si ignorano
+    expect(setNodesKind(paths, [{ path: 3, node: 0 }], 'smooth')).toBe(paths);
   });
 });
 

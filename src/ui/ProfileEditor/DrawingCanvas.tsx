@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type MutableRefObject, type PointerEvent as ReactPointerEvent } from 'react';
-import { Circle, FlipHorizontal2, Hand, Hexagon, Maximize, MousePointer2, PenTool, Square, Upload, ZoomIn, ZoomOut } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type MutableRefObject, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { TrianglesCenterlineDashedVertical, Maximize, ZoomIn, ZoomOut } from 'lucide-react';
 import { MAX_PATH_CONTOURS, cubicPoint, segmentOf } from '../../scene/bezier';
 import type { PathContour, PathNode, Vec2 } from '../../scene/types';
-import { NumberField } from '../NumberField/NumberField';
-import { POLYGON_SIDES, appendPenNode, baseShapeContour, contourContains, cycleKind, gridStep, insertNode, joinContours, moveHandle, moveNodes, nearestSegment, resumeContour, setNodeKind, snapPoint } from './model';
-import type { Draft, HandleRef, NodeRef, SegmentRef } from './model';
+import { appendPenNode, baseShapeContour, contourContains, cycleKind, gridStep, insertNode, joinContours, moveHandle, moveNodes, nearestSegment, resumeContour, setNodeKind, snapPoint } from './model';
+import type { HandleRef, NodeRef, SegmentRef } from './model';
 
 /** Aggancio e griglia: il passo (mm) serve anche a disegnare le righe; gli interruttori dicono a cosa ci si aggancia. */
 export interface GridSettings {
@@ -19,8 +18,34 @@ export interface GridSettings {
 
 export type Tool = 'select' | 'pen' | 'pan' | 'rect' | 'ellipse' | 'polygon';
 
+/** Che cosa serve a chi disegna sotto i contorni: da disegno a pixel e dimensione dell'area. */
+export interface CanvasContext {
+  toS: (p: Vec2) => Vec2;
+  size: { w: number; h: number };
+}
+
 interface Props {
-  draft: Draft;
+  /** Contorni da mostrare e modificare. */
+  paths: PathContour[];
+  /** Profilo da ruotare: l'asse di rotazione sta a x = 0 e la parte con x negativo non viene ruotata. */
+  rotate: boolean;
+  /** Nome dell'area per i lettori di schermo e per i test. */
+  label?: string;
+  /** Sagoma: i contorni restano sempre chiusi (la Penna non ne crea né ne apre, inserisce solo nodi sulla curva). */
+  closedOnly?: boolean;
+  /** Messaggio quando la Penna non ha nulla da fare (con `closedOnly`). */
+  onClosedOnly?: () => void;
+  /** Inserimento di un nodo sulla curva al posto di quello del modello (la sagoma lo fa anche negli speculari). */
+  insertOverride?: (paths: PathContour[], seg: SegmentRef, t: number) => { paths: PathContour[]; node: NodeRef } | null;
+  /** Disegno sotto i contorni (ingombro, livelli, assi di simmetria...). */
+  underlay?: (ctx: CanvasContext) => ReactNode;
+  /** Riquadro (x0, y0, x1, y1) in mm che «Adatta» e l'apertura inquadrano, al posto dei nodi; cambiandolo si inquadra di nuovo. */
+  fitBox?: [number, number, number, number];
+  /** Quota di sezione: linea orizzontale a `y` mm, che si trascina con lo strumento Seleziona. */
+  section?: { y: number; label: string };
+  onSection?: (y: number) => void;
+  /** Cambiando questo valore (la disposizione dei disegni) il disegno si inquadra di nuovo quando l'area ha la nuova misura. */
+  refit?: string;
   /** Poligoni riempiti dal kernel (stesso campionamento del solido), nelle coordinate del disegno. */
   contours: Vec2[][];
   /** Punti in cui i contorni si attraversano. */
@@ -37,7 +62,6 @@ interface Props {
   onCommit: (paths: PathContour[], selection: NodeRef[]) => void;
   onSelect: (selection: NodeRef[]) => void;
   tool: Tool;
-  onTool: (tool: Tool) => void;
   /** Vista specchiata in orizzontale (solo in rotazione): la parte non ruotata sta a destra dell'asse. Non cambia i dati. */
   flip: boolean;
   onFlip: () => void;
@@ -53,14 +77,16 @@ interface Props {
   onPenFinish: () => void;
   /** Penna: raggiunto il limite di nodi o di contorni. */
   onPenLimit: () => void;
+  /** Penna: un nodo aggiunto (al rilascio del mouse) è un passo della cronologia; il contorno resta in corso. */
+  onPenStep?: (paths: PathContour[]) => void;
   /** Forme base: raggiunto il limite di contorni. */
   onShapeLimit: () => void;
   /** Forme base: il gesto è finito senza una forma dopo averne mostrata una in anteprima; il disegno torna all'ultimo concluso. */
   onShapeCancel: () => void;
-  /** Importa SVG: il file scelto dall'utente. */
-  onImportSvg: (file: File) => void;
   /** Contatore: a ogni aumento la vista inquadra tutto il disegno (dopo un import, quando i contorni sono già nello stato). */
   fitRequest: number;
+  /** Lati del poligono regolare disegnato con lo strumento Poligono (il campo sta nella barra degli strumenti). */
+  sides: number;
 }
 
 /** Vista: centro (mm) e zoom (pixel per mm). La Y del disegno va verso l'alto. */
@@ -89,7 +115,8 @@ const f1 = (n: number) => n.toFixed(1);
 const fmt = (n: number) => String(Number(n.toFixed(2)));
 
 /** Vista che inquadra tutti i nodi e le maniglie (e l'asse in rotazione), con un po' di margine. */
-function fitView(paths: PathContour[], rotate: boolean, w: number, h: number): View {
+function fitView(paths: PathContour[], rotate: boolean, w: number, h: number, box?: [number, number, number, number]): View {
+  if (box) return { cx: (box[0] + box[2]) / 2, cy: (box[1] + box[3]) / 2, s: clampScale(Math.min(w / Math.max(box[2] - box[0], 1), h / Math.max(box[3] - box[1], 1)) / 1.15) };
   // In rotazione l'inquadratura lascia a sinistra dell'asse spazio per la parte non ruotata (scritta e pulsante dell'inversione)
   const pts: Vec2[] = [];
   for (const c of paths) {
@@ -133,12 +160,14 @@ type Drag =
   | { type: 'box'; sx: number; sy: number; shift: boolean; base: NodeRef[]; moved: boolean }
   // Forma base (rettangolo, ellisse, poligono) trascinata dal centro: `last` è il disegno con la forma in anteprima (`base` se non c'è ancora una misura), `live` dice se il disegno è già stato cambiato
   | { type: 'shape'; tool: 'rect' | 'ellipse' | 'polygon'; center: Vec2; base: PathContour[]; last: PathContour[]; sx: number; sy: number; moved: boolean; live: boolean }
+  // Quota di sezione: si trascina solo con Seleziona, dopo nodi, maniglie e curve
+  | { type: 'section' }
   // Penna, ripresa da un estremo (maniglia in uscita) o chiusura sul primo nodo (`close`, maniglia in entrata opposta al mouse): il trascinamento la disegna
   // (nodo liscio, spigolo con Alt); `last` parte dal nodo reso liscio
   | { type: 'resume'; ref: HandleRef; current: number; close: boolean; base: PathContour[]; last: PathContour[]; frozen: PathContour[]; to: Vec2 | null; sx: number; sy: number; moved: boolean; alt: boolean }
   // Penna: lo stato di partenza serve a ricalcolare il nodo (e la sua maniglia) a ogni movimento del trascinamento
   // Alt è momentaneo: `keepIn` è la maniglia in entrata che il nodo aveva quando è stato premuto, `out` la maniglia trascinata
-  | { type: 'pen'; base: PathContour[]; current: number | null; p: Vec2; sx: number; sy: number; moved: boolean; alt: boolean; keepIn: Vec2 | undefined; out: Vec2 | undefined };
+  | { type: 'pen'; base: PathContour[]; current: number | null; p: Vec2; sx: number; sy: number; moved: boolean; alt: boolean; keepIn: Vec2 | undefined; out: Vec2 | undefined; last: PathContour[] };
 
 /**
  * Disegno 2D del profilo (SVG) con lo strumento Seleziona: clic, Maiusc, riquadro, trascinamento di nodi e maniglie
@@ -148,10 +177,9 @@ type Drag =
  * zoom sul puntatore, Spazio o tasto centrale per la panoramica. Le modifiche passano da `onLive` (durante il gesto) e
  * `onCommit` (al rilascio): un gesto è un solo passo della cronologia.
  */
-export function DrawingCanvas({ draft, contours, crossings, holes, selection, grid, spaceDown, onLive, onCommit, onSelect, tool, onTool, flip, onFlip, pen, onPenLive, onPenResume, onPenClose, onPenFinish, onPenLimit, onShapeLimit, onShapeCancel, onImportSvg, fitRequest }: Props) {
+export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, insertOverride, underlay, fitBox, section, onSection, refit, contours, crossings, holes, selection, grid, spaceDown, onLive, onCommit, onSelect, tool, flip, onFlip, pen, onPenLive, onPenResume, onPenClose, onPenFinish, onPenLimit, onPenStep, onShapeLimit, onShapeCancel, fitRequest, sides }: Props) {
   const wrap = useRef<HTMLDivElement>(null);
   const svg = useRef<SVGSVGElement>(null);
-  const fileInput = useRef<HTMLInputElement>(null);
   const [size, setSize] = useState({ w: 600, h: 400 });
   const [view, setView] = useState<View>({ cx: 0, cy: 10, s: 8 });
   // Copie per i listener nativi (rotella, osservatore della dimensione), che non vedono lo stato più recente
@@ -160,7 +188,7 @@ export function DrawingCanvas({ draft, contours, crossings, holes, selection, gr
   flipRef.current = flip;
   const sgn = flip ? -1 : 1;
   const sizeRef = useRef(size);
-  const latest = useRef({ paths: draft.paths, rotate: draft.extrusion === 'rotate' });
+  const latest = useRef({ paths, rotate, fitBox });
   const fitted = useRef(false);
   const drag = useRef<Drag | null>(null);
   const [rubber, setRubber] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
@@ -178,16 +206,14 @@ export function DrawingCanvas({ draft, contours, crossings, holes, selection, gr
   // Penna: punto (agganciato) in cui cadrebbe il prossimo nodo, per l'anteprima del segmento
   const [hover, setHover] = useState<Vec2 | null>(null);
   // Lati del poligono regolare (strumento Poligono)
-  const [sides, setSides] = useState<number>(POLYGON_SIDES.default);
   // Schermo a dito: aree attive più grandi
   const [coarse] = useState(() => typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches === true);
-  const rotate = draft.extrusion === 'rotate';
   const nodeR = coarse ? 20 : 10;
   // Contorno aperto che la Penna sta continuando
-  const activePen = tool === 'pen' && pen !== null && draft.paths[pen] && !draft.paths[pen].closed ? draft.paths[pen] : null;
+  const activePen = tool === 'pen' && pen !== null && paths[pen] && !paths[pen].closed ? paths[pen] : null;
 
   useEffect(() => {
-    latest.current = { paths: draft.paths, rotate };
+    latest.current = { paths, rotate, fitBox };
   });
 
   const changeView = useCallback((v: View) => {
@@ -197,7 +223,7 @@ export function DrawingCanvas({ draft, contours, crossings, holes, selection, gr
 
   /** Inquadra tutto il disegno. */
   const fit = useCallback(() => {
-    changeView(fitView(latest.current.paths, latest.current.rotate, sizeRef.current.w, sizeRef.current.h));
+    changeView(fitView(latest.current.paths, latest.current.rotate, sizeRef.current.w, sizeRef.current.h, latest.current.fitBox));
   }, [changeView]);
 
   // Adatta chiesto da fuori (dopo un import): l'effetto che aggiorna `latest` sta più in alto, quindi vede già i contorni nuovi
@@ -216,6 +242,29 @@ export function DrawingCanvas({ draft, contours, crossings, holes, selection, gr
     wasRotate.current = rotate;
   }, [rotate, fit, changeView]);
 
+  // Un riquadro d'inquadratura diverso (la sagoma segue il raggio del profilo) inquadra di nuovo
+  const fitKey = fitBox ? fitBox.map((v) => v.toFixed(2)).join(',') : '';
+  const lastFitKey = useRef(fitKey);
+  useEffect(() => {
+    if (lastFitKey.current !== fitKey && fitted.current) fit();
+    lastFitKey.current = fitKey;
+  }, [fitKey, fit]);
+
+  // Nuova disposizione dei disegni: si inquadra di nuovo appena l'area ha la misura nuova (o dopo un attimo, se non cambia)
+  const pendingFit = useRef(false);
+  const lastRefit = useRef(refit);
+  useEffect(() => {
+    if (lastRefit.current === refit) return;
+    lastRefit.current = refit;
+    pendingFit.current = true;
+    const t = setTimeout(() => {
+      if (!pendingFit.current) return;
+      pendingFit.current = false;
+      fit();
+    }, 150);
+    return () => clearTimeout(t);
+  }, [refit, fit]);
+
   // Segue la dimensione dell'area; alla prima misura inquadra il disegno
   useEffect(() => {
     const el = wrap.current;
@@ -225,8 +274,9 @@ export function DrawingCanvas({ draft, contours, crossings, holes, selection, gr
       if (r.width < 10 || r.height < 10) return;
       sizeRef.current = { w: r.width, h: r.height };
       setSize(sizeRef.current);
-      if (!fitted.current) {
+      if (!fitted.current || pendingFit.current) {
         fitted.current = true;
+        pendingFit.current = false;
         fit();
       }
     });
@@ -267,7 +317,7 @@ export function DrawingCanvas({ draft, contours, crossings, holes, selection, gr
   const shown = useMemo(() => {
     const keys = new Set<string>();
     for (const r of selection) {
-      const c = draft.paths[r.path];
+      const c = paths[r.path];
       if (!c) continue;
       const n = c.nodes.length;
       for (const delta of [-1, 0, 1]) {
@@ -277,14 +327,14 @@ export function DrawingCanvas({ draft, contours, crossings, holes, selection, gr
       }
     }
     return keys;
-  }, [selection, draft.paths]);
+  }, [selection, paths]);
 
   /** Che cosa c'è nel punto (pixel): prima le maniglie visibili, poi i nodi, infine i segmenti. */
   const hitTest = (sx: number, sy: number): Hit => {
     const handleR = coarse ? 18 : 9;
     for (const key of shown) {
       const [pi, ni] = key.split(':').map(Number);
-      const n = draft.paths[pi].nodes[ni];
+      const n = paths[pi].nodes[ni];
       for (const side of ['out', 'in'] as const) {
         const h = n[side];
         if (!h) continue;
@@ -292,13 +342,13 @@ export function DrawingCanvas({ draft, contours, crossings, holes, selection, gr
         if (Math.hypot(sp[0] - sx, sp[1] - sy) <= handleR) return { type: 'handle', ref: { path: pi, node: ni, side } };
       }
     }
-    for (let pi = draft.paths.length - 1; pi >= 0; pi--) {
-      for (let ni = draft.paths[pi].nodes.length - 1; ni >= 0; ni--) {
-        const sp = toS(draft.paths[pi].nodes[ni].p);
+    for (let pi = paths.length - 1; pi >= 0; pi--) {
+      for (let ni = paths[pi].nodes.length - 1; ni >= 0; ni--) {
+        const sp = toS(paths[pi].nodes[ni].p);
         if (Math.hypot(sp[0] - sx, sp[1] - sy) <= nodeR) return { type: 'node', ref: { path: pi, node: ni } };
       }
     }
-    const near = nearestSegment(draft.paths, (coarse ? 14 : 7) / view.s, toW(sx, sy));
+    const near = nearestSegment(paths, (coarse ? 14 : 7) / view.s, toW(sx, sy));
     return near ? { type: 'segment', seg: { path: near.path, segment: near.segment }, t: near.t } : { type: 'none' };
   };
 
@@ -308,15 +358,15 @@ export function DrawingCanvas({ draft, contours, crossings, holes, selection, gr
    */
   const snapped = (p: Vec2, e: { ctrlKey: boolean; shiftKey?: boolean }, others: Vec2[] | undefined, prev?: Vec2): Vec2 =>
     e.ctrlKey ? p : snapPoint(p, { grid: grid.snapGrid ? gridStep(grid.step, view.s) : undefined, nodes: grid.snapNodes ? others : undefined, prev, ortho: grid.snapOrtho && !!prev, angle45: !!e.shiftKey && !!prev, radius: SNAP_RADIUS_PX / view.s });
-  const allNodes = () => draft.paths.flatMap((c) => c.nodes.map((n) => n.p));
+  const allNodes = () => paths.flatMap((c) => c.nodes.map((n) => n.p));
 
   /** Estremo di un contorno aperto sotto il puntatore (pixel), escluso il contorno `except` (quello in corso). */
   const endAt = (sx: number, sy: number, except: number | null): NodeRef | null => {
-    for (let pi = draft.paths.length - 1; pi >= 0; pi--) {
-      if (pi === except || draft.paths[pi].closed) continue;
-      const last = draft.paths[pi].nodes.length - 1;
+    for (let pi = paths.length - 1; pi >= 0; pi--) {
+      if (pi === except || paths[pi].closed) continue;
+      const last = paths[pi].nodes.length - 1;
       for (const ni of last === 0 ? [0] : [last, 0]) {
-        const sp = toS(draft.paths[pi].nodes[ni].p);
+        const sp = toS(paths[pi].nodes[ni].p);
         if (Math.hypot(sp[0] - sx, sp[1] - sy) <= nodeR) return { path: pi, node: ni };
       }
     }
@@ -324,26 +374,38 @@ export function DrawingCanvas({ draft, contours, crossings, holes, selection, gr
   };
   /** Penna senza contorno in corso: dove un clic sulla curva inserirebbe un nodo (a qualche pixel dalla curva e lontano dai nodi), o null. */
   const insertCandidate = (sx: number, sy: number): { seg: SegmentRef; t: number; point: Vec2 } | null => {
-    const near = nearestSegment(draft.paths, (coarse ? 12 : 6) / view.s, toW(sx, sy));
+    const near = nearestSegment(paths, (coarse ? 12 : 6) / view.s, toW(sx, sy));
     if (!near || !(near.t > 0 && near.t < 1)) return null;
-    for (const c of draft.paths) {
+    for (const c of paths) {
       for (const n of c.nodes) {
         const sp = toS(n.p);
         if (Math.hypot(sp[0] - sx, sp[1] - sy) <= nodeR) return null;
       }
     }
     const seg = { path: near.path, segment: near.segment };
-    return { seg, t: near.t, point: cubicPoint(segmentOf(draft.paths[seg.path], seg.segment).cubic, near.t) };
+    return { seg, t: near.t, point: cubicPoint(segmentOf(paths[seg.path], seg.segment).cubic, near.t) };
   };
   /** Anteprime della Penna: pallino di inserimento sulla curva (se non `suspend`, cioè Ctrl o ⌘ non è premuto) ed estremo che un clic riprenderebbe. */
   const refreshHover = (sx: number, sy: number, suspend: boolean, ctrl: boolean) => {
     if (tool !== 'pen') return;
-    const end = endAt(sx, sy, activePen ? pen : null);
+    const end = closedOnly ? null : endAt(sx, sy, activePen ? pen : null);
     const candidate = activePen || end || suspend ? null : insertCandidate(sx, sy);
     setEndHot(end);
     setInsertAt(candidate ? candidate.point : null);
-    if (candidate || end) setHover(null);
+    if (candidate || end || closedOnly) setHover(null);
     else setHover(snapped(toW(sx, sy), { ctrlKey: ctrl }, allNodes(), activePen ? activePen.nodes[activePen.nodes.length - 1].p : undefined));
+  };
+
+  // Quota di sezione: vicina al puntatore (pixel) solo con Seleziona; `sectionHot` accende la linea
+  const [sectionHot, setSectionHot] = useState(false);
+  // Pastiglia all'estremità destra della linea: la sua larghezza segue l'etichetta
+  const pillW = section ? section.label.length * 6.4 + 30 : 0;
+  const pillHit = (sx: number, sy: number) => !!section && sx >= size.w - 8 - pillW && sx <= size.w - 8 && Math.abs(toS([0, section.y])[1] - sy) <= 12;
+  const nearSection = (sy: number, sx = 0) => !!section && !!onSection && tool === 'select' && (Math.abs(toS([0, section.y])[1] - sy) <= (coarse ? 16 : 10) || pillHit(sx, sy));
+  const moveSection = (sy: number, e: { ctrlKey: boolean }) => {
+    if (!onSection) return;
+    const y = toW(0, sy)[1];
+    onSection(grid.snapGrid && !e.ctrlKey ? Math.round(y / step) * step : y);
   };
 
   const onPointerDown = (e: ReactPointerEvent<SVGSVGElement>) => {
@@ -360,17 +422,30 @@ export function DrawingCanvas({ draft, contours, crossings, holes, selection, gr
     if (e.button !== 0) return;
     const w = toW(sx, sy);
     if (tool === 'rect' || tool === 'ellipse' || tool === 'polygon') {
+      // Sagoma: un contorno solo, sempre chiuso; le forme base non si aggiungono
+      if (closedOnly) {
+        onClosedOnly?.();
+        return;
+      }
       // Forma base: si preme sul centro (agganciato; Ctrl sospende) e si trascina. Con 100 contorni non c'è posto per un altro
-      if (draft.paths.length >= MAX_PATH_CONTOURS) {
+      if (paths.length >= MAX_PATH_CONTOURS) {
         onShapeLimit();
         return;
       }
-      drag.current = { type: 'shape', tool, center: snapped(w, e, allNodes()), base: draft.paths, last: draft.paths, sx, sy, moved: false, live: false };
+      drag.current = { type: 'shape', tool, center: snapped(w, e, allNodes()), base: paths, last: paths, sx, sy, moved: false, live: false };
       return;
     }
     if (tool === 'pen') {
       setHover(null);
       setInsertAt(null);
+      // Sagoma: la Penna inserisce solo nodi sulla curva (Ctrl o ⌘ non servono: non c'è altro da fare)
+      if (closedOnly) {
+        const candidate = insertCandidate(sx, sy);
+        const inserted = candidate && (insertOverride ?? insertNode)(paths, candidate.seg, candidate.t);
+        if (inserted) onCommit(inserted.paths, [inserted.node]);
+        else onClosedOnly?.();
+        return;
+      }
       const prev = activePen ? activePen.nodes[activePen.nodes.length - 1].p : undefined;
       const p = snapped(w, e, allNodes(), prev);
       // Clic sul primo nodo (o aggancio a lui): il contorno si chiude
@@ -379,7 +454,7 @@ export function DrawingCanvas({ draft, contours, crossings, holes, selection, gr
         const fs = toS(first);
         if (Math.hypot(fs[0] - sx, fs[1] - sy) <= nodeR || (p[0] === first[0] && p[1] === first[1])) {
           // Il contorno si chiude al rilascio: un clic lo chiude e basta, un trascinamento disegna prima la maniglia del primo nodo (liscio, spigolo con Alt)
-          const smooth = draft.paths.map((c, i) => (i === pen ? { ...c, nodes: c.nodes.map((n, k) => (k === 0 ? { ...n, kind: 'smooth' as const } : n)) } : c));
+          const smooth = paths.map((c, i) => (i === pen ? { ...c, nodes: c.nodes.map((n, k) => (k === 0 ? { ...n, kind: 'smooth' as const } : n)) } : c));
           setClosing(pen!);
           drag.current = { type: 'resume', ref: { path: pen!, node: 0, side: 'in' }, current: pen!, close: true, base: smooth, last: smooth, frozen: smooth, to: null, sx, sy, moved: false, alt: false };
           if (e.altKey) setAlt(drag.current, true);
@@ -389,7 +464,7 @@ export function DrawingCanvas({ draft, contours, crossings, holes, selection, gr
       // Clic su un estremo di un altro contorno aperto: con un contorno in corso i due si uniscono, senza si riprende quello
       const end = endAt(sx, sy, activePen ? pen : null);
       if (end) {
-        const joined = activePen ? joinContours(draft.paths, pen!, end) : resumeContour(draft.paths, end);
+        const joined = activePen ? joinContours(paths, pen!, end) : resumeContour(paths, end);
         if (!joined) {
           onPenLimit();
           return;
@@ -407,27 +482,27 @@ export function DrawingCanvas({ draft, contours, crossings, holes, selection, gr
       // Su una curva, senza contorno in corso e senza Ctrl o ⌘: un nodo sulla curva (la forma non cambia)
       if (!activePen && !e.ctrlKey && !e.metaKey) {
         const candidate = insertCandidate(sx, sy);
-        const inserted = candidate && insertNode(draft.paths, candidate.seg, candidate.t);
+        const inserted = candidate && (insertOverride ?? insertNode)(paths, candidate.seg, candidate.t);
         if (inserted) {
           onCommit(inserted.paths, [inserted.node]);
           return;
         }
       }
       // Un nodo in più; con il trascinamento (sotto) diventa simmetrico con la maniglia
-      const added = appendPenNode(draft.paths, activePen ? pen : null, p);
+      const added = appendPenNode(paths, activePen ? pen : null, p);
       if (!added) {
         onPenLimit();
         return;
       }
       onPenLive(added.paths, added.current, [added.node]);
-      drag.current = { type: 'pen', base: draft.paths, current: activePen ? pen : null, p, sx, sy, moved: false, alt: false, keepIn: undefined, out: undefined };
+      drag.current = { type: 'pen', base: paths, current: activePen ? pen : null, p, sx, sy, moved: false, alt: false, keepIn: undefined, out: undefined, last: added.paths };
       // Alt già premuto prima del nodo: nessuna maniglia in entrata da conservare
       if (e.altKey) setAlt(drag.current, true);
       return;
     }
     const hit = hitTest(sx, sy);
     if (hit.type === 'handle') {
-      drag.current = { type: 'handle', ref: hit.ref, base: draft.paths, last: draft.paths, frozen: draft.paths, to: null, sx, sy, moved: false, alt: false };
+      drag.current = { type: 'handle', ref: hit.ref, base: paths, last: paths, frozen: paths, to: null, sx, sy, moved: false, alt: false };
       if (e.altKey) setAlt(drag.current, true);
     } else if (hit.type === 'node') {
       const selected = selection.some((r) => same(r, hit.ref));
@@ -436,22 +511,25 @@ export function DrawingCanvas({ draft, contours, crossings, holes, selection, gr
       if (next !== selection) onSelect(next);
       const refs = next.some((r) => same(r, hit.ref)) ? next : [];
       drag.current = {
-        type: 'node', refs, base: draft.paths, last: draft.paths, primary: draft.paths[hit.ref.path].nodes[hit.ref.node].p, down: w, sx, sy, moved: false,
+        type: 'node', refs, base: paths, last: paths, primary: paths[hit.ref.path].nodes[hit.ref.node].p, down: w, sx, sy, moved: false,
         // Un clic senza trascinamento su un nodo di una selezione multipla lascia solo quel nodo
         collapse: !e.shiftKey && selected && selection.length > 1 ? hit.ref : null,
       };
     } else if (hit.type === 'segment') {
       // Il clic su una curva seleziona tutto il contorno (Maiusc lo aggiunge o lo toglie) e trascinandola lo si sposta
-      const all: NodeRef[] = draft.paths[hit.seg.path].nodes.map((_, node) => ({ path: hit.seg.path, node }));
+      const all: NodeRef[] = paths[hit.seg.path].nodes.map((_, node) => ({ path: hit.seg.path, node }));
       const selected = all.every((r) => selection.some((x) => same(x, r)));
       const next = e.shiftKey ? (selected ? selection.filter((r) => r.path !== hit.seg.path) : [...selection.filter((r) => r.path !== hit.seg.path), ...all]) : all;
       onSelect(next);
-      drag.current = { type: 'node', refs: e.shiftKey && selected ? [] : all, base: draft.paths, last: draft.paths, primary: draft.paths[hit.seg.path].nodes[0].p, down: w, sx, sy, moved: false, collapse: null };
+      drag.current = { type: 'node', refs: e.shiftKey && selected ? [] : all, base: paths, last: paths, primary: paths[hit.seg.path].nodes[0].p, down: w, sx, sy, moved: false, collapse: null };
+    } else if (nearSection(sy, sx) && !e.shiftKey) {
+      drag.current = { type: 'section' };
+      setSectionHot(true);
     } else {
       // Clic dentro un contorno interamente selezionato: lo si trascina anche dal riempimento
-      const filled = e.shiftKey ? -1 : draft.paths.findLastIndex((c, pi) => c.nodes.length >= 3 && c.nodes.every((_, ni) => selection.some((r) => r.path === pi && r.node === ni)) && contourContains(c, w));
+      const filled = e.shiftKey ? -1 : paths.findLastIndex((c, pi) => c.nodes.length >= 3 && c.nodes.every((_, ni) => selection.some((r) => r.path === pi && r.node === ni)) && contourContains(c, w));
       if (filled >= 0) {
-        drag.current = { type: 'node', refs: selection, base: draft.paths, last: draft.paths, primary: draft.paths[filled].nodes[0].p, down: w, sx, sy, moved: false, collapse: null };
+        drag.current = { type: 'node', refs: selection, base: paths, last: paths, primary: paths[filled].nodes[0].p, down: w, sx, sy, moved: false, collapse: null };
       } else drag.current = { type: 'box', sx, sy, shift: e.shiftKey, base: selection, moved: false };
     }
   };
@@ -459,7 +537,9 @@ export function DrawingCanvas({ draft, contours, crossings, holes, selection, gr
   /** Rifà il nodo della Penna dallo stato di partenza: con Alt è uno spigolo (in conservata, out al puntatore), senza è simmetrico. */
   const applyPen = (d: Extract<Drag, { type: 'pen' }>) => {
     const next = appendPenNode(d.base, d.current, d.p, d.out, d.alt ? { keepIn: d.keepIn } : undefined);
-    if (next) onPenLive(next.paths, next.current, [next.node]);
+    if (!next) return;
+    d.last = next.paths;
+    onPenLive(next.paths, next.current, [next.node]);
   };
   /** Rifà la maniglia trascinata: con Alt dallo stato in cui è stato premuto (spigolo, l'altra resta), senza dallo stato di partenza (il tipo di prima). */
   const applyResume = (d: Extract<Drag, { type: 'resume' }>) => {
@@ -540,9 +620,13 @@ export function DrawingCanvas({ draft, contours, crossings, holes, selection, gr
     if (!d) {
       // Penna senza gesto in corso: l'anteprima del prossimo segmento (o il pallino di inserimento sulla curva) segue il puntatore
       refreshHover(sx, sy, e.ctrlKey || e.metaKey, e.ctrlKey);
+      // Seleziona: la quota si accende quando il puntatore è sulla linea e non su un nodo o una curva
+      if (tool === 'select') setSectionHot(nearSection(sy, sx) && hitTest(sx, sy).type === 'none');
       return;
     }
-    if (d.type === 'pan') {
+    if (d.type === 'section') {
+      moveSection(sy, e);
+    } else if (d.type === 'pan') {
       changeView({ ...view, cx: d.cx - (sgn * (sx - d.sx)) / view.s, cy: d.cy + (sy - d.sy) / view.s });
     } else if (d.type === 'node') {
       if (!d.moved && Math.hypot(sx - d.sx, sy - d.sy) < DRAG_THRESHOLD) return;
@@ -608,7 +692,14 @@ export function DrawingCanvas({ draft, contours, crossings, holes, selection, gr
     setPanning(false);
     setClosing(null);
     if (!d) return;
-    // Penna: niente da fare al rilascio, il passo di cronologia lo fa il termine del contorno
+    if (d.type === 'section') {
+      setSectionHot(false);
+      return;
+    }
+    // Penna: il nodo appena aggiunto (con la maniglia del trascinamento) è un passo della cronologia; anche la ripresa
+    // di un estremo con una maniglia disegnata
+    if (d.type === 'pen') onPenStep?.(d.last);
+    else if (d.type === 'resume' && !d.close && d.moved) onPenStep?.(d.last);
     if (d.type === 'node') {
       if (d.moved) onCommit(d.last, d.refs);
       else if (d.collapse) onSelect([d.collapse]);
@@ -631,7 +722,7 @@ export function DrawingCanvas({ draft, contours, crossings, holes, selection, gr
       const [x0, x1] = [Math.min(d.sx, sx), Math.max(d.sx, sx)];
       const [y0, y1] = [Math.min(d.sy, sy), Math.max(d.sy, sy)];
       const inside: NodeRef[] = [];
-      draft.paths.forEach((c, pi) =>
+      paths.forEach((c, pi) =>
         c.nodes.forEach((n, ni) => {
           const [px, py] = toS(n.p);
           if (px >= x0 && px <= x1 && py >= y0 && py <= y1) inside.push({ path: pi, node: ni });
@@ -646,14 +737,14 @@ export function DrawingCanvas({ draft, contours, crossings, holes, selection, gr
     if (tool === 'pan' || tool === 'rect' || tool === 'ellipse' || tool === 'polygon') return;
     // Penna: il doppio clic termina il contorno (il nodo doppio lo toglie chi termina)
     if (tool === 'pen') {
-      onPenFinish();
+      if (!closedOnly) onPenFinish();
       return;
     }
     const [sx, sy] = pos(e);
     const hit = hitTest(sx, sy);
     if (hit.type !== 'node') return;
-    const kind = draft.paths[hit.ref.path].nodes[hit.ref.node].kind;
-    onCommit(setNodeKind(draft.paths, hit.ref, cycleKind(kind)), [hit.ref]);
+    const kind = paths[hit.ref.path].nodes[hit.ref.node].kind;
+    onCommit(setNodeKind(paths, hit.ref, cycleKind(kind)), [hit.ref]);
   };
 
   // --- Disegno --------------------------------------------------------------------------------------------------------
@@ -691,7 +782,7 @@ export function DrawingCanvas({ draft, contours, crossings, holes, selection, gr
     kind === 'corner' ? <rect x={-4.5} y={-4.5} width={9} height={9} /> : kind === 'symmetric' ? <polygon points="0,-6 6,0 0,6 -6,0" /> : <circle r={5} />;
 
   return (
-    <div ref={wrap} className="profile-editor__canvas" tabIndex={0} role="group" aria-label="Disegno del profilo" data-tool={tool} data-panning={panning || undefined}>
+    <div ref={wrap} className={`profile-editor__canvas${closedOnly ? ' profile-editor__canvas--plan' : ''}`} tabIndex={0} role="group" aria-label={label ?? 'Disegno del profilo'} data-tool={tool} data-panning={panning || undefined} data-closed-only={closedOnly || undefined}>
       <svg
         ref={svg}
         className="profile-editor__svg"
@@ -710,6 +801,7 @@ export function DrawingCanvas({ draft, contours, crossings, holes, selection, gr
         }}
         onDoubleClick={onDoubleClick}
         onContextMenu={(e) => e.preventDefault()}
+        style={sectionHot ? { cursor: 'ns-resize' } : undefined}
       >
         {/* In rotazione la parte non ruotata (a sinistra dell'asse, a destra con la vista specchiata) ha una tinta */}
         {rotate && outsideWidth > 0 && (
@@ -737,14 +829,27 @@ export function DrawingCanvas({ draft, contours, crossings, holes, selection, gr
             asse di rotazione
           </text>
         )}
+        {underlay?.({ toS, size })}
+        {section && (
+          <g className={`profile-editor__section${sectionHot ? ' profile-editor__section--hot' : ''}${tool === 'select' ? '' : ' profile-editor__section--off'}`} data-section={section.y.toFixed(3)}>
+            <line x1={0} x2={size.w} y1={toS([0, section.y])[1]} y2={toS([0, section.y])[1]} />
+            <g className="profile-editor__section-pill" data-section-pill="">
+              <title>{tool === 'select' ? 'Trascina per cambiare la quota di sezione' : 'Scegli Seleziona (V) per trascinare la quota di sezione'}</title>
+              <rect x={size.w - 8 - pillW} y={toS([0, section.y])[1] - 11} width={pillW} height={22} rx={11} />
+              <text x={size.w - 8 - pillW / 2} y={toS([0, section.y])[1] + 4} textAnchor="middle">
+                ↕ {section.label}
+              </text>
+            </g>
+          </g>
+        )}
         <path className="profile-editor__fill" fillRule="evenodd" d={fill} />
-        {draft.paths.map((c, pi) => (
+        {paths.map((c, pi) => (
           <path key={pi} className={`profile-editor__curve${holes[pi] ? ' profile-editor__curve--hole' : ''}`} d={contourPath(c, toS)} />
         ))}
         {/* Maniglie dei nodi selezionati e dei loro vicini */}
         {[...shown].map((key) => {
           const [pi, ni] = key.split(':').map(Number);
-          const n = draft.paths[pi].nodes[ni];
+          const n = paths[pi].nodes[ni];
           const np = toS(n.p);
           return (['in', 'out'] as const).map((side) => {
             const h = n[side];
@@ -759,7 +864,7 @@ export function DrawingCanvas({ draft, contours, crossings, holes, selection, gr
           });
         })}
         {/* Nodi: la forma dice il tipo (quadrato = spigolo, cerchio = liscio, rombo = simmetrico) */}
-        {draft.paths.map((c, pi) =>
+        {paths.map((c, pi) =>
           c.nodes.map((n, ni) => {
             const [x, y] = toS(n.p);
             const selected = selection.some((r) => r.path === pi && r.node === ni);
@@ -782,8 +887,8 @@ export function DrawingCanvas({ draft, contours, crossings, holes, selection, gr
           return <path className="profile-editor__preview" d={d} />;
         })()}
         {/* Chiusura con il trascinamento: il segmento dall'ultimo al primo nodo, con la maniglia che si sta disegnando */}
-        {tool === 'pen' && closing !== null && draft.paths[closing] && (() => {
-          const closed: PathContour = { ...draft.paths[closing], closed: true };
+        {tool === 'pen' && closing !== null && paths[closing] && (() => {
+          const closed: PathContour = { ...paths[closing], closed: true };
           const { cubic, straight } = segmentOf(closed, closed.nodes.length - 1);
           const pt = (q: Vec2) => toS(q).map(f1).join(' ');
           return <path className="profile-editor__preview" d={straight ? `M${pt(cubic[0])} L${pt(cubic[3])}` : `M${pt(cubic[0])} C${pt(cubic[1])} ${pt(cubic[2])} ${pt(cubic[3])}`} />;
@@ -792,63 +897,15 @@ export function DrawingCanvas({ draft, contours, crossings, holes, selection, gr
         {tool === 'pen' && hover && <circle className="profile-editor__snap" cx={toS(hover)[0]} cy={toS(hover)[1]} r={4} />}
         {rubber && <rect className="profile-editor__rubber" x={Math.min(rubber.x0, rubber.x1)} y={Math.min(rubber.y0, rubber.y1)} width={Math.abs(rubber.x1 - rubber.x0)} height={Math.abs(rubber.y1 - rubber.y0)} />}
       </svg>
-      <div className="profile-editor__tools" role="toolbar" aria-label="Strumenti di disegno">
-        <button type="button" aria-pressed={tool === 'select'} title="Seleziona (V): sposta nodi e maniglie (Alt: la maniglia si muove da sola e il nodo è uno spigolo), clic su una curva per selezionare tutto il contorno (trascinala per spostarlo)" onClick={() => onTool('select')}>
-          <MousePointer2 size={16} />
-          <span>Seleziona</span>
-        </button>
-        <button type="button" aria-pressed={tool === 'pen'} title="Penna (P): clic per uno spigolo, clic e trascina per una curva (tieni premuto Alt per uno spigolo), clic su una curva esistente per inserirvi un nodo (Ctrl o ⌘: no), clic su un estremo aperto per riprendere il contorno, clic sul primo nodo per chiudere (trascinando ne disegni la maniglia, Alt per uno spigolo), Invio per terminare" onClick={() => onTool('pen')}>
-          <PenTool size={16} />
-          <span>Penna</span>
-        </button>
-        <button type="button" aria-pressed={tool === 'pan'} title="Sposta vista (H): trascina per spostare il disegno nella vista. Si può anche tenere premuto Spazio, il tasto centrale o il destro" onClick={() => onTool('pan')}>
-          <Hand size={16} />
-          <span>Sposta vista</span>
-        </button>
-        <button type="button" aria-pressed={tool === 'rect'} title="Rettangolo (R): premi sul centro e trascina (Maiusc: quadrato). Nasce con quattro spigoli, modificabili come ogni contorno" onClick={() => onTool('rect')}>
-          <Square size={16} />
-          <span>Rettangolo</span>
-        </button>
-        <button type="button" aria-pressed={tool === 'ellipse'} title="Ellisse (C): premi sul centro e trascina (Maiusc: cerchio). Nasce con quattro nodi simmetrici" onClick={() => onTool('ellipse')}>
-          <Circle size={16} />
-          <span>Ellisse</span>
-        </button>
-        <button type="button" aria-pressed={tool === 'polygon'} title="Poligono regolare (G): premi sul centro e trascina, il primo vertice va verso il puntatore (Maiusc: angolo a multipli di 15°). Il numero di lati si sceglie nel campo Lati" onClick={() => onTool('polygon')}>
-          <Hexagon size={16} />
-          <span>Poligono</span>
-        </button>
-        {tool === 'polygon' && (
-          <div className="profile-editor__sides">
-            <NumberField label="Lati" min={POLYGON_SIDES.min} max={POLYGON_SIDES.max} integer value={sides} onCommit={setSides} />
-          </div>
-        )}
-        <button type="button" title="Importa SVG: aggiunge al disegno i contorni di un file SVG conservandone le curve (in millimetri, con la X del file e il fondo a y = 0)" onClick={() => fileInput.current?.click()}>
-          <Upload size={16} />
-          <span>Importa SVG</span>
-        </button>
-        <input
-          ref={fileInput}
-          type="file"
-          accept=".svg,image/svg+xml"
-          hidden
-          aria-label="File SVG da importare"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            // Si azzera il campo: lo stesso file si può importare di nuovo
-            e.target.value = '';
-            if (file) onImportSvg(file);
-          }}
-        />
-      </div>
       {rotate && outsideWidth >= OUTSIDE_LABEL_MIN && (
         <div className="profile-editor__flip" style={{ left: outsideX + outsideWidth / 2, top: size.h / 2 + 14 }}>
           <button type="button" title="Specchia la vista in orizzontale: la parte non ruotata passa dall'altro lato dell'asse, il disegno resta com'è" onClick={onFlip}>
-            <FlipHorizontal2 size={14} />
+            <TrianglesCenterlineDashedVertical size={14} />
             <span>Inverti asse di simmetria</span>
           </button>
         </div>
       )}
-      {draft.paths.length === 0 && (
+      {paths.length === 0 && !closedOnly && (
         <div className="profile-editor__empty" role="note">
           {tool === 'pen' ? 'Fai clic nel disegno per aggiungere il primo punto' : tool === 'rect' || tool === 'ellipse' || tool === 'polygon' ? 'Premi sul centro e trascina per disegnare la forma' : 'Scegli la Penna e fai clic per iniziare, oppure parti da una forma base (R, C, G) o da un SVG'}
         </div>

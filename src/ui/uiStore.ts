@@ -22,7 +22,7 @@ const cleanBedSide = (value: unknown, fallback: number): number =>
   typeof value === 'number' && Number.isFinite(value) ? Math.round(Math.min(BED_LIMITS.max, Math.max(BED_LIMITS.min, value)) * 10) / 10 : fallback;
 
 /** Le sole impostazioni di uno stato dello store. */
-const pickSettings = (s: Settings): Settings => ({ showDimensions: s.showDimensions, nudgeStep: s.nudgeStep, snapMove: s.snapMove, snapRotate: s.snapRotate, autosave: s.autosave, welcomeAlways: s.welcomeAlways, printChecks: s.printChecks, overhangAngle: s.overhangAngle, bedHeight: s.bedHeight, minWall: s.minWall });
+const pickSettings = (s: Settings): Settings => ({ showDimensions: s.showDimensions, nudgeStep: s.nudgeStep, snapMove: s.snapMove, snapRotate: s.snapRotate, autosave: s.autosave, welcomeAlways: s.welcomeAlways, printChecks: s.printChecks, overhangAngle: s.overhangAngle, bedHeight: s.bedHeight, minWall: s.minWall, experimentalPlan: s.experimentalPlan });
 
 /** Lato maggiore del piano (mm): limite morbido dei cursori delle misure. Il piano non ha altezza, quindi vale anche per lo Z. */
 export const bedReach = (bed: BedSize): number => Math.max(bed.width, bed.depth);
@@ -67,9 +67,11 @@ export interface Settings {
   bedHeight: number;
   /** Parete minima stampabile (mm): una parete più sottile è segnalata (due passate di un ugello da 0,4 mm sono 0,8 mm). */
   minWall: number;
+  /** Funzione sperimentale: nella modale del Profilo la vista Sagoma (rotazione lungo una sagoma vista dall'alto, non salvata con OK). */
+  experimentalPlan: boolean;
 }
 
-export const DEFAULT_SETTINGS: Settings = { showDimensions: true, nudgeStep: 1, snapMove: 1, snapRotate: 15, autosave: true, welcomeAlways: true, printChecks: true, overhangAngle: 45, bedHeight: 256, minWall: 0.8 };
+export const DEFAULT_SETTINGS: Settings = { showDimensions: true, nudgeStep: 1, snapMove: 1, snapRotate: 15, autosave: true, welcomeAlways: true, printChecks: true, overhangAngle: 45, bedHeight: 256, minWall: 0.8, experimentalPlan: false };
 
 /** Limiti dei valori numerici delle impostazioni. */
 export const SETTING_LIMITS = {
@@ -89,7 +91,7 @@ export function cleanSettings(value: unknown): Settings {
     const { min, max } = SETTING_LIMITS[key];
     return typeof n === 'number' && Number.isFinite(n) ? Math.round(Math.min(max, Math.max(min, n)) * 100) / 100 : DEFAULT_SETTINGS[key];
   };
-  const bool = (key: 'showDimensions' | 'autosave' | 'welcomeAlways' | 'printChecks') => (typeof v[key] === 'boolean' ? (v[key] as boolean) : DEFAULT_SETTINGS[key]);
+  const bool = (key: 'showDimensions' | 'autosave' | 'welcomeAlways' | 'printChecks' | 'experimentalPlan') => (typeof v[key] === 'boolean' ? (v[key] as boolean) : DEFAULT_SETTINGS[key]);
   return {
     showDimensions: bool('showDimensions'),
     nudgeStep: num('nudgeStep'),
@@ -101,6 +103,7 @@ export function cleanSettings(value: unknown): Settings {
     overhangAngle: num('overhangAngle'),
     bedHeight: num('bedHeight'),
     minWall: num('minWall'),
+    experimentalPlan: bool('experimentalPlan'),
   };
 }
 

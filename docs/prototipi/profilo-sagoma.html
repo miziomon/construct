@@ -1,0 +1,1046 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sagoma di rotazione</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+</head>
+<body>
+<style>
+/* Prototipo della "Sagoma di rotazione" del Profilo: la cornice imita la modale di Construct. Token ripresi da
+   src/styles/abstracts/_tokens.scss e dal prototipo dei Bézier. */
+:root {
+  --bg: #e9eff6; --panel: #f8f9fc; --raised: #ffffff; --border: #cdd5e3;
+  --text: #1e2433; --muted: #4f5b73;
+  --accent: #2f5fc7; --accent-strong: #3563d1; --accent-soft: rgba(79, 124, 230, 0.16);
+  --danger: #c23b3b; --ok: #23794a; --warn: #9a5b00; --slice: #c8651b;
+  --grid: #dfe6f0; --grid-major: #c3cddd; --mesh: #9db8ea; --code-bg: #f1f4fa;
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14171c; --panel: #1b2027; --raised: #232a33; --border: #2d3540;
+    --text: #e6e9ee; --muted: #8b95a3;
+    --accent: #4da3ff; --accent-strong: #2a73d0; --accent-soft: rgba(77, 163, 255, 0.16);
+    --danger: #ff5d5d; --ok: #46c47a; --warn: #f0b429; --slice: #ff9a4d;
+    --grid: #232a33; --grid-major: #333c48; --mesh: #6c9ee0; --code-bg: #10141a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14171c; --panel: #1b2027; --raised: #232a33; --border: #2d3540;
+  --text: #e6e9ee; --muted: #8b95a3;
+  --accent: #4da3ff; --accent-strong: #2a73d0; --accent-soft: rgba(77, 163, 255, 0.16);
+  --danger: #ff5d5d; --ok: #46c47a; --warn: #f0b429; --slice: #ff9a4d;
+  --grid: #232a33; --grid-major: #333c48; --mesh: #6c9ee0; --code-bg: #10141a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  margin: 0; background: var(--bg); color: var(--text); font-family: var(--font-sans); font-size: 13px; line-height: 1.45;
+  padding-block: 16px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.page { max-width: 1320px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+.top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; }
+.top__titles { min-width: 0; flex: 1 1 360px; }
+.top h1 { margin: 0 0 2px; font-size: 20px; font-weight: 650; letter-spacing: -0.01em; text-wrap: balance; }
+.top p { margin: 0; color: var(--muted); max-width: 78ch; }
+.lbl { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 28px; padding: 0 10px;
+  background: var(--raised); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; white-space: nowrap;
+}
+.btn:hover:not(:disabled) { border-color: var(--accent); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn--primary { background: var(--accent-strong); border-color: var(--accent-strong); color: #fff; font-weight: 600; }
+.btn--sm { min-height: 24px; padding: 0 8px; font-size: 12px; }
+select, input[type="number"] { background: var(--raised); border: 1px solid var(--border); border-radius: 4px; min-height: 28px; padding: 0 6px; }
+input[type="range"] { width: 100%; accent-color: var(--accent); min-width: 0; margin: 0; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: var(--raised); max-width: 100%; }
+.seg button { background: transparent; border: 0; border-right: 1px solid var(--border); padding: 0 10px; min-height: 26px; cursor: pointer; }
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.seg--full { display: flex; width: 100%; }
+.seg--full button { flex: 1; padding: 0 4px; }
+.seg--wrap { flex-wrap: wrap; }
+.seg--wrap button { flex: 1 0 auto; border-bottom: 1px solid var(--border); }
+
+/* Cornice della modale */
+.frame {
+  display: grid; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+  height: clamp(640px, calc(100dvh - 190px), 860px);
+  grid-template-columns: minmax(0, 1fr) 340px; grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-areas: "head head" "tools opts" "draw opts" "foot foot";
+}
+.head { grid-area: head; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.head h2 { margin: 0; font-size: 14px; font-weight: 650; }
+.tools { grid-area: tools; display: flex; align-items: center; gap: 8px 10px; padding: 8px 12px; border-bottom: 1px solid var(--border); flex-wrap: wrap; min-width: 0; }
+.tools .sep { width: 1px; align-self: stretch; background: var(--border); margin: 2px 2px; }
+.draw { grid-area: draw; display: grid; grid-template-columns: minmax(0, 1fr); gap: 1px; background: var(--border); min-width: 0; min-height: 0; }
+.draw[data-view="both"] { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.draw[data-view="plan"] #paneProfile, .draw[data-view="profile"] #panePlan { display: none; }
+.pane { position: relative; background: var(--bg); min-width: 0; min-height: 0; overflow: hidden; }
+.pane svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; user-select: none; -webkit-user-select: none; }
+.pane__tag { position: absolute; left: 10px; top: 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); pointer-events: none; z-index: 1; }
+.pane__hint { position: absolute; left: 10px; bottom: 8px; right: 10px; font-size: 12px; color: var(--muted); background: color-mix(in srgb, var(--panel) 88%, transparent); border: 1px solid var(--border); border-radius: 6px; padding: 4px 9px; width: fit-content; max-width: calc(100% - 20px); pointer-events: none; }
+.legend { position: absolute; right: 10px; top: 8px; display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--muted); background: color-mix(in srgb, var(--panel) 88%, transparent); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; pointer-events: none; }
+.legend i { display: inline-block; width: 14px; height: 9px; margin-right: 6px; vertical-align: -1px; border-radius: 2px; }
+.opts { grid-area: opts; overflow-y: auto; min-width: 0; min-height: 0; border-left: 1px solid var(--border); background: var(--panel); grid-row: 2 / 4; }
+.opts section { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.opts h3 { margin: 0 0 8px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.row { display: grid; grid-template-columns: 112px minmax(0, 1fr) 56px; align-items: center; gap: 8px; margin: 5px 0; color: var(--muted); }
+.row output { text-align: right; font-variant-numeric: tabular-nums; color: var(--text); font-size: 12px; }
+.row--chk { grid-template-columns: 1fr; }
+.row--chk label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.row--sel { grid-template-columns: 112px minmax(0, 1fr); }
+.note { margin: 6px 0 0; font-size: 12px; color: var(--muted); }
+.note b { color: var(--text); font-weight: 600; }
+.glbox { position: relative; height: 236px; background: var(--raised); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 8px; }
+.glbox canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+.glbox .msg { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); padding: 12px; text-align: center; }
+.glbox .busy { position: absolute; right: 8px; top: 6px; font-size: 11px; font-family: var(--font-mono); color: var(--muted); }
+.meas { width: 100%; border-collapse: collapse; font-size: 12px; }
+.meas td { padding: 2px 0; }
+.meas td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+.meas tr.hl td { color: var(--slice); font-weight: 600; }
+.foot { grid-area: foot; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 8px 12px; border-top: 1px solid var(--border); }
+.foot__st { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; min-width: 0; flex: 1 1 280px; color: var(--muted); }
+.foot__btns { display: flex; gap: 8px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 1px 9px; border-radius: 999px; border: 1px solid var(--border); background: var(--raised); font-size: 12px; }
+.chip--warn { color: var(--warn); border-color: currentColor; }
+.chip--bad { color: var(--danger); border-color: currentColor; }
+.chip--ok { color: var(--ok); }
+.chip--mono { font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+
+/* Elementi SVG */
+.g-minor { stroke: var(--grid); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.g-major { stroke: var(--grid-major); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.ax { stroke: var(--muted); stroke-width: 1; opacity: 0.55; vector-effect: non-scaling-stroke; }
+.ax-rot { stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 8 5; vector-effect: non-scaling-stroke; }
+.ing { fill: var(--accent); fill-opacity: 0.30; fill-rule: evenodd; stroke: none; }
+.lvl { fill: none; stroke: var(--muted); stroke-width: 1; opacity: 0.55; vector-effect: non-scaling-stroke; }
+.outl { fill: none; stroke: var(--accent); stroke-width: 2.2; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.slc { fill: var(--slice); fill-opacity: 0.30; fill-rule: evenodd; stroke: var(--slice); stroke-width: 1.6; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.pf { fill: var(--accent); fill-opacity: 0.22; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.pf-ghost { fill: none; stroke: var(--muted); stroke-width: 1.2; stroke-dasharray: 5 4; vector-effect: non-scaling-stroke; }
+.zline { stroke: var(--slice); stroke-width: 1.6; stroke-dasharray: 6 4; vector-effect: non-scaling-stroke; }
+.lblt { fill: var(--muted); font-family: var(--font-sans); }
+.lblt--acc { fill: var(--accent); }
+.lblt--sl { fill: var(--slice); }
+.tint { fill: var(--accent); fill-opacity: 0.07; stroke: none; }
+.dline { fill: none; stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+.hdl { fill: var(--raised); stroke: var(--accent); stroke-width: 2; cursor: grab; vector-effect: non-scaling-stroke; }
+.hdl.pin { fill: var(--accent); }
+.hdl:hover { stroke-width: 3; }
+#svgPlan[data-free="1"] { cursor: crosshair; }
+
+.notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+.notes section { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+.notes h3 { margin: 0 0 6px; font-size: 13px; }
+.notes ul { margin: 0; padding-left: 18px; color: var(--muted); }
+.notes li { margin: 3px 0; }
+.notes li b { color: var(--text); font-weight: 600; }
+
+@media (max-width: 900px) {
+  .frame { height: auto; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; grid-template-areas: "head" "tools" "draw" "opts" "foot"; }
+  .opts { grid-row: auto; border-left: 0; border-top: 1px solid var(--border); overflow: visible; }
+  .draw { height: 62vh; min-height: 380px; }
+  .draw[data-view="both"] { grid-template-columns: minmax(0, 1fr); grid-template-rows: 1fr 1fr; height: 120vh; }
+}
+</style>
+<div class="page">
+  <header class="top">
+    <div class="top__titles">
+      <h1>Sagoma di rotazione del Profilo</h1>
+      <p>Prototipo dello studio <code>docs/studio-profili-sagoma.md</code>: oltre al cerchio, il Profilo si ruota seguendo una <b>sagoma vista dall'alto</b> (poligoni, stelle, rettangoli e squircle con angoli arrotondati, forme libere con simmetria). L'anteprima 3D è un'approssimazione costruita con la tecnica «anelli con lo stesso numero di vertici», non il kernel di manifold. <b>Questa pagina è la prima prova della geometria</b>: l'interfaccia vera, con gli stessi strumenti dell'editor del profilo, è nella modale del Profilo (Impostazioni &gt; Funzioni sperimentali).</p>
+    </div>
+    <label class="lbl">Tema
+      <select id="theme"><option value="auto">Automatico</option><option value="light">Chiaro</option><option value="dark">Scuro</option></select>
+    </label>
+  </header>
+
+  <div class="frame">
+    <div class="head">
+      <h2>Profilo rotazionale</h2>
+      <div class="seg" data-seg="view" role="group" aria-label="Vista">
+        <button data-v="profile">Profilo</button><button data-v="plan">Sagoma (dall'alto)</button><button data-v="both">Entrambe</button>
+      </div>
+    </div>
+
+    <div class="tools">
+      <span class="lbl">Forma</span>
+      <div class="seg" data-seg="kind" role="group" aria-label="Forma della sagoma">
+        <button data-v="circle">Cerchio / ellisse</button><button data-v="polygon">Poligono</button><button data-v="rect">Rettangolo</button><button data-v="star">Stella</button><button data-v="free">Libera</button>
+      </div>
+      <span class="sep"></span>
+      <span class="lbl">Prova</span>
+      <button class="btn btn--sm" data-preset="circle">Cerchio</button>
+      <button class="btn btn--sm" data-preset="squircle">Squircle</button>
+      <button class="btn btn--sm" data-preset="hex">Esagono tondo</button>
+      <button class="btn btn--sm" data-preset="star">Stella morbida</button>
+      <button class="btn btn--sm" data-preset="oval">Ovale</button>
+    </div>
+
+    <div class="draw" id="draw" data-view="plan">
+      <div class="pane" id="paneProfile">
+        <span class="pane__tag">Profilo (sezione)</span>
+        <svg id="svgProfile" aria-label="Profilo da ruotare"></svg>
+        <div class="legend">
+          <span><i style="border-top: 2px dashed var(--accent); height: 0; margin-top: 4px"></i>asse di rotazione</span>
+          <span><i style="border-top: 2px dashed var(--slice); height: 0; margin-top: 4px"></i>quota di sezione (trascina)</span>
+        </div>
+      </div>
+      <div class="pane" id="panePlan">
+        <span class="pane__tag">Sagoma (vista dall'alto)</span>
+        <svg id="svgPlan" aria-label="Sagoma vista dall'alto"></svg>
+        <div class="legend">
+          <span><i style="background: color-mix(in srgb, var(--accent) 35%, transparent); border: 1px solid var(--accent)"></i>ingombro del profilo</span>
+          <span><i style="background: color-mix(in srgb, var(--slice) 35%, transparent); border: 1px solid var(--slice)"></i>sezione alla quota</span>
+          <span><i style="border-top: 1px solid var(--muted); height: 0; margin-top: 4px"></i>livelli a passo costante</span>
+        </div>
+        <span class="pane__hint" id="planHint" hidden></span>
+      </div>
+    </div>
+
+    <aside class="opts" aria-label="Opzioni">
+      <section>
+        <div class="glbox">
+          <canvas id="gl" aria-label="Anteprima 3D"></canvas>
+          <div class="msg" id="glMsg" hidden>WebGL 2 non disponibile: l'anteprima 3D non può essere mostrata.</div>
+          <span class="busy" id="glInfo"></span>
+        </div>
+        <div class="row row--chk"><label><input type="checkbox" data-k="half"> Taglia a metà per vedere le pareti</label></div>
+        <div class="row row--chk"><label><input type="checkbox" data-k="levels"> Mostra i livelli nella vista dall'alto</label></div>
+      </section>
+
+      <section>
+        <h3>Sagoma</h3>
+        <div class="row" data-show="kind=polygon|star"><span>Lati / punte</span><input type="range" data-k="n" min="3" max="16" step="1"><output data-o="n"></output></div>
+        <div class="row" data-show="kind=star"><span>Rapporto interno</span><input type="range" data-k="ratio" min="0.2" max="0.95" step="0.01"><output data-o="ratio"></output></div>
+        <div class="row" data-show="kind=polygon|star"><span>Rotazione</span><input type="range" data-k="rot" min="-180" max="180" step="1"><output data-o="rot"></output></div>
+        <div class="row" data-show="kind=polygon|rect|star"><span>Raggio angoli</span><input type="range" data-k="cornerR" min="0" max="30" step="0.5"><output data-o="cornerR"></output></div>
+        <div class="row" data-show="kind=star"><span>Raggio angoli interni</span><input type="range" data-k="innerR" min="0" max="15" step="0.5"><output data-o="innerR"></output></div>
+        <div class="row row--sel" data-show="kind=polygon|rect|star"><span>Tipo di angolo</span>
+          <div class="seg seg--full" data-seg="cornerType"><button data-v="arc">Arco</button><button data-v="smooth">Continuo (Apple)</button></div></div>
+        <div class="row" data-show="kind=polygon|rect|star"><span>Morbidezza</span><input type="range" data-k="smooth" min="0" max="1" step="0.01"><output data-o="smooth"></output></div>
+        <div class="row" data-show="kind=circle|polygon|rect|star"><span>Scala X</span><input type="range" data-k="sx" min="40" max="200" step="1"><output data-o="sx"></output></div>
+        <div class="row" data-show="kind=circle|polygon|rect|star"><span>Scala Y</span><input type="range" data-k="sy" min="40" max="200" step="1"><output data-o="sy"></output></div>
+        <div class="row row--sel" data-show="kind=free"><span>Simmetria</span>
+          <select data-k="sym"><option value="none">Nessuna (contorno intero)</option><option value="v">Verticale: disegno la metà destra</option><option value="h">Orizzontale: disegno la metà alta</option><option value="q">Quattro quarti: disegno il quarto in alto a destra</option></select></div>
+        <div class="row row--chk" data-show="kind=free"><label><input type="checkbox" data-k="curved"> Curve lisce tra i punti</label></div>
+        <p class="note" data-show="kind=free">Clic nel vuoto: aggiunge un punto. Trascina: sposta. Doppio clic o Alt+clic su un punto: lo toglie. I punti sugli assi restano sugli assi. Il centro deve «vedere» tutto il bordo (forma stellata).</p>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px">
+          <button class="btn btn--sm" id="btnBreak" data-show="kind=circle|polygon|rect|star" title="Trasforma la forma in punti che si possono spostare">Rompi la forma</button>
+          <button class="btn btn--sm" id="btnRegen" data-show="kind=free" title="Riparte da una sagoma campionata dalla forma attuale">Rigenera i punti</button>
+        </div>
+      </section>
+
+      <section>
+        <h3>Modello e adattamento</h3>
+        <div class="seg seg--full" data-seg="model"><button data-v="offset">Equidistante</button><button data-v="scale">Omotetico</button></div>
+        <p class="note" id="modelNote"></p>
+        <div class="seg seg--full" data-seg="fit" style="margin-top:10px"><button data-v="planToProfile">Sagoma segue profilo</button><button data-v="profileToPlan">Profilo segue sagoma</button></div>
+        <p class="note" id="fitNote"></p>
+        <div class="row" data-show="fit=profileToPlan" style="margin-top:8px"><span>Larghezza sagoma</span><input type="range" data-k="planW" min="30" max="140" step="1"><output data-o="planW"></output></div>
+      </section>
+
+      <section>
+        <h3>Profilo di esempio</h3>
+        <div class="row row--sel"><span>Profilo</span><select data-k="profileId" id="profileSel"></select></div>
+        <p class="note">Nell'app il profilo è quello del disegno a Bézier già esistente; qui è fisso.</p>
+        <div class="row" style="margin-top:8px"><span>Quota sezione</span><input type="range" data-k="z" min="0" max="1" step="0.005"><output data-o="z"></output></div>
+      </section>
+
+      <section>
+        <h3>Misure</h3>
+        <table class="meas" id="meas"></table>
+      </section>
+    </aside>
+
+    <div class="foot">
+      <div class="foot__st" id="chips"></div>
+      <div class="foot__btns"><button class="btn" id="btnReset">Ripristina</button><button class="btn btn--primary" disabled title="Prototipo: nulla viene salvato">OK</button></div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <section>
+      <h3>Come leggere il prototipo</h3>
+      <ul>
+        <li><b>Equidistante</b>: ogni punto del profilo a distanza <i>x</i> dall'asse diventa l'anello della sagoma rientrato di <i>R − x</i>. Pareti di spessore costante, angoli convessi che si stringono fino a diventare vivi, angoli interni delle stelle che si allargano.</li>
+        <li><b>Omotetico</b>: l'anello è la sagoma ridotta in scala di <i>x / R</i>. Servono meno calcoli, ma sui lati lunghi le pareti si assottigliano. Provare un rettangolo con scala X 200% e il bicchiere.</li>
+        <li><b>Sagoma segue profilo</b>: la larghezza massima della sagoma è il raggio massimo del profilo. <b>Profilo segue sagoma</b>: la sagoma ha la sua larghezza e il profilo si scala solo in X (non in altezza).</li>
+      </ul>
+    </section>
+    <section>
+      <h3>Che cosa è approssimato</h3>
+      <ul>
+        <li>Il solido è una mesh di anelli campionati lungo raggi uscenti dal centro (i vertici degli spigoli sono aggiunti ai raggi). Nelle <b>creste</b> (cupola su un rettangolo) le facce sono a ventaglio verso il centro invece che piane.</li>
+        <li>La distanza dal bordo viene da un campo di distanza campionato sui raggi: nel codice di prodotto le forme parametriche avrebbero la formula chiusa.</li>
+        <li>L'angolo «continuo» è una Bézier cubica con tangenti lunghe 1,5 volte quelle dell'arco (non l'algoritmo esatto di Figma).</li>
+        <li>L'anteprima non verifica che la mesh sia una varietà valida: lo studio indica uno spike di manifold da fare prima di implementare.</li>
+      </ul>
+    </section>
+    <section>
+      <h3>Domande aperte (vedi lo studio)</h3>
+      <ul>
+        <li>Con «Profilo segue sagoma» e il modello equidistante le pareti si scalano con la larghezza: serve una terza variante a spessori in millimetri fissi?</li>
+        <li>Ellisse molto schiacciata nel modello equidistante: la cresta lungo l'asse maggiore è il comportamento voluto?</li>
+        <li>Forme non stellate (a C, a fagiolo): rifiutarle o usare un campo di distanza completo?</li>
+      </ul>
+    </section>
+  </div>
+</div>
+<script>
+(() => {
+'use strict';
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const TAU = Math.PI * 2, D2R = Math.PI / 180;
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const nf = (d) => new Intl.NumberFormat('it-IT', { minimumFractionDigits: d, maximumFractionDigits: d });
+const nf0 = nf(0), nf1 = nf(1), nf2 = nf(2);
+const SVGNS = 'http://www.w3.org/2000/svg';
+
+/* ============================== Profili di esempio (x = distanza dall'asse, z = quota) ============================== */
+const arcPts = (cx, cz, rx, rz, a0, a1, n) => {
+  const o = [];
+  for (let i = 0; i <= n; i++) { const a = (a0 + (a1 - a0) * i / n) * D2R; o.push([cx + rx * Math.cos(a), cz + rz * Math.sin(a)]); }
+  return o;
+};
+const PROFILES = {
+  bicchiere: { name: 'Bicchiere (parete 2 mm)', pts: [[0, 0], [30, 0], [30, 50], [28, 50], [28, 3], [0, 3]] },
+  vaso: {
+    name: 'Vaso (parete 2 mm)',
+    pts: (() => {
+      const r = (z) => 15 + 13 * Math.sin(Math.PI * Math.pow(z / 70, 0.75));
+      const o = [[0, 0]];
+      for (let i = 0; i <= 28; i++) o.push([r(i * 2.5), i * 2.5]);
+      for (let i = 28; i >= 2; i--) o.push([r(i * 2.5) - 2, i * 2.5]);
+      o.push([r(3) - 2, 3], [0, 3]);
+      return o;
+    })(),
+  },
+  ciotola: {
+    name: 'Ciotola (parete 2 mm)',
+    pts: [...arcPts(0, 28, 30, 28, -90, 0, 24).map(([x, z]) => [x, z]), ...arcPts(0, 28, 28, 26, 0, -90, 24)],
+  },
+  cupola: { name: 'Cupola piena', pts: [[0, 0], ...arcPts(0, 0, 30, 22, 0, 90, 28)] },
+  pomello: {
+    name: 'Pomello',
+    pts: (() => {
+      const R = 14, cz = 24, z0 = 11, a0 = Math.asin((z0 - cz) / R) / D2R, nx = R * Math.cos(a0 * D2R);
+      return [[0, 0], [20, 0], [20, 3], [nx, 3], [nx, z0], ...arcPts(0, cz, R, R, a0, 90, 24).slice(0, -1), [0, cz + R]];
+    })(),
+  },
+  ciambella: { name: 'Ciambella (non tocca l\'asse)', pts: arcPts(22, 8, 8, 8, 0, 360, 40).slice(0, -1) },
+};
+
+/* ============================== Stato ============================== */
+const DEFAULTS = {
+  view: 'plan', profileId: 'bicchiere',
+  kind: 'circle', n: 6, ratio: 0.5, rot: 0, cornerR: 6, innerR: 3, cornerType: 'arc', smooth: 0.6, sx: 100, sy: 100,
+  sym: 'none', curved: true, freePts: null,
+  model: 'offset', fit: 'planToProfile', planW: 70,
+  z: 0.5, levels: true, half: false,
+};
+const S = JSON.parse(JSON.stringify(DEFAULTS));
+S.drag = false; // true durante il trascinamento di un cursore: qualità ridotta
+
+/* ============================== Geometria 2D di base ============================== */
+const crs = (ax, ay, bx, by) => ax * by - ay * bx;
+const signedArea = (p) => { let a = 0; for (let i = 0; i < p.length; i++) { const q = p[(i + 1) % p.length]; a += p[i][0] * q[1] - q[0] * p[i][1]; } return a / 2; };
+const ensureCCW = (p) => (signedArea(p) < 0 ? p.slice().reverse() : p);
+const maxAbsX = (p) => { let m = 0; for (const q of p) m = Math.max(m, Math.abs(q[0])); return m; };
+
+function regular(n, r, startDeg) { const o = []; for (let i = 0; i < n; i++) { const a = (startDeg + 360 * i / n) * D2R; o.push([r * Math.cos(a), r * Math.sin(a)]); } return o; }
+function starVerts(n, ratio, startDeg) {
+  const o = [];
+  for (let i = 0; i < 2 * n; i++) { const a = (startDeg + 180 * i / n) * D2R, r = i % 2 ? ratio : 1; o.push([r * Math.cos(a), r * Math.sin(a)]); }
+  return o;
+}
+
+/* Arrotonda i vertici di un poligono (antiorario). rad[i] = raggio in unità; type 'arc' o 'smooth'.
+   Angolo continuo: cubica che parte più lontano dallo spigolo (tangente 1 + 0,5·m volte quella dell'arco). */
+function roundPolygon(V, rad, type, smooth) {
+  const m = V.length, out = [];
+  let limited = false;
+  for (let i = 0; i < m; i++) {
+    const P = V[(i + m - 1) % m], C = V[i], N = V[(i + 1) % m], r = rad[i];
+    if (!(r > 1e-9)) { out.push(C); continue; }
+    let e1x = P[0] - C[0], e1y = P[1] - C[1]; const l1 = Math.hypot(e1x, e1y); e1x /= l1; e1y /= l1;
+    let e2x = N[0] - C[0], e2y = N[1] - C[1]; const l2 = Math.hypot(e2x, e2y); e2x /= l2; e2y /= l2;
+    const phi = Math.acos(clamp(e1x * e2x + e1y * e2y, -1, 1));
+    if (phi < 1e-6 || phi > Math.PI - 1e-6) { out.push(C); continue; }
+    let t = r / Math.tan(phi / 2);
+    const tmax = 0.5 * Math.min(l1, l2);
+    if (t > tmax) { t = tmax; limited = true; }
+    if (type === 'smooth') {
+      const T = Math.min(t * (1 + 0.5 * smooth), tmax);
+      const c0 = (4 / 3) * Math.tan((Math.PI - phi) / 4) * Math.tan(phi / 2);
+      const cs = Math.min(c0 * (1 + 0.45 * smooth), 0.95);
+      const A = [C[0] + e1x * T, C[1] + e1y * T], B = [C[0] + e2x * T, C[1] + e2y * T];
+      const C1 = [A[0] - e1x * T * cs, A[1] - e1y * T * cs], C2 = [B[0] - e2x * T * cs, B[1] - e2y * T * cs];
+      const steps = 16;
+      for (let s = 0; s <= steps; s++) {
+        const u = s / steps, w = 1 - u;
+        out.push([w * w * w * A[0] + 3 * w * w * u * C1[0] + 3 * w * u * u * C2[0] + u * u * u * B[0],
+                  w * w * w * A[1] + 3 * w * w * u * C1[1] + 3 * w * u * u * C2[1] + u * u * u * B[1]]);
+      }
+    } else {
+      const rEff = t * Math.tan(phi / 2);
+      let bx = e1x + e2x, by = e1y + e2y; const bl = Math.hypot(bx, by); bx /= bl; by /= bl;
+      const dc = rEff / Math.sin(phi / 2);
+      const cx = C[0] + bx * dc, cy = C[1] + by * dc;
+      const a0 = Math.atan2(C[1] + e1y * t - cy, C[0] + e1x * t - cx);
+      const a1 = Math.atan2(C[1] + e2y * t - cy, C[0] + e2x * t - cx);
+      let d = a1 - a0; while (d > Math.PI) d -= TAU; while (d < -Math.PI) d += TAU;
+      const steps = Math.max(2, Math.ceil(Math.abs(d) / (4 * D2R)));
+      for (let s = 0; s <= steps; s++) { const a = a0 + d * s / steps; out.push([cx + rEff * Math.cos(a), cy + rEff * Math.sin(a)]); }
+    }
+  }
+  return { pts: out, limited };
+}
+
+function catmull(P, per = 10) {
+  const n = P.length, o = [];
+  for (let i = 0; i < n; i++) {
+    const p0 = P[(i + n - 1) % n], p1 = P[i], p2 = P[(i + 1) % n], p3 = P[(i + 2) % n];
+    for (let s = 0; s < per; s++) {
+      const u = s / per, u2 = u * u, u3 = u2 * u;
+      o.push([0.5 * ((2 * p1[0]) + (-p0[0] + p2[0]) * u + (2 * p0[0] - 5 * p1[0] + 4 * p2[0] - p3[0]) * u2 + (-p0[0] + 3 * p1[0] - 3 * p2[0] + p3[0]) * u3),
+              0.5 * ((2 * p1[1]) + (-p0[1] + p2[1]) * u + (2 * p0[1] - 5 * p1[1] + 4 * p2[1] - p3[1]) * u2 + (-p0[1] + 3 * p1[1] - 3 * p2[1] + p3[1]) * u3)]);
+    }
+  }
+  return o;
+}
+
+function rdp(pts, eps) {
+  const keep = new Uint8Array(pts.length); keep[0] = keep[pts.length - 1] = 1;
+  const stack = [[0, pts.length - 1]];
+  while (stack.length) {
+    const [a, b] = stack.pop();
+    let dm = 0, im = -1;
+    const [ax, ay] = pts[a], [bx, by] = pts[b], L = Math.hypot(bx - ax, by - ay) || 1e-12;
+    for (let i = a + 1; i < b; i++) { const d = Math.abs(crs(bx - ax, by - ay, pts[i][0] - ax, pts[i][1] - ay)) / L; if (d > dm) { dm = d; im = i; } }
+    if (dm > eps) { keep[im] = 1; stack.push([a, im], [im, b]); }
+  }
+  return pts.filter((_, i) => keep[i]);
+}
+
+/* ============================== Forma libera: punti salvati in unità (larghezza massima ≈ 1) ============================== */
+function mirrorJoin(pts, m) { const o = pts.slice(); for (let i = pts.length - 2; i >= 1; i--) o.push(m(pts[i])); return o; }
+function fullFromFree(pts, sym) {
+  if (sym === 'v') return mirrorJoin(pts, (p) => [-p[0], p[1]]);
+  if (sym === 'h') return mirrorJoin(pts, (p) => [p[0], -p[1]]);
+  if (sym === 'q') {
+    const right = pts.concat(pts.slice(0, -1).reverse().map((p) => [p[0], -p[1]]));
+    return mirrorJoin(right, (p) => [-p[0], p[1]]);
+  }
+  return pts.slice();
+}
+
+/* ============================== Costruzione della sagoma (in mm) ============================== */
+function buildPlan(St, Rt) {
+  const sx = St.sx / 100, sy = St.sy / 100;
+  if (St.kind === 'circle') {
+    const f = Rt / sx, N = 192, pts = [];
+    for (let i = 0; i < N; i++) { const a = TAU * i / N; pts.push([Math.cos(a) * sx * f, Math.sin(a) * sy * f]); }
+    return { pts, feats: [], f, limited: false, Rt, exactCircle: Math.abs(sx - sy) < 1e-9 };
+  }
+  if (St.kind === 'free') {
+    const base = fullFromFree(St.freePts, St.sym);
+    const poly = ensureCCW(St.curved ? catmull(base) : base);
+    const hx = maxAbsX(poly) || 1, f = Rt / hx;
+    const feats = St.curved ? [] : base.map((p) => Math.atan2(p[1], p[0]));
+    return { pts: poly.map((p) => [p[0] * f, p[1] * f]), feats, f, limited: false, Rt };
+  }
+  const V0 = St.kind === 'rect' ? [[1, 1], [-1, 1], [-1, -1], [1, -1]]
+    : St.kind === 'polygon' ? regular(St.n, 1, 90 + St.rot) : starVerts(St.n, St.ratio, 90 + St.rot);
+  const V = V0.map(([x, y]) => [x * sx, y * sy]);
+  const isInner = (i) => St.kind === 'star' && i % 2 === 1;
+  let f = Rt / maxAbsX(V), res = null;
+  for (let it = 0; it < 8; it++) {
+    const rad = V.map((_, i) => (isInner(i) ? St.innerR : St.cornerR) / f);
+    res = roundPolygon(V, rad, St.cornerType, St.smooth);
+    const fn = Rt / maxAbsX(res.pts);
+    const done = Math.abs(fn - f) < 1e-7 * f; f = fn;
+    if (done) break;
+  }
+  return { pts: res.pts.map((p) => [p[0] * f, p[1] * f]), feats: V.map((v) => Math.atan2(v[1], v[0])), f, limited: res.limited, Rt };
+}
+
+/* ============================== Raggi dal centro, campo di distanza e anelli ============================== */
+function rayHits(pts, th) {
+  const e0 = Math.cos(th), e1 = Math.sin(th), hits = [];
+  for (let i = 0; i < pts.length; i++) {
+    const A = pts[i], B = pts[(i + 1) % pts.length], dx = B[0] - A[0], dy = B[1] - A[1];
+    const den = crs(e0, e1, dx, dy);
+    if (Math.abs(den) < 1e-12) continue;
+    const t = crs(A[0], A[1], dx, dy) / den, u = crs(A[0], A[1], e0, e1) / den;
+    if (t > 1e-9 && u >= -1e-9 && u <= 1 + 1e-9) hits.push(t);
+  }
+  return hits;
+}
+function radialAt(pts, th) { const h = rayHits(pts, th); return h.length ? Math.max(...h) : 0; }
+
+function prepare(plan, K, M) {
+  const size = plan.Rt;
+  const angs = [];
+  for (let i = 0; i < K; i++) angs.push(i * TAU / K);
+  for (const a of plan.feats) angs.push(((a % TAU) + TAU) % TAU);
+  angs.sort((a, b) => a - b);
+  const th = [];
+  for (const a of angs) if (!th.length || a - th[th.length - 1] > 1e-5) th.push(a);
+  if (th.length > 1 && th[0] + TAU - th[th.length - 1] < 1e-5) th.pop();
+  const n = th.length, R = new Float64Array(n), cos = new Float64Array(n), sin = new Float64Array(n);
+  let ok = true;
+  for (let k = 0; k < n; k++) {
+    cos[k] = Math.cos(th[k]); sin[k] = Math.sin(th[k]);
+    const hits = rayHits(plan.pts, th[k]).sort((a, b) => a - b);
+    if (!hits.length) { ok = false; R[k] = 0; continue; }
+    let clusters = 1;
+    for (let i = 1; i < hits.length; i++) if (hits[i] - hits[i - 1] > 1e-6 * size) clusters++;
+    if (clusters > 1) ok = false;
+    R[k] = hits[hits.length - 1];
+  }
+  return { th, K: n, M, R, cos, sin, size, ok, sdf: null, inr: 0, plan };
+}
+function ensureSdf(prep) {
+  if (prep.sdf) return;
+  const { K, M, R, cos, sin, plan } = prep, P = plan.pts, np = P.length;
+  const xs = new Float64Array(np), ys = new Float64Array(np);
+  P.forEach((p, i) => { xs[i] = p[0]; ys[i] = p[1]; });
+  const sdf = new Float32Array(K * (M + 1));
+  let inr = 0;
+  for (let k = 0; k < K; k++) {
+    for (let m = 0; m <= M; m++) {
+      const t = R[k] * m / M, px = t * cos[k], py = t * sin[k];
+      let best = 1e18;
+      for (let i = 0, j = np - 1; i < np; j = i++) {
+        const ax = xs[j], ay = ys[j], bx = xs[i] - ax, by = ys[i] - ay;
+        const l2 = bx * bx + by * by;
+        let u = l2 > 0 ? ((px - ax) * bx + (py - ay) * by) / l2 : 0; u = u < 0 ? 0 : u > 1 ? 1 : u;
+        const qx = px - ax - u * bx, qy = py - ay - u * by, d2 = qx * qx + qy * qy;
+        if (d2 < best) best = d2;
+      }
+      const d = Math.sqrt(best);
+      sdf[k * (M + 1) + m] = d;
+      if (d > inr) inr = d;
+    }
+  }
+  prep.sdf = sdf; prep.inr = inr;
+}
+/* Raggi dell'anello del punto del profilo a distanza x dall'asse. */
+function ringRadii(prep, model, Rmax, x) {
+  const { K, M, R } = prep, out = new Float64Array(K);
+  const exact = prep.plan.exactCircle;
+  if (model === 'scale' || exact) {
+    const u = clamp(x / Rmax, 0, 1);
+    for (let k = 0; k < K; k++) out[k] = R[k] * u;
+    return out;
+  }
+  ensureSdf(prep);
+  const d = Rmax - x, eps = 1e-6 * prep.size, sdf = prep.sdf;
+  if (d <= eps) { out.set(R); return out; }
+  for (let k = 0; k < K; k++) {
+    const b = k * (M + 1);
+    let m = M;
+    while (m >= 0 && sdf[b + m] < d - eps) m--;
+    if (m < 0) { out[k] = 0; continue; }
+    if (m === M) { out[k] = R[k]; continue; }
+    const s0 = sdf[b + m], s1 = sdf[b + m + 1];
+    const u = s0 > s1 ? (s0 - d) / (s0 - s1) : 0;
+    out[k] = R[k] * (m + clamp(u, 0, 1)) / M;
+  }
+  return out;
+}
+
+/* ============================== Profilo, sezione, mesh ============================== */
+function currentProfile() {
+  const base = PROFILES[S.profileId].pts;
+  const rmaxP = Math.max(...base.map((p) => p[0]));
+  const k = S.fit === 'profileToPlan' ? (S.planW / 2) / rmaxP : 1;
+  const pts = base.map(([x, z]) => [x * k, z]);
+  const xs = pts.map((p) => p[0]), zs = pts.map((p) => p[1]);
+  return { base, pts, k, rmaxP, Rmax: rmaxP * k, xmin: Math.min(...xs), xmax: Math.max(...xs), zmin: Math.min(...zs), zmax: Math.max(...zs) };
+}
+function crossingsAt(pts, zs) {
+  const xs = [];
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i], b = pts[(i + 1) % pts.length];
+    if ((a[1] <= zs) !== (b[1] <= zs)) xs.push(a[0] + (zs - a[1]) / (b[1] - a[1]) * (b[0] - a[0]));
+  }
+  return xs.sort((p, q) => p - q);
+}
+function ringPoints(prep, radii) { const o = new Array(prep.K); for (let k = 0; k < prep.K; k++) o[k] = [radii[k] * prep.cos[k], radii[k] * prep.sin[k]]; return o; }
+function ringPath(prep, radii) {
+  let d = '';
+  for (let k = 0; k < prep.K; k++) d += (k ? 'L' : 'M') + (radii[k] * prep.cos[k]).toFixed(3) + ' ' + (-radii[k] * prep.sin[k]).toFixed(3);
+  return d + 'Z';
+}
+function distToPolyline(p, poly) {
+  let best = 1e18;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const ax = poly[j][0], ay = poly[j][1], bx = poly[i][0] - ax, by = poly[i][1] - ay, l2 = bx * bx + by * by;
+    let u = l2 > 0 ? ((p[0] - ax) * bx + (p[1] - ay) * by) / l2 : 0; u = u < 0 ? 0 : u > 1 ? 1 : u;
+    const qx = p[0] - ax - u * bx, qy = p[1] - ay - u * by, d2 = qx * qx + qy * qy;
+    if (d2 < best) best = d2;
+  }
+  return Math.sqrt(best);
+}
+
+function ringCache(prep, model, Rmax) {
+  const c = new Map();
+  return (x) => { const key = x.toFixed(4); let r = c.get(key); if (!r) { r = ringRadii(prep, model, Rmax, x); c.set(key, r); } return r; };
+}
+function buildMesh(prep, model, prof) {
+  const ring = ringCache(prep, model, prof.Rmax), J = prof.pts.length, K = prep.K;
+  const rings = prof.pts.map((p) => ring(p[0]));
+  const buf = new Float32Array(J * K * 18);
+  let n = 0;
+  const P = (j, k, o) => { const r = rings[j][k]; o[0] = r * prep.cos[k]; o[1] = r * prep.sin[k]; o[2] = prof.pts[j][1]; };
+  const a = [0, 0, 0], b = [0, 0, 0], c = [0, 0, 0], d = [0, 0, 0];
+  const put = (p, q, r) => {
+    const ux = q[0] - p[0], uy = q[1] - p[1], uz = q[2] - p[2], vx = r[0] - p[0], vy = r[1] - p[1], vz = r[2] - p[2];
+    const cx = uy * vz - uz * vy, cy = uz * vx - ux * vz, cz = ux * vy - uy * vx;
+    if (cx * cx + cy * cy + cz * cz < 1e-10) return;
+    buf.set(p, n); buf.set(q, n + 3); buf.set(r, n + 6); n += 9;
+  };
+  for (let j = 0; j < J; j++) {
+    const j2 = (j + 1) % J;
+    for (let k = 0; k < K; k++) {
+      const k2 = (k + 1) % K;
+      P(j, k, a); P(j, k2, b); P(j2, k2, c); P(j2, k, d);
+      put(a, b, c); put(a, c, d);
+    }
+  }
+  return { pos: buf.subarray(0, n), tris: n / 9, J, K };
+}
+
+/* ============================== WebGL 2 minimale ============================== */
+const GL = (() => {
+  const canvas = $('#gl');
+  const gl = canvas.getContext('webgl2', { antialias: true, alpha: true });
+  if (!gl) { $('#glMsg').hidden = false; return null; }
+  const vs = `#version 300 es
+  in vec3 aPos; uniform mat4 uMVP; out vec3 vPos;
+  void main() { vPos = aPos; gl_Position = uMVP * vec4(aPos, 1.0); }`;
+  const fs = `#version 300 es
+  precision highp float;
+  in vec3 vPos; uniform vec3 uCam; uniform vec3 uColor; uniform float uHalf; uniform int uLine; out vec4 o;
+  void main() {
+    if (uHalf > 0.5 && vPos.y < 0.0) discard;
+    if (uLine == 1) { o = vec4(uColor, 1.0); return; }
+    vec3 n = normalize(cross(dFdx(vPos), dFdy(vPos)));
+    vec3 v = normalize(uCam - vPos);
+    if (dot(n, v) < 0.0) n = -n;
+    vec3 l = normalize(vec3(0.45, -0.55, 0.7));
+    float d = max(dot(n, l), 0.0) * 0.62 + max(dot(n, v), 0.0) * 0.3;
+    float h = pow(max(dot(n, normalize(l + v)), 0.0), 28.0) * 0.12;
+    o = vec4(uColor * (0.26 + d) + h, 1.0);
+  }`;
+  const sh = (t, s) => { const x = gl.createShader(t); gl.shaderSource(x, s); gl.compileShader(x); if (!gl.getShaderParameter(x, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(x)); return x; };
+  const prog = gl.createProgram();
+  gl.attachShader(prog, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(prog);
+  const loc = { pos: gl.getAttribLocation(prog, 'aPos'), mvp: gl.getUniformLocation(prog, 'uMVP'), cam: gl.getUniformLocation(prog, 'uCam'), col: gl.getUniformLocation(prog, 'uColor'), half: gl.getUniformLocation(prog, 'uHalf'), line: gl.getUniformLocation(prog, 'uLine') };
+  const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+  const vbo = gl.createBuffer(), lbo = gl.createBuffer();
+  const cam = { yaw: -62 * D2R, pitch: 26 * D2R, dist: 1, target: [0, 0, 0], fit: 1 };
+  const g = { tris: 0, lines: [], bbox: null };
+
+  const mulM = (a, b) => { const o = new Float32Array(16); for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) { let s = 0; for (let k = 0; k < 4; k++) s += a[k * 4 + r] * b[c * 4 + k]; o[c * 4 + r] = s; } return o; };
+  const persp = (f, a, n, fr) => { const t = 1 / Math.tan(f / 2); return new Float32Array([t / a, 0, 0, 0, 0, t, 0, 0, 0, 0, (fr + n) / (n - fr), -1, 0, 0, 2 * fr * n / (n - fr), 0]); };
+  const norm = (v) => { const l = Math.hypot(...v) || 1; return v.map((x) => x / l); };
+  const look = (e, c, u) => {
+    const z = norm([e[0] - c[0], e[1] - c[1], e[2] - c[2]]);
+    const x = norm([u[1] * z[2] - u[2] * z[1], u[2] * z[0] - u[0] * z[2], u[0] * z[1] - u[1] * z[0]]);
+    const y = [z[1] * x[2] - z[2] * x[1], z[2] * x[0] - z[0] * x[2], z[0] * x[1] - z[1] * x[0]];
+    const dot = (p, q) => p[0] * q[0] + p[1] * q[1] + p[2] * q[2];
+    return new Float32Array([x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0, -dot(x, e), -dot(y, e), -dot(z, e), 1]);
+  };
+  const hex = (s) => { const m = s.trim().match(/^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i); return m ? [1, 2, 3].map((i) => parseInt(m[i], 16) / 255) : [0.6, 0.72, 0.9]; };
+  const cssColor = (name) => hex(getComputedStyle(document.documentElement).getPropertyValue(name));
+
+  function resize() {
+    const r = canvas.getBoundingClientRect(), dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = Math.max(2, Math.round(r.width * dpr)), h = Math.max(2, Math.round(r.height * dpr));
+    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+  }
+  function draw() {
+    resize();
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    if (!g.tris) return;
+    const cp = Math.cos(cam.pitch);
+    const eye = [cam.target[0] + cam.dist * cp * Math.cos(cam.yaw), cam.target[1] + cam.dist * cp * Math.sin(cam.yaw), cam.target[2] + cam.dist * Math.sin(cam.pitch)];
+    const mvp = mulM(persp(35 * D2R, canvas.width / canvas.height, cam.dist * 0.05, cam.dist * 6), look(eye, cam.target, [0, 0, 1]));
+    gl.useProgram(prog); gl.bindVertexArray(vao);
+    gl.uniformMatrix4fv(loc.mvp, false, mvp); gl.uniform3fv(loc.cam, eye); gl.uniform1f(loc.half, S.half ? 1 : 0);
+    gl.enable(gl.DEPTH_TEST); gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(1, 1);
+    gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.enableVertexAttribArray(loc.pos); gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, 0, 0);
+    gl.uniform1i(loc.line, 0); gl.uniform3fv(loc.col, cssColor('--mesh'));
+    gl.drawArrays(gl.TRIANGLES, 0, g.tris * 3);
+    gl.disable(gl.POLYGON_OFFSET_FILL);
+    if (g.lines.length) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, lbo); gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, 0, 0);
+      gl.uniform1i(loc.line, 1); gl.uniform3fv(loc.col, cssColor('--slice'));
+      for (const l of g.lines) gl.drawArrays(gl.LINE_LOOP, l.first, l.count);
+    }
+  }
+  function setMesh(mesh, lines, prof) {
+    gl.bindVertexArray(vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.bufferData(gl.ARRAY_BUFFER, mesh.pos, gl.DYNAMIC_DRAW);
+    g.tris = mesh.tris;
+    const arr = []; g.lines = [];
+    for (const ring of lines) { g.lines.push({ first: arr.length / 3, count: ring.length }); for (const p of ring) arr.push(p[0], p[1], p[2]); }
+    gl.bindBuffer(gl.ARRAY_BUFFER, lbo); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(arr), gl.DYNAMIC_DRAW);
+    const fit = Math.hypot(prof.Rmax, prof.Rmax, (prof.zmax - prof.zmin) / 2);
+    if (Math.abs(fit - cam.fit) > 1e-6 || cam.dist === 1) { cam.dist = fit * 2.5; cam.fit = fit; }
+    cam.target = [0, 0, (prof.zmin + prof.zmax) / 2];
+    draw();
+  }
+  let down = null;
+  canvas.addEventListener('pointerdown', (e) => { down = { x: e.clientX, y: e.clientY }; canvas.setPointerCapture(e.pointerId); canvas.style.cursor = 'grabbing'; });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!down) return;
+    cam.yaw -= (e.clientX - down.x) * 0.008; cam.pitch = clamp(cam.pitch + (e.clientY - down.y) * 0.008, -1.45, 1.45);
+    down = { x: e.clientX, y: e.clientY }; draw();
+  });
+  const up = () => { down = null; canvas.style.cursor = 'grab'; };
+  canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
+  canvas.addEventListener('wheel', (e) => { e.preventDefault(); cam.dist = clamp(cam.dist * Math.exp(e.deltaY * 0.001), cam.fit * 0.8, cam.fit * 8); draw(); }, { passive: false });
+  new ResizeObserver(draw).observe(canvas);
+  return { setMesh, draw };
+})();
+
+/* ============================== Calcolo ============================== */
+const cache = { plan: null, planKey: '', prep: null, prepKey: '', good: null, meshKey: '' };
+let last = null; // ultimo risultato calcolato (per i test e per la modifica dei punti)
+
+function compute() {
+  const prof = currentProfile(), Rt = prof.Rmax;
+  const q = S.drag ? 'draft' : 'full';
+  const planKey = JSON.stringify([S.kind, S.n, S.ratio, S.rot, S.cornerR, S.innerR, S.cornerType, S.smooth, S.sx, S.sy, S.sym, S.curved, S.freePts, +Rt.toFixed(4)]);
+  if (cache.planKey !== planKey) { cache.plan = buildPlan(S, Rt); cache.planKey = planKey; }
+  const prepKey = planKey + q;
+  if (cache.prepKey !== prepKey) {
+    cache.prep = prepare(cache.plan, q === 'draft' ? 144 : 360, q === 'draft' ? 56 : 160);
+    cache.prepKey = prepKey; cache.meshKey = '';
+  }
+  let prep = cache.prep, bad = false;
+  if (!prep.ok) { bad = true; if (cache.good) prep = cache.good; } else cache.good = prep;
+  const model = prep.plan.exactCircle ? 'scale' : S.model;
+  const chips = [];
+  if (bad) chips.push(['bad', 'Sagoma non stellata: il centro non vede tutto il bordo. Si mostra l\'ultima valida']);
+  else chips.push(['ok', 'Sagoma valida']);
+  if (prep.plan.limited) chips.push(['warn', 'Raggio angoli limitato dalla lunghezza dei lati']);
+
+  const meshKey = [prepKey, S.model, S.profileId, S.fit, S.planW, bad].join('|');
+  let mesh = null;
+  const ring = ringCache(prep, model, prof.Rmax);
+  if (cache.meshKey !== meshKey) { mesh = buildMesh(prep, model, prof); cache.mesh = mesh; cache.meshKey = meshKey; } else mesh = cache.mesh;
+
+  // creste: bordi del profilo che attraversano il raggio inscritto con una pendenza
+  let inr = Infinity;
+  if (model === 'offset') {
+    ensureSdf(prep); inr = prep.inr;
+    const tol = 0.003 * prof.Rmax;
+    for (let i = 0; i < prof.pts.length; i++) {
+      const a = prof.pts[i], b = prof.pts[(i + 1) % prof.pts.length];
+      const da = prof.Rmax - a[0], db = prof.Rmax - b[0];
+      if (((da > inr + tol) !== (db > inr + tol)) && Math.abs(a[1] - b[1]) > 0.5) { chips.push(['warn', 'Cresta: il profilo scende sotto il raggio inscritto (' + nf1.format(inr) + ' mm)']); break; }
+    }
+  }
+  if (S.fit === 'profileToPlan' && Math.abs(prof.k - 1) > 0.005) chips.push(['', 'Profilo scalato in X di ' + nf0.format(prof.k * 100) + ' %']);
+
+  // sezione alla quota
+  const zs = prof.zmin + (prof.zmax - prof.zmin) * S.z;
+  const xsC = crossingsAt(prof.pts, zs);
+  const slice = xsC.map((x) => ({ x, r: ring(x) }));
+  let wall = null;
+  for (let i = xsC.length - 2; i >= 0; i -= 2) {
+    const xb = xsC[i + 1], xa = xsC[i];
+    if (xa > 0.05) {
+      const outer = ringPoints(prep, ring(xb)), inner = ringPoints(prep, ring(xa));
+      let mn = 1e9, mx = 0;
+      for (const p of outer) { const d = distToPolyline(p, inner); mn = Math.min(mn, d); mx = Math.max(mx, d); }
+      wall = { min: mn, max: mx, nominal: xb - xa };
+      break;
+    }
+  }
+  last = { prof, prep, plan: prep.plan, model, mesh, zs, slice, wall, chips, inr, ring, bad };
+  return last;
+}
+
+/* ============================== Disegno 2D ============================== */
+const svgPlan = $('#svgPlan'), svgProfile = $('#svgProfile');
+const el = (tag, attrs, parent) => { const e = document.createElementNS(SVGNS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
+const gridLines = (x0, x1, y0, y1, step, parent) => {
+  for (let x = Math.ceil(x0 / step) * step; x <= x1; x += step) el('line', { x1: x, x2: x, y1: y0, y2: y1, class: Math.abs(x % (step * 5)) < 1e-6 ? 'g-major' : 'g-minor' }, parent);
+  for (let y = Math.ceil(y0 / step) * step; y <= y1; y += step) el('line', { y1: y, y2: y, x1: x0, x2: x1, class: Math.abs(y % (step * 5)) < 1e-6 ? 'g-major' : 'g-minor' }, parent);
+};
+
+function drawPlan(r) {
+  const { prof, prep, plan, ring } = r;
+  const ext = Math.max(prof.Rmax, ...plan.pts.map((p) => Math.abs(p[1]))) * 1.22;
+  const V = Math.max(ext, 10);
+  svgPlan.setAttribute('viewBox', `${-V} ${-V} ${2 * V} ${2 * V}`);
+  svgPlan.replaceChildren();
+  const root = el('g', {}, svgPlan);
+  gridLines(-V, V, -V, V, 10, root);
+  el('line', { x1: -V, x2: V, y1: 0, y2: 0, class: 'ax' }, root);
+  el('line', { x1: 0, x2: 0, y1: -V, y2: V, class: 'ax' }, root);
+  // ingombro: proiezione dall'alto dell'oggetto (corona tra gli anelli del raggio minimo e massimo del profilo)
+  let d = ringPath(prep, ring(prof.xmax));
+  if (prof.xmin > 0.05) d += ringPath(prep, ring(prof.xmin));
+  el('path', { d, class: 'ing' }, root);
+  if (S.levels) for (let i = 1; i < 8; i++) el('path', { d: ringPath(prep, ring(prof.Rmax * (1 - i / 8))), class: 'lvl' }, root);
+  if (r.slice.length) el('path', { d: r.slice.map((s) => ringPath(prep, s.r)).join(''), class: 'slc' }, root);
+  el('path', { d: ringPath(prep, ring(prof.Rmax)), class: 'outl' }, root);
+  // assi di simmetria e area di disegno della forma libera
+  const free = S.kind === 'free';
+  svgPlan.dataset.free = free ? '1' : '0';
+  const hint = $('#planHint');
+  hint.hidden = !free;
+  if (free) {
+    hint.textContent = 'Clic: aggiungi · trascina: sposta · doppio clic o Alt+clic: elimina';
+    const t = S.sym;
+    if (t === 'v') el('rect', { x: 0, y: -V, width: V, height: 2 * V, class: 'tint' }, root);
+    if (t === 'h') el('rect', { x: -V, y: -V, width: 2 * V, height: V, class: 'tint' }, root);
+    if (t === 'q') el('rect', { x: 0, y: -V, width: V, height: V, class: 'tint' }, root);
+    if (t !== 'none') {
+      if (t !== 'h') el('line', { x1: 0, x2: 0, y1: -V, y2: V, class: 'ax-rot' }, root);
+      if (t !== 'v') el('line', { x1: -V, x2: V, y1: 0, y2: 0, class: 'ax-rot' }, root);
+    }
+    const f = plan.f, open = t !== 'none', P = S.freePts;
+    const pts = P.map((p) => `${(p[0] * f).toFixed(3)},${(-p[1] * f).toFixed(3)}`).join(' ');
+    el(open ? 'polyline' : 'polygon', { points: pts, class: 'dline' }, root);
+    const hr = V * 0.028;
+    P.forEach((p, i) => {
+      const pinned = open && (i === 0 || i === P.length - 1);
+      const c = el('circle', { cx: p[0] * f, cy: -p[1] * f, r: hr, class: 'hdl' + (pinned ? ' pin' : ''), 'data-i': i }, root);
+      c.style.vectorEffect = 'non-scaling-stroke';
+    });
+  } else {
+    // croce al centro, asse di rotazione
+    el('circle', { cx: 0, cy: 0, r: V * 0.012, fill: 'var(--accent)' }, root);
+  }
+}
+
+function drawProfile(r) {
+  const { prof } = r;
+  const zr = prof.zmax - prof.zmin, xr = prof.Rmax;
+  const mx = Math.max(xr * 0.45, 14), mz = Math.max(zr * 0.12, 6);
+  const x0 = -mx, x1 = xr + mx, z0 = prof.zmin - mz, z1 = prof.zmax + mz;
+  svgProfile.setAttribute('viewBox', `${x0} ${-z1} ${x1 - x0} ${z1 - z0}`);
+  svgProfile.replaceChildren();
+  const root = el('g', {}, svgProfile);
+  // griglia con y capovolta: le linee orizzontali stanno a -z
+  for (let x = Math.ceil(x0 / 10) * 10; x <= x1; x += 10) el('line', { x1: x, x2: x, y1: -z1, y2: -z0, class: x % 50 === 0 ? 'g-major' : 'g-minor' }, root);
+  for (let z = Math.ceil(z0 / 10) * 10; z <= z1; z += 10) el('line', { y1: -z, y2: -z, x1: x0, x2: x1, class: z % 50 === 0 ? 'g-major' : 'g-minor' }, root);
+  el('line', { x1: 0, x2: 0, y1: -z1, y2: -z0, class: 'ax-rot' }, root);
+  const poly = (pts) => pts.map((p) => `${p[0].toFixed(3)},${(-p[1]).toFixed(3)}`).join(' ');
+  if (Math.abs(prof.k - 1) > 0.005) el('polygon', { points: poly(prof.base), class: 'pf-ghost' }, root);
+  el('polygon', { points: poly(prof.pts), class: 'pf' }, root);
+  el('line', { x1: x0, x2: x1, y1: -r.zs, y2: -r.zs, class: 'zline' }, root);
+  r.slice.forEach((s) => el('circle', { cx: s.x, cy: -r.zs, r: Math.max(xr, zr) * 0.012, fill: 'var(--slice)' }, root));
+  const fs = Math.max(xr, zr) * 0.034;
+  const tx = (x, y, txt, cls, anchor) => { const t = el('text', { x, y, class: 'lblt ' + cls, 'font-size': fs, 'text-anchor': anchor || 'start' }, root); t.textContent = txt; };
+  tx(prof.Rmax, -z0 - fs * 0.5, 'R = ' + nf1.format(prof.Rmax) + ' mm', '', 'end');
+  tx(x0 + fs * 0.5, -r.zs - fs * 0.6, 'z = ' + nf1.format(r.zs) + ' mm', 'lblt--sl');
+}
+
+/* ============================== Misure, avvisi, controlli ============================== */
+function drawInfo(r) {
+  const { prof, plan } = r;
+  let bx0 = 1e9, bx1 = -1e9, by0 = 1e9, by1 = -1e9;
+  for (const p of plan.pts) { bx0 = Math.min(bx0, p[0]); bx1 = Math.max(bx1, p[0]); by0 = Math.min(by0, p[1]); by1 = Math.max(by1, p[1]); }
+  const rows = [
+    ['Ingombro sagoma', nf1.format(bx1 - bx0) + ' × ' + nf1.format(by1 - by0) + ' mm'],
+    ['Altezza profilo', nf1.format(prof.zmax - prof.zmin) + ' mm'],
+    ['Raggio massimo profilo', nf1.format(prof.Rmax) + ' mm'],
+    ['Quota di sezione', nf1.format(r.zs) + ' mm'],
+  ];
+  if (r.wall) {
+    const sp = Math.abs(r.wall.max - r.wall.min) < 0.05 ? nf2.format(r.wall.min) + ' mm' : nf2.format(r.wall.min) + ' – ' + nf2.format(r.wall.max) + ' mm';
+    rows.push(['Parete (misurata)', sp, true]);
+    rows.push(['Parete nel profilo', nf2.format(r.wall.nominal) + ' mm']);
+  }
+  $('#meas').innerHTML = rows.map(([a, b, h]) => `<tr${h ? ' class="hl"' : ''}><td>${a}</td><td>${b}</td></tr>`).join('');
+  const chips = r.chips.map(([c, t]) => `<span class="chip${c ? ' chip--' + c : ''}">${t}</span>`);
+  chips.push(`<span class="chip chip--mono">${r.mesh.J} anelli × ${r.mesh.K} punti · ${nf0.format(r.mesh.tris)} triangoli</span>`);
+  $('#chips').innerHTML = chips.join('');
+  $('#glInfo').textContent = S.drag ? 'bozza' : '';
+  const notes = {
+    offset: 'Ogni anello è la sagoma rientrata di <b>R − x</b>: pareti di spessore costante, angoli che diventano vivi verso il centro.',
+    scale: 'Ogni anello è la sagoma <b>ridotta in scala</b> di x / R: il raggio degli angoli cala in proporzione.',
+  };
+  $('#modelNote').innerHTML = r.plan.exactCircle ? 'Con un cerchio perfetto i due modelli coincidono.' : notes[S.model];
+  $('#fitNote').innerHTML = S.fit === 'planToProfile'
+    ? 'La larghezza massima della sagoma è il <b>raggio massimo del profilo</b> (' + nf1.format(prof.Rmax) + ' mm).'
+    : 'La sagoma ha la sua larghezza; il profilo si scala <b>solo in X</b> (×' + nf2.format(prof.k) + '), non in altezza.';
+}
+
+function render() {
+  const r = compute();
+  drawPlan(r); drawProfile(r); drawInfo(r);
+  if (GL) {
+    const lines = r.slice.map((s) => ringPoints(r.prep, s.r).map((p) => [p[0], p[1], r.zs]));
+    GL.setMesh(r.mesh, lines, r.prof);
+  }
+}
+let queued = false;
+function update() { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; render(); syncControls(); }); }
+
+/* ============================== Forma libera ============================== */
+function freeFromOutline(sym) {
+  const pl = cache.plan, Rt = pl.Rt;
+  const angs = { none: [90, 60, 30, 0, -30, -60, -90, -120, -150, 180, 150, 120], v: [90, 60, 30, 0, -30, -60, -90], h: [180, 150, 120, 90, 60, 30, 0], q: [90, 67.5, 45, 22.5, 0] }[sym];
+  const pts = angs.map((a) => { const r = radialAt(pl.pts, a * D2R) / Rt; return [r * Math.cos(a * D2R), r * Math.sin(a * D2R)]; });
+  const n = pts.length;
+  if (sym === 'v' || sym === 'h') { if (sym === 'v') { pts[0][0] = 0; pts[n - 1][0] = 0; } else { pts[0][1] = 0; pts[n - 1][1] = 0; } }
+  if (sym === 'q') { pts[0][0] = 0; pts[n - 1][1] = 0; }
+  return pts;
+}
+/* Semplifica un contorno chiuso: lo divide nel punto più lontano dal primo, per non avere un tratto con estremi coincidenti. */
+function rdpClosed(P, eps) {
+  let m = 0, dm = -1;
+  P.forEach((p, i) => { const d = Math.hypot(p[0] - P[0][0], p[1] - P[0][1]); if (d > dm) { dm = d; m = i; } });
+  const a = rdp(P.slice(0, m + 1), eps), b = rdp(P.slice(m).concat([P[0]]), eps);
+  return a.slice(0, -1).concat(b.slice(0, -1));
+}
+function breakShape() {
+  const pl = cache.plan, Rt = pl.Rt;
+  let eps = 0.012 * Rt, pts = rdpClosed(pl.pts, eps);
+  while (pts.length > 40) { eps *= 1.4; pts = rdpClosed(pl.pts, eps); }
+  S.freePts = pts.map((p) => [p[0] / Rt, p[1] / Rt]);
+  S.sym = 'none'; S.curved = false; S.kind = 'free';
+}
+function constrain(i, x, y) {
+  const n = S.freePts.length, e = i === 0 || i === n - 1;
+  if (S.sym === 'v') { x = e ? 0 : Math.max(0, x); }
+  else if (S.sym === 'h') { y = e ? 0 : Math.max(0, y); }
+  else if (S.sym === 'q') {
+    if (i === 0) { x = 0; y = Math.max(0, y); } else if (i === n - 1) { y = 0; x = Math.max(0, x); } else { x = Math.max(0, x); y = Math.max(0, y); }
+  }
+  return [x, y];
+}
+const svgToWorld = (e) => { const pt = svgPlan.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY; const p = pt.matrixTransform(svgPlan.getScreenCTM().inverse()); return [p.x, -p.y]; };
+let freeDrag = -1;
+svgPlan.addEventListener('pointerdown', (e) => {
+  if (S.kind !== 'free' || !last) return;
+  const f = last.plan.f, w = svgToWorld(e), tgt = e.target;
+  if (tgt.dataset && tgt.dataset.i !== undefined) {
+    const i = +tgt.dataset.i;
+    if (e.altKey) { removePoint(i); return; }
+    freeDrag = i; S.drag = true; svgPlan.setPointerCapture(e.pointerId); return;
+  }
+  // inserisce un punto sul lato più vicino
+  const P = S.freePts, open = S.sym !== 'none', n = P.length;
+  let best = 1e18, at = n;
+  for (let i = 0; i < (open ? n - 1 : n); i++) {
+    const a = P[i], b = P[(i + 1) % n];
+    const ax = a[0] * f, ay = a[1] * f, bx = (b[0] - a[0]) * f, by = (b[1] - a[1]) * f, l2 = bx * bx + by * by;
+    const u = l2 ? clamp(((w[0] - ax) * bx + (w[1] - ay) * by) / l2, 0, 1) : 0;
+    const d = Math.hypot(w[0] - ax - u * bx, w[1] - ay - u * by);
+    if (d < best) { best = d; at = i + 1; }
+  }
+  const [x, y] = constrain(1, w[0] / f, w[1] / f);
+  P.splice(at, 0, [x, y]); freeDrag = at; S.drag = true; svgPlan.setPointerCapture(e.pointerId); update();
+});
+svgPlan.addEventListener('pointermove', (e) => {
+  if (freeDrag < 0) return;
+  const w = svgToWorld(e), f = last.plan.f;
+  S.freePts[freeDrag] = constrain(freeDrag, w[0] / f, w[1] / f); update();
+});
+const endFree = () => { if (freeDrag >= 0) { freeDrag = -1; S.drag = false; update(); } };
+svgPlan.addEventListener('pointerup', endFree); svgPlan.addEventListener('pointercancel', endFree);
+svgPlan.addEventListener('dblclick', (e) => { if (e.target.dataset && e.target.dataset.i !== undefined) removePoint(+e.target.dataset.i); });
+function removePoint(i) {
+  const n = S.freePts.length, open = S.sym !== 'none';
+  if (n <= 4 || (open && (i === 0 || i === n - 1))) return;
+  S.freePts.splice(i, 1); update();
+}
+
+/* ============================== Profilo: quota di sezione trascinando ============================== */
+let zDrag = false;
+const zFromEvent = (e) => {
+  const pt = svgProfile.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+  const p = pt.matrixTransform(svgProfile.getScreenCTM().inverse()), pr = last.prof;
+  S.z = clamp((-p.y - pr.zmin) / ((pr.zmax - pr.zmin) || 1), 0, 1); update();
+};
+svgProfile.addEventListener('pointerdown', (e) => { zDrag = true; svgProfile.setPointerCapture(e.pointerId); zFromEvent(e); });
+svgProfile.addEventListener('pointermove', (e) => { if (zDrag) zFromEvent(e); });
+svgProfile.addEventListener('pointerup', () => { zDrag = false; });
+
+/* ============================== Controlli ============================== */
+const FORMAT = {
+  n: (v) => nf0.format(v), ratio: (v) => nf0.format(v * 100) + ' %', rot: (v) => nf0.format(v) + '°',
+  cornerR: (v) => nf1.format(v) + ' mm', innerR: (v) => nf1.format(v) + ' mm', smooth: (v) => nf0.format(v * 100) + ' %',
+  sx: (v) => nf0.format(v) + ' %', sy: (v) => nf0.format(v) + ' %', planW: (v) => nf0.format(v) + ' mm',
+  z: (v) => nf0.format(v * 100) + ' %',
+};
+function setKey(k, v) {
+  if (k === 'kind' && v === 'free' && S.kind !== 'free') { S.freePts = freeFromOutline(S.sym); }
+  S[k] = v;
+  if (k === 'sym' && S.kind === 'free') S.freePts = freeFromOutline(v);
+}
+function syncControls() {
+  $$('[data-k]').forEach((c) => {
+    const k = c.dataset.k;
+    if (c.type === 'checkbox') c.checked = !!S[k];
+    else if (document.activeElement !== c || c.tagName === 'SELECT') c.value = S[k];
+  });
+  $$('[data-o]').forEach((o) => { o.textContent = FORMAT[o.dataset.o](S[o.dataset.o]); });
+  $$('[data-seg]').forEach((g) => $$('button', g).forEach((b) => b.setAttribute('aria-pressed', String(S[g.dataset.seg] === b.dataset.v))));
+  $$('[data-show]').forEach((e) => {
+    const [k, vals] = e.dataset.show.split('=');
+    e.hidden = !vals.split('|').includes(String(S[k]));
+  });
+  $('#draw').dataset.view = S.view;
+}
+$$('[data-k]').forEach((c) => {
+  const k = c.dataset.k;
+  if (c.type === 'checkbox') c.addEventListener('change', () => { S[k] = c.checked; update(); });
+  else if (c.type === 'range') {
+    c.addEventListener('input', () => { S[k] = +c.value; S.drag = true; update(); });
+    c.addEventListener('change', () => { S.drag = false; update(); });
+  } else c.addEventListener('change', () => { setKey(k, c.value); update(); });
+});
+$$('[data-seg]').forEach((g) => g.addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  setKey(g.dataset.seg, b.dataset.v); update();
+}));
+const PRESETS = {
+  circle: { kind: 'circle', sx: 100, sy: 100 },
+  squircle: { kind: 'rect', sx: 100, sy: 100, cornerR: 14, cornerType: 'smooth', smooth: 1 },
+  hex: { kind: 'polygon', n: 6, rot: 0, sx: 100, sy: 100, cornerR: 5, cornerType: 'arc' },
+  star: { kind: 'star', n: 5, ratio: 0.5, rot: 0, sx: 100, sy: 100, cornerR: 3, innerR: 4, cornerType: 'smooth', smooth: 0.8 },
+  oval: { kind: 'circle', sx: 100, sy: 62 },
+};
+$$('[data-preset]').forEach((b) => b.addEventListener('click', () => { Object.assign(S, PRESETS[b.dataset.preset]); update(); }));
+$('#btnBreak').addEventListener('click', () => { breakShape(); update(); });
+$('#btnRegen').addEventListener('click', () => { S.freePts = freeFromOutline(S.sym); update(); });
+$('#btnReset').addEventListener('click', () => { Object.assign(S, JSON.parse(JSON.stringify(DEFAULTS))); update(); });
+$('#profileSel').innerHTML = Object.entries(PROFILES).map(([id, p]) => `<option value="${id}">${p.name}</option>`).join('');
+$('#theme').addEventListener('change', (e) => {
+  const v = e.target.value; if (v === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.dataset.theme = v;
+  update();
+});
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => update());
+
+window.__sagoma = { S, render, compute: () => last, PROFILES, set: (o) => { for (const k in o) setKey(k, o[k]); render(); syncControls(); } };
+render(); syncControls();
+})();
+</script>
+</body>
+</html>

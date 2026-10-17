@@ -92,6 +92,8 @@ export type ProfileKind = BarKind | TubeKind;
 export type Shape2DKind = 'circle' | 'square' | 'ring' | 'heart' | 'star' | 'egg' | 'trapezoid' | 'cross' | 'drop' | 'crescent' | 'text' | 'svg' | 'path' | ProfileKind;
 
 /** Punto del piano XY in mm (Y verso l'alto). */
+import type { PlanDraft } from './planShape';
+
 export type Vec2 = [number, number];
 
 /**
@@ -121,6 +123,8 @@ export interface Draft {
   scaleTop: number;
   revolveAngle: number;
   revolveSegments: number;
+  /** Sagoma di rotazione (sperimentale); assente = cerchio, oppure non toccata dalla modale. */
+  plan?: PlanDraft;
 }
 
 /**
@@ -242,6 +246,8 @@ export type Shape2DNode = BaseNode & {
       tolerance: number;
       width: number;
       depth: number;
+      /** Sagoma di rotazione (sperimentale): la forma vista dall'alto lungo cui si ruota il profilo. Assente = cerchio. */
+      plan?: PlanDraft;
     }
   | {
       /**
