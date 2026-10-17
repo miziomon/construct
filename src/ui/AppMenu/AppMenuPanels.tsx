@@ -37,6 +37,7 @@ const SHORTCUTS: { title: string; rows: [string, string][] }[] = [
       ['A', 'Smusso angolare: clic su un vertice, Maiusc+clic per sceglierne altri (Invio conferma, Esc annulla)'],
       ['G', 'Guscio: svuota il solido selezionato, con la faccia aperta a scelta (Invio conferma, Esc annulla)'],
       ['Maiusc+P', 'Modifica profilo: apre la modale di disegno del Profilo selezionato (anche dal menu contestuale e dalle Proprietà)'],
+      ['Converti in profilo', 'Senza scorciatoia: dal menu contestuale o dalle Proprietà trasforma il cerchio, il quadrato, le forme poligonali, i profilati e gli SVG in un Profilo con lo stesso solido, modificabile nodo per nodo (un solo Annulla)'],
       ['Maiusc+S', 'Dividi: taglia l\'oggetto in due con un piano perpendicolare a un asse, anche inclinato di un angolo, con connettori per rimontarlo (Invio conferma, Esc annulla)'],
       ['Doppio clic', 'Seleziona l\'oggetto e passa a Sposta'],
       ['Ctrl+G', 'Raggruppa (gli oggetti restano separati)'],
@@ -88,6 +89,9 @@ const SHORTCUTS: { title: string; rows: [string, string][] }[] = [
     title: 'Disegno del Profilo (nella modale)',
     rows: [
       ['V / P / H', 'Strumento Seleziona / Penna / Sposta vista (la mano: trascinando si sposta la vista)'],
+      ['R / C / G', 'Strumento Rettangolo / Ellisse / Poligono regolare: premi sul centro e trascina. Maiusc: quadrato, cerchio, oppure angolo del poligono a multipli di 15°; il Poligono ha il campo Lati (da 3 a 24). Il contorno nasce con nodi modificabili e resta selezionato'],
+      ['Importa SVG', 'Pulsante nella barra degli strumenti: aggiunge al disegno i contorni di un file SVG con le curve di Bézier (path, rect, circle, ellipse, line, polyline, polygon, anche solo con il tratto e con le trasformazioni). Misure in millimetri, X del file, fondo a y = 0. Non si leggono i fogli di stile (style) e gli use; massimo 500 nodi per contorno e 100 contorni'],
+      ['Fori', 'Un contorno dentro un altro è un foro, con qualunque strumento (anche la Penna nel riempimento): badge Foro nell\'elenco dei Percorsi e curva tratteggiata'],
       ['Penna', 'Clic: spigolo. Clic e trascina: nodo simmetrico con le maniglie. Clic su una curva esistente (senza un contorno in corso): inserisce un nodo, la forma non cambia (Ctrl o ⌘ lo sospende). Clic su un estremo aperto: riprende quel contorno (il trascinamento disegna la maniglia in uscita, liscia); con un contorno in corso lo unisce all\'altro. Clic sul primo nodo: chiude il contorno, anche con due soli punti se uno dei segmenti è curvo (trascinando ne disegni la maniglia, liscia; spigolo con Alt). Invio, doppio clic o Esc: termina. Backspace: toglie l\'ultimo nodo'],
       ['Seleziona', 'Clic o riquadro per scegliere i nodi (Maiusc aggiunge), trascina nodi e maniglie (Alt: finché è premuto il nodo è uno spigolo), clic su una curva per selezionare tutto il contorno (Canc lo elimina, trascinandola lo sposti), doppio clic su un nodo per cambiarne il tipo'],
       ['Canc / Frecce', 'Elimina i nodi selezionati / li sposta di un passo di griglia (Maiusc: dieci passi)'],
