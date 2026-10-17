@@ -18,6 +18,7 @@ import type { Mirror, Transform } from './math';
 import { pathNaturalSize } from './shapes2d';
 import { hasBoundDimension } from './resize';
 import { compensatePosition } from './pathPlacement';
+import { convertToPath as convertShapeToPath } from './convertPath';
 
 export type GizmoMode = 'select' | 'translate' | 'rotate' | 'resize' | 'extrude';
 
@@ -48,6 +49,12 @@ interface SceneState {
    * disegno da `before` a `after` (vedi pathPlacement.ts). Rifiuta (false) un nodo bloccato o che non è un Profilo.
    */
   commitProfile: (id: string, draft: Draft, centers: { before: Vec2; after: Vec2 }) => boolean;
+  /**
+   * Converte una forma 2D (cerchio, quadrato, forme poligonali, profilati, SVG) nel Profilo di Bézier equivalente, in un solo
+   * passo di Annulla ("Converti in profilo"): stesso id e stesso solido, i contorni diventano nodi modificabili (vedi
+   * convertPath.ts). Rifiuta (false, con un avviso) un nodo bloccato, il testo, un Profilo e un disegno oltre i tetti dei nodi.
+   */
+  convertToPath: (id: string) => boolean;
   /** Aggiunge una mesh importata, appoggiata sul piatto e centrata in XY. */
   addMesh: (input: { assetId: string; name: string; fileName: string; color?: string; origin: Vec3; size: Vec3; triangles: number }) => string;
   /** Aggiorna campi di un nodo (patch parziale, validata dal chiamante). */
@@ -384,6 +391,27 @@ export const useSceneStore = create<SceneState>()(
         });
         // Come in updateNode: se un campo legato doveva cambiare, l'utente lo sa invece di vederlo restare com'era
         if (held) noteHeld(node.name);
+        return true;
+      },
+
+      convertToPath: (id) => {
+        const node = get().scene.nodes[id];
+        if (node?.type !== 'shape2d') return false;
+        if (isLocked(get().scene, id)) {
+          notify.error(`«${node.name}» è bloccato: sbloccalo per convertirlo in Profilo`);
+          return false;
+        }
+        const result = convertShapeToPath(node);
+        if (typeof result === 'string') {
+          notify.error(result);
+          return false;
+        }
+        // Un solo passo: il nodo cambia forma ma resta lo stesso oggetto (id, posizione nella scena, selezione)
+        act('Converti in profilo', (s) => {
+          s.scene.nodes[id] = result.node;
+        });
+        // I legami che il Profilo non può tenere (raggio, lati...) si perdono: l'utente lo sa
+        if (result.dropped.length) notify.info(`«${node.name}»: ${result.dropped.length === 1 ? `il legame di ${result.dropped[0]} al parametro si perde` : `i legami di ${result.dropped.join(', ')} ai parametri si perdono`}`);
         return true;
       },
 

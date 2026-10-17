@@ -1,8 +1,9 @@
-import { SquareArrowDown, AlignHorizontalJustifyStart, PenTool, ArrowDownToLine, Eye, EyeOff, FlipHorizontal2, Ruler, Copy, Lock, Unlock, Group, MousePointer2, Move3d, Rotate3d, RotateCw, Scissors, SquaresUnite, Scaling, ArrowUpFromLine, Trash2, Ungroup, CircleDashed } from 'lucide-react';
+import { SquareArrowDown, AlignHorizontalJustifyStart, PenTool, ArrowDownToLine, Eye, EyeOff, FlipHorizontal2, Ruler, Copy, Lock, Unlock, Group, MousePointer2, Move3d, Rotate3d, RotateCw, Scissors, SquaresUnite, Scaling, ArrowUpFromLine, Trash2, Ungroup, CircleDashed, Spline } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { combineToBed, dropSelectionToBed, layDownSelection, lowestZByRoot } from '../kernel/placement';
 import { isAppGroup, isLocked, parentOf, useSceneStore } from '../scene/store';
 import { isScaled } from '../scene/groupScale';
+import { canConvertToPath } from '../scene/convertPath';
 import type { GizmoMode } from '../scene/store';
 import { isCutter } from '../scene/treatment';
 import type { Scene, SceneNode } from '../scene/types';
@@ -33,7 +34,7 @@ export type CommandId =
   | 'group' | 'ungroup' | 'union' | 'hull' | 'minkowski' | 'hole'
   | 'fillet' | 'chamfer' | 'corner' | 'shell' | 'pattern' | 'split'
   | 'align' | 'mirror' | 'layflat' | 'lay' | 'drop' | 'array'
-  | 'duplicate' | 'lock' | 'hide' | 'delete' | 'measure' | 'profile';
+  | 'duplicate' | 'lock' | 'hide' | 'delete' | 'measure' | 'profile' | 'toPath';
 
 /** Stato da cui dipende la disponibilità dei comandi: selezione, scena e strumenti aperti. */
 export interface CommandContext {
@@ -277,6 +278,12 @@ export const COMMANDS: Record<CommandId, Command> = {
     enabled: (c) => c.single?.type === 'shape2d' && c.single.kind === 'path' && !isLocked(c.scene, c.single.id),
     run: (c) => c.single && useProfileEditor.getState().open({ nodeId: c.single.id }), menu: true, toolbar: false,
   },
+  // Converti in profilo: solo menu contestuale e Proprietà (nessuna lettera libera per la scorciatoia); una forma 2D non bloccata, che non sia Testo o Profilo
+  toPath: {
+    id: 'toPath', help: 'toPath', shortcut: '', icon: (_c, size) => <Spline size={size} />,
+    enabled: (c) => canConvertToPath(c.single) && !isLocked(c.scene, c.single.id),
+    run: (c) => c.single && sceneState().convertToPath(c.single.id), menu: true, toolbar: false,
+  },
   measure: { id: 'measure', help: 'measure', shortcut: 'I', icon: (_c, size) => <Ruler size={size} />, enabled: (c) => c.hasObjects, active: (c) => c.measureActive, run: () => toggleMeasure(), menu: true },
 };
 
@@ -287,7 +294,7 @@ export type SectionTone = 'transform' | 'combine' | 'modify' | 'arrange' | 'obje
 export const COMMAND_GROUPS: { label: string; ids: CommandId[]; tone: SectionTone }[] = [
   { label: 'Trasforma', ids: ['select', 'translate', 'rotate', 'resize'], tone: 'transform' },
   { label: 'Combina', ids: ['group', 'ungroup', 'union', 'hull', 'minkowski', 'hole'], tone: 'combine' },
-  { label: 'Modifica', ids: ['extrude', 'profile', 'fillet', 'chamfer', 'corner', 'shell', 'pattern', 'split'], tone: 'modify' },
+  { label: 'Modifica', ids: ['extrude', 'profile', 'toPath', 'fillet', 'chamfer', 'corner', 'shell', 'pattern', 'split'], tone: 'modify' },
   { label: 'Disponi', ids: ['align', 'mirror', 'layflat', 'lay', 'drop', 'array'], tone: 'arrange' },
   { label: 'Oggetto', ids: ['duplicate', 'lock', 'hide', 'delete', 'measure'], tone: 'object' },
 ];

@@ -267,3 +267,43 @@ describe('Modifica profilo (D6)', () => {
     useProfileEditor.getState().close();
   });
 });
+
+describe('Converti in profilo', () => {
+  it('non ha un pulsante sulla barra né una scorciatoia e sta nel gruppo Modifica', () => {
+    expect(COMMANDS.toPath.toolbar).toBe(false);
+    expect(COMMANDS.toPath.shortcut).toBe('');
+    expect(COMMAND_GROUPS.find((g) => g.label === 'Modifica')!.ids).toContain('toPath');
+  });
+
+  it('si può usare solo con una forma 2D non bloccata che non sia Testo né Profilo', () => {
+    const st = () => useSceneStore.getState();
+    expect(COMMANDS.toPath.enabled(getCommandContext())).toBe(false);
+    st().addPrimitive('box');
+    expect(applicable()).not.toContain('toPath');
+    st().addShape2D('circle');
+    expect(applicable()).toContain('toPath');
+    // Due oggetti selezionati: no
+    st().select(st().scene.rootIds);
+    expect(applicable()).not.toContain('toPath');
+    // Testo e Profilo: no
+    st().addShape2D('text');
+    expect(applicable()).not.toContain('toPath');
+    st().addPath({ paths: [{ closed: true, nodes: [{ p: [0, 0], kind: 'corner' }, { p: [10, 0], kind: 'corner' }, { p: [10, 10], kind: 'corner' }] }] });
+    expect(applicable()).not.toContain('toPath');
+    // Bloccata: no
+    st().addShape2D('square');
+    st().toggleLockSelected();
+    expect(COMMANDS.toPath.enabled(getCommandContext())).toBe(false);
+    expect(applicable()).not.toContain('toPath');
+  });
+
+  it('run converte la forma selezionata in un Profilo, in un solo passo', () => {
+    const st = () => useSceneStore.getState();
+    st().addShape2D('square');
+    const [id] = st().scene.rootIds;
+    const steps = useSceneStore.temporal.getState().pastStates.length;
+    COMMANDS.toPath.run(getCommandContext());
+    expect(st().scene.nodes[id]).toMatchObject({ kind: 'path' });
+    expect(useSceneStore.temporal.getState().pastStates).toHaveLength(steps + 1);
+  });
+});

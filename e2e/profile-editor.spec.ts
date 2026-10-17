@@ -1467,3 +1467,69 @@ test('Altezza legata a un parametro: nella modale lo slider è disattivato (gli 
   expect(node.height).toBe(12);
   expect(node.exprs.height).toBeDefined();
 });
+
+// --- Converti in profilo (fase 3) ---------------------------------------------------------------------------------------
+
+/** Aggiunge una forma 2D di prova (esagono di raggio 12) e la lascia selezionata. */
+async function addHexagon(page: Page): Promise<string> {
+  const id = await page.evaluate(() => {
+    const s = window.__construct!.store.getState();
+    s.addShape2D('circle');
+    const id = window.__construct!.store.getState().scene.rootIds[0];
+    window.__construct!.store.getState().updateNode(id, { segments: 6, radius: 12 });
+    return id;
+  });
+  await settled(page);
+  return id;
+}
+
+test('Converti in profilo dal menu contestuale: un solo passo, stesso solido, Ctrl+Z riporta il cerchio', async ({ page }) => {
+  const id = await addHexagon(page);
+  const before = await volume(page);
+  const steps = await history(page);
+  const menu = page.getByRole('menu', { name: 'Comandi per la selezione' });
+  const spot = await page.evaluate(() => {
+    const s = window.__r3f!;
+    const V = s.camera.position.constructor as new (x: number, y: number, z: number) => { project(c: unknown): { x: number; y: number } };
+    const v = new V(0, 0, 5).project(s.camera);
+    const r = s.gl.domElement.getBoundingClientRect();
+    return { x: r.left + ((v.x + 1) / 2) * r.width, y: r.top + ((1 - v.y) / 2) * r.height };
+  });
+  await page.mouse.click(spot.x, spot.y, { button: 'right' });
+  await menu.getByRole('menuitem', { name: 'Converti in profilo' }).click();
+  await settled(page);
+  expect(await history(page)).toBe(steps + 1);
+  expect(await page.evaluate(() => window.__construct!.store.getState().op)).toBe('Converti in profilo');
+  const scene = await sceneState(page);
+  expect(scene.rootIds).toEqual([id]);
+  expect(scene.nodes[id]).toMatchObject({ kind: 'path' });
+  expect(scene.nodes[id].paths[0].nodes).toHaveLength(6);
+  // Il solido non è cambiato
+  expect(Math.abs((await volume(page)) - before) / before).toBeLessThan(1e-3);
+  // Il comando non c'è più (è già un Profilo) e Modifica profilo apre la modale con i 6 spigoli
+  await page.keyboard.press('Shift+P');
+  await expect(editor(page).locator('[data-node]')).toHaveCount(6);
+  await page.keyboard.press('Escape');
+  await expect(editor(page)).toHaveCount(0);
+  await page.keyboard.press('Control+z');
+  expect(await history(page)).toBe(steps);
+  expect((await sceneState(page)).nodes[id]).toMatchObject({ kind: 'circle', segments: 6, radius: 12 });
+});
+
+test('Converti in profilo dalle Proprietà: il pulsante c\'è per le forme 2D, non per il testo, ed è disattivato se bloccate', async ({ page }) => {
+  const id = await addHexagon(page);
+  const action = page.locator('.properties__action', { hasText: 'Converti in profilo' });
+  await page.evaluate((nodeId) => window.__construct!.store.getState().updateNode(nodeId, { locked: true }), id);
+  await expect(action).toBeDisabled();
+  await page.evaluate((nodeId) => window.__construct!.store.getState().updateNode(nodeId, { locked: false }), id);
+  await action.click();
+  await settled(page);
+  expect((await sceneState(page)).nodes[id]).toMatchObject({ kind: 'path' });
+  // Ora è un Profilo: compare Modifica profilo e non più Converti
+  await expect(action).toHaveCount(0);
+  await expect(page.locator('.properties__action', { hasText: 'Modifica profilo' })).toBeVisible();
+  // Il testo non si converte
+  await page.evaluate(() => window.__construct!.store.getState().addShape2D('text'));
+  await settled(page);
+  await expect(action).toHaveCount(0);
+});

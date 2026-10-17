@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { isHidden, isLocked, useSceneStore } from './store';
+import { useNotifyStore } from '../ui/notify/notifyStore';
 import { composeTransform, eulerToMatrix, matrixToEuler } from './math';
 import { draftFromNode, pathCenter } from '../ui/ProfileEditor/model';
 import { bboxOf } from './bezier';
@@ -399,5 +400,61 @@ describe('commitProfile: applica il disegno della modale', () => {
     expect(scalePercent(after)).toBeCloseTo(100, 9);
     const boxAfter = bboxOf(pathContours(after))!;
     for (const key of ['minX', 'maxX', 'minY', 'maxY'] as const) expect(boxAfter[key]).toBeCloseTo(boxBefore[key], 3);
+  });
+});
+
+describe('convertToPath: Converti in profilo', () => {
+  const toasts = () => useNotifyStore.getState().toasts.map((t) => t.text);
+
+  beforeEach(() => useNotifyStore.setState({ toasts: [] }));
+
+  it('in un solo passo "Converti in profilo": stesso id, il nodo diventa un Profilo e Annulla riporta il cerchio', () => {
+    st().addShape2D('circle');
+    const [id] = st().scene.rootIds;
+    st().updateNode(id, { segments: 6, radius: 12 });
+    const before = st().scene.nodes[id];
+    useSceneStore.temporal.getState().clear();
+    expect(st().convertToPath(id)).toBe(true);
+    expect(st().op).toBe('Converti in profilo');
+    expect(useSceneStore.temporal.getState().pastStates).toHaveLength(1);
+    expect(st().scene.rootIds).toEqual([id]);
+    expect(st().selection).toEqual([id]);
+    expect(st().scene.nodes[id]).toMatchObject({ id, kind: 'path', name: before.name, color: before.color, height: 10 });
+    expect((st().scene.nodes[id] as Extract<Shape2DNode, { kind: 'path' }>).paths[0].nodes).toHaveLength(6);
+    undo();
+    expect(st().scene.nodes[id]).toEqual(before);
+  });
+
+  it('rifiuta un oggetto bloccato, il testo, un Profilo e un nodo che non è una forma 2D: nessun passo', () => {
+    st().addShape2D('square');
+    st().addShape2D('text');
+    st().addPrimitive('box');
+    const [box, text, square] = st().scene.rootIds;
+    const path = st().addPath({ paths: [{ closed: true, nodes: [{ p: [0, 0], kind: 'corner' }, { p: [10, 0], kind: 'corner' }, { p: [10, 10], kind: 'corner' }] }] });
+    st().updateNode(square, { locked: true });
+    useSceneStore.temporal.getState().clear();
+    for (const id of [square, text, path, box, 'inesistente']) expect(st().convertToPath(id)).toBe(false);
+    expect(useSceneStore.temporal.getState().pastStates).toHaveLength(0);
+    expect((st().scene.nodes[square] as Shape2DNode).kind).toBe('square');
+    // Un avviso per il bloccato e uno per il testo
+    expect(toasts().some((t) => t.includes('bloccato'))).toBe(true);
+    expect(toasts().some((t) => t.includes('Il testo non si converte'))).toBe(true);
+  });
+
+  it('un disegno oltre i tetti viene rifiutato con il messaggio che rimanda all\'import nella modale', () => {
+    st().addSvg({ name: 'grande', fileName: 'g.svg', contours: [Array.from({ length: 600 }, (_, i): [number, number] => [10 * Math.cos((2 * Math.PI * i) / 600), 10 * Math.sin((2 * Math.PI * i) / 600)])], width: 20, depth: 20 });
+    const [id] = st().scene.rootIds;
+    expect(st().convertToPath(id)).toBe(false);
+    expect(toasts().join(' ')).toContain('importa il file SVG dentro la modale del Profilo');
+    expect((st().scene.nodes[id] as Shape2DNode).kind).toBe('svg');
+  });
+
+  it('i legami che il Profilo non ha si perdono e l\'utente lo sa', () => {
+    st().addShape2D('circle');
+    const [id] = st().scene.rootIds;
+    st().updateNode(id, { segments: 6, exprs: { radius: { expr: '12' }, height: { expr: '10' } } });
+    expect(st().convertToPath(id)).toBe(true);
+    expect(Object.keys(st().scene.nodes[id].exprs ?? {})).toEqual(['height']);
+    expect(toasts().join(' ')).toContain('il legame di radius al parametro si perde');
   });
 });

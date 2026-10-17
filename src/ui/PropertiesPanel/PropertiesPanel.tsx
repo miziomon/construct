@@ -6,6 +6,7 @@ import { isCutter } from '../../scene/treatment';
 import { FONTS, FONT_CATEGORIES, fontInfo } from '../../scene/fontCatalog';
 import type { FontCategory, FontInfo } from '../../scene/fontCatalog';
 import { Lock, Unlock } from 'lucide-react';
+import { canConvertToPath } from '../../scene/convertPath';
 import { isPolygonShape, isRotational, RATIO_INFO, revolveParams, STAR_POINTS } from '../../scene/shapes2d';
 import { clampProfile, isBarShape, isProfileShape, maxRootRadius, maxTipSize, PROFILE_INFO } from '../../scene/profiles';
 import { hasBoundDimension, isRatioLocked, lockedPatch, scalePatch, scalePercent } from '../../scene/resize';
@@ -858,6 +859,14 @@ function Shape2DFields({ node, patch, locked }: { node: Shape2DNode; patch: (p: 
             <span className="properties__label">Disegno</span>
             <button type="button" className="properties__action" disabled={locked} onClick={() => useProfileEditor.getState().open({ nodeId: node.id })} title="Apre la modale di disegno: nodi, curve e fori del profilo (Maiusc+P)">
               Modifica profilo…
+            </button>
+          </div>
+        )}
+        {canConvertToPath(node) && (
+          <div className="properties__row">
+            <span className="properties__label">Disegno</span>
+            <button type="button" className="properties__action" disabled={locked} onClick={() => useSceneStore.getState().convertToPath(node.id)} title="Trasforma la forma in un Profilo di Bézier con gli stessi contorni, modificabile nodo per nodo: il solido non cambia">
+              Converti in profilo
             </button>
           </div>
         )}
