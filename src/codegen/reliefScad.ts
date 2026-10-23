@@ -31,7 +31,7 @@ const DENT_MODULE = [
  * vertice del bordo (pareti verticali a quadrilateri), ventaglio di chiusura dal centro del piano. I valori di `zmap` sono
  * centesimi di mm interi (un terzo di caratteri in meno dei decimali) e `pts` li divide per 100.
  */
-function polyhedronLines(grid: HeightGrid, planeZ: number, side: HeightSide): string[] {
+export function polyhedronLines(grid: HeightGrid, planeZ: number, side: HeightSide): string[] {
   const { nx, ny, x0, y0, dx, dy, z } = grid;
   const rows: string[] = [];
   for (let j = 0; j < ny; j++) rows.push(`  [${Array.from(z.subarray(j * nx, (j + 1) * nx), (v) => Math.round(v * 100)).join(',')}]`);

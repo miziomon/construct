@@ -48,10 +48,10 @@ export const BEST_ENGINE: Record<ReliefParams['kind'], ReliefEngine> = {
 };
 
 /** Quanto il solido del taglio sporge sopra la faccia (mm) e quanto la borchia entra nel pezzo (mm). */
-const ABOVE = 0.5;
-const EMBED = 0.2;
+export const ABOVE = 0.5;
+export const EMBED = 0.2;
 /** Spessore minimo oltre il quale una mappa di altezze taglia: sotto, la superficie resta sopra la faccia (niente facce complanari). */
-const FLOOR = 0.02;
+export const FLOOR = 0.02;
 
 const DEFAULT_STEP = 0.5;
 const DEFAULT_SEGMENTS = 24;
@@ -68,7 +68,7 @@ function boxesSection(wasm: ManifoldToplevel, boxes: Box[]): CrossSection {
 }
 
 /** Prisma della sezione tra `z0` e `z1`. */
-function prism(wasm: ManifoldToplevel, section: CrossSection, z0: number, z1: number): Manifold {
+export function prism(wasm: ManifoldToplevel, section: CrossSection, z0: number, z1: number): Manifold {
   const slab = wasm.Manifold.extrude(section, z1 - z0, 0, 0, [1, 1], false);
   const moved = slab.translate([0, 0, z0]);
   slab.delete();
@@ -138,7 +138,7 @@ function depthMapCutter(wasm: ManifoldToplevel, rect: Rect, step: number, depth:
 }
 
 /** Intersezione con il prisma della regione e pulizia: restituisce null se non resta nulla. */
-function clipToRegion(wasm: ManifoldToplevel, solid: Manifold, region: CrossSection, z0: number, z1: number): Manifold | null {
+export function clipToRegion(wasm: ManifoldToplevel, solid: Manifold, region: CrossSection, z0: number, z1: number): Manifold | null {
   const box = prism(wasm, region, z0, z1);
   const clipped = solid.intersect(box);
   box.delete();
