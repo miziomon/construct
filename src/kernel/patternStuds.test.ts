@@ -127,6 +127,27 @@ describe('Pattern Borchie nel kernel', () => {
     expect(m.volume).toBeGreaterThanOrEqual(FULL);
   });
 
+  it('faccia grande con il tetto di borchie e il margine: le piramidi che si toccano si uniscono (nessun doppio conteggio)', () => {
+    // 410 × 410: il tetto di 2000 borchie allarga il passo a 9,2 mm sulla faccia intera ma a 8,3 mm su quella ridotta del margine,
+    // con piramidi di lato 9 mm: sul rettangolo ridotto si sovrappongono e serve l'unione
+    const big: Vec3 = [410, 410, 5];
+    const cube = { ...primitiveDefaults('box'), id: 'c', name: 'Pannello', position: [0, 0, 0], size: big } as PrimitiveNode;
+    const bb = { min: big.map((v) => -v / 2) as Vec3, max: big.map((v) => v / 2) as Vec3 };
+    const relief = { ...studs, shape: 'pyramid' as const, pitch: 6, radius: 4.5, height: 1.5 };
+    const pattern = normalizePattern({ ...defaultPatternParams(bb, 7), kind: 'studs', margin: 20, design: 'pyramid', relief });
+    const g: GroupNode = { id: 'g', name: 'Pattern', type: 'group', op: 'pattern', children: ['c'], position: [0, 0, 0], rotation: [0, 0, 0], mode: 'solid', color: '#4da3ff', pattern };
+    const { centers, rect } = studCentersOf(pattern, pattern.faces[0]);
+    const m = run({ nodes: { c: cube, g }, rootIds: ['g'] });
+    expect(m.status).toBe('NoError');
+    // Il passo effettivo della griglia (sul rettangolo ridotto) è sotto il lato della piramide: ci sono sovrapposizioni
+    const pitch = Math.hypot(centers[1][0] - centers[0][0], centers[1][1] - centers[0][1]);
+    expect(pitch).toBeLessThan(2 * relief.radius);
+    expect(rect.maxX - rect.minX).toBeCloseTo(370, 6);
+    // L'unione conta una volta sola il materiale comune: il volume aggiunto sta sotto la somma delle singole borchie
+    expect(m.volume - 410 * 410 * 5).toBeLessThan(centers.length * studVolume('pyramid', relief) * 0.99);
+    expect(m.volume - 410 * 410 * 5).toBeGreaterThan(0);
+  }, 60_000);
+
   it('su un pezzo non rettangolare (cilindro) il contorno vero ritaglia le borchie e nessuna resta staccata', () => {
     const piece = wasm.Manifold.cylinder(10, 20, 20, 48);
     const cb = { min: [-20, -20, 0] as Vec3, max: [20, 20, 10] as Vec3 };

@@ -1,7 +1,7 @@
 import { apply, eulerToMatrix, matrixToEuler, round, transpose } from './math';
 import type { Mat3, Transform } from './math';
 import { rotationToDown } from './layFlat';
-import { BRICK_DESIGNS, STUD_SHAPES, brickModule, fitBrick, normalizeRelief, reliefDefaults, studCentersFor } from './relief';
+import { BRICK_DESIGNS, STUD_SHAPES, brickModule, fitBrick, normalizeRelief, reliefDefaults, studCentersFor, studInnerRect } from './relief';
 import type { BrickParams, ReliefDesign, ReliefParams, StudParams } from './relief';
 import { PATTERN_ALGORITHM, randomVoronoi } from './voronoi';
 import type { Rect, Vec2 } from './voronoi';
@@ -108,12 +108,14 @@ export const patternRelief = (p: PatternParams): { design: ReliefDesign; relief:
 
 /**
  * Centri delle borchie di una faccia: la griglia centrata nel rettangolo esatto della faccia (senza il margine di 1 mm di
- * `frameRect`) meno le borchie che non stanno intere dentro il margine. Calcolo puro: il kernel e il codice OpenSCAD usano la
- * stessa lista e ritagliano poi sul contorno vero della faccia.
+ * `frameRect`) ridotto del margine, con le borchie intere dentro. Restituisce anche quel rettangolo ridotto (`rect`): è quello
+ * da cui nasce la griglia, quindi anche il passo effettivo (che si allarga oltre un tetto di borchie) si deve leggere lì.
+ * Calcolo puro: il kernel e il codice OpenSCAD usano la stessa lista e ritagliano poi sul contorno vero della faccia.
  */
 export function studCentersOf(p: PatternParams, face: PatternFace) {
-  const rect = frameRect(p, face, 0);
-  return { rect, centers: studCentersFor(rect, studRelief(p).relief, p.margin) };
+  const relief = studRelief(p).relief;
+  const rect = studInnerRect(frameRect(p, face, 0), p.margin);
+  return { rect, centers: studCentersFor(frameRect(p, face, 0), relief, p.margin) };
 }
 
 /** Misura in mm per i testi (una cifra decimale, virgola). */

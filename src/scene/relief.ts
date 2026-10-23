@@ -587,9 +587,14 @@ export function studCenters(rect: Rect, p: StudParams): Vec2[] {
  * ritaglia poi la regione. Un margine che lascia un rettangolo vuoto non lascia borchie.
  */
 export function studCentersFor(rect: Rect, params: StudParams, margin: number): Vec2[] {
-  const m = Math.max(0, Number.isFinite(margin) ? margin : 0);
-  const inner = { minX: rect.minX + m, minY: rect.minY + m, maxX: rect.maxX - m, maxY: rect.maxY - m };
+  const inner = studInnerRect(rect, margin);
   return inner.maxX > inner.minX && inner.maxY > inner.minY ? studCenters(inner, normalizeRelief(params)) : [];
+}
+
+/** Il rettangolo della faccia ridotto del margine (un margine non finito vale zero): quello in cui sta la griglia delle borchie. */
+export function studInnerRect(rect: Rect, margin: number): Rect {
+  const m = Math.max(0, Number.isFinite(margin) ? margin : 0);
+  return { minX: rect.minX + m, minY: rect.minY + m, maxX: rect.maxX - m, maxY: rect.maxY - m };
 }
 
 /**
