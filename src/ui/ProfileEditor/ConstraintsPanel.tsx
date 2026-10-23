@@ -1,5 +1,5 @@
 import { NumberField } from '../NumberField/NumberField';
-import { CONSTRAINT_GLYPHS, CONSTRAINT_NAMES, SELECTION_CONSTRAINTS, canApplyConstraint, describeConstraint, dimensionValue, isDimension, nodeNames } from './dimensions';
+import { CONSTRAINT_GLYPHS, CONSTRAINT_NAMES, SELECTION_CONSTRAINTS, canApplyConstraint, describeConstraint, dimensionValue, isDimension, isLinearDimension, nodeNames } from './dimensions';
 import type { SelectionConstraint } from './dimensions';
 import type { PathContour, ProfileConstraint } from '../../scene/types';
 
@@ -18,6 +18,8 @@ export interface ConstraintsPanelProps {
   /** Cambia il valore di una quota. */
   onValue: (id: string, value: number) => void;
   onDelete: (id: string) => void;
+  /** Ridispone tutte le quote di lunghezza fuori dal disegno e senza sovrapposizioni (un passo di cronologia). */
+  onReposition: () => void;
 }
 
 /** Spiegazione di ogni pulsante: che nodi servono. */
@@ -32,7 +34,7 @@ const BUTTON_TIPS: Record<SelectionConstraint, string> = {
  * Sezione «Quote e vincoli» della colonna di destra: i pulsanti dei vincoli (Orizzontale, Verticale, Fisso, Coincidente) per
  * i nodi scelti e l'elenco di tutte le quote e i vincoli del disegno, con il valore modificabile delle quote.
  */
-export function ConstraintsPanel({ paths, constraints, selectedNodes, bad, selected, onSelect, onApply, onValue, onDelete }: ConstraintsPanelProps) {
+export function ConstraintsPanel({ paths, constraints, selectedNodes, bad, selected, onSelect, onApply, onValue, onDelete, onReposition }: ConstraintsPanelProps) {
   const names = nodeNames(paths);
   return (
     <section className="profile-editor__section" data-quotes-panel="">
@@ -45,8 +47,13 @@ export function ConstraintsPanel({ paths, constraints, selectedNodes, bad, selec
         ))}
       </div>
       <p className="profile-editor__hint">
-        {selectedNodes === 0 ? 'Scegli dei nodi con Seleziona (Maiusc+clic per più nodi) per aggiungere un vincolo. Con Quota (D) clicca un segmento o due nodi.' : `${selectedNodes} ${selectedNodes === 1 ? 'nodo scelto' : 'nodi scelti'}.`}
+        {selectedNodes === 0 ? 'Scegli dei nodi con Seleziona (Maiusc+clic per più nodi, Alt+clic su un segmento per i suoi due nodi) per aggiungere un vincolo. Con Quota (D) clicca un segmento o due nodi.' : `${selectedNodes} ${selectedNodes === 1 ? 'nodo scelto' : 'nodi scelti'}.`}
       </p>
+      {constraints.some(isLinearDimension) && (
+        <button type="button" className="profile-editor__mini" data-reposition="" title="Ridispone tutte le quote di lunghezza fuori dal disegno, senza sovrapposizioni. Si possono anche trascinare: l'etichetta lungo la linea, la linea più o meno lontana" onClick={onReposition}>
+          Riposiziona quote
+        </button>
+      )}
       {constraints.length === 0 ? (
         <p className="profile-editor__hint">Nessuna quota né vincolo.</p>
       ) : (
@@ -70,7 +77,7 @@ export function ConstraintsPanel({ paths, constraints, selectedNodes, bad, selec
                   (c.ref ? (
                     <p className="profile-editor__hint">({String(Math.round(dimensionValue(c, paths) * 100) / 100).replace('.', ',')} {unit}) quota di riferimento</p>
                   ) : (
-                    <NumberField label="Valore" unit={unit} min={c.t === 'angle' ? -360 : 0.001} max={c.t === 'angle' ? 360 : 1e5} value={c.v ?? 0} onCommit={(v) => onValue(c.id, v)} />
+                    <NumberField label="Valore" ariaLabel={`Valore di ${label}`} unit={unit} value={c.v ?? 0} onCommit={(v) => onValue(c.id, v)} />
                   ))}
               </li>
             );

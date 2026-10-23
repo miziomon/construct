@@ -2,18 +2,22 @@ import { describe, expect, it } from 'vitest';
 import {
   addConstraint,
   addFixed,
+  addReferenceDimension,
   addSelectionConstraint,
   canApplyConstraint,
   createDimension,
   diagnose,
   dimLayout,
+  dimText,
   dimensionValue,
   dragFrame,
+  fmtDim,
   idsOf,
   moveNodesConstrained,
   nodeNames,
   pointMap,
   pointsOf,
+  quoteMismatch,
   removeConstraint,
   setConstraintValue,
   settlePaths,
@@ -189,24 +193,30 @@ describe('aggiunta di vincoli e quote', () => {
     let d = squared();
     d = must(addConstraint(d, { t: 'dist', p: ['n1', 'n2'], v: 60 }));
     d = must(addConstraint(d, { t: 'dist', p: ['n2', 'n3'], v: 30 }));
+    const before = JSON.stringify(pointsOf(d.paths));
     // La diagonale di un rettangolo 60 x 30 non può valere 10
     const r = addConstraint(d, { t: 'dist', p: ['n1', 'n3'], v: 10 });
     expect(r.ok).toBe(false);
     if (r.ok) return;
-    expect(r.message).toMatch(/^Quota in conflitto con /);
-    expect(r.message).toMatch(/non applicato$/);
+    expect(r.message).toMatch(/^Quota in conflitto con .* non applicato$/);
+    expect(r.reason).toBe('conflict');
     expect(r.ids.length).toBeGreaterThan(0);
-    // Chi chiama tiene il disegno di prima (la funzione non lo modifica)
+    // Il disegno di prima non è stato toccato: stessi vincoli e stesse posizioni dei nodi
     expect(d.constraints).toHaveLength(7);
+    expect(JSON.stringify(pointsOf(d.paths))).toBe(before);
   });
 
   it('un vincolo che il disegno già impone (ridondante) non si applica', () => {
     const d = squared();
     const r = addConstraint(d, { t: 'horizontal', p: ['n1', 'n2'] });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.message).toMatch(/ridondante/);
+    if (!r.ok) {
+      expect(r.message).toMatch(/ridondante/);
+      expect(r.reason).toBe('redundant');
+    }
     const q = addConstraint(must(addConstraint(d, { t: 'dist', p: ['n1', 'n2'], v: 40 })), { t: 'distX', p: ['n1', 'n2'], v: 40, s: 1 });
     expect(q.ok).toBe(false);
+    if (!q.ok) expect(q.reason).toBe('redundant');
   });
 
   it('un vincolo in conflitto con un altro: due nodi coincidenti non possono avere una distanza', () => {
@@ -221,7 +231,7 @@ describe('aggiunta di vincoli e quote', () => {
     const q = must(addConstraint(start(), { t: 'dist', p: ['n1', 'n2'], v: 5 }));
     const c = addConstraint(q, { t: 'coincident', p: ['n1', 'n2'] });
     expect(c.ok).toBe(false);
-    if (!c.ok) expect(c.message).toMatch(/^Vincolo in conflitto con Lunghezza P1\.1-P1\.2/);
+    if (!c.ok) expect(c.message).toMatch(/^Vincolo in conflitto con Distanza P1\.1-P1\.2/);
   });
 
   it('Fisso: tiene i nodi dove sono, salta quelli già fissi, rifiuta se non resta nulla da fissare', () => {
@@ -253,6 +263,73 @@ describe('aggiunta di vincoli e quote', () => {
     const ok = must(addSelectionConstraint(start(), 'coincident', ['n1', 'n2']));
     expect(pos(ok, 'n1')[0]).toBeCloseTo(pos(ok, 'n2')[0], 6);
     expect(pos(ok, 'n1')[1]).toBeCloseTo(pos(ok, 'n2')[1], 6);
+  });
+});
+
+describe('quote che non corrispondono al disegno', () => {
+  it('un rettangolo largo 80 con la quota 40 ha uno scarto di 40 mm; un disegno risolto e arrotondato a 4 decimali no', () => {
+    const wide = rect();
+    const scaled: Geo = { paths: [{ ...wide[0], nodes: wide[0].nodes.map((n) => ({ ...n, p: [n.p[0] * 2, n.p[1] * 2] as Vec2 })) }], constraints: [{ id: 'k1', t: 'dist', p: ['n1', 'n2'], v: 40 }] };
+    expect(quoteMismatch(scaled)).toBeCloseTo(40, 6);
+    // Senza vincoli, o con i vincoli validi, nessuno scarto; i vincoli con nodi mancanti non contano
+    expect(quoteMismatch(start())).toBeNull();
+    expect(quoteMismatch({ paths: scaled.paths, constraints: [{ id: 'k', t: 'dist', p: ['n1', 'zz'], v: 5 }] })).toBeNull();
+    let d = squared();
+    d = must(addConstraint(d, { t: 'dist', p: ['n1', 'n2'], v: 12.3456789 }));
+    d = must(addConstraint(d, { t: 'dist', p: ['n2', 'n3'], v: 7.7777777 }));
+    expect(quoteMismatch(d)).toBeNull();
+    expect(quoteMismatch({ paths: roundPaths(d.paths), constraints: d.constraints })).toBeNull();
+    // Il disegno ridimensionato e salvato (nodi doppi, quote uguali) si segnala anche a quote rispettate prima
+    const saved: Geo = { paths: roundPaths(scaled.paths), constraints: scaled.constraints };
+    expect(quoteMismatch(saved)).toBeGreaterThan(30);
+  });
+
+  it('anche i vincoli geometrici contano: un orizzontale con i nodi a quote diverse', () => {
+    const d: Geo = { paths: writeBack(rect(), [{ id: 'n2', x: 40, y: 3 }]), constraints: [{ id: 'k1', t: 'horizontal', p: ['n1', 'n2'] }] };
+    expect(quoteMismatch(d)).toBeCloseTo(3, 9);
+  });
+});
+
+describe('quota di riferimento', () => {
+  const full = (): Geo => {
+    let d = squared();
+    d = must(addConstraint(d, { t: 'dist', p: ['n1', 'n2'], v: 40 }));
+    return must(addConstraint(d, { t: 'dist', p: ['n2', 'n3'], v: 20 }));
+  };
+
+  it('una quota ridondante o in conflitto si può aggiungere come riferimento: misura attuale, nessun movimento, nessun vincolo in più per il risolutore', () => {
+    const d = full();
+    // Esatta (ridondante) e sbagliata (in conflitto): in tutti e due i casi il rifiuto dice perché, e il riferimento è sempre possibile
+    const cases: [Omit<ProfileConstraint, 'id'>, string][] = [[{ t: 'distX', p: ['n1', 'n2'], s: 1, v: 40 }, 'redundant'], [{ t: 'dist', p: ['n1', 'n3'], v: 10 }, 'conflict']];
+    for (const [dim, reason] of cases) {
+      const r = addConstraint(d, dim);
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.reason).toBe(reason);
+    }
+    const out = addReferenceDimension(d, { t: 'dist', p: ['n1', 'n3'], v: 10 });
+    const ref = out.constraints!.at(-1)!;
+    expect(ref).toMatchObject({ t: 'dist', p: ['n1', 'n3'], ref: true });
+    // Il valore è la misura attuale (la diagonale 44,72), non il 10 digitato
+    expect(ref.v).toBeCloseTo(Math.hypot(40, 20), 9);
+    expect(dimText(ref, out.paths)).toBe('(44,72)');
+    expect(out.paths).toBe(d.paths);
+    expect(out.constraints).toHaveLength(d.constraints!.length + 1);
+    // Non vincola: il disegno resta completamente vincolato, senza conflitti né ridondanze
+    const diag = diagnose(out)!;
+    expect(diag.report.state).toBe('full');
+    expect(diag.bad.size).toBe(0);
+    // Segue il disegno: cambiando la larghezza la misura di riferimento cambia, e non si può modificare
+    const wider = must(setConstraintValue(out, out.constraints!.find((c) => c.t === 'dist' && c.p[1] === 'n2')!.id, 80));
+    expect(dimText(wider.constraints!.find((c) => c.id === ref.id)!, wider.paths)).toBe(`(${fmtDim(Math.hypot(80, 20))})`);
+    expect(setConstraintValue(out, ref.id, 5)).toMatchObject({ ok: false, message: 'Questa quota non ha un valore da cambiare' });
+  });
+
+  it('l\'id della quota di riferimento è nuovo e la posizione (off, at) della proposta si conserva', () => {
+    const d = full();
+    const out = addReferenceDimension(d, { t: 'distX', p: ['n1', 'n2'], s: 1, v: 40, off: -4, at: 0.3 });
+    const ref = out.constraints!.at(-1)!;
+    expect(d.constraints!.some((c) => c.id === ref.id)).toBe(false);
+    expect(ref).toMatchObject({ ref: true, off: -4, at: 0.3 });
   });
 });
 

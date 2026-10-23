@@ -17,7 +17,7 @@ const paths: PathContour[] = [
 ];
 const noop = () => {};
 const render = (patch: Partial<ConstraintsPanelProps> = {}) =>
-  renderToStaticMarkup(createElement(ConstraintsPanel, { paths, constraints: [], selectedNodes: 0, bad: new Set<string>(), selected: null, onSelect: noop, onApply: noop, onValue: noop, onDelete: noop, ...patch }));
+  renderToStaticMarkup(createElement(ConstraintsPanel, { paths, constraints: [], selectedNodes: 0, bad: new Set<string>(), selected: null, onSelect: noop, onApply: noop, onValue: noop, onDelete: noop, onReposition: noop, ...patch }));
 
 /** Il pulsante di un vincolo (il suo tag di apertura) nel markup. */
 const button = (html: string, type: string) => html.match(new RegExp(`<button[^>]*data-constraint-button="${type}"[^>]*>`))![0];
@@ -52,7 +52,11 @@ describe('sezione Quote e vincoli', () => {
     const html = render({ constraints, selected: 'k2', bad: new Set(['k1']) });
     expect(html.match(/data-constraint="/g)).toHaveLength(3);
     expect(html).toContain('aria-label="Elimina Orizzontale P1.1-P1.2"');
-    expect(html).toContain('aria-label="Elimina Lunghezza P1.2-P1.3"');
+    expect(html).toContain('aria-label="Elimina Distanza P1.2-P1.3"');
+    // Il campo del valore ha un nome che lo distingue dagli altri dell'elenco
+    expect(html).toContain('aria-label="Valore di Distanza P1.2-P1.3"');
+    // Nessun limite che porti in silenzio un valore a un altro: il campo non ha min né max (la validazione dà il messaggio)
+    expect(html).not.toContain('min=');
     // Il valore di una quota pilotante è un campo; il vincolo geometrico non ne ha; la quota di riferimento mostra solo la misura
     expect(html.match(/number-field__input/g)).toHaveLength(1);
     expect(html).toContain('value="20"');
@@ -61,5 +65,11 @@ describe('sezione Quote e vincoli', () => {
     // Stati della riga
     expect(html).toContain('profile-editor__constraint--selected');
     expect(html).toContain('profile-editor__constraint--bad');
+  });
+
+  it('Riposiziona quote c\'è solo se ci sono quote di lunghezza (non per i soli vincoli o per le quote di riferimento senza linea)', () => {
+    expect(render()).not.toContain('data-reposition');
+    expect(render({ constraints: [{ id: 'k1', t: 'horizontal', p: ['n1', 'n2'] }] })).not.toContain('data-reposition');
+    expect(render({ constraints: [{ id: 'k2', t: 'dist', p: ['n1', 'n2'], v: 40 }] })).toContain('data-reposition');
   });
 });

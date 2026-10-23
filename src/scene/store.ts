@@ -18,6 +18,7 @@ import { composeTransform, conjugate, eulerToMatrix, matrixToEuler, normalizeMir
 import type { Mirror, Transform } from './math';
 import { pathNaturalSize } from './shapes2d';
 import { assignNodeIds, nodeIds } from './bezier';
+import { pathScaleFactors, quoteScaleWarning } from './quoteScale';
 import { hasBoundDimension } from './resize';
 import { compensatePosition } from './pathPlacement';
 import { convertToPath as convertShapeToPath } from './convertPath';
@@ -510,6 +511,15 @@ export const useSceneStore = create<SceneState>()(
           Object.assign(node, kept.patch);
         });
         if (held) noteHeld(before?.name);
+        // Profilo con quote ridimensionato (Larghezza, Profondità, Scala, gizmo): le quote non si aggiornano, l'utente lo sa
+        const after = get().scene.nodes[id];
+        if (before?.type === 'shape2d' && before.kind === 'path' && after?.type === 'shape2d' && after.kind === 'path' && ('width' in patch || 'depth' in patch)) {
+          const [was, now] = [pathScaleFactors(before), pathScaleFactors(after)];
+          if (now && (!was || Math.abs(was.sx - now.sx) > 1e-6 || Math.abs(was.sy - now.sy) > 1e-6)) {
+            const warning = quoteScaleWarning(after, `«${after.name}»`);
+            if (warning) notify.info(warning);
+          }
+        }
         // Le misure inserite diventano il punto di partenza delle prossime forme dello stesso tipo
         if (before && (before.type === 'primitive' || before.type === 'shape2d') && !isLocked(get().scene, id)) rememberShape(before.kind, patch);
       },

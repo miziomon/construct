@@ -462,6 +462,21 @@ describe('Profilo con id dei nodi, vincoli e parametri', () => {
     expect(get(id)).not.toHaveProperty('constraints');
   });
 
+  it('la posizione delle quote (off, at) e le quote di riferimento sopravvivono ad addPath e commitProfile', () => {
+    const placed = [
+      { id: 'k1', t: 'dist' as const, p: ['n1', 'n2'], v: 40.123456789, off: -3.5, at: 0.25 },
+      { id: 'k2', t: 'dist' as const, p: ['n1', 'n3'], v: 44, ref: true as const, off: 7, at: 0.9 },
+    ];
+    const id = st().addPath({ paths: [tri()], constraints: placed });
+    expect(get(id).constraints).toStrictEqual(placed);
+    // Trascinata un'etichetta nella modale: nuovo off e at, un passo, e si rilegge uguale dal nodo
+    const moved = placed.map((c) => (c.id === 'k1' ? { ...c, off: -9, at: 0.75 } : c));
+    const draft = { ...draftFromNode(get(id)), constraints: moved };
+    expect(st().commitProfile(id, draft, { before: pathCenter(draft), after: pathCenter(draft) })).toBe(true);
+    expect(get(id).constraints).toStrictEqual(moved);
+    expect(draftFromNode(get(id)).constraints).toStrictEqual(moved);
+  });
+
   it('commitProfile conserva id e vincoli in un solo passo e li toglie quando la modale non li ha più', () => {
     const id = st().addPath({ paths: [tri()] });
     useSceneStore.temporal.getState().clear();
@@ -483,6 +498,44 @@ describe('Profilo con id dei nodi, vincoli e parametri', () => {
     // Annulla riporta i vincoli
     undo();
     expect(get(id).constraints).toStrictEqual(constraints);
+  });
+});
+
+describe('avviso di ridimensionamento di un Profilo con quote', () => {
+  const rect = { closed: true, nodes: [{ id: 'n1', p: [0, 0] as [number, number], kind: 'corner' as const }, { id: 'n2', p: [40, 0] as [number, number], kind: 'corner' as const }, { id: 'n3', p: [40, 20] as [number, number], kind: 'corner' as const }, { id: 'n4', p: [0, 20] as [number, number], kind: 'corner' as const }] };
+  const width = { id: 'k1', t: 'dist' as const, p: ['n1', 'n2'], v: 40 };
+  const toasts = () => useNotifyStore.getState().toasts.map((t) => t.text);
+
+  beforeEach(() => useNotifyStore.setState({ toasts: [] }));
+
+  it('cambiare Larghezza o Profondità di un Profilo con quote avvisa con il fattore e dice quale valore resta', () => {
+    const id = st().addPath({ paths: [rect], constraints: [width], name: 'Staffa' });
+    st().updateNode(id, { width: 80, depth: 40 });
+    expect(toasts()).toHaveLength(1);
+    expect(toasts()[0]).toBe('«Staffa»: ridimensionato ×2 in X e ×2 in Y. Le quote non si aggiornano: 40 mm resta il valore salvato');
+    // Un'altra misura (non la scala) non avvisa; tornare alla misura naturale nemmeno
+    st().updateNode(id, { height: 9 });
+    st().updateNode(id, { width: 40, depth: 20 });
+    expect(toasts()).toHaveLength(1);
+  });
+
+  it('senza quote, con sole quote di riferimento o con la stessa scala non c\'è nessun avviso', () => {
+    const plain = st().addPath({ paths: [rect] });
+    st().updateNode(plain, { width: 80, depth: 40 });
+    const onlyRef = st().addPath({ paths: [rect], constraints: [{ id: 'k1', t: 'dist', p: ['n1', 'n2'], v: 40, ref: true }] });
+    st().updateNode(onlyRef, { width: 80, depth: 40 });
+    const same = st().addPath({ paths: [rect], constraints: [width] });
+    st().updateNode(same, { width: 40, depth: 20 });
+    expect(toasts()).toEqual([]);
+  });
+
+  it('un cambio di scala successivo avvisa di nuovo (un fattore diverso)', () => {
+    const id = st().addPath({ paths: [rect], constraints: [width] });
+    st().updateNode(id, { width: 60, depth: 30 });
+    st().updateNode(id, { width: 80, depth: 40 });
+    expect(toasts()).toHaveLength(2);
+    expect(toasts()[0]).toContain('×1,5 in X e ×1,5 in Y');
+    expect(toasts()[1]).toContain('×2 in X e ×2 in Y');
   });
 });
 

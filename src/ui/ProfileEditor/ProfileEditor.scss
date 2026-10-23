@@ -235,19 +235,19 @@
     stroke-linejoin: round;
   }
 
-  // Stato di vincolo: completamente vincolato = colore del testo, in conflitto = rosso (il significato è anche nel piede e nell'elenco)
+  // Stato di vincolo: completamente vincolato = colore del testo (un foro tiene il suo colore), in conflitto = rosso anche per un foro
   &__curve--def {
     stroke: color('text');
-  }
-
-  &__curve--err {
-    stroke: color('danger');
   }
 
   // Un contorno dentro un altro è un foro: tratteggiato e con il colore del foro (il significato non è affidato solo al colore)
   &__curve--hole {
     stroke: color('hole');
     stroke-dasharray: 6 3;
+  }
+
+  &__curve--err {
+    stroke: color('danger');
   }
 
   &__handle {
@@ -411,6 +411,57 @@
 
     text {
       fill: color('danger');
+    }
+  }
+
+  // Linea di quota: un tracciato trasparente e largo per afferrarla; etichetta: si trascina o, con un clic, apre il campo
+  &__qline {
+    fill: none;
+    stroke: transparent;
+    stroke-width: 12;
+    cursor: move;
+    pointer-events: stroke;
+  }
+
+  &__qlabel {
+    cursor: grab;
+  }
+
+  // Avviso sopra il disegno con il pulsante per la quota di riferimento
+  &__qbar {
+    position: absolute;
+    top: $space-2;
+    left: 50%;
+    z-index: 7;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: $space-2;
+    max-width: calc(100% - 24px);
+    padding: $space-2 $space-3;
+    border: 1px solid color('danger');
+    border-radius: $radius-md;
+    background: color('panel');
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+    font-size: 12px;
+    transform: translateX(-50%);
+
+    span {
+      color: color('danger');
+    }
+
+    button {
+      padding: 3px $space-2;
+      border: 1px solid color('border');
+      border-radius: $radius-sm;
+      background: color('panel-raised');
+      color: color('text');
+      font-size: 12px;
+      @include focus-ring;
+
+      &:hover {
+        border-color: color('accent');
+      }
     }
   }
 

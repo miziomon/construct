@@ -597,7 +597,8 @@ export function draftFromNode(node: Extract<Shape2DNode, { kind: 'path' }>): Dra
     const sx = Math.max(0.01, node.width) / box.width;
     const sy = Math.max(0.01, node.depth) / box.depth;
     // Attenzione: con la scala incorporata i valori `v` delle quote e `x`, `y` di `fixed` NON si scalano e non corrispondono più
-    // ai nodi (decisione 11 dello studio quote: rimandata, fase B3)
+    // ai nodi. Decisione 11a dello studio quote: la modale avvisa con il fattore (`quoteScaleWarning`) e non riscrive i valori
+    // (scalare nodi e quote insieme è la tappa «c», futura)
     if (sx !== 1 || sy !== 1) paths = bakeScale(paths, sx, sy, box.cx, box.cy);
   }
   return {

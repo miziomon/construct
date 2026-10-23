@@ -76,6 +76,26 @@ async function typeValue(page: Page, value: string) {
   await expect(field(page)).toHaveCount(0);
 }
 
+/** Trascina con piccoli passi, come una persona. */
+async function dragBy(page: Page, from: { x: number; y: number }, dx: number, dy: number) {
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  for (let i = 1; i <= 8; i++) await page.mouse.move(from.x + (dx * i) / 8, from.y + (dy * i) / 8);
+  await page.mouse.up();
+}
+
+const labels = (page: Page) => editor(page).locator('[data-quote-label]');
+/** Avviso sopra il disegno (quota rifiutata) e i suoi pulsanti. */
+const banner = (page: Page) => editor(page).locator('.profile-editor__qbar');
+/** Centro e riquadro di un'etichetta in pixel di pagina. */
+async function box(locator: ReturnType<typeof labels>) {
+  const b = (await locator.boundingBox())!;
+  return { ...b, cx: b.x + b.width / 2, cy: b.y + b.height / 2 };
+}
+/** Le due etichette non si sovrappongono. */
+const disjoint = (a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number }) =>
+  a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y;
+
 const fit = (page: Page) => editor(page).getByRole('button', { name: 'Adatta', exact: true }).click();
 const quoteTool = (page: Page) => editor(page).getByRole('button', { name: 'Quota', exact: true });
 const ok = (page: Page) => editor(page).getByRole('button', { name: 'OK', exact: true });
@@ -133,6 +153,18 @@ test('una quota in conflitto e un vincolo ridondante si rifiutano con un avviso 
   await expect(page.getByText('Quota in conflitto')).toBeVisible();
   await expect(editor(page).locator('[data-constraint]')).toHaveCount(7);
   await expect(editor(page).locator('[data-quote-label]')).toHaveCount(2);
+  // L'avviso offre la quota di riferimento; qui si chiude senza aggiungerla
+  await expect(banner(page).getByRole('button', { name: 'Aggiungi come quota di riferimento' })).toBeVisible();
+  await banner(page).getByRole('button', { name: 'Annulla' }).click();
+  await expect(banner(page)).toHaveCount(0);
+
+  // Una quota ridondante non identica: la distanza in X tra A e B vale 40 e le altre già lo impongono (quota allineata 40 e orizzontale)
+  await editor(page).getByRole('group', { name: 'Modo della quota' }).getByRole('button', { name: 'Orizzontale' }).click();
+  await clickSegment(page, '0:0', '0:1');
+  await typeValue(page, '40');
+  await expect(banner(page)).toContainText('Quota ridondante');
+  await expect(editor(page).locator('[data-constraint]')).toHaveCount(7);
+  await banner(page).getByRole('button', { name: 'Annulla' }).click();
 
   // Orizzontale tra A e B c'è già (e A e B sono già determinati): ridondante
   await editor(page).getByRole('button', { name: 'Seleziona', exact: true }).click();
@@ -189,4 +221,214 @@ test('OK e riapertura conservano quote e vincoli; Esc nel campo annulla senza ca
   await ok(page).click();
   await expect(editor(page)).toHaveCount(0);
   expect(await history(page)).toBe(steps + 1);
+});
+
+test('Annulla toglie un vincolo o una quota in un solo passo e Ripeti li rimette', async ({ page }) => {
+  const id = await addProfile(page, []);
+  await openEditor(page, id);
+  const items = editor(page).locator('[data-constraint]');
+  await expect(items).toHaveCount(0);
+
+  // Fisso su A (un vincolo, un passo)
+  await clickNode(page, '0:0');
+  await editor(page).locator('[data-constraint-button="fixed"]').click();
+  await expect(items).toHaveCount(1);
+  // Quota di larghezza 60 (un passo): i nodi si spostano e la quota resta una sola voce
+  await quoteTool(page).click();
+  await clickSegment(page, '0:0', '0:1');
+  await typeValue(page, '60');
+  await expect(items).toHaveCount(2);
+  await expect(labels(page)).toHaveCount(1);
+  await expect(editor(page).locator('.profile-editor')).toBeFocused();
+
+  // Annulla: prima la quota (tutta, con il movimento dei nodi), poi il vincolo; Ripeti li riporta uno alla volta
+  await page.keyboard.press('Control+z');
+  await expect(items).toHaveCount(1);
+  await expect(labels(page)).toHaveCount(0);
+  await page.keyboard.press('Control+z');
+  await expect(items).toHaveCount(0);
+  await page.keyboard.press('Control+Shift+z');
+  await expect(items).toHaveCount(1);
+  await page.keyboard.press('Control+Shift+z');
+  await expect(items).toHaveCount(2);
+  await expect(labels(page)).toHaveCount(1);
+
+  // La cronologia della scena non è cambiata: solo l'OK la tocca
+  await ok(page).click();
+  await expect(editor(page)).toHaveCount(0);
+  const saved = await getNode(page, id);
+  expect(saved.paths[0].nodes[1].p[0]).toBeCloseTo(60, 3);
+  expect(saved.constraints).toHaveLength(2);
+});
+
+test('trascinare un nodo vincolato: Orizzontale e Verticale restano validi e il resto del disegno segue', async ({ page }) => {
+  const id = await addProfile(page, SQUARED);
+  await openEditor(page, id);
+  // Trascina il nodo in alto a destra più in là e più in alto: i lati restano orizzontali e verticali, A resta fisso
+  const c = await center(node(page, '0:2'));
+  await dragBy(page, c, 60, -40);
+  await ok(page).click();
+  await expect(editor(page)).toHaveCount(0);
+  await settled(page);
+  const p = (await getNode(page, id)).paths[0].nodes.map((n) => n.p);
+  // A non si è mosso; AB è orizzontale (stessa y), BC e AD verticali (stessa x), DC orizzontale
+  expect(p[0][0]).toBeCloseTo(0, 3);
+  expect(p[0][1]).toBeCloseTo(0, 3);
+  expect(p[1][1]).toBeCloseTo(p[0][1], 3);
+  expect(p[2][0]).toBeCloseTo(p[1][0], 3);
+  expect(p[3][0]).toBeCloseTo(p[0][0], 3);
+  expect(p[3][1]).toBeCloseTo(p[2][1], 3);
+  // Il nodo ha davvero seguito il mouse (non è rimasto dov'era)
+  expect(p[2][0]).toBeGreaterThan(41);
+  expect(p[2][1]).toBeGreaterThan(21);
+});
+
+test('una quota nuova nasce fuori dal rettangolo e non si sovrappone alle altre; la linea e l\'etichetta si trascinano', async ({ page }) => {
+  const id = await addProfile(page, SQUARED);
+  await openEditor(page, id);
+  await quoteTool(page).click();
+  await clickSegment(page, '0:0', '0:1');
+  await typeValue(page, '60');
+  await fit(page);
+  await clickSegment(page, '0:1', '0:2');
+  await typeValue(page, '30');
+  await expect(labels(page)).toHaveCount(2);
+
+  // Fuori dal rettangolo: la prima sotto il lato in basso, la seconda a destra del lato di destra; e non si toccano
+  const [a, b, c] = [await center(node(page, '0:0')), await center(node(page, '0:1')), await center(node(page, '0:2'))];
+  const [first, second] = [await box(labels(page).first()), await box(labels(page).last())];
+  expect(first.y).toBeGreaterThan(a.y);
+  expect(second.x).toBeGreaterThan(b.x);
+  expect(c.y).toBeLessThan(b.y);
+  expect(disjoint(first, second)).toBe(true);
+
+  // Trascinare l'etichetta: si sposta lungo la linea e più lontano dal lato, con un solo passo locale
+  await dragBy(page, { x: first.cx, y: first.cy }, 80, 30);
+  const moved = await box(labels(page).first());
+  expect(moved.cx - first.cx).toBeGreaterThan(60);
+  expect(moved.cy - first.cy).toBeGreaterThan(20);
+  await page.keyboard.press('Control+z');
+  const back = await box(labels(page).first());
+  expect(Math.abs(back.cx - first.cx)).toBeLessThan(3);
+  expect(Math.abs(back.cy - first.cy)).toBeLessThan(3);
+  await page.keyboard.press('Control+Shift+z');
+
+  // Trascinare la linea di quota (non l'etichetta): cambia solo la distanza dal lato
+  const before = await box(labels(page).last());
+  // La linea di destra è verticale: si afferra tra le frecce, sopra l'etichetta, e si porta più a destra
+  const line = { x: before.cx, y: before.cy - 25 };
+  await dragBy(page, line, 50, 0);
+  const after = await box(labels(page).last());
+  expect(after.cx - before.cx).toBeGreaterThan(35);
+  expect(Math.abs(after.cy - before.cy)).toBeLessThan(4);
+
+  // OK e riapertura conservano la posizione: relativa al lato in basso (in unità del lato AB)
+  const rel = async () => {
+    const [a2, b2] = [await center(node(page, '0:0')), await center(node(page, '0:1'))];
+    const l = await box(labels(page).first());
+    const k = Math.hypot(b2.x - a2.x, b2.y - a2.y);
+    return { x: (l.cx - a2.x) / k, y: (l.cy - a2.y) / k };
+  };
+  const placed = await rel();
+  await ok(page).click();
+  await expect(editor(page)).toHaveCount(0);
+  await settled(page);
+  const saved = await getNode(page, id);
+  const dims = saved.constraints!.filter((q) => q.t === 'dist') as unknown as { off: number; at: number }[];
+  expect(dims).toHaveLength(2);
+  // L'etichetta è stata portata verso destra lungo la linea: at oltre la metà
+  expect(dims[0].at).toBeGreaterThan(0.55);
+  await openEditor(page, id);
+  const reopened = await rel();
+  expect(Math.abs(reopened.x - placed.x)).toBeLessThan(0.03);
+  expect(Math.abs(reopened.y - placed.y)).toBeLessThan(0.03);
+
+  // Riposiziona quote: le dispone di nuovo (at torna a metà) e una sola voce di cronologia locale
+  await editor(page).locator('[data-reposition]').click();
+  await expect(labels(page)).toHaveCount(2);
+  const [x1, x2] = [await box(labels(page).first()), await box(labels(page).last())];
+  expect(disjoint(x1, x2)).toBe(true);
+});
+
+test('una quota ridondante si aggiunge come quota di riferimento: misura tra parentesi, non vincola e non si modifica', async ({ page }) => {
+  const id = await addProfile(page, FULL);
+  await openEditor(page, id);
+  await quoteTool(page).click();
+  await editor(page).getByRole('group', { name: 'Modo della quota' }).getByRole('button', { name: 'Orizzontale' }).click();
+  await clickSegment(page, '0:0', '0:1');
+  await typeValue(page, '40');
+  await expect(banner(page)).toContainText('Quota ridondante');
+  await banner(page).getByRole('button', { name: 'Aggiungi come quota di riferimento' }).click();
+  await expect(banner(page)).toHaveCount(0);
+
+  // Una voce in più, con la misura tra parentesi; il disegno è sempre completamente vincolato
+  await expect(editor(page).locator('[data-constraint]')).toHaveCount(8);
+  await expect(labels(page)).toHaveCount(3);
+  await expect(labels(page).last()).toContainText('(40)');
+  await expect(editor(page).getByText('Completamente vincolato: 0 gradi di libertà')).toBeVisible();
+  await expect(editor(page).getByText('quota di riferimento')).toBeVisible();
+  // Un clic sull'etichetta non apre il campo: la quota non si modifica
+  await labels(page).last().click();
+  await expect(field(page)).toHaveCount(0);
+
+  // OK e riapertura: la quota di riferimento resta, tra parentesi
+  await ok(page).click();
+  await expect(editor(page)).toHaveCount(0);
+  await settled(page);
+  const saved = await getNode(page, id);
+  expect(saved.constraints).toHaveLength(8);
+  expect((saved.constraints as unknown as { ref?: boolean }[]).filter((c) => c.ref)).toHaveLength(1);
+  await openEditor(page, id);
+  await expect(labels(page).last()).toContainText('(40)');
+});
+
+test('Alt+clic su un segmento sceglie i suoi due nodi: Orizzontale si applica a quel lato con un clic', async ({ page }) => {
+  const id = await addProfile(page, []);
+  await openEditor(page, id);
+  const horizontal = editor(page).locator('[data-constraint-button="horizontal"]');
+  await expect(horizontal).toBeDisabled();
+  // Un clic normale su un segmento sceglie tutto il contorno; con Alt solo i due nodi del segmento
+  const [a, b] = [await center(node(page, '0:1')), await center(node(page, '0:2'))];
+  await page.keyboard.down('Alt');
+  await page.mouse.click((a.x + b.x) / 2, (a.y + b.y) / 2);
+  await page.keyboard.up('Alt');
+  await expect(editor(page).locator('.profile-editor__node--selected')).toHaveCount(2);
+  await expect(node(page, '0:1')).toHaveClass(/profile-editor__node--selected/);
+  await expect(node(page, '0:2')).toHaveClass(/profile-editor__node--selected/);
+  await expect(horizontal).toBeEnabled();
+  await editor(page).locator('[data-constraint-button="vertical"]').click();
+  await expect(editor(page).locator('[data-constraint]')).toHaveCount(1);
+  await ok(page).click();
+  await expect(editor(page)).toHaveCount(0);
+  await settled(page);
+  // B (40, 0) e C (40, 20) erano già sulla stessa verticale: il vincolo non muove nulla
+  const saved = await getNode(page, id);
+  expect(saved.constraints).toHaveLength(1);
+  expect(saved.paths[0].nodes[1].p[0]).toBeCloseTo(saved.paths[0].nodes[2].p[0], 3);
+});
+
+test('ridimensionare un Profilo con quote avvisa con il fattore, anche all\'apertura della modale, e non riscrive le quote', async ({ page }) => {
+  const id = await addProfile(page, [...SQUARED, { id: 'k6', t: 'dist', p: ['n1', 'n2'], v: 40 }]);
+  await page.evaluate((nodeId) => window.__construct!.store.getState().updateNode(nodeId, { width: 80, depth: 40 }), id);
+  await expect(page.locator('.toast--info')).toContainText('ridimensionato ×2 in X e ×2 in Y. Le quote non si aggiornano: 40 mm resta il valore salvato');
+  // Le quote restano quelle salvate
+  expect((await getNode(page, id)).constraints!.find((c) => c.t === 'dist')!.v).toBe(40);
+  await openEditor(page, id);
+  await expect(editor(page).getByText('Il profilo: ridimensionato ×2 in X e ×2 in Y')).toBeVisible();
+  await ok(page).click();
+  await expect(editor(page)).toHaveCount(0);
+  await settled(page);
+  // Il valore salvato è sempre 40
+  expect((await getNode(page, id)).constraints!.find((c) => c.t === 'dist')!.v).toBe(40);
+  // Salvato il disegno ridimensionato il fattore non c'è più, ma le quote non corrispondono ai nodi: la modale lo dice
+  await openEditor(page, id);
+  await expect(editor(page).getByText('Le quote non corrispondono al disegno')).toBeVisible();
+  await expect(editor(page).getByText('Il profilo: ridimensionato')).toHaveCount(0);
+});
+
+test('con le quote che corrispondono ai nodi non compare nessun avviso di disaccordo', async ({ page }) => {
+  const id = await addProfile(page, FULL);
+  await openEditor(page, id);
+  await expect(editor(page).getByText('Completamente vincolato: 0 gradi di libertà')).toBeVisible();
+  await expect(editor(page).getByText('Le quote non corrispondono al disegno')).toHaveCount(0);
 });

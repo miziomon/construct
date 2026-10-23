@@ -61,6 +61,19 @@ describe('livello delle quote', () => {
     expect(html).toMatch(/<path d="M[^"]+L[^"]+"/);
   });
 
+  it('la linea di quota ha un tracciato largo da afferrare (data-qline), la quota in attesa e i vincoli no', () => {
+    const html = render({ constraints: [width, horizontal], draft: { con: { ...width, id: 'draft' }, paths } });
+    expect(html.match(/data-qline="/g)).toHaveLength(1);
+    expect(html).toContain('data-qline="k1"');
+    expect(html).not.toContain('data-qline="draft"');
+  });
+
+  it('una quota di riferimento mostra la misura tra parentesi, anche se i nodi sono stati spostati', () => {
+    const moved: PathContour[] = [{ closed: true, nodes: paths[0].nodes.map((n) => (n.id === 'n2' ? { ...n, p: [50, 0] as Vec2 } : n)) }];
+    const html = render({ paths: moved, constraints: [{ id: 'r1', t: 'dist', p: ['n1', 'n2'], ref: true, off: -3 }] });
+    expect(html).toMatch(/<text[^>]*>\(50\)<\/text>/);
+  });
+
   it('stati: di riferimento, scelta, in conflitto (anche dopo un rifiuto) e nuova', () => {
     expect(render({ constraints: [{ ...width, ref: true }] })).toContain('profile-editor__qlabel--ref');
     expect(render({ constraints: [{ ...width, ref: true }] })).toContain('profile-editor__dim--ref');

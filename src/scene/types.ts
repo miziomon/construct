@@ -122,7 +122,11 @@ export interface PathNode {
  * la posizione grafica della quota nell'editor, che non influisce sulla geometria.
  */
 export interface ProfileConstraint extends Constraint {
-  /** Distanza con segno (mm) della linea di quota dal segmento. */
+  /**
+   * Distanza con segno (mm) della linea di quota dal segmento. Per la lunghezza allineata è la distanza dalla normale a
+   * sinistra del segmento (Y verso l'alto); per le distanze in X e in Y è lo scostamento dalla Y (o X) a metà tra i due nodi,
+   * positivo verso l'alto (o la destra). Vedi `dimLayout` in ui/ProfileEditor/dimPlacement.ts.
+   */
   off?: number;
   /** Posizione dell'etichetta lungo la linea di quota, da 0 (primo estremo) a 1 (secondo). */
   at?: number;

@@ -4,7 +4,7 @@ import { MAX_PATH_CONTOURS, cubicPoint, segmentOf } from '../../scene/bezier';
 import type { PathContour, PathNode, ProfileConstraint, Vec2 } from '../../scene/types';
 import { appendPenNode, baseShapeContour, contourContains, cycleKind, gridStep, insertNodeWithConstraints, joinContours, moveHandle, moveNodes, nearestSegment, resumeContour, setNodeKind, snapPoint } from './model';
 import type { HandleRef, NodeRef, SegmentRef } from './model';
-import { dragFrame, settlePaths } from './dimensions';
+import { dragDimension, dragFrame, isLinearDimension, pointMap, settlePaths } from './dimensions';
 import type { NodeState } from './dimensions';
 import { QuoteOverlay, quoteLabelPoint } from './QuoteOverlay';
 
@@ -44,6 +44,10 @@ export interface QuoteProps {
   /** Il campo della quota si conferma (Invio o uscita) o si annulla (Esc). */
   onEditCommit: (text: string) => void;
   onEditCancel: () => void;
+  /** Trascinamento dell'etichetta o della linea di quota: nuova posizione (`off`, `at`) in corso; il passo di cronologia lo chiude il rilascio. */
+  onQuoteMove: (id: string, off: number, at: number) => void;
+  /** Lo zoom (pixel per mm) ogni volta che cambia: serve alla disposizione automatica delle quote. */
+  onScale: (pxPerMm: number) => void;
 }
 
 /** Che cosa serve a chi disegna sotto i contorni: da disegno a pixel e dimensione dell'area. */
@@ -195,6 +199,8 @@ type Drag =
   | { type: 'shape'; tool: 'rect' | 'ellipse' | 'polygon'; center: Vec2; base: PathContour[]; last: PathContour[]; sx: number; sy: number; moved: boolean; live: boolean }
   // Quota di sezione: si trascina solo con Seleziona, dopo nodi, maniglie e curve
   | { type: 'section' }
+  // Etichetta (`label`: cambia `at` e `off`) o linea (`line`: cambia `off`) di una quota di lunghezza; senza movimento un clic sull'etichetta apre il campo
+  | { type: 'quote'; id: string; part: 'label' | 'line'; sx: number; sy: number; moved: boolean }
   // Penna, ripresa da un estremo (maniglia in uscita) o chiusura sul primo nodo (`close`, maniglia in entrata opposta al mouse): il trascinamento la disegna
   // (nodo liscio, spigolo con Alt); `last` parte dal nodo reso liscio
   | { type: 'resume'; ref: HandleRef; current: number; close: boolean; base: PathContour[]; last: PathContour[]; frozen: PathContour[]; to: Vec2 | null; sx: number; sy: number; moved: boolean; alt: boolean }
@@ -234,6 +240,12 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
   const insertOnCurve = (seg: SegmentRef, t: number): { paths: PathContour[]; node: NodeRef; constraints?: ProfileConstraint[] } | null =>
     insertOverride ? insertOverride(paths, seg, t) : insertNodeWithConstraints({ paths, constraints }, seg, t);
   const [endHot, setEndHot] = useState<NodeRef | null>(null);
+  // Lo zoom si comunica alla modale (disposizione automatica delle quote); `quote` cambia a ogni render, quindi si legge da un ref
+  const quoteRef = useRef(quote);
+  quoteRef.current = quote;
+  useEffect(() => {
+    quoteRef.current?.onScale(view.s);
+  }, [view.s]);
   // Campo della quota in scrittura: si mette a fuoco appena montato, ma un attimo dopo (il clic che l'ha aperto sposterebbe subito il fuoco sull'area)
   const editInput = useRef<HTMLInputElement>(null);
   const editKey = quote?.edit ? `${quote.edit.isNew ? 'new' : quote.edit.con.id}:${quote.edit.con.t}:${quote.edit.con.p.join('-')}` : '';
@@ -468,10 +480,23 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
     }
     if (e.button !== 0) return;
     // Etichetta di una quota o icona di un vincolo: apre il campo (quota) o sceglie il vincolo; non inizia nessun gesto
-    const labelId = quote && (tool === 'select' || tool === 'dim') && e.target instanceof Element ? e.target.closest('[data-qid]')?.getAttribute('data-qid') : null;
+    // Una quota di lunghezza si trascina dall'etichetta (cambia la posizione lungo la linea e la distanza) o dalla linea (la distanza):
+    // il clic senza movimento sull'etichetta apre il campo. Etichette e linee valgono solo con Seleziona e Quota, e prima dei segmenti
+    // del contorno; nodi e maniglie hanno la precedenza sulla linea (la linea sta di solito lontana dai nodi)
+    const target = quote && (tool === 'select' || tool === 'dim') && e.target instanceof Element ? e.target : null;
+    const labelId = target?.closest('[data-qid]')?.getAttribute('data-qid');
     if (labelId && quote) {
-      quote.onLabelClick(labelId);
+      if (constraints?.some((c) => c.id === labelId && isLinearDimension(c))) drag.current = { type: 'quote', id: labelId, part: 'label', sx, sy, moved: false };
+      else quote.onLabelClick(labelId);
       return;
+    }
+    const lineId = target?.closest('[data-qline]')?.getAttribute('data-qline');
+    if (lineId && quote) {
+      const under = hitTest(sx, sy);
+      if (under.type !== 'node' && under.type !== 'handle') {
+        drag.current = { type: 'quote', id: lineId, part: 'line', sx, sy, moved: false };
+        return;
+      }
     }
     // Strumento Quota: un nodo (due nodi = una quota) o un segmento (la quota tra i suoi estremi); la modale decide il resto
     if (tool === 'dim') {
@@ -577,6 +602,10 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
         collapse: !e.shiftKey && selected && selection.length > 1 ? hit.ref : null,
         soft: false,
       };
+    } else if (hit.type === 'segment' && e.altKey) {
+      // Alt+clic su un segmento: sceglie i suoi due nodi (così Orizzontale, Verticale o Coincidente valgono per quel lato con un clic)
+      const contour = paths[hit.seg.path];
+      onSelect([{ path: hit.seg.path, node: hit.seg.segment }, { path: hit.seg.path, node: (hit.seg.segment + 1) % contour.nodes.length }]);
     } else if (hit.type === 'segment') {
       // Il clic su una curva seleziona tutto il contorno (Maiusc lo aggiunge o lo toglie) e trascinandola lo si sposta
       const all: NodeRef[] = paths[hit.seg.path].nodes.map((_, node) => ({ path: hit.seg.path, node }));
@@ -688,6 +717,15 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
     }
     if (d.type === 'section') {
       moveSection(sy, e);
+    } else if (d.type === 'quote') {
+      if (!d.moved && Math.hypot(sx - d.sx, sy - d.sy) < DRAG_THRESHOLD) return;
+      d.moved = true;
+      // La quota passa per il puntatore (senza aggancio: la posizione è libera)
+      const con = constraints?.find((c) => c.id === d.id);
+      if (con && quote) {
+        const moved = dragDimension(con, pointMap(paths), w, d.part);
+        quote.onQuoteMove(d.id, moved.off, moved.at);
+      }
     } else if (d.type === 'pan') {
       changeView({ ...view, cx: d.cx - (sgn * (sx - d.sx)) / view.s, cy: d.cy + (sy - d.sy) / view.s });
     } else if (d.type === 'node') {
@@ -697,7 +735,8 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
       // Il nodo cliccato segue il puntatore (agganciato) e gli altri selezionati si muovono dello stesso vettore
       const target: Vec2 = [d.primary[0] + w[0] - d.down[0], d.primary[1] + w[1] - d.down[1]];
       const moving = new Set(d.refs.map(keyOf));
-      const others = d.base.flatMap((c, pi) => c.nodes.filter((_, ni) => !moving.has(`${pi}:${ni}`)).map((n) => n.p));
+      // Con i vincoli gli altri nodi si muovono con il trascinamento: l'aggancio guarda dove stanno adesso (`last`), non dov'erano al clic
+      const others = d.last.flatMap((c, pi) => c.nodes.filter((_, ni) => !moving.has(`${pi}:${ni}`)).map((n) => n.p));
       const p = snapped(target, e, others);
       const delta: Vec2 = [p[0] - d.primary[0], p[1] - d.primary[1]];
       if (constraints?.length) {
@@ -768,6 +807,11 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
     if (!d) return;
     if (d.type === 'section') {
       setSectionHot(false);
+      return;
+    }
+    if (d.type === 'quote') {
+      // Senza movimento un clic sull'etichetta apre il campo del valore; trascinata, la quota è già al suo posto (il passo lo chiude la modale)
+      if (!d.moved && d.part === 'label') quote?.onLabelClick(d.id);
       return;
     }
     // Penna: il nodo appena aggiunto (con la maniglia del trascinamento) è un passo della cronologia; anche la ripresa

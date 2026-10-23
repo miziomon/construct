@@ -8,6 +8,7 @@ import type { PlanPrep } from '../../scene/planRevolve';
 import { cleanPlan, DEFAULT_PLAN, featureAngles, isDefaultPlan, isPlainCircle, PLAN_PRESETS, planOutline, planPaths, planTolerance } from '../../scene/planShape';
 import type { PlanDraft } from '../../scene/planShape';
 import { hasBoundDimension } from '../../scene/resize';
+import { quoteScaleWarning } from '../../scene/quoteScale';
 import { pathNaturalBox } from '../../scene/shapes2d';
 import { useSceneStore } from '../../scene/store';
 import type { PathContour, PathNode, ProfileConstraint, Vec2 } from '../../scene/types';
@@ -18,7 +19,7 @@ import { DrawingCanvas } from './DrawingCanvas';
 import { EditorToolbar } from './EditorToolbar';
 import type { ViewMode } from './EditorToolbar';
 import type { DimHit, GridSettings, QuoteProps, Tool } from './DrawingCanvas';
-import { addConstraint, addSelectionConstraint, createDimension, diagnose, idsOf, isDimension, moveNodesConstrained, removeConstraint, setConstraintValue, stateText } from './dimensions';
+import { addConstraint, addReferenceDimension, addSelectionConstraint, createDimension, diagnose, idsOf, isDimension, moveNodesConstrained, quoteMismatch, removeConstraint, repositionDimensions, setConstraintValue, stateText } from './dimensions';
 import type { Applied, DimMode, SelectionConstraint } from './dimensions';
 import { validateValue } from './constraints';
 import { clearDraft, flushDrafts, loadDraft, saveDraft } from './draft';
@@ -147,6 +148,8 @@ function Editor({ target }: { target: ProfileTarget }) {
       bound: path ? { is: hasBoundDimension(path), width: path.width, depth: path.depth } : { is: false, width: 0, depth: 0 },
       // Campi legati a un parametro (altezza, torsione...): la modale non li cambia, all'OK la formula vincerebbe comunque
       boundFields: path ? Object.keys(path.exprs ?? {}) : [],
+      // Profilo con quote ridimensionato: la scala è nei nodi ma non nei valori delle quote (decisione 11a: si avvisa, non si riscrive)
+      scaleWarning: path && !hasBoundDimension(path) ? quoteScaleWarning(path, 'Il profilo') : null,
       // Il nodo esistente (colore, contorno 2D) e le misure che l'anteprima deve tenere
       node: path ?? null,
       size: path && hasBoundDimension(path) ? { width: path.width, depth: path.depth } : null,
@@ -398,6 +401,8 @@ function Editor({ target }: { target: ProfileTarget }) {
     const next = pruneConstraints(draftToCommit);
     history.current!.push(next);
     committed.current = next;
+    // Un'offerta di quota di riferimento riguarda il disegno di prima
+    setRefOffer(null);
     dispatch({ type: 'replace', draft: next, selection: nextSelection });
   };
   // `constraints` (se c'è, anche vuoto) sostituisce quelli del disegno: serve all'inserimento di un nodo, che può dividere un vincolo
@@ -421,6 +426,7 @@ function Editor({ target }: { target: ProfileTarget }) {
     const prev = history.current!.undo();
     if (prev) {
       committed.current = prev;
+      forgetQuoteState(prev);
       // Con la Penna a metà contorno ogni nodo è un passo: si toglie l'ultimo e la Penna resta sullo stesso contorno
       dispatch({ type: 'replace', draft: prev, selection: [], pen: penStillOpen(prev) });
     }
@@ -434,8 +440,15 @@ function Editor({ target }: { target: ProfileTarget }) {
     const next = history.current!.redo();
     if (next) {
       committed.current = next;
+      forgetQuoteState(next);
       dispatch({ type: 'replace', draft: next, selection: [], pen: penStillOpen(next) });
     }
+  };
+  /** Annulla e Ripeti cambiano il disegno: i nodi scelti con la Quota, un'offerta di quota di riferimento e il vincolo scelto che non c'è più non hanno più senso. */
+  const forgetQuoteState = (d: Draft) => {
+    setDimPick([]);
+    setRefOffer(null);
+    setSelCon((id) => (id && d.constraints?.some((c) => c.id === id) ? id : null));
   };
   /** Il contorno della Penna in corso, se nel disegno `d` c'è ancora ed è aperto (allora la Penna lo continua). */
   const penStillOpen = (d: Draft): number | null => {
@@ -517,6 +530,10 @@ function Editor({ target }: { target: ProfileTarget }) {
   };
   const [selCon, setSelCon] = useState<string | null>(null);
   const [flash, setFlash] = useState<Set<string>>(NONE);
+  // Quota che il disegno rifiuta perché ridondante o in conflitto: si può aggiungere come quota di riferimento (non vincola)
+  const [refOffer, setRefOffer] = useState<{ message: string; base: Draft; con: Omit<ProfileConstraint, 'id'> } | null>(null);
+  // Zoom del disegno (pixel per mm), comunicato dal canvas: serve a ridisporre le quote
+  const scaleRef = useRef(8);
   const flashTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(flashTimer.current), []);
 
@@ -527,11 +544,14 @@ function Editor({ target }: { target: ProfileTarget }) {
     }, 0);
 
   /** Rifiuto: avviso breve e, per qualche secondo, i vincoli con cui andrebbe in conflitto in rosso. */
-  const reject = (message: string, ids: string[]) => {
-    notify.error(message);
+  const flashIds = (ids: string[]) => {
     clearTimeout(flashTimer.current);
     setFlash(ids.length ? new Set(ids) : NONE);
     if (ids.length) flashTimer.current = setTimeout(() => setFlash(NONE), 3000);
+  };
+  const reject = (message: string, ids: string[]) => {
+    notify.error(message);
+    flashIds(ids);
   };
   /** Esito di un'aggiunta o modifica: un passo di cronologia se è andata bene, altrimenti l'avviso e niente cambia. */
   const applyResult = (result: Applied<Draft>): boolean => {
@@ -548,7 +568,7 @@ function Editor({ target }: { target: ProfileTarget }) {
     // Gli id dei nodi si danno qui (i nodi disegnati dopo l'apertura non ce li hanno): il passo di cronologia lo fa la conferma
     const base = normalizeProfile(stateRef.current.draft);
     const [idA, idB] = idsOf(base.paths, [a, b]);
-    const dim = idA && idB ? createDimension(base.paths, dimMode, idA, idB, pxPerMm) : 'Scegli due nodi diversi';
+    const dim = idA && idB ? createDimension(base.paths, dimMode, idA, idB, pxPerMm, base.constraints) : 'Scegli due nodi diversi';
     if (typeof dim === 'string') {
       notify.error(dim);
       return;
@@ -603,7 +623,14 @@ function Editor({ target }: { target: ProfileTarget }) {
     if (edit.isNew) {
       const { id: _draftId, ...dim } = edit.con;
       const result = addConstraint(edit.base, { ...dim, v: value });
-      if (applyResult(result) && result.ok) setSelCon(result.draft.constraints?.at(-1)?.id ?? null);
+      if (result.ok) {
+        commitDraft(result.draft);
+        setSelCon(result.draft.constraints?.at(-1)?.id ?? null);
+      } else if (result.reason === 'conflict' || result.reason === 'redundant') {
+        // Conflitto o ridondanza: non si applica, ma si offre di aggiungerla come quota di riferimento (misura senza vincolare)
+        flashIds(result.ids);
+        setRefOffer({ message: result.message, base: edit.base, con: dim });
+      } else reject(result.message, result.ids);
     } else if (Math.abs(value - (edit.con.v ?? Number.NaN)) > 1e-9) applyResult(setConstraintValue(stateRef.current.draft, edit.con.id, value));
   };
   const cancelQuote = () => {
@@ -621,6 +648,27 @@ function Editor({ target }: { target: ProfileTarget }) {
   };
   const setConstraintValueFromPanel = (id: string, value: number) => {
     applyResult(setConstraintValue(stateRef.current.draft, id, value));
+  };
+  /** «Aggiungi come quota di riferimento»: la quota rifiutata entra con la misura che il disegno ha (tra parentesi, non vincola). */
+  const addReference = () => {
+    const offer = refOffer;
+    if (!offer) return;
+    const next = addReferenceDimension(offer.base, offer.con);
+    commitDraft(next);
+    setSelCon(next.constraints?.at(-1)?.id ?? null);
+  };
+  /** Trascinamento dell'etichetta o della linea di una quota: la posizione cambia subito, il passo di cronologia lo chiude il rilascio. */
+  const moveQuote = (id: string, off: number, at: number) => {
+    const current = stateRef.current.draft;
+    if (!current.constraints?.some((c) => c.id === id)) return;
+    setSelCon(id);
+    liveDraft({ constraints: current.constraints.map((c) => (c.id === id ? { ...c, off, at } : c)) });
+  };
+  /** «Riposiziona quote»: la disposizione automatica per tutte, in un passo. */
+  const repositionQuotes = () => {
+    const current = stateRef.current.draft;
+    if (!current.constraints?.length) return;
+    commitDraft({ ...current, constraints: repositionDimensions(current.paths, current.constraints, scaleRef.current) });
   };
 
   // --- Importa SVG ----------------------------------------------------------------------------------------------------
@@ -667,6 +715,8 @@ function Editor({ target }: { target: ProfileTarget }) {
   const diagDraft = useRef(draft);
   if (draft === committed.current) diagDraft.current = draft;
   const diag = useMemo(() => diagnose(diagDraft.current), [diagDraft.current]);
+  // Le quote non corrispondono ai nodi (profilo ridimensionato e salvato, file modificato a mano): si dice prima che la prima modifica li riporti alle quote
+  const mismatch = useMemo(() => quoteMismatch(diagDraft.current), [diagDraft.current]);
   const validContours = draft.paths.filter((c) => c.nodes.length >= 2);
   const nodeCount = draft.paths.reduce((n, c) => n + c.nodes.length, 0);
   // OK solo con almeno un contorno che il kernel riempie davvero
@@ -708,6 +758,7 @@ function Editor({ target }: { target: ProfileTarget }) {
       e.preventDefault();
       if (isTyping(e.target)) return;
       if (stateRef.current.pen !== null) finishPen();
+      else if (refOffer) setRefOffer(null);
       else if (dimPick.length) setDimPick([]);
       else void askClose();
       return;
@@ -747,6 +798,8 @@ function Editor({ target }: { target: ProfileTarget }) {
         if (stateRef.current.tool === 'select' && planState.selection.length && !planState.deleteSelected()) notify.info('Una sagoma ha almeno tre nodi: la forma deve restare chiusa');
       } else if (penIndex !== null) penBackspace();
       else if (sel.length && stateRef.current.tool === 'select') commitDraft(deleteNodesWithConstraints(stateRef.current.draft, sel), []);
+      // Nessun nodo scelto ma una quota o un vincolo scelto nell'elenco o sul disegno: Canc lo elimina
+      else if (!sel.length && selCon && stateRef.current.draft.constraints?.some((c) => c.id === selCon)) deleteConstraint(selCon);
     } else if (key.startsWith('arrow')) {
       // Frecce: un passo di griglia (Maiusc: dieci)
       e.preventDefault();
@@ -790,6 +843,10 @@ function Editor({ target }: { target: ProfileTarget }) {
     onLabelClick,
     onEditCommit: commitQuote,
     onEditCancel: cancelQuote,
+    onQuoteMove: moveQuote,
+    onScale: (px) => {
+      scaleRef.current = px;
+    },
   };
 
   // --- Piede ----------------------------------------------------------------------------------------------------------
@@ -817,6 +874,11 @@ function Editor({ target }: { target: ProfileTarget }) {
   if (!chips.length && contours.length) chips.push({ kind: 'ok', text: 'Nessun avviso' });
   // Stato dei vincoli (non è un avviso): sottovincolato, completamente vincolato, sovravincolato
   if (diag) chips.push(stateText(diag.report));
+  // Ridimensionato con quote: i valori salvati non seguono la scala (decisione 11a): finché ci sono quote pilotanti l'avviso resta
+  const scaleChip = !!init.scaleWarning && !!draft.constraints?.some((c) => isDimension(c) && !c.ref);
+  if (scaleChip) chips.push({ kind: 'warn', text: init.scaleWarning! });
+  // Già salvato dopo un ridimensionamento il fattore non c'è più, ma il disaccordo sì: lo scarto lo segnala (non due volte alla prima apertura)
+  else if (mismatch !== null) chips.push({ kind: 'warn', text: `Le quote non corrispondono al disegno (scarto fino a ${fmt(mismatch)} mm): alla prossima modifica i nodi tornano alle quote` });
 
   if (!init.valid) return null;
 
@@ -883,6 +945,17 @@ function Editor({ target }: { target: ProfileTarget }) {
                     onPenStep={penStep}
                     onPenLimit={() => notify.info('Limite raggiunto: al massimo 500 nodi per contorno e 100 contorni. Termina il contorno (Invio) o chiudilo')}
                   />
+                  {refOffer && (
+                    <div className="profile-editor__qbar" role="alert">
+                      <span>{refOffer.message}</span>
+                      <button type="button" onClick={addReference}>
+                        Aggiungi come quota di riferimento
+                      </button>
+                      <button type="button" onClick={() => setRefOffer(null)}>
+                        Annulla
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
               {showPlan && (
@@ -987,7 +1060,7 @@ function Editor({ target }: { target: ProfileTarget }) {
               onSelectPath={(i) => dispatch({ type: 'select', selection: draft.paths[i].nodes.map((_, node) => ({ path: i, node })) })}
               onClosePath={(i) => commitPaths(closeContour(draft.paths, i))}
               onDeletePath={(i) => commitDraft(normalizeProfile({ ...draft, paths: draft.paths.filter((_, k) => k !== i) }), [])}
-              quote={{ selectedNodes: selection.length, bad: diag?.bad ?? NONE, selected: selCon, onSelect: setSelCon, onApply: applyConstraintButton, onValue: setConstraintValueFromPanel, onDelete: deleteConstraint }}
+              quote={{ selectedNodes: selection.length, bad: diag?.bad ?? NONE, selected: selCon, onSelect: setSelCon, onApply: applyConstraintButton, onValue: setConstraintValueFromPanel, onDelete: deleteConstraint, onReposition: repositionQuotes }}
             />
           )}
         </div>

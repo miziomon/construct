@@ -173,6 +173,20 @@ describe('bozza v:2 con id, vincoli e parametri', () => {
     expect(JSON.parse(s.data.get('construct:profile-draft:abc')!).v).toBe(1);
   });
 
+  it('la posizione delle quote (off, at) e le quote di riferimento sopravvivono alla bozza', () => {
+    const s = fakeStorage();
+    const placed: Draft = {
+      ...withIds,
+      constraints: [
+        { id: 'k1', t: 'dist', p: ['n1', 'n2'], v: 10, off: -4.5, at: 0.2 },
+        { id: 'k2', t: 'dist', p: ['n2', 'n3'], v: 9.4, ref: true, off: 6, at: 0.8 },
+      ],
+    };
+    saveDraft('abc', placed, s);
+    vi.advanceTimersByTime(500);
+    expect(loadDraft('abc', s)?.constraints).toEqual(placed.constraints);
+  });
+
   it('i vincoli appesi (contorno scartato, nodo tolto) non finiscono nella bozza, che resta v:1', () => {
     const s = fakeStorage();
     const orphan = { id: 'k2', t: 'horizontal' as const, p: ['n1', 'n8'] };

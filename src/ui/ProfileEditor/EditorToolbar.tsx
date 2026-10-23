@@ -31,7 +31,7 @@ interface Props {
 }
 
 const DIM_MODES: [DimMode, string, string][] = [
-  ['len', 'Allineata', 'Lunghezza tra i due nodi, nella loro direzione'],
+  ['len', 'Allineata', 'Distanza tra i due nodi, nella loro direzione'],
   ['h', 'Orizzontale', 'Solo la distanza in orizzontale (X) tra i due nodi'],
   ['v', 'Verticale', 'Solo la distanza in verticale (Y) tra i due nodi'],
 ];
@@ -53,7 +53,7 @@ export function EditorToolbar({ tool, onTool, canUndo, canRedo, onUndo, onRedo, 
   return (
     <div className="profile-editor__toolbar" role="toolbar" aria-label="Strumenti di disegno">
       <div className="profile-editor__toolgroup">
-        <button type="button" aria-pressed={tool === 'select'} title="Seleziona (V): sposta nodi e maniglie (Alt: la maniglia si muove da sola e il nodo è uno spigolo), clic su una curva per selezionare tutto il contorno (trascinala per spostarlo). Con la quota di sezione visibile, trascinala per cambiare la quota" onClick={() => onTool('select')}>
+        <button type="button" aria-pressed={tool === 'select'} title="Seleziona (V): sposta nodi e maniglie (Alt: la maniglia si muove da sola e il nodo è uno spigolo), clic su una curva per selezionare tutto il contorno (trascinala per spostarlo), Alt+clic su un segmento per sceglierne i due nodi (per Orizzontale, Verticale, Coincidente). Le quote si trascinano dall'etichetta (lungo la linea) o dalla linea (più o meno lontana). Con la quota di sezione visibile, trascinala per cambiare la quota" onClick={() => onTool('select')}>
           <MousePointer2 size={16} />
           <span>Seleziona</span>
         </button>
@@ -82,7 +82,7 @@ export function EditorToolbar({ tool, onTool, canUndo, canRedo, onUndo, onRedo, 
             <NumberField label="Lati" min={POLYGON_SIDES.min} max={POLYGON_SIDES.max} integer value={sides} onCommit={onSides} />
           </div>
         )}
-        <button type="button" aria-pressed={tool === 'dim'} disabled={!!shapesOff} title={off('Quota (D): clic su un segmento, o su due nodi, poi digita il valore e premi Invio: i nodi si spostano alla misura. Il modo (allineata, orizzontale, verticale) si sceglie accanto. Clic su un\'etichetta per cambiare il valore')} onClick={() => onTool('dim')}>
+        <button type="button" aria-pressed={tool === 'dim'} disabled={!!shapesOff} title={off('Quota (D): clic su un segmento, o su due nodi, poi digita il valore e premi Invio: i nodi si spostano alla misura. Il modo (allineata, orizzontale, verticale) si sceglie accanto; su un segmento curvo la quota misura la distanza tra i due nodi (la corda). Clic su un\'etichetta per cambiare il valore, trascinala per spostarla')} onClick={() => onTool('dim')}>
           <RulerDimensionLine size={16} />
           <span>Quota</span>
         </button>

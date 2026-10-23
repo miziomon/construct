@@ -1,5 +1,6 @@
-import { dragSketch, measure, solveSketch, validateValue } from './constraints';
+import { dragSketch, maxResidual, solveSketch, validateValue } from './constraints';
 import type { ConstraintType, Pt, Report } from './constraints';
+import { dimensionValue, isDimension, placeDimension, pointMap, pointsOf } from './dimPlacement';
 import { constraintIdMaker, moveNodes } from './model';
 import type { NodeRef, ProfileGeometry } from './model';
 import type { PathContour, ProfileConstraint, Vec2 } from '../../scene/types';
@@ -14,15 +15,12 @@ import type { PathContour, ProfileConstraint, Vec2 } from '../../scene/types';
  * trascinamento; mai al caricamento (le coordinate salvate sono già la soluzione).
  */
 
+// La geometria delle quote (posizione, testo, disposizione automatica) sta in dimPlacement.ts: da qui si riesporta
+export { DIM_GAP_PX, dimLayout, dimText, dimensionValue, dragDimension, fmtDim, isDimension, isLinearDimension, pillWidthPx, placeDimension, pointMap, pointsOf, repositionDimensions } from './dimPlacement';
+export type { DimLayout } from './dimPlacement';
+
 /** Come si misura una quota di lunghezza: allineata ai due nodi, solo in orizzontale (distX) o solo in verticale (distY). */
 export type DimMode = 'len' | 'h' | 'v';
-
-/** Distanza (pixel) della linea di quota dal disegno alla sua creazione. */
-export const DIM_GAP_PX = 30;
-
-/** Tipi che hanno un valore (le quote); gli altri sono vincoli geometrici. */
-const DIMENSION_TYPES = new Set<ConstraintType>(['dist', 'distX', 'distY', 'angle']);
-export const isDimension = (c: Pick<ProfileConstraint, 't'>): boolean => DIMENSION_TYPES.has(c.t);
 
 /** Nomi dei tipi di vincolo, come nell'elenco del pannello. */
 export const CONSTRAINT_NAMES: Record<ConstraintType, string> = {
@@ -30,7 +28,7 @@ export const CONSTRAINT_NAMES: Record<ConstraintType, string> = {
   horizontal: 'Orizzontale',
   vertical: 'Verticale',
   coincident: 'Coincidente',
-  dist: 'Lunghezza',
+  dist: 'Distanza',
   distX: 'Distanza X',
   distY: 'Distanza Y',
   angle: 'Angolo',
@@ -65,16 +63,6 @@ export const SELECTION_CONSTRAINTS = ['horizontal', 'vertical', 'fixed', 'coinci
 export type SelectionConstraint = (typeof SELECTION_CONSTRAINTS)[number];
 
 // --- Punti del risolutore ---------------------------------------------------------------------------------------------
-
-/** Punti del risolutore: i nodi che hanno un id (gli altri non possono essere citati da nessun vincolo). */
-export function pointsOf(paths: PathContour[]): Pt[] {
-  return paths.flatMap((c) => c.nodes.flatMap((n) => (n.id ? [{ id: n.id, x: n.p[0], y: n.p[1] }] : [])));
-}
-
-/** Posizione di ogni nodo con id. */
-export function pointMap(paths: PathContour[]): Map<string, Vec2> {
-  return new Map(paths.flatMap((c) => c.nodes.flatMap((n): [string, Vec2][] => (n.id ? [[n.id, n.p]] : []))));
-}
 
 /** Nome leggibile dei nodi (P1.2 = secondo nodo del primo percorso): è quello del pannello, come nei contorni dell'elenco Percorsi. */
 export function nodeNames(paths: PathContour[]): Map<string, string> {
@@ -156,10 +144,25 @@ export function stateText(report: Report): { kind: 'info' | 'ok' | 'warn' | 'err
   return { kind: 'info', text: `Sottovincolato: ${report.dof} ${report.dof === 1 ? 'grado' : 'gradi'} di libertà` };
 }
 
+/** Scarto (mm) sotto cui le quote si considerano rispettate: quello dell'arrotondamento a 4 decimali dei nodi al salvataggio (§3 dello studio). */
+export const QUOTE_TOLERANCE = 2e-4;
+
+/**
+ * Di quanto il disegno si discosta dalle sue quote e dai suoi vincoli (scarto massimo dei vincoli pilotanti), oppure null se
+ * li rispetta entro `QUOTE_TOLERANCE`. Succede dopo un ridimensionamento (la scala è nei nodi, non nei valori) o con un file
+ * modificato a mano: la prima modifica risolverebbe e farebbe tornare i nodi alle quote. Non risolve nulla.
+ */
+export function quoteMismatch(d: ProfileGeometry): number | null {
+  const constraints = validConstraints(d.paths, d.constraints);
+  if (!constraints.length) return null;
+  const residual = maxResidual(pointsOf(d.paths), constraints);
+  return residual > QUOTE_TOLERANCE ? residual : null;
+}
+
 // --- Aggiunta e modifica -----------------------------------------------------------------------------------------------
 
 /** Esito di un'aggiunta o modifica: il disegno nuovo (già risolto), oppure il perché non si è applicata e i vincoli da evidenziare. */
-export type Applied<T> = { ok: true; draft: T; report: Report } | { ok: false; message: string; ids: string[] };
+export type Applied<T> = { ok: true; draft: T; report: Report } | { ok: false; message: string; ids: string[]; reason?: 'conflict' | 'redundant' | 'unsolved' | 'invalid' };
 
 const UNSOLVED = 'Il risolutore non è arrivato a una soluzione (non è detto che ci sia un conflitto): prova un valore più vicino a quello attuale.';
 
@@ -199,12 +202,12 @@ const messagesFor = (what: 'Vincolo' | 'Quota'): Messages => ({
 function solveWith<T extends ProfileGeometry>(d: T, list: ProfileConstraint[], added: ProfileConstraint | null, messages: Messages, strict = false): Applied<T> {
   const next: T = { ...d, constraints: list };
   const rep = solveSketch(pointsOf(d.paths), validConstraints(d.paths, list));
-  if (rep.unsolved) return { ok: false, message: UNSOLVED, ids: [] };
+  if (rep.unsolved) return { ok: false, message: UNSOLVED, ids: [], reason: 'unsolved' };
   if (!rep.converged || rep.conflicting.length) {
     const others = rep.conflicting.filter((id) => id !== added?.id);
-    return { ok: false, message: messages.conflict(namesOf(others, list, nodeNames(d.paths))), ids: others };
+    return { ok: false, message: messages.conflict(namesOf(others, list, nodeNames(d.paths))), ids: others, reason: 'conflict' };
   }
-  if ((added && rep.redundant.includes(added.id)) || (strict && rep.redundant.length)) return { ok: false, message: messages.redundant, ids: [] };
+  if ((added && rep.redundant.includes(added.id)) || (strict && rep.redundant.length)) return { ok: false, message: messages.redundant, ids: [], reason: 'redundant' };
   return { ok: true, draft: { ...next, paths: writeBack(d.paths, rep.points) }, report: rep };
 }
 
@@ -247,9 +250,9 @@ export function addSelectionConstraint<T extends ProfileGeometry>(d: T, type: Se
 export function setConstraintValue<T extends ProfileGeometry>(d: T, id: string, value: number): Applied<T> {
   const list = d.constraints ?? [];
   const con = list.find((c) => c.id === id);
-  if (!con || !isDimension(con) || con.ref) return { ok: false, message: 'Questa quota non ha un valore da cambiare', ids: [] };
+  if (!con || !isDimension(con) || con.ref) return { ok: false, message: 'Questa quota non ha un valore da cambiare', ids: [], reason: 'invalid' };
   const invalid = validateValue(con.t, value);
-  if (invalid) return { ok: false, message: invalid, ids: [] };
+  if (invalid) return { ok: false, message: invalid, ids: [], reason: 'invalid' };
   const edited: ProfileConstraint = { ...con, v: value };
   // Per una modifica la frase è «Valore non raggiungibile» (la quota c'era già); il valore uguale all'attuale non è mai ridondante
   const messages: Messages = { conflict: (who) => `Valore non raggiungibile: va in conflitto con ${who || 'i vincoli'}`, redundant: 'Valore non raggiungibile: il disegno è già vincolato da altri vincoli' };
@@ -265,85 +268,47 @@ export function removeConstraint<T extends ProfileGeometry>(d: T, id: string): T
   return next;
 }
 
-/** Misura attuale di una quota (per una quota di riferimento è l'unico valore che ha). */
-export function dimensionValue(c: ProfileConstraint, paths: PathContour[]): number {
-  return c.ref || c.v === undefined ? measure(c, pointsOf(paths)) : c.v;
-}
-
 // --- Creazione di una quota di lunghezza ---------------------------------------------------------------------------------
 
 /**
- * Nuova quota tra due nodi (id), con il valore che hanno adesso e la posizione della linea di quota: lontana dal disegno,
- * dalla parte opposta al centro dei nodi, a `DIM_GAP_PX` pixel (`pxPerMm` è lo zoom). Non risolve e non assegna l'id: è
- * la proposta che l'utente conferma digitando il valore. Restituisce un messaggio se i due nodi coincidono sull'asse scelto.
+ * Nuova quota tra due nodi (id), con il valore che hanno adesso e la posizione della linea di quota scelta da
+ * `placeDimension`: fuori dal disegno, dalla parte opposta al baricentro, a `DIM_GAP_PX` pixel e più lontano se l'etichetta
+ * si sovrapporrebbe al disegno o a una quota già posizionata (`existing`). `pxPerMm` è lo zoom. Non risolve e non assegna
+ * l'id: è la proposta che l'utente conferma digitando il valore. Restituisce un messaggio se i due nodi coincidono sull'asse scelto.
  */
-export function createDimension(paths: PathContour[], mode: DimMode, idA: string, idB: string, pxPerMm: number): Omit<ProfileConstraint, 'id'> | string {
+export function createDimension(paths: PathContour[], mode: DimMode, idA: string, idB: string, pxPerMm: number, existing: ProfileConstraint[] = []): Omit<ProfileConstraint, 'id'> | string {
   const pm = pointMap(paths);
   const a = pm.get(idA);
   const b = pm.get(idB);
   if (!a || !b || idA === idB) return 'Scegli due nodi diversi';
-  const gap = DIM_GAP_PX / Math.max(pxPerMm, 1e-6);
-  // Centro dei nodi: la quota sta dalla parte opposta, fuori dal disegno
-  const all = [...pm.values()];
-  const centre: Vec2 = [all.reduce((s, p) => s + p[0], 0) / all.length, all.reduce((s, p) => s + p[1], 0) / all.length];
-  const mid: Vec2 = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
-  const base = { p: [idA, idB], at: 0.5 };
+  let dim: Omit<ProfileConstraint, 'id'>;
   if (mode === 'len') {
     const v = Math.hypot(b[0] - a[0], b[1] - a[1]);
     if (v < 1e-6) return 'I due nodi sono nello stesso punto: prima separali';
-    // Normale a sinistra di A→B (Y verso l'alto)
-    const n: Vec2 = [-(b[1] - a[1]) / v, (b[0] - a[0]) / v];
-    const side = (mid[0] - centre[0]) * n[0] + (mid[1] - centre[1]) * n[1] >= 0 ? 1 : -1;
-    return { ...base, t: 'dist', v, off: side * gap };
-  }
-  if (mode === 'h') {
+    dim = { t: 'dist', p: [idA, idB], v };
+  } else if (mode === 'h') {
     const v = Math.abs(b[0] - a[0]);
     if (v < 1e-6) return 'I due nodi hanno la stessa x: prima separali';
-    return { ...base, t: 'distX', s: b[0] >= a[0] ? 1 : -1, v, off: mid[1] >= centre[1] ? gap : -gap };
+    dim = { t: 'distX', p: [idA, idB], s: b[0] >= a[0] ? 1 : -1, v };
+  } else {
+    const v = Math.abs(b[1] - a[1]);
+    if (v < 1e-6) return 'I due nodi hanno la stessa y: prima separali';
+    dim = { t: 'distY', p: [idA, idB], s: b[1] >= a[1] ? 1 : -1, v };
   }
-  const v = Math.abs(b[1] - a[1]);
-  if (v < 1e-6) return 'I due nodi hanno la stessa y: prima separali';
-  return { ...base, t: 'distY', s: b[1] >= a[1] ? 1 : -1, v, off: mid[0] >= centre[0] ? gap : -gap };
-}
-
-/** Geometria di una quota nel disegno (mm): linee di richiamo da `a` e `b` verso `a2` e `b2`, linea di quota tra `a2` e `b2`, centro dell'etichetta. */
-export interface DimLayout {
-  a: Vec2;
-  b: Vec2;
-  a2: Vec2;
-  b2: Vec2;
-  label: Vec2;
+  return { ...dim, ...placeDimension(paths, existing, dim as ProfileConstraint, pxPerMm) };
 }
 
 /**
- * Dove sta una quota. `off` (mm) per la lunghezza allineata è la distanza con segno dalla normale a sinistra di A→B (Y
- * verso l'alto); per distX e distY è lo scostamento oltre il nodo più alto o più a destra (positivo) o oltre il più basso o
- * più a sinistra (negativo). `at` (0-1) è la posizione dell'etichetta lungo la linea. `fallbackOff` vale per una quota senza `off`.
- * Restituisce null se un nodo citato non c'è.
+ * Aggiunge una quota di riferimento: mostra la misura attuale (tra parentesi sul disegno), non entra nel risolutore e non si
+ * modifica. Serve quando una quota nuova sarebbe ridondante o in conflitto con le altre. Non risolve: il disegno non cambia.
  */
-export function dimLayout(c: ProfileConstraint, pm: Map<string, Vec2>, fallbackOff: number): DimLayout | null {
-  const a = pm.get(c.p[0]);
-  const b = pm.get(c.p[1]);
-  if (!a || !b) return null;
-  const off = c.off ?? fallbackOff;
-  const at = c.at ?? 0.5;
-  let a2: Vec2 = a;
-  let b2: Vec2 = b;
-  if (c.t === 'dist') {
-    const l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
-    const n: Vec2 = [(-(b[1] - a[1]) / l) * off, ((b[0] - a[0]) / l) * off];
-    a2 = [a[0] + n[0], a[1] + n[1]];
-    b2 = [b[0] + n[0], b[1] + n[1]];
-  } else if (c.t === 'distX') {
-    const y = (off >= 0 ? Math.max(a[1], b[1]) : Math.min(a[1], b[1])) + off;
-    a2 = [a[0], y];
-    b2 = [b[0], y];
-  } else if (c.t === 'distY') {
-    const x = (off >= 0 ? Math.max(a[0], b[0]) : Math.min(a[0], b[0])) + off;
-    a2 = [x, a[1]];
-    b2 = [x, b[1]];
-  }
-  return { a, b, a2, b2, label: [a2[0] + (b2[0] - a2[0]) * at, a2[1] + (b2[1] - a2[1]) * at] };
+export function addReferenceDimension<T extends ProfileGeometry>(d: T, con: Omit<ProfileConstraint, 'id'>): T {
+  const list = d.constraints ?? [];
+  const id = constraintIdMaker(list)();
+  const ref: ProfileConstraint = { ...con, id, ref: true };
+  // La misura che ha adesso (positiva per le distanze); `v` resta come promemoria, il disegno la rilegge sempre
+  const measured = dimensionValue({ ...ref, v: undefined }, d.paths);
+  return { ...d, constraints: [...list, { ...ref, v: measured }] };
 }
 
 // --- Trascinamento -----------------------------------------------------------------------------------------------------

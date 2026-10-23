@@ -21,6 +21,8 @@ interface Props {
   pickLabel?: string;
   /** Il campo vuole un numero intero (conteggi): il risultato di un calcolo si arrotonda. */
   integer?: boolean;
+  /** Nome accessibile del campo quando l'etichetta visibile è troppo breve per distinguerlo da altri (es. «Valore» in un elenco). */
+  ariaLabel?: string;
 }
 
 /**
@@ -29,7 +31,7 @@ interface Props {
  * Accetta anche un calcolo senza parametri ("10 / 2"). Nel pannello Proprietà un doppio clic sul nome lo lega a un
  * parametro: il campo diventa allora un'icona fx con il valore, non modificabile.
  */
-export function NumberField({ label, value, onCommit, min = -Infinity, max = Infinity, step = 1, unit, disabled, path, pickLabel, integer }: Props) {
+export function NumberField({ label, value, onCommit, min = -Infinity, max = Infinity, step = 1, unit, disabled, path, pickLabel, integer, ariaLabel }: Props) {
   const [text, setText] = useState(String(value));
   const [focused, setFocused] = useState(false);
   // Esc annulla: all'uscita dal campo (blur) il testo scritto non si conferma. Serve un flag perché il blur parte nello
@@ -87,6 +89,7 @@ export function NumberField({ label, value, onCommit, min = -Infinity, max = Inf
         className="number-field__input"
         type="text"
         inputMode="decimal"
+        aria-label={ariaLabel}
         disabled={disabled}
         value={text}
         onFocus={(e) => {

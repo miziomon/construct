@@ -1,19 +1,12 @@
 import type { ReactNode } from 'react';
-import { CONSTRAINT_GLYPHS, DIM_GAP_PX, dimLayout, dimensionValue, isDimension, nodeNames, pointMap, describeConstraint } from './dimensions';
+import { CONSTRAINT_GLYPHS, DIM_GAP_PX, dimLayout, dimText, fmtDim, isDimension, nodeNames, pointMap, describeConstraint } from './dimensions';
 import type { NodeRef } from './model';
 import type { PathContour, ProfileConstraint, Vec2 } from '../../scene/types';
 
 /** Coordinata per l'attributo SVG: un decimale basta e tiene corto il markup. */
 const f1 = (n: number) => n.toFixed(1);
-/** Numero con al più due decimali e la virgola italiana. */
-export const fmtDim = (n: number) => String(Number(n.toFixed(2))).replace('.', ',');
-
-/** Testo dell'etichetta di una quota: il valore, tra parentesi se è di riferimento. */
-export function dimText(c: ProfileConstraint, paths: PathContour[]): string {
-  const v = dimensionValue(c, paths);
-  const text = c.t === 'angle' ? `${fmtDim(v)}°` : fmtDim(v);
-  return c.ref ? `(${text})` : text;
-}
+// Il testo delle etichette sta in dimensions.ts (serve anche alla disposizione automatica): si riesporta da qui
+export { dimText, fmtDim };
 
 /** Punto (pixel) al centro dell'etichetta di una quota, o null se un nodo citato non c'è: serve a posizionare il campo che la modifica. */
 export function quoteLabelPoint(c: ProfileConstraint, paths: PathContour[], toS: (p: Vec2) => Vec2, pxPerMm: number): Vec2 | null {
@@ -95,6 +88,8 @@ export function QuoteOverlay({ paths, constraints, toS, pxPerMm, bad, flash, sel
         <g className={bem('profile-editor__dim', state)}>
           <path d={`${extension(A, A2)}${extension(B, B2)}${line}`} />
         </g>
+        {/* La linea di quota si afferra e si trascina (cambia `off`): un tracciato trasparente più largo, non per la quota in attesa del valore */}
+        {key !== 'draft' && <path className="profile-editor__qline" d={`M${f1(A2[0])} ${f1(A2[1])}L${f1(B2[0])} ${f1(B2[1])}`} data-qline={key} />}
         {pill(key, L[0], L[1], dimText(c, ps), state)}
       </g>
     );
