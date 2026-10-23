@@ -6,3 +6,5 @@ test-results
 playwright-report
 save/
 tsconfig.tsbuildinfo
+# STL di esempio degli studi (si rigenerano con i test, vedi docs/studio-pattern-rilievo.md)
+docs/studio-rilievo/*.stl

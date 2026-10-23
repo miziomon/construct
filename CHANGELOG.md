@@ -18,6 +18,13 @@ I messaggi di commit seguono i [Conventional Commits](https://www.conventionalco
 
 ## [Non rilasciato]
 
+## [0.73.0] - 2026-10-23
+
+### Aggiunto
+- **Studio di fattibilità e prototipo dei Pattern in rilievo** (`docs/studio-pattern-rilievo.md`): cinque texture su una faccia piana (muro di mattoni, tavola di legno con venature, lamiera arrugginita, borchie additive, rame battuto) con due motori a confronto (CSG di celle e mappa di altezze), benchmark, stampabilità FDM, export OpenSCAD verificato e raccomandazione di rilascio. Solo documento, codice di studio (`src/scene/relief.ts`, `src/kernel/relief.ts`, `src/codegen/reliefScad.ts`), test ed esempi in `docs/studio-rilievo/`: **non ancora nell'app** (gli STL di esempio non sono versionati: si rigenerano con i comandi dello studio).
+- **Studio della texture da immagine come displacement (stile Blender e BumpMesh)** (`docs/studio-texture-immagine.md`), con il confronto con i rilievi procedurali: due motori, **F** (faccia piana, l'immagine in scala di grigi è la funzione di altezza di `sampleGrid`/`heightSolid`) e **M** (displacement dei vertici dell'intera mesh con proiezione triplanare, cilindrica o planare), SVG per via vettoriale o raster, asset e persistenza dell'immagine, anteprima, export OpenSCAD (`zmap`, `surface()`, `polyhedron`) verificato con OpenSCAD, stampabilità FDM e raccomandazione ibrida (CSG procedurale per i casi geometrici, immagine per il resto). Solo studio: codice di prova in `src/scene/textureMap.ts`, `src/scene/textureSamples.ts`, `src/kernel/textureMap.ts` e `src/codegen/textureScad.ts` con test, righe immagine nello stesso benchmark dei rilievi, script in `scripts/texture-*.mjs` e immagini in `docs/studio-texture/`. **Non è nell'app.** Nei file dei rilievi sono stati aggiunti solo `export` (`src/kernel/relief.ts`, `src/codegen/reliefScad.ts`).
+- **Prototipo `docs/prototipi/texture-immagine.html`**: carica PNG, JPG o SVG (o texture di esempio) e le applica a pannello, cilindro o cubo con il motore F o M, con metriche e scarico di STL e `.scad`.
+
 ## [0.72.0] - 2026-10-23
 
 ### Aggiunto

@@ -1,0 +1,1578 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Texture da immagine</title>
+</head>
+<body>
+<style>
+/* Token ripresi da src/styles/abstracts/_tokens.scss (stessi del prototipo delle deformazioni). */
+:root {
+  --bg: #e9eff6; --panel: #f8f9fc; --raised: #ffffff; --border: #cdd5e3;
+  --text: #1e2433; --muted: #4f5b73;
+  --accent: #2f5fc7; --accent-strong: #3563d1; --accent-soft: rgba(79, 124, 230, 0.16);
+  --danger: #c23b3b; --ok: #23794a; --warn: #9a5b00;
+  --grid: #dfe6f0; --grid-major: #c3cddd; --mesh: #9db8ea; --mesh-edge: #24376a;
+  --code-bg: #f1f4fa;
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14171c; --panel: #1b2027; --raised: #232a33; --border: #2d3540;
+    --text: #e6e9ee; --muted: #8b95a3;
+    --accent: #4da3ff; --accent-strong: #2a73d0; --accent-soft: rgba(77, 163, 255, 0.16);
+    --danger: #ff5d5d; --ok: #46c47a; --warn: #f0b429;
+    --grid: #232a33; --grid-major: #333c48; --mesh: #6c9ee0; --mesh-edge: #cfe0ff;
+    --code-bg: #10141a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14171c; --panel: #1b2027; --raised: #232a33; --border: #2d3540;
+  --text: #e6e9ee; --muted: #8b95a3;
+  --accent: #4da3ff; --accent-strong: #2a73d0; --accent-soft: rgba(77, 163, 255, 0.16);
+  --danger: #ff5d5d; --ok: #46c47a; --warn: #f0b429;
+  --grid: #232a33; --grid-major: #333c48; --mesh: #6c9ee0; --mesh-edge: #cfe0ff;
+  --code-bg: #10141a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  margin: 0; background: var(--bg); color: var(--text); font-family: var(--font-sans); font-size: 13px; line-height: 1.45;
+  padding-block: 16px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.page { max-width: 1320px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+.top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; }
+.top__titles { min-width: 0; flex: 1 1 360px; }
+.top h1 { margin: 0 0 2px; font-size: 20px; font-weight: 650; letter-spacing: -0.01em; text-wrap: balance; }
+.top p { margin: 0; color: var(--muted); max-width: 78ch; }
+.lbl { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 28px; padding: 0 10px;
+  background: var(--raised); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; white-space: nowrap;
+}
+.btn:hover:not(:disabled) { border-color: var(--accent); }
+.btn:disabled { opacity: 0.5; cursor: default; }
+.btn--primary { background: var(--accent-strong); border-color: var(--accent-strong); color: #fff; font-weight: 600; }
+select, input[type="number"] { background: var(--raised); border: 1px solid var(--border); border-radius: 4px; min-height: 28px; padding: 0 8px; }
+select { max-width: 100%; }
+input[type="number"] { width: 84px; font-variant-numeric: tabular-nums; }
+input[type="range"] { width: 100%; accent-color: var(--accent); min-width: 0; margin: 0; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: var(--raised); }
+.seg button { background: transparent; border: 0; border-right: 1px solid var(--border); padding: 0 8px; min-height: 26px; cursor: pointer; min-width: 0; }
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.seg--full { display: flex; width: 100%; }
+.seg--full button { flex: 1; }
+
+/* Cornice: vista 3D a sinistra, pannello a destra, misure sotto */
+.frame {
+  display: grid; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+  grid-template-columns: minmax(0, 1fr) 360px; grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-areas: "tabs tabs" "view panel" "stat stat";
+  height: clamp(640px, calc(100dvh - 150px), 860px);
+}
+.tabs { grid-area: tabs; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+.tabs small { color: var(--muted); }
+.view { grid-area: view; position: relative; min-width: 0; min-height: 0; background: var(--bg); overflow: hidden; cursor: grab; }
+.view canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+.view__msg { position: absolute; inset: 0; display: grid; place-items: center; padding: 16px; text-align: center; color: var(--muted); pointer-events: none; }
+.view__bar { position: absolute; right: 10px; top: 10px; display: flex; gap: 6px; }
+.view__hint { position: absolute; left: 10px; bottom: 10px; color: var(--muted); font-size: 12px; background: color-mix(in srgb, var(--panel) 88%, transparent); border: 1px solid var(--border); border-radius: 6px; padding: 4px 9px; pointer-events: none; }
+.panel { grid-area: panel; overflow-y: auto; min-width: 0; border-left: 1px solid var(--border); background: var(--panel); }
+.panel h2 { margin: 0; padding: 10px 12px; font-size: 14px; font-weight: 650; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.panel h2 span { font-weight: 400; font-size: 11px; color: var(--muted); }
+.sec { padding: 10px 12px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
+.sec h3 { margin: 0; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.row { display: grid; grid-template-columns: 96px minmax(0, 1fr); align-items: center; gap: 4px 8px; }
+.row--num { grid-template-columns: 96px minmax(0, 1fr) 84px; }
+.row > label, .row > span.l { color: var(--muted); }
+.chk { display: flex; align-items: center; gap: 8px; color: var(--text); }
+.note { margin: 0; color: var(--muted); font-size: 12px; }
+.msg { margin: 0; padding: 6px 9px; border-radius: 6px; border: 1px solid var(--border); background: var(--code-bg); font-size: 12px; }
+.msg:empty { display: none; }
+.msg--err { border-color: var(--danger); color: var(--danger); }
+.foot { display: flex; gap: 8px; justify-content: flex-end; padding: 10px 12px; flex-wrap: wrap; }
+.stat { grid-area: stat; display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 8px 12px; border-top: 1px solid var(--border); color: var(--muted); font-variant-numeric: tabular-nums; }
+.stat b { color: var(--text); font-weight: 600; }
+.stat .ok { color: var(--ok); } .stat .bad { color: var(--danger); } .stat .warn { color: var(--warn); }
+.thumb { display: flex; gap: 10px; align-items: center; }
+.thumb canvas { width: 72px; height: 72px; image-rendering: pixelated; border: 1px solid var(--border); border-radius: 4px; background: var(--raised); flex: none; }
+.thumb div { min-width: 0; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+input[type="file"] { max-width: 100%; font-size: 12px; }
+
+@media (max-width: 900px) {
+  .frame { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 56vh auto auto; grid-template-areas: "tabs" "view" "panel" "stat"; height: auto; }
+  .panel { border-left: 0; border-top: 1px solid var(--border); overflow: visible; }
+  .row, .row--num { grid-template-columns: 96px minmax(0, 1fr); }
+  .row--num input[type="number"] { grid-column: 2; width: 100%; }
+}
+</style>
+
+<div class="page">
+  <header class="top">
+    <div class="top__titles">
+      <h1>Texture da immagine</h1>
+      <p>Prototipo per lo studio <code>docs/studio-texture-immagine.md</code>: un'immagine in scala di grigi (PNG, JPG, SVG o una texture di esempio) diventa una superficie in rilievo. <b>Motore F</b>: solo la faccia superiore, campionata su una griglia (come i rilievi procedurali). <b>Motore M</b>: tutto l'oggetto, con i vertici spostati lungo la normale (come Blender Displace e BumpMesh).
+        La geometria è calcolata da <code>manifold-3d</code> 3.5.4, la stessa versione dell'app, caricata dalla rete; le funzioni di calcolo sono generate dai sorgenti TypeScript dello studio (<code>scripts/texture-core.mjs</code>). L'interfaccia, invece, è solo un disegno.</p>
+    </div>
+    <label class="lbl">Tema
+      <select id="theme" aria-label="Tema">
+        <option value="auto">Automatico</option><option value="light">Chiaro</option><option value="dark">Scuro</option>
+      </select>
+    </label>
+  </header>
+
+  <main class="frame" id="frame">
+    <div class="tabs">
+      <div class="seg" role="group" aria-label="Oggetto" data-k="obj">
+        <button type="button" data-v="panel" aria-pressed="true">Pannello 80 × 60 × 5</button>
+        <button type="button" data-v="cyl" aria-pressed="false">Cilindro Ø30 × 20</button>
+        <button type="button" data-v="cube" aria-pressed="false">Cubo 30</button>
+      </div>
+      <div class="seg" role="group" aria-label="Motore" data-k="engine">
+        <button type="button" data-v="F" aria-pressed="true">Motore F (faccia)</button>
+        <button type="button" data-v="M" aria-pressed="false">Motore M (mesh intera)</button>
+      </div>
+      <small id="tabNote"></small>
+    </div>
+
+    <section class="view" id="view" aria-label="Anteprima 3D">
+      <div class="view__msg" id="viewMsg">Caricamento di manifold-3d e three.js…</div>
+      <div class="view__bar"><button type="button" class="btn" id="fit">Adatta</button></div>
+      <div class="view__hint">Trascina per orbitare, rotella per lo zoom</div>
+    </section>
+
+    <aside class="panel" id="panel">
+      <h2>Texture <span>Immagine come quota</span></h2>
+      <div class="sec">
+        <h3>Immagine</h3>
+        <div class="row"><label for="sample">Esempio</label>
+          <select id="sample" data-k="sample">
+            <option value="leather">Pelle</option><option value="knurl">Zigrinatura a rombi</option><option value="carbon">Fibra di carbonio</option>
+            <option value="bricks">Mattoni</option><option value="waves">Onde</option><option value="noise">Rumore</option>
+          </select></div>
+        <div class="row"><label for="file">Oppure</label><input type="file" id="file" accept="image/png,image/jpeg,image/svg+xml,.png,.jpg,.jpeg,.svg" aria-label="Carica un'immagine PNG, JPG o SVG"></div>
+        <div class="thumb"><canvas id="thumb" width="72" height="72" aria-label="Anteprima in scala di grigi"></canvas><div id="imgInfo"></div></div>
+      </div>
+
+      <div class="sec">
+        <h3>Quota</h3>
+        <div class="row row--num"><label for="amp">Ampiezza mm</label><input type="range" min="0" max="3" step="0.05" data-k="amp" id="amp"><input type="number" min="0" max="20" step="0.05" data-k="amp" aria-label="Ampiezza in mm"></div>
+        <div class="row row--num"><label for="mid">Livello medio</label><input type="range" min="0" max="1" step="0.01" data-k="mid" id="mid"><input type="number" min="0" max="1" step="0.01" data-k="mid" aria-label="Livello medio da 0 a 1"></div>
+        <div class="row"><span class="l">Modo</span><div class="seg seg--full" data-k="mode"><button type="button" data-v="relief">Rilievo</button><button type="button" data-v="groove">Incavo</button><button type="button" data-v="both">Entrambi</button></div></div>
+        <label class="chk"><input type="checkbox" data-k="invert"> Inverti (nero in alto)</label>
+        <div class="row row--num"><label for="blur">Sfocatura px</label><input type="range" min="0" max="8" step="1" data-k="blur" id="blur"><input type="number" min="0" max="20" step="1" data-k="blur" aria-label="Raggio della sfocatura in pixel"></div>
+      </div>
+
+      <div class="sec">
+        <h3>Scala e posizione</h3>
+        <div class="row row--num"><label for="tile">Scala mm</label><input type="range" min="2" max="80" step="0.5" data-k="tile" id="tile"><input type="number" min="0.5" max="1000" step="0.5" data-k="tile" aria-label="Lato della piastrella in mm"></div>
+        <div class="row row--num"><label for="rot">Rotazione °</label><input type="range" min="-180" max="180" step="1" data-k="rot" id="rot"><input type="number" min="-360" max="360" step="1" data-k="rot" aria-label="Rotazione in gradi"></div>
+        <div class="row row--num"><label for="ox">Scostam. X</label><input type="range" min="-20" max="20" step="0.5" data-k="ox" id="ox"><input type="number" min="-1000" max="1000" step="0.5" data-k="ox" aria-label="Scostamento X in mm"></div>
+        <div class="row row--num"><label for="oy">Scostam. Y</label><input type="range" min="-20" max="20" step="0.5" data-k="oy" id="oy"><input type="number" min="-1000" max="1000" step="0.5" data-k="oy" aria-label="Scostamento Y in mm"></div>
+        <label class="chk"><input type="checkbox" data-k="repeat"> Ripeti l'immagine</label>
+      </div>
+
+      <div class="sec">
+        <h3>Calcolo</h3>
+        <div class="row row--num"><label for="step"><span data-show="engine=F">Passo mm</span><span data-show="engine=M">Lato mm</span></label><input type="range" min="0.3" max="1.5" step="0.05" data-k="step" id="step"><input type="number" min="0.2" max="3" step="0.05" data-k="step" aria-label="Passo della griglia o lato dei triangoli in mm"></div>
+        <div data-show="engine=M" class="sec" style="padding:0;border:0">
+          <div class="row"><label for="proj">Proiezione</label>
+            <select id="proj" data-k="proj"><option value="triplanar">Triplanare</option><option value="cylindrical">Cilindrica</option><option value="planar">Planare</option></select></div>
+          <div class="row" data-show="proj=planar|cylindrical"><span class="l">Asse</span><div class="seg seg--full" data-k="axis"><button type="button" data-v="0">X</button><button type="button" data-v="1">Y</button><button type="button" data-v="2">Z</button></div></div>
+          <div class="row"><label for="normals">Normali</label>
+            <select id="normals" data-k="normals"><option value="smooth">Medie</option><option value="miter">Squadrate (miter)</option><option value="split">Separate per faccia</option></select></div>
+          <label class="chk"><input type="checkbox" data-k="fade"> Spigoli fermi (ampiezza 0 sugli spigoli vivi)</label>
+        </div>
+        <p class="note" data-show="engine=F">Solo la faccia superiore; il resto del pezzo non cambia. Rilievo e incavo usano una booleana, "Entrambi" due.</p>
+        <p class="note" data-show="engine=M">Spigoli e angoli: con le normali medie lo spigolo si arrotonda, con quelle separate le facce si staccano e manifold rifiuta la mesh, con "Spigoli fermi" lo spigolo resta ma la texture sfuma verso di esso.</p>
+      </div>
+
+      <div class="sec">
+        <h3>Vista</h3>
+        <label class="chk"><input type="checkbox" data-k="grazing"> Luce radente</label>
+        <div class="row row--num"><label for="light">Direzione luce</label><input type="range" min="0" max="360" step="5" data-k="light" id="light"><input type="number" min="0" max="360" step="5" data-k="light" aria-label="Direzione della luce in gradi"></div>
+      </div>
+
+      <div class="sec">
+        <p class="msg" id="msg">Calcolo in corso…</p>
+      </div>
+      <div class="foot"><button type="button" class="btn" id="dlStl" disabled>Scarica STL</button><button type="button" class="btn btn--primary" id="dlScad" disabled>Scarica .scad</button></div>
+    </aside>
+
+    <div class="stat" id="stat" aria-live="polite"></div>
+  </main>
+</div>
+
+<script type="module">
+const $ = (id) => document.getElementById(id);
+
+/* CORE-BEGIN: funzioni pure di calcolo, generate da scripts/texture-core.mjs dai sorgenti TypeScript dello studio e provate in Node dai test (src/kernel/textureCore.test.ts). M è il modulo di manifold-3d. */
+/* ---------- scene/relief.ts ---------- */
+/** Nodi massimi di una mappa di altezze: oltre, il passo si allarga (a 0,3 mm sono circa 22 mila mm² di faccia). */
+const MAX_GRID_NODES = 25e4;
+/** Campiona `f` su una griglia di passo (al più) `step` che copre tutto il rettangolo; i valori sono arrotondati al centesimo di mm. */
+function sampleGrid(rect, requestedStep, f) {
+	const width = rect.maxX - rect.minX;
+	const height = rect.maxY - rect.minY;
+	if (!(width > 0 && height > 0 && Number.isFinite(width) && Number.isFinite(height))) throw new Error("Rettangolo vuoto o non finito");
+	// Passo minimo 0,05 mm e al più MAX_GRID_NODES nodi: se servirebbero di più il passo si allarga
+	const step = Math.max(Number.isFinite(requestedStep) ? requestedStep : .5, .05, Math.sqrt(width * height / MAX_GRID_NODES));
+	const nx = Math.max(2, Math.ceil(width / step) + 1);
+	const ny = Math.max(2, Math.ceil(height / step) + 1);
+	const dx = (rect.maxX - rect.minX) / (nx - 1);
+	const dy = (rect.maxY - rect.minY) / (ny - 1);
+	const z = new Float32Array(nx * ny);
+	for (let j = 0; j < ny; j++) {
+		for (let i = 0; i < nx; i++) z[j * nx + i] = Math.round(f(rect.minX + i * dx, rect.minY + j * dy) * 100) / 100;
+	}
+	return {
+		nx,
+		ny,
+		x0: rect.minX,
+		y0: rect.minY,
+		dx,
+		dy,
+		z
+	};
+}
+
+/* ---------- kernel/relief.ts ---------- */
+/** Quanto il solido del taglio sporge sopra la faccia (mm) e quanto la borchia entra nel pezzo (mm). */
+const ABOVE = .5;
+const EMBED = .2;
+/** Spessore minimo oltre il quale una mappa di altezze taglia: sotto, la superficie resta sopra la faccia (niente facce complanari). */
+const FLOOR = .02;
+/** Prisma della sezione tra `z0` e `z1`. */
+function prism(wasm, section, z0, z1) {
+	const slab = wasm.Manifold.extrude(section, z1 - z0, 0, 0, [1, 1], false);
+	const moved = slab.translate([
+		0,
+		0,
+		z0
+	]);
+	slab.delete();
+	return moved;
+}
+/**
+* Solido chiuso tra la superficie z = f(x, y) della griglia e il piano orizzontale `planeZ`, con il materiale `side` della
+* superficie ('below': piano sotto, per le borchie; 'above': piano sopra, per i tagli). Le pareti sono verticali: ogni vertice
+* del bordo della superficie ha il suo gemello sul piano, quindi le pareti sono strisce di quadrilateri che non si
+* rovesciano mai, qualunque sia la superficie. Il piano di chiusura è un ventaglio dal suo centro ai vertici del bordo
+* (nessun triangolo degenere: il centro non sta mai su un lato). Tutti i vertici sono condivisi, quindi la mesh è a tenuta
+* senza fusione. La superficie e il piano non devono toccarsi.
+*/
+function heightSolid(wasm, grid, planeZ, side) {
+	const { nx, ny, x0, y0, dx, dy, z } = grid;
+	const n = nx * ny;
+	const v = (i, j) => j * nx + i;
+	// Bordo della griglia in senso antiorario visto dall'alto: lato basso, destro, alto, sinistro (senza ripetere gli angoli)
+	const loop = [];
+	for (let i = 0; i < nx; i++) loop.push(v(i, 0));
+	for (let j = 1; j < ny; j++) loop.push(v(nx - 1, j));
+	for (let i = nx - 2; i >= 0; i--) loop.push(v(i, ny - 1));
+	for (let j = ny - 2; j >= 1; j--) loop.push(v(0, j));
+	const count = loop.length;
+	// Vertici: griglia, poi un gemello sul piano per ogni vertice del bordo (indice n + k), poi il centro del piano
+	const vertices = new Float32Array((n + count + 1) * 3);
+	for (let j = 0; j < ny; j++) {
+		for (let i = 0; i < nx; i++) vertices.set([
+			x0 + i * dx,
+			y0 + j * dy,
+			z[v(i, j)]
+		], v(i, j) * 3);
+	}
+	loop.forEach((s, k) => vertices.set([
+		vertices[s * 3],
+		vertices[s * 3 + 1],
+		planeZ
+	], (n + k) * 3));
+	const centre = n + count;
+	vertices.set([
+		x0 + (nx - 1) * dx / 2,
+		y0 + (ny - 1) * dy / 2,
+		planeZ
+	], centre * 3);
+	// Orientazione "sotto": normali verso l'esterno con i vertici antiorari visti da fuori
+	const tris = [];
+	// Superficie: due triangoli per cella, antiorari visti dall'alto (normale verso +Z)
+	for (let j = 0; j < ny - 1; j++) {
+		for (let i = 0; i < nx - 1; i++) tris.push(v(i, j), v(i + 1, j), v(i + 1, j + 1), v(i, j), v(i + 1, j + 1), v(i, j + 1));
+	}
+	for (let k = 0; k < count; k++) {
+		const next = (k + 1) % count;
+		// Parete: quadrilatero verticale sotto il lato k del bordo (verso opposto a quello del lato nella superficie)
+		tris.push(loop[next], loop[k], n + k, loop[next], n + k, n + next);
+		// Piano di chiusura (normale verso -Z): ventaglio dal centro
+		tris.push(centre, n + next, n + k);
+	}
+	// Materiale sopra la superficie: stessa mesh con i triangoli rovesciati
+	if (side === "above") for (let t = 0; t < tris.length; t += 3) [tris[t + 1], tris[t + 2]] = [tris[t + 2], tris[t + 1]];
+	const mesh = new wasm.Mesh({
+		numProp: 3,
+		vertProperties: vertices,
+		triVerts: new Uint32Array(tris)
+	});
+	return new wasm.Manifold(mesh);
+}
+/** Intersezione con il prisma della regione e pulizia: restituisce null se non resta nulla. */
+function clipToRegion(wasm, solid, region, z0, z1) {
+	const box = prism(wasm, region, z0, z1);
+	const clipped = solid.intersect(box);
+	box.delete();
+	solid.delete();
+	if (clipped.isEmpty()) {
+		clipped.delete();
+		return null;
+	}
+	return clipped;
+}
+
+/* ---------- codegen/reliefScad.ts ---------- */
+/**
+* `polyhedron` chiuso della griglia, con lo stesso schema del kernel: superficie, un gemello sul piano `planeZ` per ogni
+* vertice del bordo (pareti verticali a quadrilateri), ventaglio di chiusura dal centro del piano. I valori di `zmap` sono
+* centesimi di mm interi (un terzo di caratteri in meno dei decimali) e `pts` li divide per 100.
+*/
+function polyhedronLines(grid, planeZ, side) {
+	const { nx, ny, x0, y0, dx, dy, z } = grid;
+	const rows = [];
+	for (let j = 0; j < ny; j++) rows.push(`  [${Array.from(z.subarray(j * nx, (j + 1) * nx), (v) => Math.round(v * 100)).join(",")}]`);
+	const plane = n(planeZ);
+	return [
+		`nx = ${nx}; ny = ${ny}; x0 = ${x0}; y0 = ${y0}; dx = ${dx}; dy = ${dy};`,
+		"// Quote in centesimi di mm",
+		"zmap = [",
+		rows.join(",\n"),
+		"];",
+		"N = nx * ny;",
+		"function v(i, j) = j * nx + i;",
+		"// Bordo della griglia in senso antiorario: lato basso, destro, alto, sinistro (senza ripetere gli angoli)",
+		"per = concat([for (i = [0 : nx - 1]) v(i, 0)], [for (j = [1 : ny - 1]) v(nx - 1, j)], [for (i = [nx - 2 : -1 : 0]) v(i, ny - 1)], [for (j = [ny - 2 : -1 : 1]) v(0, j)]);",
+		"P = len(per);",
+		`pts = concat([for (j = [0 : ny - 1]) for (i = [0 : nx - 1]) [x0 + i * dx, y0 + j * dy, zmap[j][i] / 100]], [for (s = per) [x0 + (s % nx) * dx, y0 + floor(s / nx) * dy, ${plane}]], [[x0 + (nx - 1) * dx / 2, y0 + (ny - 1) * dy / 2, ${plane}]]);`,
+		"// Facce con i vertici in ordine antiorario visti da fuori (come nel kernel); OpenSCAD le vuole orarie, quindi t() le rovescia",
+		`function t(a, b, c) = ${side === "above" ? "[a, b, c]" : "[a, c, b]"};`,
+		"faces = concat(",
+		"  [for (j = [0 : ny - 2]) for (i = [0 : nx - 2]) each [t(v(i, j), v(i + 1, j), v(i + 1, j + 1)), t(v(i, j), v(i + 1, j + 1), v(i, j + 1))]],",
+		"  [for (k = [0 : P - 1]) let (m = (k + 1) % P) each [t(per[m], per[k], N + k), t(per[m], N + k, N + m), t(N + P, N + m, N + k)]]",
+		");",
+		"polyhedron(pts, faces, convexity = 10);"
+	];
+}
+
+/* ---------- kernel/export/stl.ts ---------- */
+/**
+* STL binario: header da 80 byte, conteggio triangoli (uint32), poi per ogni triangolo
+* normale (3 float), tre vertici (9 float) e 2 byte di attributo. Little endian.
+*/
+function writeStl(positions, indices) {
+	const triCount = indices.length / 3;
+	const buffer = new ArrayBuffer(84 + triCount * 50);
+	const view = new DataView(buffer);
+	// Header testuale (ignorato dagli slicer) e numero di triangoli
+	new TextEncoder().encodeInto("Construct binary STL", new Uint8Array(buffer, 0, 80));
+	view.setUint32(80, triCount, true);
+	let offset = 84;
+	for (let t = 0; t < triCount; t++) {
+		const a = indices[t * 3] * 3;
+		const b = indices[t * 3 + 1] * 3;
+		const c = indices[t * 3 + 2] * 3;
+		// Normale = prodotto vettoriale degli spigoli, normalizzata (vettore nullo per triangoli degeneri)
+		const ux = positions[b] - positions[a], uy = positions[b + 1] - positions[a + 1], uz = positions[b + 2] - positions[a + 2];
+		const vx = positions[c] - positions[a], vy = positions[c + 1] - positions[a + 1], vz = positions[c + 2] - positions[a + 2];
+		let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+		const len = Math.hypot(nx, ny, nz) || 1;
+		nx /= len;
+		ny /= len;
+		nz /= len;
+		for (const v of [
+			nx,
+			ny,
+			nz,
+			positions[a],
+			positions[a + 1],
+			positions[a + 2],
+			positions[b],
+			positions[b + 1],
+			positions[b + 2],
+			positions[c],
+			positions[c + 1],
+			positions[c + 2]
+		]) {
+			view.setFloat32(offset, v, true);
+			offset += 4;
+		}
+		// Attributo (2 byte) lasciato a zero
+		offset += 2;
+	}
+	return new Uint8Array(buffer);
+}
+
+/* ---------- scene/textureMap.ts ---------- */
+const textureDefaults = () => ({
+	tile: 20,
+	repeat: true,
+	rotation: 0,
+	offset: [0, 0],
+	invert: false,
+	midlevel: .5,
+	amplitude: .6,
+	blur: 0,
+	mode: "relief"
+});
+const finite = (v, fallback) => Number.isFinite(v) ? v : fallback;
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+/** Limiti obbligatori: senza di essi una piastrella nulla o infinita darebbe divisioni per zero e griglie enormi. */
+function normalizeTexture(p) {
+	const d = textureDefaults();
+	return {
+		tile: clamp(finite(p.tile ?? d.tile, d.tile), .5, 1e3),
+		repeat: p.repeat ?? d.repeat,
+		rotation: finite(p.rotation ?? d.rotation, 0) % 360,
+		offset: [clamp(finite(p.offset?.[0] ?? 0, 0), -1e4, 1e4), clamp(finite(p.offset?.[1] ?? 0, 0), -1e4, 1e4)],
+		invert: p.invert ?? d.invert,
+		midlevel: clamp(finite(p.midlevel ?? d.midlevel, d.midlevel), 0, 1),
+		amplitude: clamp(finite(p.amplitude ?? d.amplitude, d.amplitude), 0, 20),
+		blur: Math.round(clamp(finite(p.blur ?? d.blur, 0), 0, 20)),
+		mode: p.mode === "groove" || p.mode === "both" ? p.mode : "relief"
+	};
+}
+// ---------------------------------------------------------------------------------------------------------------------
+// Immagine: conversione a grigio, ridimensionamento, sfocatura
+// ---------------------------------------------------------------------------------------------------------------------
+/**
+* Da RGBA a 8 bit (come lo restituisce `getImageData` o `createImageBitmap`) a scala di grigi, con una formula INTERA sui
+* valori sRGB così come sono (nessuna linearizzazione, nessun profilo colore): `Y = (77 R + 150 G + 29 B + 128) >> 8`
+* (pesi di Rec. 601 arrotondati, la somma dei pesi è 256). I pixel semitrasparenti si compongono prima sul bianco (la
+* carta), con aritmetica intera: il risultato è identico su ogni browser e su Node, purché i canali RGBA in ingresso lo siano.
+*/
+function rgbaToGray(rgba, w, h) {
+	const data = new Uint8Array(w * h);
+	for (let i = 0; i < w * h; i++) {
+		const a = rgba[i * 4 + 3];
+		// Composizione sul bianco, arrotondata all'intero più vicino
+		const mix = (c) => Math.floor((c * a + 255 * (255 - a) + 127) / 255);
+		data[i] = 77 * mix(rgba[i * 4]) + 150 * mix(rgba[i * 4 + 1]) + 29 * mix(rgba[i * 4 + 2]) + 128 >> 8;
+	}
+	return {
+		w,
+		h,
+		data
+	};
+}
+/** Riduce l'immagine (media sull'area di ogni pixel di arrivo) in modo che il lato maggiore non superi `maxSide`; se già piccola, la restituisce. */
+function resizeGray(img, maxSide) {
+	const k = Math.max(img.w, img.h) / maxSide;
+	if (!(k > 1)) return img;
+	const w = Math.max(1, Math.round(img.w / k));
+	const h = Math.max(1, Math.round(img.h / k));
+	const data = new Uint8Array(w * h);
+	for (let j = 0; j < h; j++) {
+		// Righe e colonne di partenza coperte dal pixel di arrivo (almeno una)
+		const y0 = Math.floor(j * img.h / h);
+		const y1 = Math.max(y0 + 1, Math.floor((j + 1) * img.h / h));
+		for (let i = 0; i < w; i++) {
+			const x0 = Math.floor(i * img.w / w);
+			const x1 = Math.max(x0 + 1, Math.floor((i + 1) * img.w / w));
+			let sum = 0;
+			for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) sum += img.data[y * img.w + x];
+			data[j * w + i] = Math.round(sum / ((y1 - y0) * (x1 - x0)));
+		}
+	}
+	return {
+		w,
+		h,
+		data
+	};
+}
+/** Sfocatura a scatola separabile di raggio `radius` pixel; con `wrap` i bordi si richiudono (texture ripetuta), altrimenti si replicano. */
+function blurGray(img, radius, wrap) {
+	const r = Math.round(radius);
+	if (r <= 0) return img;
+	const { w, h } = img;
+	const idx = (k, n) => wrap ? (k % n + n) % n : Math.min(n - 1, Math.max(0, k));
+	const tmp = new Float32Array(w * h);
+	const out = new Uint8Array(w * h);
+	const norm = 2 * r + 1;
+	// Prima le righe...
+	for (let j = 0; j < h; j++) {
+		for (let i = 0; i < w; i++) {
+			let s = 0;
+			for (let k = -r; k <= r; k++) s += img.data[j * w + idx(i + k, w)];
+			tmp[j * w + i] = s / norm;
+		}
+	}
+	// ...poi le colonne
+	for (let j = 0; j < h; j++) {
+		for (let i = 0; i < w; i++) {
+			let s = 0;
+			for (let k = -r; k <= r; k++) s += tmp[idx(j + k, h) * w + i];
+			out[j * w + i] = Math.round(s / norm);
+		}
+	}
+	return {
+		w,
+		h,
+		data: out
+	};
+}
+/** Valore dell'immagine (0 a 1) in coordinate di piastrella (s, t), interpolazione bilineare; `wrap` ripete l'immagine, altrimenti i bordi si replicano. */
+function sampleGray(img, s, t, wrap) {
+	const { w, h, data } = img;
+	// Il centro del pixel (i, j) sta in ((i + 0,5) / w, 1 - (j + 0,5) / h): riga 0 in alto, t verso l'alto
+	const px = s * w - .5;
+	const py = (1 - t) * h - .5;
+	const ix = Math.floor(px);
+	const iy = Math.floor(py);
+	const fx = px - ix;
+	const fy = py - iy;
+	const col = (k) => wrap ? (k % w + w) % w : Math.min(w - 1, Math.max(0, k));
+	const row = (k) => wrap ? (k % h + h) % h : Math.min(h - 1, Math.max(0, k));
+	const a = data[row(iy) * w + col(ix)];
+	const b = data[row(iy) * w + col(ix + 1)];
+	const c = data[row(iy + 1) * w + col(ix)];
+	const d = data[row(iy + 1) * w + col(ix + 1)];
+	return (a + (b - a) * fx + (c - a) * fy + (a - b - c + d) * fx * fy) / 255;
+}
+// ---------------------------------------------------------------------------------------------------------------------
+// Quota
+// ---------------------------------------------------------------------------------------------------------------------
+/** Dal grigio normalizzato (0 a 1, già invertito se serve) alla quota in mm secondo il modo; il livello medio resta a quota 0. */
+function grayToHeight(v, p) {
+	const m = p.midlevel;
+	if (p.mode === "both") return (v - m) * p.amplitude;
+	// Solo rilievo: da 0 al bianco, ciò che sta sotto il livello medio resta sulla faccia
+	if (p.mode === "relief") return m >= 1 ? 0 : Math.max(0, v - m) / (1 - m) * p.amplitude;
+	// Solo incavo: da 0 al nero, ciò che sta sopra il livello medio resta sulla faccia
+	return m <= 0 ? 0 : 0 - Math.max(0, m - v) / m * p.amplitude;
+}
+/** Quota minima e massima possibili (mm) del modo scelto: servono a dimensionare i solidi e il piano di chiusura. */
+function heightRange(p) {
+	const lo = Math.min(grayToHeight(0, p), grayToHeight(1, p));
+	const hi = Math.max(grayToHeight(0, p), grayToHeight(1, p));
+	return [Math.min(0, lo), Math.max(0, hi)];
+}
+/**
+* Funzione di quota `h(u, v)` (mm) di un'immagine, con scala, rotazione, scostamento, ripetizione, inversione, livello
+* medio, ampiezza e sfocatura. Fuori dalla piastrella (senza ripetizione) vale 0. La sfocatura si calcola una volta sola, qui.
+*/
+function makeTextureHeight(img, params) {
+	const p = normalizeTexture(params);
+	const source = blurGray(img, p.blur, p.repeat);
+	const tileW = p.tile;
+	const tileH = p.tile * img.h / img.w;
+	const cos = Math.cos(p.rotation * Math.PI / 180);
+	const sin = Math.sin(p.rotation * Math.PI / 180);
+	return (u, v) => {
+		// Dal riferimento della faccia a quello della texture: si toglie lo scostamento e si ruota di -rotazione
+		const du = u - p.offset[0];
+		const dv = v - p.offset[1];
+		const tu = du * cos + dv * sin;
+		const tv = -du * sin + dv * cos;
+		const s = tu / tileW;
+		const t = tv / tileH;
+		if (!p.repeat && (s < 0 || s > 1 || t < 0 || t > 1)) return 0;
+		const g = sampleGray(source, s, t, p.repeat);
+		return grayToHeight(p.invert ? 1 - g : g, p);
+	};
+}
+const projectionDefaults = () => ({
+	kind: "triplanar",
+	axis: 2,
+	radius: 10,
+	blend: 4,
+	capAngle: 25
+});
+/** Coordinate (u, v) in mm di un punto per la proiezione planare lungo `axis`: Z guarda dall'alto (u = x, v = y), X (u = y, v = z), Y (u = x, v = z). */
+function planarUv(axis, x, y, z) {
+	return axis === 2 ? [x, y] : axis === 0 ? [y, z] : [x, z];
+}
+/**
+* Spostamento (mm) di un punto della superficie lungo la sua normale: `(x, y, z)` posizione e `(nx, ny, nz)` normale
+* unitaria. Planare: una sola proiezione. Triplanare: tre proiezioni (una per asse) mescolate con i pesi |n|^blend, che
+* sommano 1. Cilindrica: u è l'arco (in mm, con un numero intero di piastrelle sul giro) e v la quota lungo l'asse;
+* le facce quasi perpendicolari all'asse (i tappi) passano gradualmente alla proiezione planare.
+*/
+function makeDisplacement(img, params, projection = {}) {
+	const proj = {
+		...projectionDefaults(),
+		...projection
+	};
+	const tex = normalizeTexture(params);
+	const h = makeTextureHeight(img, tex);
+	const planar = (axis, x, y, z) => h(...planarUv(axis, x, y, z));
+	if (proj.kind === "planar") return (x, y, z) => planar(proj.axis, x, y, z);
+	if (proj.kind === "triplanar") {
+		return (x, y, z, nx, ny, nz) => {
+			const w0 = Math.abs(nx) ** proj.blend;
+			const w1 = Math.abs(ny) ** proj.blend;
+			const w2 = Math.abs(nz) ** proj.blend;
+			const sum = w0 + w1 + w2;
+			if (!(sum > 0)) return 0;
+			// Le proiezioni con peso trascurabile non si calcolano
+			let out = 0;
+			if (w0 / sum > 1e-4) out += w0 / sum * planar(0, x, y, z);
+			if (w1 / sum > 1e-4) out += w1 / sum * planar(1, x, y, z);
+			if (w2 / sum > 1e-4) out += w2 / sum * planar(2, x, y, z);
+			return out;
+		};
+	}
+	// Cilindrica: piastrelle sul giro = intero più vicino a 2 pi R / tile (almeno 1), così la texture si chiude senza cucitura
+	const tiles = Math.max(1, Math.round(2 * Math.PI * Math.max(proj.radius, .01) / tex.tile));
+	const arc = tiles * tex.tile;
+	const a = proj.axis;
+	const cosCap = Math.cos(proj.capAngle * Math.PI / 180);
+	return (x, y, z, nx, ny, nz) => {
+		const p3 = [
+			x,
+			y,
+			z
+		];
+		const n3 = [
+			nx,
+			ny,
+			nz
+		];
+		const c1 = p3[(a + 1) % 3];
+		const c2 = p3[(a + 2) % 3];
+		const theta = Math.atan2(c2, c1);
+		const side = h(theta / (2 * Math.PI) * arc, p3[a]);
+		// Fascia di passaggio tra fianco e tappo: 0 sul fianco, 1 sul tappo, ampia 0,2 in |n_asse|
+		const cap = clamp((Math.abs(n3[a]) - (cosCap - .1)) / .2, 0, 1);
+		return cap <= 0 ? side : cap >= 1 ? planar(a, x, y, z) : (1 - cap) * side + cap * planar(a, x, y, z);
+	};
+}
+
+/* ---------- scene/textureSamples.ts ---------- */
+/** Hash intero 2D (nessuna tabella, stesso risultato ovunque) in 0..1. */
+function hash2(x, y, seed) {
+	let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^ Math.imul(seed | 0, 1274126177);
+	h = Math.imul(h ^ h >>> 13, 1274126177);
+	h ^= h >>> 16;
+	return (h >>> 0) / 4294967296;
+}
+const fract = (v) => v - Math.floor(v);
+const tri = (v) => Math.abs(fract(v) - .5) * 2;
+const smoothstep = (a, b, v) => {
+	const t = Math.min(1, Math.max(0, (v - a) / (b - a)));
+	return t * t * (3 - 2 * t);
+};
+/** Valore 0..1 della texture nel punto (u, v) della piastrella (u e v in 0..1, v verso l'alto). */
+function sampleValue(kind, u, v) {
+	if (kind === "knurl") {
+		// Zigrinatura a rombi: piramidi a base quadrata ruotate di 45 gradi (8 per lato)
+		return 1 - Math.max(tri(4 * (u + v)), tri(4 * (u - v)));
+	}
+	if (kind === "carbon") {
+		// Tessuto a saia 2 x 2: cella 8 x 8 per piastrella, il filo sopra ha un profilo a mezza onda
+		const cu = u * 8;
+		const cv = v * 8;
+		const i = Math.floor(cu);
+		const j = Math.floor(cv);
+		const horizontalOver = (i + j) % 4 < 2;
+		const along = horizontalOver ? fract(cv) : fract(cu);
+		return horizontalOver ? .55 + .45 * Math.sin(Math.PI * along) : .2 + .25 * Math.sin(Math.PI * along);
+	}
+	if (kind === "leather") {
+		// Pelle: celle di Voronoi (12 x 12 per piastrella, punti sfalsati dal seme) con le crepe tra le celle
+		const n = 12;
+		const px = u * n;
+		const py = v * n;
+		const ix = Math.floor(px);
+		const iy = Math.floor(py);
+		let f1 = 9;
+		let f2 = 9;
+		for (let dj = -1; dj <= 1; dj++) {
+			for (let di = -1; di <= 1; di++) {
+				const cx = ix + di;
+				const cy = iy + dj;
+				// Il punto della cella dipende dalla cella modulo n: la texture si ripete
+				const wx = (cx % n + n) % n;
+				const wy = (cy % n + n) % n;
+				const dx = cx + .15 + .7 * hash2(wx, wy, 11) - px;
+				const dy = cy + .15 + .7 * hash2(wx, wy, 29) - py;
+				const d = Math.hypot(dx, dy);
+				if (d < f1) [f1, f2] = [d, f1];
+				else if (d < f2) f2 = d;
+			}
+		}
+		return smoothstep(0, .35, f2 - f1) * .85 + .15 * hash2(Math.floor(px * 4), Math.floor(py * 4), 5);
+	}
+	if (kind === "bricks") {
+		// 4 file di 2 mattoni, file dispari sfalsate di mezzo mattone, fughe scure
+		const row = Math.floor(v * 4);
+		const x = fract(u * 2 + row % 2 * .5);
+		const y = fract(v * 4);
+		const inBrick = x > .06 && x < .94 && y > .1 && y < .9;
+		return inBrick ? .8 + .2 * hash2(Math.floor(u * 2 + row % 2 * .5), row, 3) : .05;
+	}
+	if (kind === "waves") {
+		// Onde: tre periodi in u, deformate da due periodi in v
+		return .5 + .5 * Math.sin(2 * Math.PI * (3 * u + .35 * Math.sin(2 * Math.PI * 2 * v)));
+	}
+	// Rumore: valori casuali per pixel (il caso peggiore per la compressione)
+	return hash2(Math.floor(u * 4096), Math.floor(v * 4096), 1);
+}
+/** Immagine `size` x `size` della texture; il centro del pixel (i, j) vale `sampleValue((i + 0,5) / size, 1 - (j + 0,5) / size)`. */
+function makeSample(kind, size) {
+	const data = new Uint8Array(size * size);
+	for (let j = 0; j < size; j++) {
+		for (let i = 0; i < size; i++) data[j * size + i] = Math.round(Math.min(1, Math.max(0, sampleValue(kind, (i + .5) / size, 1 - (j + .5) / size))) * 255);
+	}
+	return {
+		w: size,
+		h: size,
+		data
+	};
+}
+/** SVG di prova (stemma: anello e stella, 100 x 100 unità): usato per confrontare la strada vettoriale con la rasterizzazione. */
+const SAMPLE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100mm" height="100mm">
+  <path fill-rule="evenodd" d="M50 4 A46 46 0 1 1 49.99 4 Z M50 12 A38 38 0 1 0 50.01 12 Z"/>
+  <polygon points="50,22 58,42 80,42 62,55 69,76 50,63 31,76 38,55 20,42 42,42"/>
+</svg>`;
+
+/* ---------- kernel/textureMap.ts ---------- */
+/**
+* Texture da immagine nel kernel (studio di fattibilità, non collegato all'app; docs/studio-texture-immagine.md).
+*
+* Motore F (faccia piana): l'immagine campionata è la `f(x, y)` di `sampleGrid`, poi `heightSolid` come per i rilievi
+* procedurali. Tutto nel riferimento della faccia (faccia su z = 0, pezzo sotto). Il chiamante possiede regione e solidi.
+*
+* Motore M (mesh intera, stile BumpMesh): raffinamento dei lati, spostamento di ogni vertice lungo la normale con una
+* proiezione planare, triplanare o cilindrica, ricostruzione del solido.
+*
+* SVG vettoriale: i contorni di `parseSvg` come celle estruse (un solo livello di quota, bordi esatti).
+*/
+// ---------------------------------------------------------------------------------------------------------------------
+// Chiave di cache
+// ---------------------------------------------------------------------------------------------------------------------
+/**
+* Chiave di cache del kernel per una texture: l'impronta dell'immagine (l'id dell'asset, come per le mesh importate) più i
+* parametri. Non contiene i pixel: la chiave resta corta e `JSON.stringify` di `evaluate.ts` non scorre mai l'immagine.
+*/
+const textureCacheKey = (imageId, params, projection, extra = null) => JSON.stringify([
+	imageId,
+	normalizeTexture(params),
+	projection ?? null,
+	extra
+]);
+function regionRect(region) {
+	const b = region.bounds();
+	return {
+		minX: b.min[0],
+		minY: b.min[1],
+		maxX: b.max[0],
+		maxY: b.max[1]
+	};
+}
+/** Superficie della texture sul rettangolo; null se la quota è nulla ovunque (ampiezza 0, livello medio agli estremi). */
+function faceSurface(img, params, rect, step = .5) {
+	const tex = normalizeTexture(params);
+	const h = makeTextureHeight(img, tex);
+	const [lo, hi] = heightRange(tex);
+	if (lo === 0 && hi === 0) return null;
+	if (tex.mode === "groove") {
+		// Dove l'incavo è sotto FLOOR la superficie resta sopra la faccia: niente facce complanari con il pezzo
+		return {
+			op: "subtract",
+			grid: sampleGrid(rect, step, (x, y) => FLOOR + h(x, y)),
+			planeZ: ABOVE + 1,
+			side: "above",
+			zFrom: lo - 1,
+			zTo: ABOVE + 1,
+			column: null
+		};
+	}
+	if (tex.mode === "relief") {
+		// Dove il rilievo è sotto FLOOR la superficie resta un po' sotto la faccia
+		return {
+			op: "add",
+			grid: sampleGrid(rect, step, (x, y) => h(x, y) < FLOOR ? -FLOOR : h(x, y)),
+			planeZ: -EMBED,
+			side: "below",
+			zFrom: -EMBED,
+			zTo: hi + 1,
+			column: null
+		};
+	}
+	// both: la quota cambia segno. Piano di base 0,4 mm sotto l'incavo più profondo; la pelle entra di EMBED sotto il piano
+	const base = lo - .4;
+	return {
+		op: "skin",
+		grid: sampleGrid(rect, step, h),
+		planeZ: base - EMBED,
+		side: "below",
+		zFrom: base - EMBED,
+		zTo: hi + 1,
+		column: [base, hi + 1]
+	};
+}
+/**
+* Applica la texture a una faccia piana (nel riferimento della faccia) e restituisce un nuovo solido (il pezzo resta del
+* chiamante): una booleana per rilievo e incavo, due per `both` (si toglie la colonna della regione e si unisce la pelle).
+*/
+function applyTextureFace(wasm, solid, region, img, params, options = {}) {
+	if (region.isEmpty()) return solid.translate([
+		0,
+		0,
+		0
+	]);
+	const surface = faceSurface(img, params, options.rect ?? regionRect(region), options.step);
+	if (!surface) return solid.translate([
+		0,
+		0,
+		0
+	]);
+	const tool = clipToRegion(wasm, heightSolid(wasm, surface.grid, surface.planeZ, surface.side), region, surface.zFrom, surface.zTo);
+	if (!tool) return solid.translate([
+		0,
+		0,
+		0
+	]);
+	if (surface.op === "subtract") {
+		const result = solid.subtract(tool);
+		tool.delete();
+		return result;
+	}
+	let base = solid;
+	if (surface.column) {
+		const column = prism(wasm, region, surface.column[0], surface.column[1]);
+		base = solid.subtract(column);
+		column.delete();
+	}
+	const result = base.add(tool);
+	if (base !== solid) base.delete();
+	tool.delete();
+	return result;
+}
+const now = () => performance.now();
+/** Normale unitaria e area (doppia) del triangolo; area nulla per i triangoli degeneri. */
+function triangleNormal(p, a, b, c) {
+	const ux = p[b * 3] - p[a * 3];
+	const uy = p[b * 3 + 1] - p[a * 3 + 1];
+	const uz = p[b * 3 + 2] - p[a * 3 + 2];
+	const vx = p[c * 3] - p[a * 3];
+	const vy = p[c * 3 + 1] - p[a * 3 + 1];
+	const vz = p[c * 3 + 2] - p[a * 3 + 2];
+	const nx = uy * vz - uz * vy;
+	const ny = uz * vx - ux * vz;
+	const nz = ux * vy - uy * vx;
+	const len = Math.hypot(nx, ny, nz);
+	return len > 0 ? [
+		nx / len,
+		ny / len,
+		nz / len,
+		len
+	] : [
+		0,
+		0,
+		0,
+		0
+	];
+}
+/** Soluzione di G c = 1 (matrice k x k, k <= 4) con eliminazione di Gauss e pivot; null se è singolare. */
+function solveOnes(g) {
+	const k = g.length;
+	const m = g.map((row, i) => [...row, 1 + 0 * i]);
+	for (let col = 0; col < k; col++) {
+		let piv = col;
+		for (let r = col + 1; r < k; r++) if (Math.abs(m[r][col]) > Math.abs(m[piv][col])) piv = r;
+		if (Math.abs(m[piv][col]) < 1e-6) return null;
+		[m[col], m[piv]] = [m[piv], m[col]];
+		for (let r = 0; r < k; r++) {
+			if (r === col) continue;
+			const f = m[r][col] / m[col][col];
+			for (let c = col; c <= k; c++) m[r][c] -= f * m[col][c];
+		}
+	}
+	return m.map((row, i) => row[k] / row[i]);
+}
+/**
+* Sposta ogni vertice di `solid` lungo la normale di `img` come texture secondo `projection`. Restituisce il nuovo solido
+* (da liberare) e le statistiche; `solid` resta del chiamante. Lo `status()` di manifold dopo lo spostamento controlla solo la
+* topologia: una superficie che si autointerseca resta 'NoError', quindi si contano anche i triangoli rovesciati.
+*/
+function displaceSolid(wasm, solid, img, params, projection = {}, options = {}) {
+	const mode = options.normals ?? "smooth";
+	const sharpCos = Math.cos((options.sharpAngle ?? 30) * Math.PI / 180);
+	const miterLimit = options.miterLimit ?? 2;
+	const volumeBefore = solid.volume();
+	// 1) Raffinamento: lati al più `edge` mm. La superficie ha una stima dei triangoli (circa 0,4 L^2 a triangolo) e il tetto allarga il lato
+	const t0 = now();
+	const area = solid.surfaceArea();
+	const maxTriangles = options.maxTriangles ?? 4e5;
+	const edge = Math.max(options.edge ?? .8, Math.sqrt(area / (.4 * maxTriangles)));
+	const refined = solid.refineToLength(edge);
+	const mesh = refined.getMesh();
+	const msRefine = now() - t0;
+	// 2) Posizioni (le prime tre colonne), triangoli, normali delle facce e normali medie dei vertici
+	const t1 = now();
+	const np = mesh.numProp;
+	const nv = mesh.vertProperties.length / np;
+	const pos = new Float64Array(nv * 3);
+	for (let i = 0; i < nv; i++) pos.set([
+		mesh.vertProperties[i * np],
+		mesh.vertProperties[i * np + 1],
+		mesh.vertProperties[i * np + 2]
+	], i * 3);
+	const tri = mesh.triVerts;
+	const nt = tri.length / 3;
+	const out = new Float64Array(nv * 3);
+	const faceN = new Float64Array(nt * 3);
+	let sharpVertices = 0;
+	if (mode === "split") {
+		// Ogni triangolo è a sé: tre vertici propri spostati lungo la normale del triangolo
+		const splitPos = new Float32Array(nt * 9);
+		const splitTri = new Uint32Array(nt * 3);
+		const disp = makeDisplacement(img, params, projection);
+		for (let t = 0; t < nt; t++) {
+			const [a, b, c] = [
+				tri[t * 3],
+				tri[t * 3 + 1],
+				tri[t * 3 + 2]
+			];
+			const [nx, ny, nz] = triangleNormal(pos, a, b, c);
+			[
+				a,
+				b,
+				c
+			].forEach((v, k) => {
+				const x = pos[v * 3];
+				const y = pos[v * 3 + 1];
+				const z = pos[v * 3 + 2];
+				const d = disp(x, y, z, nx, ny, nz);
+				splitPos.set([
+					x + nx * d,
+					y + ny * d,
+					z + nz * d
+				], (t * 3 + k) * 3);
+				splitTri[t * 3 + k] = t * 3 + k;
+			});
+		}
+		const msDisplace = now() - t1;
+		const t2 = now();
+		const built = buildSolid(wasm, splitPos, splitTri);
+		const stats = finish(built, nt, edge, volumeBefore, 0, msRefine, msDisplace, now() - t2, splitPos, splitTri, pos, tri);
+		refined.delete();
+		return {
+			solid: typeof built === "string" ? null : built,
+			stats
+		};
+	}
+	// Normali medie (pesate per l'angolo al vertice) e, per 'miter', fino a 4 normali distinte per vertice
+	const acc = new Float64Array(nv * 3);
+	const needClusters = mode === "miter" || options.fadeSharp === true;
+	const clusters = needClusters ? new Float64Array(nv * 12) : null;
+	const clusterCount = needClusters ? new Uint8Array(nv) : null;
+	// Un cluster accetta una normale entro circa 5 gradi
+	const CLUSTER_COS = Math.cos(5 * Math.PI / 180);
+	for (let t = 0; t < nt; t++) {
+		const idx = [
+			tri[t * 3],
+			tri[t * 3 + 1],
+			tri[t * 3 + 2]
+		];
+		const [nx, ny, nz, len] = triangleNormal(pos, idx[0], idx[1], idx[2]);
+		faceN.set([
+			nx,
+			ny,
+			nz
+		], t * 3);
+		if (len === 0) continue;
+		for (let k = 0; k < 3; k++) {
+			const v = idx[k];
+			const p0 = idx[k] * 3;
+			const p1 = idx[(k + 1) % 3] * 3;
+			const p2 = idx[(k + 2) % 3] * 3;
+			// Angolo del triangolo nel vertice v
+			const e1 = [
+				pos[p1] - pos[p0],
+				pos[p1 + 1] - pos[p0 + 1],
+				pos[p1 + 2] - pos[p0 + 2]
+			];
+			const e2 = [
+				pos[p2] - pos[p0],
+				pos[p2 + 1] - pos[p0 + 1],
+				pos[p2 + 2] - pos[p0 + 2]
+			];
+			const cosA = (e1[0] * e2[0] + e1[1] * e2[1] + e1[2] * e2[2]) / (Math.hypot(...e1) * Math.hypot(...e2) || 1);
+			const w = Math.acos(Math.min(1, Math.max(-1, cosA)));
+			acc[v * 3] += nx * w;
+			acc[v * 3 + 1] += ny * w;
+			acc[v * 3 + 2] += nz * w;
+			if (clusters && clusterCount) {
+				const cnt = clusterCount[v];
+				let found = false;
+				for (let c = 0; c < cnt && !found; c++) found = clusters[v * 12 + c * 3] * nx + clusters[v * 12 + c * 3 + 1] * ny + clusters[v * 12 + c * 3 + 2] * nz > CLUSTER_COS;
+				if (!found && cnt < 4) {
+					clusters.set([
+						nx,
+						ny,
+						nz
+					], v * 12 + cnt * 3);
+					clusterCount[v] = cnt + 1;
+				}
+			}
+		}
+	}
+	// 3) Spostamento: direzione unitaria media (per la proiezione) e vettore di spostamento per unità di quota
+	const disp = makeDisplacement(img, params, projection);
+	for (let i = 0; i < nv; i++) {
+		let nx = acc[i * 3];
+		let ny = acc[i * 3 + 1];
+		let nz = acc[i * 3 + 2];
+		const len = Math.hypot(nx, ny, nz) || 1;
+		nx /= len;
+		ny /= len;
+		nz /= len;
+		// Spigolo vivo: due normali di faccia distinte (cluster) con angolo oltre `sharpAngle`
+		let dirX = nx;
+		let dirY = ny;
+		let dirZ = nz;
+		let sharp = false;
+		if (clusters && clusterCount) {
+			const cnt = clusterCount[i];
+			const ns = [];
+			for (let c = 0; c < cnt; c++) ns.push([
+				clusters[i * 12 + c * 3],
+				clusters[i * 12 + c * 3 + 1],
+				clusters[i * 12 + c * 3 + 2]
+			]);
+			for (let a = 0; a < cnt && !sharp; a++) for (let b = a + 1; b < cnt && !sharp; b++) sharp = ns[a][0] * ns[b][0] + ns[a][1] * ns[b][1] + ns[a][2] * ns[b][2] < sharpCos;
+			if (sharp && mode === "miter") {
+				const g = ns.map((u) => ns.map((v) => u[0] * v[0] + u[1] * v[1] + u[2] * v[2]));
+				const c = solveOnes(g);
+				if (c) {
+					let mx = 0;
+					let my = 0;
+					let mz = 0;
+					c.forEach((ci, k) => {
+						mx += ci * ns[k][0];
+						my += ci * ns[k][1];
+						mz += ci * ns[k][2];
+					});
+					// Tetto sulla lunghezza: spigoli molto acuti darebbero spostamenti enormi
+					const ml = Math.hypot(mx, my, mz);
+					const s = ml > miterLimit ? miterLimit / ml : 1;
+					[dirX, dirY, dirZ] = [
+						mx * s,
+						my * s,
+						mz * s
+					];
+				}
+			}
+		}
+		if (sharp) sharpVertices++;
+		const d = options.fadeSharp && sharp ? 0 : disp(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2], nx, ny, nz);
+		out[i * 3] = pos[i * 3] + dirX * d;
+		out[i * 3 + 1] = pos[i * 3 + 1] + dirY * d;
+		out[i * 3 + 2] = pos[i * 3 + 2] + dirZ * d;
+	}
+	const msDisplace = now() - t1;
+	// 4) Ricostruzione del solido dalle posizioni spostate (stessa topologia)
+	const t2 = now();
+	const vp = new Float32Array(out);
+	const built = buildSolid(wasm, vp, new Uint32Array(tri));
+	const stats = finish(built, nt, edge, volumeBefore, sharpVertices, msRefine, msDisplace, now() - t2, vp, tri, pos, tri);
+	refined.delete();
+	return {
+		solid: typeof built === "string" ? null : built,
+		stats
+	};
+}
+/** Solido dalla mesh spostata. Con mesh aperta (le facce 'split' staccate) il costruttore di manifold lancia `ManifoldError`: si restituisce il messaggio. */
+function buildSolid(wasm, vertProperties, triVerts) {
+	try {
+		return new wasm.Manifold(new wasm.Mesh({
+			numProp: 3,
+			vertProperties,
+			triVerts
+		}));
+	} catch (e) {
+		return e instanceof Error ? e.message : String(e);
+	}
+}
+/** Completa le statistiche: stato, triangoli, volume e triangoli rovesciati rispetto alla mesh di partenza. */
+function finish(built, refinedTriangles, edgeUsed, volumeBefore, sharpVertices, msRefine, msDisplace, msBuild, newPos, newTri, oldPos, oldTri) {
+	// Rovesciati: confronto tra la normale del triangolo prima e dopo (solo se la topologia è la stessa, cioè non 'split')
+	let flipped = 0;
+	if (newTri.length === oldTri.length && newPos.length === oldPos.length) {
+		const np = Float64Array.from(newPos);
+		for (let t = 0; t < oldTri.length / 3; t++) {
+			const a = triangleNormal(oldPos, oldTri[t * 3], oldTri[t * 3 + 1], oldTri[t * 3 + 2]);
+			const b = triangleNormal(np, newTri[t * 3], newTri[t * 3 + 1], newTri[t * 3 + 2]);
+			if (a[0] * b[0] + a[1] * b[1] + a[2] * b[2] < 0) flipped++;
+		}
+	}
+	const ok = typeof built !== "string";
+	return {
+		status: ok ? built.status() : `Errore: ${built}`,
+		triangles: ok ? built.numTri() : 0,
+		refinedTriangles,
+		edgeUsed,
+		volume: ok ? built.volume() : 0,
+		volumeBefore,
+		flipped,
+		sharpVertices,
+		msRefine,
+		msDisplace,
+		msBuild
+	};
+}
+/** Centri delle copie del disegno: una al centro del rettangolo e le altre a passi interi, finché la piastrella tocca il rettangolo. */
+function svgTileCenters(rect, o) {
+	const cx = (rect.minX + rect.maxX) / 2;
+	const cy = (rect.minY + rect.maxY) / 2;
+	if (!o.repeat) return [[cx, cy]];
+	const [px, py] = o.pitch;
+	const nx = Math.ceil((rect.maxX - rect.minX + px) / (2 * px));
+	const ny = Math.ceil((rect.maxY - rect.minY + py) / (2 * py));
+	const out = [];
+	for (let j = -ny; j <= ny; j++) for (let i = -nx; i <= nx; i++) out.push([cx + i * px, cy + j * py]);
+	return out;
+}
+/**
+* Il disegno SVG come solido: `CrossSection` (riempimento pari-dispari) copiata nei centri, estrusa di |height|. Con
+* `height` > 0 va unito al pezzo (parte da `EMBED` sotto la faccia), con `height` < 0 va tolto. Ritagliato sulla regione.
+*/
+function svgReliefSolid(wasm, region, o, rect) {
+	if (region.isEmpty() || o.height === 0) return null;
+	const CS = wasm.CrossSection;
+	const one = new CS(o.contours, "EvenOdd");
+	const copies = svgTileCenters(rect, o).map(([x, y]) => one.translate([x, y]));
+	one.delete();
+	// Le copie sono disgiunte (il passo è maggiore dell'ingombro): si compongono senza booleane. Se si toccassero servirebbe l'unione.
+	const all = CS.compose(copies);
+	copies.forEach((c) => c.delete());
+	const inside = all.intersect(region);
+	all.delete();
+	if (inside.isEmpty()) {
+		inside.delete();
+		return null;
+	}
+	// Rilievo: da -EMBED a +height. Incavo: da -|height| a +ABOVE (oltre la faccia)
+	const solid = o.height > 0 ? prism(wasm, inside, -EMBED, o.height) : prism(wasm, inside, o.height, ABOVE);
+	inside.delete();
+	return solid;
+}
+/**
+* Differenza tra il volume dell'unione del solido con se stesso e il suo volume: nulla se la superficie è valida, negativa se
+* si sovrappone (l'integrale con segno conta due volte la zona doppia, la booleana una). `status()` non lo vede. Il rumore
+* numerico delle coordinate a 32 bit arriva a circa 0,05 mm³: sotto 0,1 mm³ si considera zero.
+*/
+function selfOverlapVolume(solid) {
+	const union = solid.add(solid);
+	const delta = union.volume() - solid.volume();
+	union.delete();
+	return delta;
+}
+
+/* ---------- codegen/textureScad.ts ---------- */
+/**
+* Codice OpenSCAD delle texture da immagine (studio di fattibilità, non collegato al generatore dell'app). Tre strade:
+* - `textureFaceScad`: motore F, `zmap` in centesimi di mm e `polyhedron` (come i rilievi procedurali), un file solo;
+* - `textureSurfaceScad`: motore F con `surface(file = "x.png")`: l'immagine è un PNG a 8 bit scritto accanto al `.scad`;
+* - `meshScad`: motore M, `polyhedron` dell'oggetto intero già spostato (la catena parametrica è persa);
+* - `svgReliefScad`: strada vettoriale, un `polygon` con i contorni e un ciclo sulle copie.
+* Il codice è nel riferimento della faccia (faccia su z = 0), come `reliefScad`.
+*/
+const n = (v) => String(Math.round(v * 100) / 100);
+const n4 = (v) => String(Math.round(v * 1e4) / 1e4);
+/**
+* Motore F con `zmap`. Restituisce il modulo `relief()` (e `texture_column()` per il modo "entrambi") e, se `piece` è il
+* codice OpenSCAD del pezzo (una espressione 3D), anche l'operazione che lo combina; `clip` ritaglia il rilievo sulla regione.
+*/
+function textureFaceScad(rect, img, params, step = .5, piece, clip) {
+	const surface = faceSurface(img, params, rect, step);
+	const out = [`// Texture da immagine, motore F, modo ${normalizeTexture(params).mode}, passo ${step} mm`];
+	if (!surface) return [...out, "module relief() {}"].join("\n");
+	// `clip` (facoltativo): solido 3D che copre la regione quando non è il rettangolo (per esempio un cilindro): come nel kernel, il rilievo si ritaglia
+	out.push(clip ? "module relief_raw() {" : "module relief() {", ...polyhedronLines(surface.grid, surface.planeZ, surface.side).map((l) => `  ${l}`), "}");
+	if (clip) out.push(`module relief() intersection() { relief_raw(); ${clip} }`);
+	if (piece) out.push(...combine(surface.op, surface.column, rect, piece, clip));
+	return out.join("\n");
+}
+/** Come si combina il solido della texture con il pezzo, secondo l'operazione di `faceSurface`. */
+function combine(op, column, rect, piece, clip) {
+	const w = rect.maxX - rect.minX;
+	const h = rect.maxY - rect.minY;
+	if (op === "subtract") return [
+		"difference() {",
+		`  ${piece}`,
+		"  relief();",
+		"}"
+	];
+	if (op === "add") return [
+		"union() {",
+		`  ${piece}`,
+		"  relief();",
+		"}"
+	];
+	// Pelle: si toglie la colonna della REGIONE (il rettangolo, ritagliato con `clip` se la regione è più piccola, come `prism(region)` del kernel) fino a un
+	// piano sotto l'incavo più profondo e si unisce la superficie, anch'essa ritagliata sulla regione
+	const cube = `translate([${n(rect.minX)}, ${n(rect.minY)}, ${n(column[0])}]) cube([${n(w)}, ${n(h)}, ${n(column[1] - column[0])}]);`;
+	const column3d = clip ? [
+		"    intersection() {",
+		`      ${cube}`,
+		`      ${clip}`,
+		"    }"
+	] : [`    ${cube}`];
+	return [
+		"union() {",
+		"  difference() {",
+		`    ${piece}`,
+		...column3d,
+		"  }",
+		"  relief();",
+		"}"
+	];
+}
+/**
+* Motore F con `surface()`. L'immagine è la griglia di quote del kernel, riscalata a 0..255 e scritta come PNG a 8 bit
+* (`png`: righe dall'alto, cioè la riga 0 è l'ultima riga della griglia); `surface()` legge 0..100 per 0..255, con il nodo
+* (colonna i, riga dal basso j) in (i, j), e la scala riporta tutto in mm. Costruisce sempre la "pelle": togliere la colonna
+* e unire la superficie, per qualunque modo (un incavo è una pelle con quote negative).
+*/
+function textureSurfaceScad(rect, img, params, step, pngName, piece, clip) {
+	const tex = normalizeTexture(params);
+	const h = makeTextureHeight(img, tex);
+	const [lo] = heightRange(tex);
+	const grid = sampleGrid(rect, step, h);
+	const base = lo - .4;
+	const zBase = base - EMBED;
+	const zTop = Math.max(...grid.z, 0) + .01;
+	// `surface()` chiude il solido a (quota minima del PNG - 1 unità): senza un nodo a 0 il fondo sale fin quasi alla superficie e il
+	// solido resta sottile. Si aggiunge una cornice di un pixel a 0 (il fondo vero, `zBase`) fuori dal rettangolo, poi si ritaglia.
+	const w = grid.nx + 2;
+	const hh = grid.ny + 2;
+	const png = new Uint8Array(w * hh);
+	// La riga 0 del PNG è l'alto: la riga dal basso j (con la cornice, j + 1) sta in riga hh - 1 - (j + 1)
+	for (let j = 0; j < grid.ny; j++) for (let i = 0; i < grid.nx; i++) png[(hh - 2 - j) * w + i + 1] = Math.round((grid.z[j * grid.nx + i] - zBase) / (zTop - zBase) * 255);
+	const scaleZ = (zTop - zBase) / 100;
+	const width = rect.maxX - rect.minX;
+	const height = rect.maxY - rect.minY;
+	const code = [
+		`// Texture da immagine, motore F con surface(): il file ${pngName} (${w} x ${hh} pixel, 8 bit, cornice a 0) sta accanto a questo`,
+		"module relief() intersection() {",
+		`  translate([${n4(rect.minX - grid.dx)}, ${n4(rect.minY - grid.dy)}, ${n4(zBase)}]) scale([${n4(grid.dx)}, ${n4(grid.dy)}, ${n4(scaleZ)}]) surface(file = "${pngName}", center = false, convexity = 10);`,
+		`  translate([${n4(rect.minX)}, ${n4(rect.minY)}, ${n4(zBase - 1)}]) cube([${n4(width)}, ${n4(height)}, ${n4(zTop - zBase + 2)}]);`,
+		...clip ? [`  ${clip}`] : [],
+		"}",
+		...piece ? combine("skin", [base, Math.max(...grid.z, 0) + 1], rect, piece, clip) : []
+	].join("\n");
+	return {
+		code,
+		png: {
+			w,
+			h: hh,
+			data: png
+		},
+		scaleZ
+	};
+}
+/**
+* Motore M: l'oggetto intero come `polyhedron` (coordinate a `decimals` decimali, facce rovesciate perché OpenSCAD le vuole
+* orarie viste da fuori). La catena parametrica (primitive, booleane, pattern) è persa: resta una mesh.
+*/
+function meshScad(positions, indices, decimals = 3) {
+	const f = 10 ** decimals;
+	const pts = [];
+	for (let i = 0; i < positions.length; i += 3) pts.push(`[${[
+		0,
+		1,
+		2
+	].map((k) => Math.round(positions[i + k] * f) / f).join(",")}]`);
+	const faces = [];
+	for (let i = 0; i < indices.length; i += 3) faces.push(`[${indices[i]},${indices[i + 2]},${indices[i + 1]}]`);
+	return ["// Texture da immagine, motore M: oggetto intero spostato (catena parametrica persa)", `polyhedron(points = [${pts.join(",")}], faces = [${faces.join(",")}], convexity = 10);`].join("\n");
+}
+/** Strada vettoriale: contorni (già in mm, centrati) con riempimento pari-dispari, copiati nei centri e estrusi. Rilievo o incavo secondo il segno di `height`. */
+function svgReliefScad(rect, o) {
+	const points = o.contours.flat();
+	let start = 0;
+	const paths = o.contours.map((c) => {
+		const idx = c.map((_, i) => start + i);
+		start += c.length;
+		return `[${idx.join(", ")}]`;
+	});
+	const centers = svgTileCenters(rect, o);
+	const z0 = o.height > 0 ? -EMBED : o.height;
+	const h = o.height > 0 ? o.height + EMBED : -o.height + .5;
+	return [
+		"// Texture da SVG, strada vettoriale: un solo livello di quota, bordi esatti",
+		`svg_points = [${points.map((p) => `[${n4(p[0])},${n4(p[1])}]`).join(",")}];`,
+		`svg_paths = [${paths.join(", ")}];`,
+		o.repeat ? `centers = [${centers.map((c) => `[${n(c[0])},${n(c[1])}]`).join(",")}];` : `centers = [[${n(centers[0][0])}, ${n(centers[0][1])}]];`,
+		"module relief() {",
+		"  intersection() {",
+		`    for (c = centers) translate([c[0], c[1], ${n(z0)}]) linear_extrude(${n(h)}) polygon(points = svg_points, paths = svg_paths);`,
+		`    translate([${n(rect.minX)}, ${n(rect.minY)}, ${n(z0 - 1)}]) cube([${n(rect.maxX - rect.minX)}, ${n(rect.maxY - rect.minY)}, ${n(h + 2)}]);`,
+		"  }",
+		"}"
+	].join("\n");
+}
+/* CORE-END */
+
+/* ---------- Stato e interfaccia ---------- */
+const S = {
+  obj: 'panel', engine: 'F', sample: 'leather', amp: 0.6, mid: 0.5, tile: 20, rot: 0, ox: 0, oy: 0, invert: false, repeat: true, mode: 'both', blur: 0,
+  step: 0.8, proj: 'triplanar', axis: 2, normals: 'smooth', fade: true, grazing: true, light: 40,
+};
+let M = null, T3 = null, IMG = null, IMG_NAME = '';
+let last = null;           // ultimo risultato: { positions, indices, rect, stats, ... }
+let runs = 0;              // numero di risultati calcolati (serve ai test automatici)
+const MAX_SIDE = 512;       // lato massimo dell'immagine dopo la decodifica (vedi lo studio)
+
+const cond = (expr) => { const [k, vals] = expr.split('='); return vals.split('|').includes(String(S[k])); };
+function sync() {
+  document.querySelectorAll('[data-k]').forEach((el) => {
+    const k = el.dataset.k, v = S[k];
+    if (el.classList.contains('seg')) el.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === String(v))));
+    else if (el.type === 'checkbox') el.checked = !!v;
+    else if (document.activeElement !== el) el.value = v;
+  });
+  document.querySelectorAll('[data-show]').forEach((el) => { el.hidden = !cond(el.dataset.show); });
+  $('tabNote').textContent = S.engine === 'F' ? 'Solo la faccia superiore, passo della griglia in mm' : 'Tutto l\'oggetto, lato dei triangoli in mm';
+}
+document.addEventListener('input', (e) => {
+  const el = e.target.closest('[data-k]'); if (!el || el.classList.contains('seg')) return;
+  const k = el.dataset.k;
+  if (el.type === 'checkbox') S[k] = el.checked;
+  else if (el.type === 'range' || el.type === 'number') { const v = parseFloat(el.value); if (Number.isFinite(v)) S[k] = v; }
+  else S[k] = el.value;
+  if (k === 'sample') { useSample(S.sample); return; }
+  sync(); (k === 'grazing' || k === 'light') ? lightChanged() : schedule();
+});
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('.seg button'); if (!b) return;
+  const k = b.parentElement.dataset.k; S[k] = ['axis'].includes(k) ? parseInt(b.dataset.v, 10) : b.dataset.v;
+  sync(); schedule();
+});
+$('theme').addEventListener('change', (e) => { const v = e.target.value; v === 'auto' ? document.documentElement.removeAttribute('data-theme') : (document.documentElement.dataset.theme = v); setTimeout(applyTheme, 30); });
+
+/* ---------- Immagine: esempi e file ---------- */
+function setImage(gray, name) {
+  IMG = gray; IMG_NAME = name;
+  const c = $('thumb'), ctx = c.getContext('2d'), id = ctx.createImageData(72, 72);
+  // Miniatura 72 x 72 per campionamento del vicino più prossimo
+  for (let j = 0; j < 72; j++) for (let i = 0; i < 72; i++) { const v = gray.data[Math.min(gray.h - 1, Math.floor((j * gray.h) / 72)) * gray.w + Math.min(gray.w - 1, Math.floor((i * gray.w) / 72))]; const o = (j * 72 + i) * 4; id.data[o] = id.data[o + 1] = id.data[o + 2] = v; id.data[o + 3] = 255; }
+  ctx.putImageData(id, 0, 0);
+  let sum = 0; for (let k = 0; k < gray.data.length; k++) sum += gray.data[k];
+  $('imgInfo').textContent = `${name}: ${gray.w} × ${gray.h} px, grigio medio ${(sum / gray.data.length).toFixed(0)}/255`;
+  schedule();
+}
+function useSample(kind) { setImage(makeSample(kind, 256), `esempio "${kind}"`); }
+
+/** Decodifica un file: PNG e JPG con createImageBitmap (nessuna conversione di colore, alfa non premoltiplicato), SVG con un'immagine HTML; poi grigio intero e riduzione a MAX_SIDE. */
+async function loadFile(file) {
+  try {
+    let source, w, h;
+    if (file.type === 'image/svg+xml' || /\.svg$/i.test(file.name)) {
+      const url = URL.createObjectURL(file), im = new Image(); im.src = url; await im.decode();
+      // Un SVG senza dimensioni proprie ha 0 o 150 pixel: si usa un lato di 1024 per il lato maggiore
+      const nw = im.naturalWidth || 1024, nh = im.naturalHeight || 1024, k = 1024 / Math.max(nw, nh);
+      source = im; w = Math.max(1, Math.round(nw * k)); h = Math.max(1, Math.round(nh * k));
+    } else {
+      source = await createImageBitmap(file, { colorSpaceConversion: 'none', premultiplyAlpha: 'none' }); w = source.width; h = source.height;
+    }
+    const canvas = document.createElement('canvas'); canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(source, 0, 0, w, h);
+    const rgba = ctx.getImageData(0, 0, w, h).data;
+    setImage(resizeGray(rgbaToGray(rgba, w, h), MAX_SIDE), file.name);
+  } catch (err) { $('msg').textContent = `Immagine non leggibile: ${err.message || err}`; $('msg').className = 'msg msg--err'; }
+}
+$('file').addEventListener('change', (e) => { const f = e.target.files[0]; if (f) loadFile(f); });
+
+/* ---------- Oggetti, parametri e calcolo ---------- */
+function makeObject(kind) {
+  const { Manifold } = M;
+  // Tutti con la faccia superiore a z = 0 (riferimento della faccia dei rilievi procedurali)
+  if (kind === 'panel') return Manifold.cube([80, 60, 5], true).translate([0, 0, -2.5]);
+  if (kind === 'cyl') return Manifold.cylinder(20, 15, 15, 96, false).translate([0, 0, -20]);
+  return Manifold.cube([30, 30, 30], true).translate([0, 0, -15]);
+}
+const PIECE = { panel: 'translate([-40, -30, -5]) cube([80, 60, 5]);', cyl: 'translate([0, 0, -20]) cylinder(h = 20, r = 15, $fn = 96);', cube: 'translate([-15, -15, -30]) cube(30);' };
+const texParams = () => ({ tile: S.tile, repeat: S.repeat, rotation: S.rot, offset: [S.ox, S.oy], invert: S.invert, midlevel: S.mid, amplitude: S.amp, blur: S.blur, mode: S.mode });
+
+let timer = 0;
+function schedule() { clearTimeout(timer); $('msg').textContent = 'Calcolo in corso…'; $('msg').className = 'msg'; timer = setTimeout(rebuild, 40); }
+
+function rebuild() {
+  if (!M || !IMG) return;
+  const { CrossSection } = M;
+  const solid = makeObject(S.obj);
+  const t0 = performance.now();
+  let result = null, stats = null, rect = null;
+  try {
+    if (S.engine === 'F') {
+      // Regione = sezione appena sotto la faccia, come fa il kernel per i Pattern
+      const region = solid.slice(-0.01);
+      const b = region.bounds();
+      rect = { minX: b.min[0], minY: b.min[1], maxX: b.max[0], maxY: b.max[1] };
+      result = applyTextureFace(M, solid, region, IMG, texParams(), { step: S.step, rect });
+      region.delete();
+      stats = { status: result.status(), triangles: result.numTri(), volume: result.volume(), flipped: null };
+    } else {
+      const proj = { kind: S.proj, axis: S.axis, radius: S.obj === 'cyl' ? 15 : 20 };
+      const out = displaceSolid(M, solid, IMG, texParams(), proj, { edge: S.step, normals: S.normals, fadeSharp: S.fade, maxTriangles: 300000 });
+      result = out.solid; stats = out.stats;
+    }
+  } catch (err) { console.error(err); $('msg').textContent = `Errore: ${err.message || err}`; $('msg').className = 'msg msg--err'; solid.delete(); return; }
+  if (!result) {
+    // Le normali separate producono una mesh aperta: manifold la rifiuta (limite del metodo)
+    $('msg').textContent = `Nessun solido: ${stats.status}. Con le normali separate per faccia i bordi si staccano.`; $('msg').className = 'msg msg--err';
+    show(null); statBar({ ms: performance.now() - t0, stats, snap: { engine: S.engine, step: S.step } }); solid.delete(); return;
+  }
+  const mesh = result.getMesh();
+  const ms = performance.now() - t0;
+  const np = mesh.numProp, nv = mesh.vertProperties.length / np, positions = new Float32Array(nv * 3);
+  for (let i = 0; i < nv; i++) positions.set([mesh.vertProperties[i * np], mesh.vertProperties[i * np + 1], mesh.vertProperties[i * np + 2]], i * 3);
+  // Istantanea dei parametri: il codice OpenSCAD e i nomi dei file si riferiscono a questo risultato, anche se nel frattempo l'interfaccia cambia
+  last = { positions, indices: new Uint32Array(mesh.triVerts), rect, stats, ms, scadKb: null, run: ++runs, snap: { engine: S.engine, obj: S.obj, step: S.step, tex: texParams(), img: IMG } };
+  result.delete(); solid.delete();
+  $('msg').textContent = ''; $('msg').className = 'msg';
+  show(last); statBar(last);
+  $('dlStl').disabled = false; $('dlScad').disabled = false;
+  // La lunghezza del codice OpenSCAD si calcola a parte, quando il browser è libero
+  const mine = last;
+  setTimeout(() => { if (last === mine) { mine.scadKb = scadText().length / 1024; statBar(mine); } }, 30);
+}
+
+/** Codice OpenSCAD del risultato: motore F con zmap, motore M con il polyhedron dell'oggetto intero. */
+function scadText() {
+  const { engine, obj, step, tex, img } = last.snap;
+  if (engine === 'M') return meshScad(last.positions, last.indices);
+  const clip = obj === 'cyl' ? 'translate([0, 0, -10]) cylinder(h = 20, r = 15, $fn = 96);' : undefined;
+  return textureFaceScad(last.rect, img, tex, step, PIECE[obj], clip);
+}
+
+function statBar(r) {
+  const st = r.stats, ok = st.status === 'NoError';
+  const stl = ((84 + 50 * st.triangles) / 1024);
+  $('stat').innerHTML =
+    `<span>Tempo <b>${r.ms.toFixed(0)} ms</b></span><span>Triangoli <b>${st.triangles.toLocaleString('it-IT')}</b></span>` +
+    `<span>Manifold <b class="${ok ? 'ok' : 'bad'}">${st.status}</b></span>` +
+    (st.flipped === null || st.flipped === undefined ? '' : `<span>Rovesciati <b class="${st.flipped ? 'warn' : 'ok'}">${st.flipped}</b></span>`) +
+    (st.edgeUsed && r.snap.engine === 'M' && st.edgeUsed > r.snap.step + 1e-6 ? `<span class="warn">Lato allargato a ${st.edgeUsed.toFixed(2)} mm (tetto dei triangoli)</span>` : '') +
+    `<span>Volume <b>${st.volume ? st.volume.toFixed(0) : '-'} mm³</b></span><span>STL <b>${stl.toFixed(0)} KB</b></span>` +
+    `<span>OpenSCAD <b>${r.scadKb === null || r.scadKb === undefined ? '…' : r.scadKb.toFixed(r.scadKb < 10 ? 1 : 0) + ' KB'}</b></span>`;
+}
+
+function download(name, data, type) {
+  const url = URL.createObjectURL(new Blob([data], { type })), a = document.createElement('a');
+  a.href = url; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+$('dlStl').onclick = () => last && download(`texture-${last.snap.engine}-${last.snap.obj}.stl`, writeStl(last.positions, last.indices), 'model/stl');
+$('dlScad').onclick = () => last && download(`texture-${last.snap.engine}-${last.snap.obj}.scad`, scadText(), 'text/plain');
+
+/* ---------- Vista 3D ---------- */
+const view = $('view');
+let renderer, scene3, camera, mesh3 = null, sun, hemi, dirty = true, orbit = { th: -1.0, ph: 1.1, r: 140, c: [0, 0, -5] };
+const clamp3 = (x, a, b) => Math.min(b, Math.max(a, x));
+const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+/** Normali per angolo di piega: ogni angolo di triangolo somma le normali delle facce attorno al vertice che stanno entro `crease` gradi dalla propria (spigoli vivi netti, rilievo liscio). */
+function creasedNormals(pos, idx, creaseDeg) {
+  const nt = idx.length / 3, fn = new Float32Array(nt * 3), cosC = Math.cos(creaseDeg * Math.PI / 180);
+  const around = new Map();  // vertice -> triangoli
+  for (let t = 0; t < nt; t++) {
+    const a = idx[t * 3] * 3, b = idx[t * 3 + 1] * 3, c = idx[t * 3 + 2] * 3;
+    const ux = pos[b] - pos[a], uy = pos[b + 1] - pos[a + 1], uz = pos[b + 2] - pos[a + 2], vx = pos[c] - pos[a], vy = pos[c + 1] - pos[a + 1], vz = pos[c + 2] - pos[a + 2];
+    let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx; const l = Math.hypot(nx, ny, nz) || 1;
+    fn[t * 3] = nx / l; fn[t * 3 + 1] = ny / l; fn[t * 3 + 2] = nz / l;
+    for (let k = 0; k < 3; k++) { const v = idx[t * 3 + k]; (around.get(v) || around.set(v, []).get(v)).push(t); }
+  }
+  const out = new Float32Array(nt * 9);
+  for (let t = 0; t < nt; t++) for (let k = 0; k < 3; k++) {
+    let sx = 0, sy = 0, sz = 0;
+    for (const u of around.get(idx[t * 3 + k])) { const d = fn[u * 3] * fn[t * 3] + fn[u * 3 + 1] * fn[t * 3 + 1] + fn[u * 3 + 2] * fn[t * 3 + 2]; if (d > cosC) { sx += fn[u * 3]; sy += fn[u * 3 + 1]; sz += fn[u * 3 + 2]; } }
+    const l = Math.hypot(sx, sy, sz) || 1; out.set([sx / l, sy / l, sz / l], (t * 3 + k) * 3);
+  }
+  return out;
+}
+function show(r) {
+  if (!T3) return;
+  if (mesh3) { scene3.remove(mesh3); mesh3.geometry.dispose(); mesh3.material.dispose(); mesh3 = null; }
+  if (r) {
+    const nt = r.indices.length / 3, flat = new Float32Array(nt * 9);
+    for (let t = 0; t < nt; t++) for (let k = 0; k < 3; k++) flat.set(r.positions.subarray(r.indices[t * 3 + k] * 3, r.indices[t * 3 + k] * 3 + 3), (t * 3 + k) * 3);
+    const g = new T3.BufferGeometry();
+    g.setAttribute('position', new T3.BufferAttribute(flat, 3));
+    g.setAttribute('normal', new T3.BufferAttribute(creasedNormals(r.positions, r.indices, 50), 3));
+    mesh3 = new T3.Mesh(g, new T3.MeshStandardMaterial({ color: css('--mesh'), roughness: 0.7, metalness: 0.05 }));
+    scene3.add(mesh3);
+    g.computeBoundingSphere();
+    if (needFit) { needFit = false; fit3d(); }
+  }
+  dirty = true; draw();
+}
+let needFit = true;
+function applyTheme() { if (mesh3) mesh3.material.color.set(css('--mesh')); dirty = true; draw(); }
+function lightChanged() {
+  // Luce radente: bassa sull'orizzonte, quasi parallela alla faccia superiore; altrimenti alta (55 gradi)
+  const az = S.light * Math.PI / 180, el = (S.grazing ? 12 : 55) * Math.PI / 180;
+  sun.position.set(Math.cos(az) * Math.cos(el), Math.sin(az) * Math.cos(el), Math.sin(el)).multiplyScalar(300);
+  sun.intensity = S.grazing ? 3.2 : 1.8; hemi.intensity = S.grazing ? 0.55 : 0.9;
+  dirty = true; draw();
+}
+function init3d() {
+  renderer = new T3.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+  view.insertBefore(renderer.domElement, view.firstChild);
+  scene3 = new T3.Scene();
+  camera = new T3.PerspectiveCamera(35, 1, 0.5, 5000); camera.up.set(0, 0, 1); scene3.add(camera);
+  hemi = new T3.HemisphereLight(0xffffff, 0x556070, 0.9); scene3.add(hemi);
+  sun = new T3.DirectionalLight(0xffffff, 3); scene3.add(sun);
+  lightChanged();
+  new ResizeObserver(resize3d).observe(view);
+  const el = renderer.domElement; let od = null;
+  el.addEventListener('pointerdown', (e) => { el.setPointerCapture(e.pointerId); od = { x: e.clientX, y: e.clientY }; view.style.cursor = 'grabbing'; });
+  el.addEventListener('pointermove', (e) => { if (!od) return; orbit.th -= (e.clientX - od.x) * 0.01; orbit.ph = clamp3(orbit.ph - (e.clientY - od.y) * 0.01, 0.15, 3.0); od = { x: e.clientX, y: e.clientY }; dirty = true; draw(); });
+  const up = () => { od = null; view.style.cursor = ''; }; el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
+  el.addEventListener('wheel', (e) => { e.preventDefault(); orbit.r = clamp3(orbit.r * Math.exp(e.deltaY * 0.0012), 8, 1500); dirty = true; draw(); }, { passive: false });
+  $('fit').onclick = fit3d;
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => setTimeout(applyTheme, 30));
+  resize3d();
+}
+function resize3d() { if (!renderer) return; const w = view.clientWidth, h = view.clientHeight; if (w < 4 || h < 4) return; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); dirty = true; draw(); }
+function draw() {
+  if (!renderer || !dirty) return; dirty = false;
+  const o = orbit;
+  camera.position.set(o.c[0] + o.r * Math.sin(o.ph) * Math.cos(o.th), o.c[1] + o.r * Math.sin(o.ph) * Math.sin(o.th), o.c[2] + o.r * Math.cos(o.ph));
+  camera.lookAt(o.c[0], o.c[1], o.c[2]); renderer.render(scene3, camera);
+}
+function fit3d() {
+  if (!mesh3) return; mesh3.geometry.computeBoundingSphere();
+  const b = mesh3.geometry.boundingSphere; orbit.c = [b.center.x, b.center.y, b.center.z]; orbit.r = Math.max(15, b.radius * 3.0); dirty = true; draw();
+}
+// Oggetto o motore diversi: si riadatta la camera al prossimo risultato
+document.addEventListener('click', (e) => { if (e.target.closest('[data-k="obj"] button')) needFit = true; });
+
+/* ---------- Avvio ---------- */
+sync();
+useSample(S.sample);
+const MANIFOLD_URL = 'https://cdn.jsdelivr.net/npm/manifold-3d@3.5.4/';
+Promise.all([
+  import('https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js'),
+  import(MANIFOLD_URL + 'manifold.js').then(async (m) => { const mod = await m.default({ locateFile: () => MANIFOLD_URL + 'manifold.wasm' }); mod.setup(); return mod; }),
+]).then(([three, mod]) => {
+  T3 = three; M = mod; init3d(); $('viewMsg').hidden = true; rebuild();
+}).catch((err) => { $('viewMsg').textContent = 'Anteprima non disponibile: servono la rete (manifold-3d e three.js da jsDelivr) e WebGL.'; console.error(err); });
+// Per i test automatici: stato e ultimo risultato
+window.__texture = { S, get last() { return last; }, get runs() { return runs; }, loadFile, rebuild, rgbaToGray };
+</script>
+</body>
+</html>
