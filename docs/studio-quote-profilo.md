@@ -376,8 +376,13 @@ Una versione precedente trascinava solo con il peso 30 e questa tabella riportav
 la frase che il ritardo «sparisce quando il nodo è libero di seguire il mouse» era **sbagliata**: con un disegno che può seguire il mouse solo con un
 moto rigido il ritardo **cresce con i nodi** (vedi il punto 6 sopra). Il ritardo con il solo peso 30 si misura anche su un fotogramma solo da 2,24 mm
 (0,83, 1,17 e 1,54 mm a 25, 50 e 100 nodi); con il peso 1000 il trascinamento continuo restava tra 0,01 e 0,03 mm, ma non converge a 50 segmenti non lineari.
-Con `dragSketch` il ritardo è nullo **se il disegno può seguire il mouse**; se non può (nodo fisso, disegno ancorato e tutto quotato) il nodo non si muove
-affatto, ed è il comportamento voluto.
+Con `dragSketch` il ritardo è nullo **se il disegno può seguire il mouse**; se non può (nodo fisso, disegno ancorato e tutto quotato) il tentativo rigido
+fallisce e subentra il ramo morbido (peso 30), che a ogni fotogramma riporta il nodo sul mouse. Con vincoli non lineari, che possono avere più soluzioni
+valide, il trascinamento continuo può quindi **spingere il disegno su un'altra soluzione** e lasciarcelo anche dopo `settle` (revisione Opus, poligono
+ancorato in stato `full`, 40 fotogrammi da 0,56 mm: spostamento finale dalla soluzione di partenza 10,0 mm a 6 lati, 6,18 a 10, 2,51 a 25, 1,26 a 50).
+Il bench non lo vede perché misura un solo fotogramma a partire dalla soluzione. Rimedi, da provare prima di portare il trascinamento nell'app: saltare il
+fotogramma quando il rigido fallisce e il disegno ha 0 gradi di libertà, oppure rifiutare un fotogramma in cui i nodi non trascinati si spostano più del nodo
+trascinato; riprovare il rigido ogni pochi fotogrammi (dopo il primo fallimento il resto del trascinamento resta morbido, `dragSoft` nel prototipo).
 
 **d. Tempo di risoluzione**, in ms, **mediane** (il massimo di una singola esecuzione non è riproducibile: a 100 segmenti lineari
 completamente quotati si sono visti massimi da 4 a 24 ms in esecuzioni diverse; `misure-quote.txt` riporta anche i massimi di quella esecuzione).
@@ -726,7 +731,7 @@ Start-Process docs/prototipi/profilo-quote.html
 - **Criterio d con vincoli non lineari**: soddisfatto solo fino a 50 segmenti; **a 100 segmenti non lo è** (26-59 ms di mediana, secondo l'ancoraggio e l'esecuzione). I casi misurati sono
   poligoni con lunghezze, uguaglianze e angoli: altre combinazioni (per esempio molti angoli assoluti, simmetrie, più contorni collegati) non sono state
   provate e potrebbero convergere peggio. Il peso di trascinamento 30 e la soglia di accettazione 1e-4 mm sono scelte empiriche su questi casi.
-- **`dragSketch`**: il ritardo nullo è misurato sui poligoni non lineari, sul rettangolo e sull'esagono; disegni parzialmente vincolati in molti modi diversi, più componenti, cerchi e quote tra contorni diversi non sono stati provati con il tentativo rigido. Quando il disegno è tutto quotato e ancorato il nodo non si muove (voluto), ma nel prototipo non c'è ancora un segno visivo che lo dica; il tentativo rigido a 100 nodi non ancorati costa circa 26 ms per fotogramma (sopra i 16 ms). Il ritardo del solo peso 30 (0,22-1,8 mm) è misurato su poligoni non lineari di 25-100 lati e su rettangolo ed esagono (0,04-0,06 mm), non su altri disegni.
+- **`dragSketch`**: il ritardo nullo è misurato sui poligoni non lineari, sul rettangolo e sull'esagono; disegni parzialmente vincolati in molti modi diversi, più componenti, cerchi e quote tra contorni diversi non sono stati provati con il tentativo rigido. Quando il disegno è tutto quotato e ancorato il nodo può saltare su un'altra soluzione dei vincoli (vedi sopra: non verificato né corretto) e nel prototipo non c'è un segno visivo che lo dica; il trascinamento continuo di un disegno ancorato nel ramo morbido costa 8-12 ms a 25 segmenti, 23-25 a 50 e 56-59 a 100 (misura del revisore, più della tabella d che misura un fotogramma isolato), e nel browser circa 11 ms di mediana a 50 segmenti ancorati; il tentativo rigido a 100 nodi non ancorati costa circa 26 ms per fotogramma (sopra i 16 ms). Il ritardo del solo peso 30 (0,22-1,8 mm) è misurato su poligoni non lineari di 25-100 lati e su rettangolo ed esagono (0,04-0,06 mm), non su altri disegni.
 - **Il massimo dei tempi non è riproducibile**: oscilla molto tra un'esecuzione e l'altra (garbage collector, altri processi); il testo cita le mediane.
 - **Esito «non risolto»**: la soglia del gradiente (1e-5) è empirica; non ho una dimostrazione che separi sempre un conflitto vero da un risolutore fermo.
 - **Accessibilità da tastiera** delle etichette SVG: non raggiungibili da tastiera (vedi sezione 5); nessuna prova con uno
