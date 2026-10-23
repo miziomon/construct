@@ -10,8 +10,8 @@ import { resolveEnds } from '../scene/edgeEnds';
 import { stretchFactors } from '../scene/ellipse';
 import { isScaled, scaleOf } from '../scene/groupScale';
 import { circularStep, linearStep, normalizeArray } from '../scene/arrayPattern';
-import { brickRelief, cutReach, faceFrame, frameRect, isAxisFace, isReliefKind, normalizePattern, patternCells } from '../scene/pattern';
-import { brickScad } from './reliefScad';
+import { cutReach, faceFrame, frameRect, isAdditiveKind, isAxisFace, isReliefKind, normalizePattern, patternCells, studCentersOf, studRelief, brickRelief } from '../scene/pattern';
+import { brickScad, studScad } from './reliefScad';
 import { isRotational, pathContours, revolveParams, shapeContours, svgContours } from '../scene/shapes2d';
 import { hasPlan, planSolid } from '../scene/planSolid';
 import type { PlanSolid } from '../scene/planSolid';
@@ -483,28 +483,45 @@ function arrayLines(params: ArrayParams, child: (depth: number) => string[], dep
 }
 
 /**
- * Codice di un Pattern in rilievo (Mattoni): per ogni faccia i dati del disegno, poi la sottrazione delle fughe nel riferimento
- * della faccia, ritagliate sulla regione (sempre il contorno della faccia, meno il margine) come fa il kernel con
- * `reliefCutter`. `depth` e `sides` del Pattern non contano.
+ * Codice di un Pattern in rilievo, per ogni faccia i dati del disegno e poi:
+ * - Mattoni (sottrattivo): `difference()` con le fughe nel riferimento della faccia, ritagliate sulla regione (sempre il contorno
+ *   della faccia, meno il margine) come fa il kernel con `reliefCutter`;
+ * - Borchie (additivo): `union()` con le borchie, di cui si esporta l'elenco dei centri già calcolato (gli stessi del kernel,
+ *   `studCentersOf`), ritagliate sullo stesso contorno.
+ * `depth` e `sides` del Pattern non contano.
  */
 function reliefPatternLines(p: PatternParams, child: (depth: number) => string[], depth: number): string[] {
   const pad = IND.repeat(depth);
   const at = (d: number, text: string) => `${IND.repeat(d)}${text}`;
-  const { design, relief } = brickRelief(p);
-  // Dati e solido di ogni faccia (con più facce i nomi dei dati hanno il numero della faccia)
-  const faces = p.faces.map((face, i) => ({ face, ...brickScad(frameRect(p, face), relief, p.faces.length > 1 ? `_${i + 1}` : '') }));
-  const out: string[] = [`${pad}// Pattern ${p.kind}, disegno ${design}: fughe di ${n(relief.depth)} mm scavate sulle facce scelte`];
+  const additive = isAdditiveKind(p.kind);
+  // Dati e solido di ogni faccia (con più facce i nomi dei dati hanno il numero della faccia); le facce senza borchie si saltano
+  const { design, relief } = additive ? studRelief(p) : brickRelief(p);
+  const faces = p.faces
+    .map((face, i) => {
+      const id = p.faces.length > 1 ? `_${i + 1}` : '';
+      if (relief.kind === 'studs') {
+        const { centers } = studCentersOf(p, face);
+        return { face, centers, ...studScad(relief, centers, id) };
+      }
+      return { face, centers: [], ...brickScad(frameRect(p, face), relief, id) };
+    })
+    .filter((f) => !additive || f.centers.length > 0);
+  // Quota del prisma di ritaglio: oltre il solido del rilievo (le fughe arrivano a -depth, le borchie a `height`)
+  const below = relief.kind === 'brick' ? relief.depth + 1 : 1;
+  const above = relief.kind === 'studs' ? (relief.shape === 'dome' ? Math.min(relief.height, relief.radius) : relief.height) + 1 : 2;
+  const what = relief.kind === 'brick' ? `fughe di ${n(relief.depth)} mm scavate` : `${faces.reduce((sum, f) => sum + f.centers.length, 0)} borchie unite`;
+  const out: string[] = [`${pad}// Pattern ${p.kind}, disegno ${design}: ${what} sulle facce scelte`];
   faces.forEach((f) => out.push(...f.data.map((l) => `${pad}${l}`)));
-  out.push(`${pad}difference() {`, ...child(depth + 1));
+  out.push(`${pad}${additive ? 'union' : 'difference'}() {`, ...child(depth + 1));
   faces.forEach(({ face, solid }) => {
     const frame = faceFrame(face);
     let d = depth + 1;
     out.push(at(d, `translate(${vec(frame.origin)}) rotate(${vec(frame.inverseEuler)}) intersection() {`));
     d++;
     out.push(...solid.map((l) => at(d, l)));
-    // Regione: sezione della faccia ridotta del margine, estrusa oltre le fughe (come il prisma di ritaglio del kernel)
+    // Regione: sezione della faccia ridotta del margine, estrusa oltre il rilievo (come il prisma di ritaglio del kernel)
     out.push(
-      at(d, `translate([0, 0, ${n(-relief.depth - 1)}]) linear_extrude(height = ${n(relief.depth + 3)})`),
+      at(d, `translate([0, 0, ${n(-below)}]) linear_extrude(height = ${n(below + above)})`),
       at(d + 1, `${p.margin > 0 ? `offset(delta = -${n(p.margin)}) ` : ''}projection(cut = true) translate([0, 0, 0.01]) rotate(${vec(frame.euler)}) translate(${vec(frame.origin.map((v) => -v))}) {`),
       ...child(d + 2),
       at(d + 1, '}'),

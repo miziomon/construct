@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { BRICK_DESIGNS, MAX_BRICKS, brickDepth, brickLayout, brickModule, normalizeRelief, reliefDefaults } from './relief';
 import type { BrickDesign, BrickParams } from './relief';
 import { brickScad } from '../codegen/reliefScad';
-import { defaultPatternParams, faceFromBounds, normalizePattern, patternCells, reliefDepthLimit, reliefWarnings } from './pattern';
+import { brickRelief, defaultPatternParams, faceFromBounds, normalizePattern, patternCells, reliefDepthLimit, reliefWarnings } from './pattern';
 import type { PatternParams, Vec3 } from './types';
 
 /** Faccia 80 × 60 mm centrata nell'origine e una meno comoda (origine e misure non intere). */
@@ -224,11 +224,22 @@ describe('Pattern Mattoni: normalizzazione', () => {
     const deep = { ...brick, depth: 50 };
     // Pannello 5 mm: una faccia sola 5 - 0,2
     expect(reliefDepthLimit(params({ kind: 'brick' }))).toBeCloseTo(4.8, 6);
-    expect(normalizePattern(params({ kind: 'brick', relief: deep })).relief).toMatchObject({ depth: 4.8 });
+    // Il valore salvato non si riduce: il limite si applica solo ai parametri effettivi (kernel, codice, pannello)
+    const single = normalizePattern(params({ kind: 'brick', relief: deep }));
+    expect(single.relief).toMatchObject({ depth: 50 });
+    expect(brickRelief(single).relief.depth).toBeCloseTo(4.8, 6);
+    expect(reliefWarnings(single).some((w) => w.startsWith('Profondità ridotta a 4,8') && w.includes("sull'ingombro del pezzo"))).toBe(true);
     // z+ e z- insieme: le due incisioni non si attraversano (2,5 - 0,2 ciascuna)
-    const both = params({ kind: 'brick', relief: deep, faces: [faceFromBounds(bounds, 'z+'), faceFromBounds(bounds, 'z-')] });
-    expect(normalizePattern(both).relief).toMatchObject({ depth: 2.3 });
+    const both = normalizePattern(params({ kind: 'brick', relief: deep, faces: [faceFromBounds(bounds, 'z+'), faceFromBounds(bounds, 'z-')] }));
+    expect(both.relief).toMatchObject({ depth: 50 });
+    expect(brickRelief(both).relief.depth).toBeCloseTo(2.3, 6);
     expect(reliefWarnings(both).some((w) => w.startsWith('Profondità ridotta a 2,3'))).toBe(true);
+    // Aggiungere e poi togliere la faccia opposta ripristina il valore: nessuna perdita nel salvato
+    const back = normalizePattern({ ...both, faces: [faceFromBounds(bounds, 'z+')] });
+    expect(back.relief).toMatchObject({ depth: 50 });
+    expect(brickRelief(back).relief.depth).toBeCloseTo(4.8, 6);
+    // Profondità entro il limite: nessun avviso
+    expect(reliefWarnings(normalizePattern(params({ kind: 'brick' }))).some((w) => w.startsWith('Profondità ridotta'))).toBe(false);
     // Una faccia laterale e una cima non sono opposte: vale lo spessore più piccolo
     expect(reliefDepthLimit(params({ kind: 'brick', faces: [faceFromBounds(bounds, 'z+'), faceFromBounds(bounds, 'x+')] }))).toBeCloseTo(4.8, 6);
     // Un pannello sottilissimo: sempre almeno 0,05

@@ -1,8 +1,8 @@
 import type { CrossSection, Manifold, ManifoldToplevel } from 'manifold-3d';
-import { brickRelief, cutReach, faceFrame, frameRect, isAxisFace, isReliefKind, normalizePattern, patternCells } from '../scene/pattern';
+import { brickRelief, cutReach, faceFrame, frameRect, isAdditiveKind, isAxisFace, isReliefKind, normalizePattern, patternCells, studCentersOf, studRelief } from '../scene/pattern';
 import type { FaceFrame } from '../scene/pattern';
 import type { PatternFace, PatternParams, Vec3 } from '../scene/types';
-import { BEST_ENGINE, reliefCutter } from './relief';
+import { BEST_ENGINE, reliefAddition, reliefCutter } from './relief';
 
 /** Segmenti del cerchio nelle giunzioni arrotondate (gli stessi degli angoli arrotondati delle forme 2D). */
 const ROUND_SEGMENTS = 32;
@@ -82,6 +82,20 @@ function reliefCutterFor(wasm: ManifoldToplevel, child: Manifold, p: PatternPara
 }
 
 /**
+ * Rilievo additivo (Borchie) di una faccia: le borchie da unire al pezzo, sulla regione della faccia (sempre il suo contorno,
+ * meno il margine). I centri sono quelli del calcolo puro (`studCentersOf`, gli stessi del codice OpenSCAD) e il contorno vero
+ * ritaglia le borchie che lo sporgono. Nel riferimento del pezzo, o null se non resta nulla.
+ */
+function studAdditionFor(wasm: ManifoldToplevel, child: Manifold, p: PatternParams, face: PatternFace): Manifold | null {
+  const found = faceRegion(child, p, face, false, ROUND_SEGMENTS);
+  if (!found) return null;
+  const { rect, centers } = studCentersOf(p, face);
+  const solid = reliefAddition(wasm, found.region, studRelief(p).relief, { engine: BEST_ENGINE.studs, rect, centers });
+  found.region.delete();
+  return solid ? backToPiece(solid, found.frame) : null;
+}
+
+/**
  * Il solido da togliere per una faccia, nel riferimento del pezzo (o null se la faccia non taglia nulla).
  * Passi: 1) regione della faccia (vedi `faceRegion`); 2) le celle si riducono
  * per la parete, si arrotondano e si intersecano con la regione (Fori) oppure si tolgono da essa (Solchi); 3) si estrude
@@ -130,11 +144,19 @@ function cutterFor(wasm: ManifoldToplevel, child: Manifold, p: PatternParams, fa
 
 /**
  * Applica il pattern al pezzo (di proprietà del chiamante, non si libera) e restituisce un nuovo Manifold: il pezzo meno
- * i tagli di tutte le facce scelte. Se nessuna faccia taglia nulla, il pezzo resta com'è.
+ * i tagli di tutte le facce scelte (o, per le Borchie, più le borchie). Se nessuna faccia cambia nulla, il pezzo resta com'è.
  */
 export function buildPattern(wasm: ManifoldToplevel, child: Manifold, params: PatternParams): Manifold {
   const { Manifold } = wasm;
   const p = normalizePattern(params);
+  // Rilievo additivo (Borchie): il pezzo più le borchie di ogni faccia, `depth` e `sides` non contano
+  if (isAdditiveKind(p.kind)) {
+    const additions = p.faces.map((face) => studAdditionFor(wasm, child, p, face)).filter((a): a is Manifold => a !== null);
+    if (additions.length === 0) return child.translate([0, 0, 0]);
+    const joined = Manifold.union([child, ...additions]);
+    additions.forEach((a) => a.delete());
+    return joined;
+  }
   const cutters = p.faces.map((face, i) => cutterFor(wasm, child, p, face, i)).filter((c): c is Manifold => c !== null);
   if (cutters.length === 0) return child.translate([0, 0, 0]);
   const result = Manifold.difference([child, ...cutters]);

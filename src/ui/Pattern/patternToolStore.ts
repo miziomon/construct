@@ -117,7 +117,7 @@ export async function refreshedPattern(scene: Scene, groupId: string): Promise<P
 /** Stima del lavoro: celle del Voronoi (o 60 per le griglie, in media) per il numero di facce. */
 export function estimatedCells(p: PatternParams): number {
   // Il rilievo non ha celle: il suo calcolo è leggero e non deve far comparire l'avviso delle celle
-  if (p.kind === 'brick') return 0;
+  if (p.kind === 'brick' || p.kind === 'studs') return 0;
   return (p.kind === 'voronoi' ? p.cells : 60) * p.faces.length;
 }
 

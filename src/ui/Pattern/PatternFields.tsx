@@ -1,7 +1,7 @@
 import { useId } from 'react';
 import { useResultStore } from '../../kernel/useKernel';
-import { PATTERN_MAX_CELLS, brickRelief, faceName, isAxisFace, isReliefKind, reliefDepthLimit, reliefWarnings } from '../../scene/pattern';
-import type { BrickDesign, BrickParams } from '../../scene/relief';
+import { PATTERN_MAX_CELLS, faceName, isAxisFace, isReliefKind, patternRelief, reliefDepthLimit, reliefToStore, reliefWarnings } from '../../scene/pattern';
+import type { BrickDesign, ReliefDesign, ReliefParams, StudLayout, StudShape } from '../../scene/relief';
 import type { PatternParams } from '../../scene/types';
 import { NumberField } from '../NumberField/NumberField';
 import { SliderField } from '../SliderField/SliderField';
@@ -28,11 +28,13 @@ interface Props {
   refreshBlocked?: string;
 }
 
-const KIND_LABELS: Record<PatternParams['kind'], string> = { voronoi: 'Voronoi', hexagon: 'Esagoni', circle: 'Cerchi', diamond: 'Rombi', triangle: 'Triangoli', brick: 'Mattoni' };
+const KIND_LABELS: Record<PatternParams['kind'], string> = { voronoi: 'Voronoi', hexagon: 'Esagoni', circle: 'Cerchi', diamond: 'Rombi', triangle: 'Triangoli', brick: 'Mattoni', studs: 'Borchie' };
 /** Tipi a celle e tipi in rilievo: due gruppi della tendina. */
 const CELL_KINDS: PatternParams['kind'][] = ['voronoi', 'hexagon', 'circle', 'diamond', 'triangle'];
-const RELIEF_KINDS: PatternParams['kind'][] = ['brick'];
-const DESIGN_LABELS: Record<BrickDesign, string> = { running: 'Sfalsati', herringbone: 'Spina di pesce', basket: 'Cesto' };
+const RELIEF_KINDS: PatternParams['kind'][] = ['brick', 'studs'];
+/** Disegni di ogni rilievo: muratura dei Mattoni, forma delle Borchie. */
+const DESIGN_LABELS: Record<ReliefDesign, string> = { running: 'Sfalsati', herringbone: 'Spina di pesce', basket: 'Cesto', dome: 'Cupola', chamfered: 'Cilindro smussato', pyramid: 'Piramide' };
+const DESIGNS_OF: Record<'brick' | 'studs', ReliefDesign[]> = { brick: ['running', 'herringbone', 'basket'] as BrickDesign[], studs: ['dome', 'chamfered', 'pyramid'] as StudShape[] };
 /** Sotto questa parete (circa due passate di un ugello da 0,4 mm) la stampa è inaffidabile. */
 const MIN_PRINTABLE_WALL = 0.8;
 
@@ -57,17 +59,17 @@ export function PatternFields({ params: p, onChange, disabled, history = true, o
       </div>
     </div>
   );
-  // Rilievo: disegno e misure dei mattoni (con i valori di partenza per ciò che manca)
+  // Rilievo (Mattoni o Borchie): disegno e misure, con i valori di partenza per ciò che manca
   const relief = isReliefKind(p.kind);
-  const brick = brickRelief(p);
+  const effective = patternRelief(p);
   const designId = useId();
-  // Il disegno si salva solo in `design`: dentro `relief` non si riscrive
-  const { design: _design, ...storedRelief } = brick.relief;
   // Le fughe non possono attraversare il pezzo (con due facce opposte lo spessore si divide)
   const depthLimit = reliefDepthLimit(p);
+  /** Salva una misura del rilievo: parte dai parametri salvati (non da quelli con il limite di spessore) e non ripete il disegno. */
+  const setRelief = (patch: Record<string, number | string>) => onChange({ relief: { ...reliefToStore(p), ...patch } as ReliefParams });
   /** Slider di una misura del rilievo: modifica `relief` e non un campo del Pattern. */
-  const reliefSlider = (label: string, tip: string, key: 'brickW' | 'brickH' | 'mortar' | 'depth', range: { min: number; max: number; step: number; hardMin?: number; hardMax?: number; unit?: string }) => (
-    <SliderField label={label} tooltip={tip} value={brick.relief[key]} disabled={disabled} history={history} onCommit={(v) => onChange({ relief: { ...storedRelief, [key]: v } as BrickParams })} {...range} />
+  const reliefSlider = (label: string, tip: string, key: string, range: { min: number; max: number; step: number; hardMin?: number; hardMax?: number; unit?: string }) => (
+    <SliderField label={label} tooltip={tip} value={(effective.relief as unknown as Record<string, number>)[key]} disabled={disabled} history={history} onCommit={(v) => setRelief({ [key]: v })} {...range} />
   );
   const slider = (label: string, tip: string, key: 'cells' | 'regularity' | 'size' | 'angle' | 'wall' | 'rounding' | 'margin' | 'depth', range: { min: number; max: number; step: number; hardMin?: number; hardMax?: number; unit?: string }) => (
     <SliderField label={label} tooltip={tip} value={p[key]} disabled={disabled} history={history} onCommit={(v) => onChange({ [key]: v })} {...range} />
@@ -101,18 +103,31 @@ export function PatternFields({ params: p, onChange, disabled, history = true, o
 
       {relief && (
         <>
-          <div className="array-fields__row" title="Sfalsati: file sfalsate di mezzo mattone. Spina di pesce e Cesto: la lunghezza del mattone si arrotonda a un multiplo dell'altezza (fuga compresa) perché il disegno si chiuda.">
+          <div className="array-fields__row" title={p.kind === 'studs' ? 'Forma della borchia: cupola, cilindro con smusso o piramide a base quadrata (lato = diametro).' : "Sfalsati: file sfalsate di mezzo mattone. Spina di pesce e Cesto: la lunghezza del mattone si arrotonda a un multiplo dell'altezza (fuga compresa) perché il disegno si chiuda."}>
             <label className="array-fields__label" htmlFor={designId}>Disegno</label>
-            <select id={designId} className="array-fields__select" value={brick.design} disabled={disabled} onChange={(e) => onChange({ design: e.target.value as BrickDesign })}>
-              {(Object.keys(DESIGN_LABELS) as BrickDesign[]).map((d) => (
+            <select id={designId} className="array-fields__select" value={effective.design} disabled={disabled} onChange={(e) => onChange({ design: e.target.value as ReliefDesign })}>
+              {DESIGNS_OF[p.kind === 'studs' ? 'studs' : 'brick'].map((d) => (
                 <option key={d} value={d}>{DESIGN_LABELS[d]}</option>
               ))}
             </select>
           </div>
-          {reliefSlider('Larghezza mattone', 'Lunghezza del mattone, in mm (fuga esclusa).', 'brickW', { min: 8, max: 80, step: 0.5, hardMin: 2, unit: 'mm' })}
-          {reliefSlider('Altezza mattone', 'Altezza del mattone, in mm (fuga esclusa).', 'brickH', { min: 4, max: 40, step: 0.5, hardMin: 2, unit: 'mm' })}
-          {reliefSlider('Fuga', 'Spessore della fuga tra due mattoni, in mm.', 'mortar', { min: 0.4, max: 5, step: 0.1, hardMin: 0.2, unit: 'mm' })}
-          {reliefSlider('Profondità fuga', 'Quanto si scava la fuga sotto la faccia, in mm.', 'depth', { min: Math.min(0.2, depthLimit), max: Math.min(3, depthLimit), step: 0.1, hardMin: 0.05, hardMax: depthLimit, unit: 'mm' })}
+          {effective.relief.kind === 'brick' && (
+            <>
+              {reliefSlider('Larghezza mattone', 'Lunghezza del mattone, in mm (fuga esclusa).', 'brickW', { min: 8, max: 80, step: 0.5, hardMin: 2, unit: 'mm' })}
+              {reliefSlider('Altezza mattone', 'Altezza del mattone, in mm (fuga esclusa).', 'brickH', { min: 4, max: 40, step: 0.5, hardMin: 2, unit: 'mm' })}
+              {reliefSlider('Fuga', 'Spessore della fuga tra due mattoni, in mm.', 'mortar', { min: 0.4, max: 5, step: 0.1, hardMin: 0.2, unit: 'mm' })}
+              {reliefSlider('Profondità fuga', "Quanto si scava la fuga sotto la faccia, in mm (al massimo lo spessore dell'ingombro del pezzo, meno 0,2 mm).", 'depth', { min: Math.min(0.2, depthLimit), max: Math.min(3, depthLimit), step: 0.1, hardMin: 0.05, hardMax: depthLimit, unit: 'mm' })}
+            </>
+          )}
+          {effective.relief.kind === 'studs' && (
+            <>
+              {choice('Griglia', 'Quadrata: file allineate. Sfalsata: le file dispari spostate di mezzo passo.', effective.relief.layout ?? 'square', [['square', 'Quadrata'], ['staggered', 'Sfalsata']] as [StudLayout, string][], (layout) => setRelief({ layout }))}
+              {reliefSlider('Passo', 'Distanza tra i centri di due borchie, in mm.', 'pitch', { min: 4, max: 40, step: 0.5, hardMin: 2, unit: 'mm' })}
+              {reliefSlider('Raggio', 'Raggio della base, in mm (per la piramide, metà del lato).', 'radius', { min: 1, max: 10, step: 0.1, hardMin: 0.5, unit: 'mm' })}
+              {reliefSlider('Altezza', 'Quanto sporge la borchia dalla faccia, in mm. La cupola non supera il suo raggio.', 'height', { min: 0.4, max: 6, step: 0.1, hardMin: 0.2, unit: 'mm' })}
+              {effective.design === 'chamfered' && reliefSlider('Smusso', 'Smusso a 45 gradi del bordo del cilindro, in mm.', 'chamfer', { min: 0, max: 3, step: 0.1, hardMin: 0, unit: 'mm' })}
+            </>
+          )}
         </>
       )}
 
@@ -166,7 +181,7 @@ export function PatternFields({ params: p, onChange, disabled, history = true, o
 
       {slow && (
         <p className="array-fields__total array-fields__warning" role="alert">
-          {ms > SLOW_PREVIEW_MS ? `Calcolo lento (${Math.round(ms)} ms).` : `Molte celle (circa ${estimatedCells(p)}): il calcolo può essere lento.`} {relief ? 'Aumenta le misure del mattone o riduci le facce.' : 'Riduci celle o facce, oppure aumenta il passo.'}
+          {ms > SLOW_PREVIEW_MS ? `Calcolo lento (${Math.round(ms)} ms).` : `Molte celle (circa ${estimatedCells(p)}): il calcolo può essere lento.`} {relief ? (p.kind === 'studs' ? 'Aumenta il passo o il raggio delle borchie, oppure riduci le facce.' : 'Aumenta le misure del mattone o riduci le facce.') : 'Riduci celle o facce, oppure aumenta il passo.'}
         </p>
       )}
       {onSimplified && !relief && (

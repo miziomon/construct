@@ -1,8 +1,8 @@
 import { apply, eulerToMatrix, matrixToEuler, round, transpose } from './math';
 import type { Mat3, Transform } from './math';
 import { rotationToDown } from './layFlat';
-import { BRICK_DESIGNS, brickModule, fitBrick, normalizeRelief, reliefDefaults } from './relief';
-import type { BrickDesign, BrickParams, ReliefParams } from './relief';
+import { BRICK_DESIGNS, STUD_SHAPES, brickModule, fitBrick, normalizeRelief, reliefDefaults, studCentersFor } from './relief';
+import type { BrickParams, ReliefDesign, ReliefParams, StudParams } from './relief';
 import { PATTERN_ALGORITHM, randomVoronoi } from './voronoi';
 import type { Rect, Vec2 } from './voronoi';
 import type { PatternFace, PatternParams, Vec3 } from './types';
@@ -36,8 +36,11 @@ export function faceFromBounds(bounds: Bounds, direction: FaceDirection): Patter
   return { origin: origin.map((v) => round(v, 3)) as Vec3, normal, thickness: round(sizeOf(bounds)[axis], 3) };
 }
 
-/** Vero per i Pattern in rilievo (gruppo «Rilievo» della tendina): una texture incisa sulla faccia invece di celle forate. */
-export const isReliefKind = (kind: PatternParams['kind']) => kind === 'brick';
+/** Vero per i Pattern in rilievo (gruppo «Rilievo» della tendina): una texture sulla faccia invece di celle forate. */
+export const isReliefKind = (kind: PatternParams['kind']) => kind === 'brick' || kind === 'studs';
+
+/** Vero per i rilievi additivi (borchie): il solido cresce sulla normale della faccia invece di essere scavato. */
+export const isAdditiveKind = (kind: PatternParams['kind']) => kind === 'studs';
 
 /** Versione corrente del rumore e delle liste dei rilievi (`PatternParams.reliefAlgorithm`). */
 export const RELIEF_ALGORITHM = 1;
@@ -45,12 +48,41 @@ export const RELIEF_ALGORITHM = 1;
 /** Sotto questa fuga (circa due passate di un ugello da 0,4 mm) la fuga si chiude in stampa. */
 export const MIN_PRINTABLE_MORTAR = 0.8;
 
+/** Borchie: spazio minimo tra due basi, raggio minimo e altezza minima (due strati da 0,2 mm) per una stampa FDM affidabile. */
+export const MIN_STUD_GAP = 0.8;
+export const MIN_STUD_RADIUS = 1;
+export const MIN_STUD_HEIGHT = 0.4;
+
+/** I disegni ammessi di ogni rilievo: il primo è quello di partenza. */
+const DESIGNS: Record<'brick' | 'studs', ReliefDesign[]> = { brick: BRICK_DESIGNS, studs: STUD_SHAPES };
+
+/**
+ * Disegno e parametri del rilievo (Mattoni o Borchie), entro i limiti e con i valori di partenza per ciò che manca (progetti
+ * nuovi e vecchi). Il disegno sta solo in `p.design`: qui viene copiato nei parametri (`design` dei Mattoni, `shape` delle
+ * Borchie) perché kernel e codice OpenSCAD li leggono da lì, ma non si salva. Nessun limite sulla profondità (vedi `brickRelief`).
+ */
+function reliefBase(p: PatternParams): { design: ReliefDesign; relief: BrickParams | StudParams } {
+  const kind = p.kind === 'studs' ? 'studs' : 'brick';
+  const designs = DESIGNS[kind];
+  const design = designs.includes(p.design as ReliefDesign) ? (p.design as ReliefDesign) : designs[0];
+  const own = p.relief?.kind === kind ? p.relief : {};
+  const relief = normalizeRelief({ ...reliefDefaults(kind), ...own, kind, [kind === 'studs' ? 'shape' : 'design']: design } as ReliefParams) as BrickParams | StudParams;
+  return { design, relief };
+}
+
+/** I parametri del rilievo come si salvano in `PatternParams.relief`: normalizzati, senza il disegno e senza limiti di spessore. */
+export function reliefToStore(p: PatternParams): ReliefParams {
+  const { design: _design, shape: _shape, ...stored } = reliefBase(p).relief as unknown as Record<string, unknown>;
+  return stored as unknown as ReliefParams;
+}
+
 /** Materiale che una fuga lascia comunque sotto di sé (mm): con la profondità uguale allo spessore i mattoni si staccherebbero. */
 const RELIEF_FLOOR = 0.2;
 
 /**
- * Profondità massima delle fughe (mm): lo spessore del pezzo lungo la faccia, meno `RELIEF_FLOOR`. Se tra le facce ce n'è una
- * opposta (z+ e z- insieme) lo spessore si divide a metà, così le due incisioni non si attraversano. Infinito senza facce.
+ * Profondità massima delle fughe (mm): lo spessore del pezzo lungo la normale della faccia (l'ingombro, `thicknessAlong`: non
+ * la parete vera di un pezzo cavo o di un Guscio), meno `RELIEF_FLOOR`. Se tra le facce ce n'è una opposta (z+ e z- insieme)
+ * lo spessore si divide a metà, così le due incisioni non si attraversano. Infinito senza facce.
  */
 export function reliefDepthLimit(p: PatternParams): number {
   const faces = (p.faces?.length ? p.faces : p.face ? [p.face] : []).map(normalizeFace);
@@ -59,33 +91,54 @@ export function reliefDepthLimit(p: PatternParams): number {
   return limits.length ? Math.max(0.05, Math.min(...limits) - RELIEF_FLOOR) : Infinity;
 }
 
+/** Rilievo Mattoni per kernel, codice e pannello: parametri normalizzati e profondità limitata allo spessore (`reliefDepthLimit`). */
+export function brickRelief(p: PatternParams): { design: ReliefDesign; relief: BrickParams & { kind: 'brick' } } {
+  const { design, relief } = reliefBase({ ...p, kind: 'brick' });
+  return { design, relief: { ...(relief as BrickParams), kind: 'brick', depth: Math.max(0.05, Math.min((relief as BrickParams).depth, reliefDepthLimit(p))) } };
+}
+
+/** Rilievo Borchie per kernel, codice e pannello: parametri normalizzati (le borchie non hanno profondità da limitare). */
+export function studRelief(p: PatternParams): { design: ReliefDesign; relief: StudParams } {
+  const { design, relief } = reliefBase({ ...p, kind: 'studs' });
+  return { design, relief: relief as StudParams };
+}
+
+/** Il rilievo del Pattern (Mattoni o Borchie) con i parametri effettivi. */
+export const patternRelief = (p: PatternParams): { design: ReliefDesign; relief: BrickParams | StudParams } => (p.kind === 'studs' ? studRelief(p) : brickRelief(p));
+
 /**
- * Parametri del rilievo Mattoni, entro i limiti, con i valori di partenza per ciò che manca (progetti nuovi e vecchi) e la
- * profondità limitata allo spessore (`reliefDepthLimit`). Il disegno sta solo in `p.design`: qui viene copiato in `relief`
- * perché kernel e codice OpenSCAD lo leggono da lì, ma non si salva (vedi `normalizePattern`).
+ * Centri delle borchie di una faccia: la griglia centrata nel rettangolo esatto della faccia (senza il margine di 1 mm di
+ * `frameRect`) meno le borchie che non stanno intere dentro il margine. Calcolo puro: il kernel e il codice OpenSCAD usano la
+ * stessa lista e ritagliano poi sul contorno vero della faccia.
  */
-export function brickRelief(p: PatternParams): { design: BrickDesign; relief: BrickParams & { kind: 'brick' } } {
-  const design = BRICK_DESIGNS.includes(p.design as BrickDesign) ? (p.design as BrickDesign) : 'running';
-  const merged = normalizeRelief({ ...reliefDefaults('brick'), ...(p.relief?.kind === 'brick' ? p.relief : {}), kind: 'brick', design } as ReliefParams) as BrickParams & { kind: 'brick' };
-  return { design, relief: { ...merged, depth: Math.max(0.05, Math.min(merged.depth, reliefDepthLimit(p))) } };
+export function studCentersOf(p: PatternParams, face: PatternFace) {
+  const rect = frameRect(p, face, 0);
+  return { rect, centers: studCentersFor(rect, studRelief(p).relief, p.margin) };
 }
 
 /** Misura in mm per i testi (una cifra decimale, virgola). */
 const mm = (v: number) => String(round(v, 1)).replace('.', ',');
 
 /**
- * Avvisi del rilievo (testi per il pannello); vuoto per i Pattern a celle: fuga troppo stretta, profondità ridotta allo
- * spessore, mattone arrotondato dal disegno (spina di pesce e cesto) o ingrandito dal tetto di mattoni della faccia.
+ * Avvisi del rilievo (testi per il pannello); vuoto per i Pattern a celle. Mattoni: fuga troppo stretta, profondità ridotta
+ * allo spessore dell'ingombro, mattone arrotondato dal disegno (spina di pesce e cesto) o ingrandito dal tetto di mattoni della
+ * faccia. Borchie: troppo vicine tra loro o troppo piccole per la stampa.
  */
 export function reliefWarnings(p: PatternParams): string[] {
-  if (p.kind !== 'brick') return [];
+  if (!isReliefKind(p.kind)) return [];
   const q = normalizePattern(p);
-  const { design, relief } = brickRelief(q);
   const out: string[] = [];
+  if (q.kind === 'studs') {
+    const { relief } = studRelief(q);
+    if (relief.pitch < 2 * relief.radius + MIN_STUD_GAP) out.push(`Borchie troppo vicine: tra una base e l'altra servono almeno ${mm(MIN_STUD_GAP)} mm (passo di almeno ${mm(2 * relief.radius + MIN_STUD_GAP)} mm).`);
+    if (relief.radius < MIN_STUD_RADIUS || relief.height < MIN_STUD_HEIGHT) out.push(`Borchie troppo piccole per la stampa: servono un raggio di almeno ${mm(MIN_STUD_RADIUS)} mm e un'altezza di almeno ${mm(MIN_STUD_HEIGHT)} mm.`);
+    return out;
+  }
+  const { design, relief } = brickRelief(q);
   if (relief.mortar < MIN_PRINTABLE_MORTAR) out.push(`Fuga sotto ${mm(MIN_PRINTABLE_MORTAR)} mm: tende a chiudersi in stampa.`);
-  // Profondità richiesta (prima del limite): oltre lo spessore la fuga attraverserebbe il pezzo
-  const requested = p.relief?.kind === 'brick' && Number.isFinite(p.relief.depth) ? p.relief.depth : relief.depth;
-  if (requested > relief.depth + 1e-9) out.push(`Profondità ridotta a ${mm(relief.depth)} mm: le fughe non devono attraversare il pezzo.`);
+  // Profondità salvata (senza limite) contro quella effettiva: oltre lo spessore dell'ingombro la fuga attraverserebbe il pezzo
+  const requested = (q.relief as BrickParams).depth;
+  if (requested > relief.depth + 1e-9) out.push(`Profondità ridotta a ${mm(relief.depth)} mm (sull'ingombro del pezzo): le fughe non devono attraversare il pezzo.`);
   // Misure effettive sulla faccia più grande: il tetto di mattoni le ingrandisce, il disegno arrotonda la lunghezza
   const fitted = q.faces.map((face) => fitBrick(frameRect(q, face), relief)).sort((a, b) => b.brickW * b.brickH - a.brickW * a.brickH)[0];
   if (fitted && (fitted.brickW > relief.brickW + 1e-6 || fitted.brickH > relief.brickH + 1e-6)) {
@@ -143,14 +196,13 @@ export function faceFrame(face: PatternFace): FaceFrame {
 }
 
 /** Rettangolo (nel riferimento della faccia) che contiene tutto l'ingombro del pezzo: dove si generano le celle. */
-export function frameRect(p: PatternParams, face: PatternFace = p.faces[0]): Rect {
+export function frameRect(p: PatternParams, face: PatternFace = p.faces[0], pad = 1): Rect {
   const frame = faceFrame(face);
   const corners = [0, 1].flatMap((a) => [0, 1].flatMap((b) => [0, 1].map((c) => [p.bounds[a ? 'max' : 'min'][0], p.bounds[b ? 'max' : 'min'][1], p.bounds[c ? 'max' : 'min'][2]] as Vec3)));
   // Si usa la stessa rotazione (con i soli angoli arrotondati) del kernel, così le celle coprono la stessa area
   const turned = corners.map((c) => apply(frame.matrix, [c[0] - frame.origin[0], c[1] - frame.origin[1], c[2] - frame.origin[2]]));
   const xs = turned.map((t) => t[0]);
   const ys = turned.map((t) => t[1]);
-  const pad = 1;
   return { minX: Math.min(...xs) - pad, minY: Math.min(...ys) - pad, maxX: Math.max(...xs) + pad, maxY: Math.max(...ys) + pad };
 }
 
@@ -211,15 +263,12 @@ export function normalizePattern(p: PatternParams): PatternParams {
   const { face: legacy, ...rest } = p;
   const given = p.faces?.length ? p.faces : legacy ? [legacy] : [faceFromBounds(p.bounds, 'z+')];
   const faces = given.map(normalizeFace).filter((f, i, all) => all.findIndex((o) => sameFace(o, f)) === i);
-  const kind = (['voronoi', 'hexagon', 'circle', 'diamond', 'triangle', 'brick'] as string[]).includes(p.kind) ? p.kind : 'voronoi';
+  const kind = (['voronoi', 'hexagon', 'circle', 'diamond', 'triangle', 'brick', 'studs'] as string[]).includes(p.kind) ? p.kind : 'voronoi';
   // Disegno e misure dei rilievi: solo per i Pattern in rilievo, così gli altri progetti restano identici a prima
-  // Il disegno si salva solo in `design` (non dentro `relief`); la versione del rilievo già salvata non si sovrascrive
-  const reliefFields = (() => {
-    if (kind !== 'brick') return {};
-    const { design, relief } = brickRelief({ ...p, kind, faces });
-    const { design: _copy, ...stored } = relief;
-    return { design, relief: stored as BrickParams, reliefAlgorithm: p.reliefAlgorithm ?? (RELIEF_ALGORITHM as 1) };
-  })();
+  // Il disegno si salva solo in `design` (non dentro `relief`) e la profondità senza il limite dello spessore (si applica in
+  // `brickRelief`, così aggiungere e togliere una faccia opposta non cambia il valore salvato); la versione del rilievo già
+  // salvata non si sovrascrive
+  const reliefFields = isReliefKind(kind) ? { design: reliefBase({ ...p, kind }).design, relief: reliefToStore({ ...p, kind, faces }), reliefAlgorithm: p.reliefAlgorithm ?? (RELIEF_ALGORITHM as 1) } : {};
   return {
     ...rest,
     kind,

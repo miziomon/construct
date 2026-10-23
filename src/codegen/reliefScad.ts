@@ -1,5 +1,5 @@
-import { brickLayout, brickPitch, craterList, dentList, fitBrick, grainDepth, normalizeRelief, plankLayout, reliefDepth, sampleGrid, studCenters, studGrid, studHeight, studProfile } from '../scene/relief';
-import type { BrickParams, HeightGrid, ReliefParams } from '../scene/relief';
+import { brickLayout, brickPitch, craterList, dentList, fitBrick, grainDepth, normalizeRelief, plankLayout, pyramidPolyhedron, reliefDepth, sampleGrid, studCenters, studGrid, studHeight, studProfile } from '../scene/relief';
+import type { BrickParams, HeightGrid, ReliefParams, StudParams } from '../scene/relief';
 import type { Rect, Vec2 } from '../scene/voronoi';
 import type { HeightSide, ReliefEngine } from '../kernel/relief';
 
@@ -60,7 +60,8 @@ export function polyhedronLines(grid: HeightGrid, planeZ: number, side: HeightSi
 
 /** Rettangoli come `square` posizionati: elenco [x0, y0, x1, y1] e un ciclo che li disegna. */
 function boxesLines(name: string, boxes: number[][]): string[] {
-  return [`${name} = [`, boxes.map((b) => `  ${vec(b)}`).join(',\n'), '];'];
+  // Una riga per rettangolo (così chi indenta il codice rientra anche le righe dell'elenco)
+  return [`${name} = [`, ...boxes.map((b, k) => `  ${vec(b)}${k < boxes.length - 1 ? ',' : ''}`), '];'];
 }
 
 /**
@@ -97,6 +98,27 @@ export function brickScad(rect: Rect, params: BrickParams, id = ''): { data: str
 }
 
 /**
+ * Borchie: i dati (`studs`, l'elenco dei centri già calcolato, e `stud_profile` per le forme di rivoluzione) e il solido da
+ * unire, in righe senza rientro, nel riferimento della faccia. Cupola e cilindro smussato sono `rotate_extrude` dello stesso
+ * profilo del kernel (24 segmenti), la piramide è il `polyhedron` del kernel (`pyramidPolyhedron`, con i triangoli rovesciati
+ * perché OpenSCAD li vuole orari). `id` suffissa i nomi dei dati, per più facce di un Pattern.
+ */
+export function studScad(params: StudParams, centers: Vec2[], id = ''): { data: string[]; solid: string[] } {
+  const p = normalizeRelief(params);
+  // Quattro decimali: la stessa precisione con cui il kernel calcola il profilo
+  const n4 = (v: number) => String(Math.round(v * 10000) / 10000);
+  const data = [`studs${id} = [`, ...centers.map((c, k) => `  [${c.map(n4).join(', ')}]${k < centers.length - 1 ? ',' : ''}`), '];'];
+  if (p.shape === 'pyramid') {
+    const { points, faces } = pyramidPolyhedron(p.radius, p.height, EMBED);
+    const pts = points.map((q) => `[${q.map(n4).join(', ')}]`).join(', ');
+    const tris = faces.map((f) => `[${[...f].reverse().join(', ')}]`).join(', ');
+    return { data, solid: [`for (c = studs${id}) translate([c[0], c[1], 0]) polyhedron(points = [${pts}], faces = [${tris}]);`] };
+  }
+  data.push(`stud_profile${id} = [${studProfile(p).map((q) => `[${q.map(n4).join(', ')}]`).join(', ')}, [${n4(p.radius)}, ${n4(-EMBED)}], [0, ${n4(-EMBED)}]];`);
+  return { data, solid: [`for (c = studs${id}) translate([c[0], c[1], 0]) rotate_extrude($fn = 24) polygon(stud_profile${id});`] };
+}
+
+/**
  * Modulo `relief()` con il codice OpenSCAD della texture nel motore dato; `step` è il passo della mappa di altezze.
  * Per le borchie `centers` (facoltativo) sono i centri effettivamente scritti, per esempio quelli rimasti dentro la
  * regione (`studsInRegion` del kernel): se mancano vale la griglia centrata, scritta con due cicli.
@@ -115,21 +137,20 @@ export function reliefScad(rect: Rect, params: ReliefParams, engine: ReliefEngin
       const height = studHeight(rect, p, list);
       const grid = sampleGrid(rect, step, (x, y) => Math.max(height(x, y), -FLOOR));
       out.push('module relief() {', ...polyhedronLines(grid, -EMBED, 'below').map((l) => `  ${l}`), '}');
+    } else if (centers || p.shape === 'pyramid' || p.layout === 'staggered') {
+      // Centri scelti dal chiamante, piramidi e file sfalsate: un elenco, una riga per borchia
+      const { data, solid } = studScad(p, list);
+      out.push(...data, 'module relief() {', ...solid.map((l) => `  ${l}`), '}');
     } else {
-      out.push(`stud_profile = [${studProfile(p).map((q) => `[${q.map((v) => Math.round(v * 10000) / 10000).join(', ')}]`).join(', ')}, [${n(p.radius)}, ${n(-EMBED)}], [0, ${n(-EMBED)}]];`);
-      if (centers) {
-        // Centri scelti dal chiamante: un elenco, una riga per borchia
-        out.push('studs = [', list.map((c) => `  ${vec(c)}`).join(',\n'), '];', 'module relief() {', '  for (c = studs) translate([c[0], c[1], 0]) rotate_extrude($fn = 24) polygon(stud_profile);', '}');
-      } else {
-        // Griglia centrata e tutta dentro il rettangolo: due cicli, nessun dato
-        const g = studGrid(rect, p);
-        out.push(
-          'module relief() {',
-          `  for (i = [0 : ${g.cols - 1}], j = [0 : ${g.rows - 1}])`,
-          `    translate([${n(g.x0)} + i * ${n(g.pitch)}, ${n(g.y0)} + j * ${n(g.pitch)}, 0]) rotate_extrude($fn = 24) polygon(stud_profile);`,
-          '}',
-        );
-      }
+      // Griglia quadrata centrata e tutta dentro il rettangolo: due cicli, nessun dato
+      const g = studGrid(rect, p);
+      out.push(
+        `stud_profile = [${studProfile(p).map((q) => `[${q.map((v) => Math.round(v * 10000) / 10000).join(', ')}]`).join(', ')}, [${n(p.radius)}, ${n(-EMBED)}], [0, ${n(-EMBED)}]];`,
+        'module relief() {',
+        `  for (i = [0 : ${g.cols - 1}], j = [0 : ${g.rows - 1}])`,
+        `    translate([${n(g.x0)} + i * ${n(g.pitch)}, ${n(g.y0)} + j * ${n(g.pitch)}, 0]) rotate_extrude($fn = 24) polygon(stud_profile);`,
+        '}',
+      );
     }
     return out.join('\n');
   }

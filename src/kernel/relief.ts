@@ -7,6 +7,7 @@ import {
   isAdditive,
   normalizeRelief,
   plankLayout,
+  pyramidPolyhedron,
   reliefDepth,
   rustMaxDepth,
   sampleGrid,
@@ -36,6 +37,8 @@ export interface ReliefOptions {
   segments?: number;
   /** Rettangolo a cui ancorare il disegno (di solito `frameRect`, quello della faccia): così non si sposta quando il margine cambia la regione. Se manca si usa il riquadro della regione. */
   rect?: Rect;
+  /** Solo borchie: i centri già scelti dal chiamante (vedi `studCentersFor`); se mancano si scartano quelli che non stanno interi nella regione (`studsInRegion`). */
+  centers?: Vec2[];
 }
 
 /** Il motore consigliato per ogni texture (vedi docs/studio-pattern-rilievo.md). */
@@ -165,6 +168,13 @@ function revolved(wasm: ManifoldToplevel, profile: [number, number][], closeZ: n
   const solid = wasm.Manifold.revolve(section, segments);
   section.delete();
   return solid;
+}
+
+/** Piramide a base quadrata con il piede nel pezzo (vedi `pyramidPolyhedron`), con la base della punta su z = 0. */
+function pyramidStud(wasm: ManifoldToplevel, radius: number, height: number): Manifold {
+  const { points, faces } = pyramidPolyhedron(radius, height, EMBED);
+  const mesh = new wasm.Mesh({ numProp: 3, vertProperties: new Float32Array(points.flat()), triVerts: new Uint32Array(faces.flat()) });
+  return new wasm.Manifold(mesh);
 }
 
 /** Calotta concava (cavità di una sfera di raggio R, profondità d, bordo r) con il bordo a z = 0, profondità verso il basso. */
@@ -310,8 +320,8 @@ export function reliefAddition(wasm: ManifoldToplevel, region: CrossSection, par
   if (region.isEmpty()) return null;
   const rect = options.rect ?? regionRect(region);
   const top = p.height + 1;
-  // Solo le borchie che stanno intere nella regione: nessuna borchia tagliata a metà, e il codice OpenSCAD coincide
-  const centers = studsInRegion(region, rect, p);
+  // Di solito solo le borchie che stanno intere nella regione (nessuna borchia tagliata a metà); nel Pattern i centri li sceglie il chiamante
+  const centers = options.centers ?? studsInRegion(region, rect, p);
   if (centers.length === 0) return null;
 
   if (engine === 'heightmap') {
@@ -321,8 +331,8 @@ export function reliefAddition(wasm: ManifoldToplevel, region: CrossSection, par
     return clipToRegion(wasm, heightSolid(wasm, grid, -EMBED, 'below'), region, -EMBED, top);
   }
 
-  // CSG: una borchia per rivoluzione del profilo (con il piede che entra nel pezzo), copiata nei centri
-  const stud = revolved(wasm, studProfile(p), -EMBED, options.segments ?? DEFAULT_SEGMENTS);
+  // CSG: una borchia per rivoluzione del profilo (con il piede che entra nel pezzo), o la piramide, copiata nei centri
+  const stud = p.shape === 'pyramid' ? pyramidStud(wasm, p.radius, p.height) : revolved(wasm, studProfile(p), -EMBED, options.segments ?? DEFAULT_SEGMENTS);
   const copies = centers.map((c) => stud.translate([c[0], c[1], 0]));
   stud.delete();
   // Con le borchie che si toccano serve l'unione; altrimenti basta compose (nessuna booleana)

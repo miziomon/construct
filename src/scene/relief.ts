@@ -10,6 +10,9 @@ import type { Rect, Vec2 } from './voronoi';
 
 export type ReliefKind = 'brick' | 'wood' | 'rust' | 'studs' | 'hammered';
 
+/** Disegno di un rilievo nel Pattern: della muratura (Mattoni) o forma della borchia (Borchie). */
+export type ReliefDesign = BrickDesign | StudShape;
+
 /** Disegno della muratura: mattoni sfalsati, spina di pesce (90°) o cesto. */
 export type BrickDesign = 'running' | 'herringbone' | 'basket';
 
@@ -58,14 +61,26 @@ export interface RustParams {
   flakes: number;
 }
 
-/** Borchie: griglia di calotte o cilindri smussati che si aggiungono alla faccia. */
+/** Forma di una borchia: cupola, cilindro smussato o piramide a base quadrata (lato = diametro). */
+export type StudShape = 'dome' | 'chamfered' | 'pyramid';
+
+export const STUD_SHAPES: StudShape[] = ['dome', 'chamfered', 'pyramid'];
+
+/** Disposizione delle borchie: file allineate o file sfalsate di mezzo passo. */
+export type StudLayout = 'square' | 'staggered';
+
+export const STUD_LAYOUTS: StudLayout[] = ['square', 'staggered'];
+
+/** Borchie: griglia di cupole, cilindri smussati o piramidi che si aggiungono alla faccia. */
 export interface StudParams {
   kind: 'studs';
-  /** Passo della griglia (mm), raggio alla base (mm), altezza (mm). */
+  /** Passo della griglia (mm), raggio alla base (mm, per la piramide metà lato), altezza (mm). */
   pitch: number;
   radius: number;
   height: number;
-  shape: 'dome' | 'chamfered';
+  shape: StudShape;
+  /** Griglia (se manca vale 'square', come prima che esistesse la scelta). */
+  layout?: StudLayout;
   /** Smusso del cilindro (mm). */
   chamfer: number;
 }
@@ -98,7 +113,7 @@ export function reliefDefaults(kind: ReliefKind): ReliefParams {
     case 'rust':
       return { kind, seed: 1, baseDepth: 0.5, roughness: 0.35, craterDensity: 3, craterDepth: 0.5, flakes: 0.4 };
     case 'studs':
-      return { kind, pitch: 12, radius: 2.5, height: 1.5, shape: 'dome', chamfer: 0.5 };
+      return { kind, pitch: 12, radius: 2.5, height: 1.5, shape: 'dome', layout: 'square', chamfer: 0.5 };
     case 'hammered':
       return { kind, seed: 1, size: 8, depth: 0.5, jitter: 0.25, regularity: 60 };
   }
@@ -128,7 +143,7 @@ export function normalizeRelief<T extends ReliefParams>(p: T): T {
     case 'rust':
       return { ...p, seed: Math.round(num('seed', 0, 2 ** 31)), baseDepth: num('baseDepth', 0.1), roughness: num('roughness', 0), craterDensity: num('craterDensity', 0, 20), craterDepth: num('craterDepth', 0), flakes: num('flakes', 0, 1) } as T;
     case 'studs':
-      return { ...p, pitch: num('pitch', 2), radius: num('radius', 0.5), height: num('height', 0.2), chamfer: num('chamfer', 0), shape: p.shape === 'chamfered' ? 'chamfered' : 'dome' } as T;
+      return { ...p, pitch: num('pitch', 2), radius: num('radius', 0.5), height: num('height', 0.2), chamfer: num('chamfer', 0), shape: STUD_SHAPES.includes(p.shape) ? p.shape : 'dome', layout: STUD_LAYOUTS.includes(p.layout as StudLayout) ? p.layout : 'square' } as T;
     case 'hammered':
       return { ...p, seed: Math.round(num('seed', 0, 2 ** 31)), size: num('size', 2), depth: num('depth', 0.05), jitter: num('jitter', 0, 0.9), regularity: num('regularity', 0, 100) } as T;
   }
@@ -527,37 +542,68 @@ export function rustDepth(rect: Rect, params: RustParams): (x: number, y: number
 /** Borchie massime sulla faccia (circa, più una fila e una colonna di arrotondamento): oltre, il passo si allarga. */
 export const MAX_STUDS = 2000;
 
-/** Griglia delle borchie: colonne, file, centro della prima e passo effettivo. */
+/** Griglia delle borchie: colonne, file, centro della prima, passo effettivo e sfalsamento delle file dispari (mm). */
 export interface StudGrid {
   cols: number;
   rows: number;
   x0: number;
   y0: number;
   pitch: number;
+  stagger: number;
 }
 
 /**
- * La griglia quadrata delle borchie, **centrata** nel rettangolo e con tutte le borchie intere dentro: `cols = floor((w - 2r) /
- * passo) + 1` (0 se il lato è più corto del diametro), partenza a metà dello spazio che avanza. Il passo si allarga se le borchie
- * sarebbero più di MAX_STUDS.
+ * La griglia delle borchie, **centrata** nel rettangolo e con tutte le borchie intere dentro: `cols = floor((w - 2r) /
+ * passo) + 1` (0 se il lato è più corto del diametro), partenza a metà dello spazio che avanza. Con la disposizione 'staggered'
+ * le file dispari sono spostate di mezzo passo (la distanza tra le file resta il passo, quindi anche le piramidi, che sono
+ * quadrate, non si toccano mai se il passo è almeno il diametro) e il rettangolo deve ospitare mezzo passo in più.
+ * Il passo si allarga se le borchie sarebbero più di MAX_STUDS.
  */
 export function studGrid(rect: Rect, params: StudParams): StudGrid {
   const p = normalizeRelief(params);
   const w = rect.maxX - rect.minX;
   const h = rect.maxY - rect.minY;
   const pitch = Math.max(p.pitch, Math.sqrt((w * h) / MAX_STUDS));
+  const stagger = p.layout === 'staggered' ? pitch / 2 : 0;
   const count = (length: number) => (length < 2 * p.radius ? 0 : Math.floor((length - 2 * p.radius) / pitch) + 1);
-  const cols = count(w);
+  const cols = count(w - stagger);
   const rows = count(h);
-  return { cols, rows, x0: rect.minX + (w - (cols - 1) * pitch) / 2, y0: rect.minY + (h - (rows - 1) * pitch) / 2, pitch };
+  return { cols, rows, x0: rect.minX + (w - ((cols - 1) * pitch + stagger)) / 2, y0: rect.minY + (h - (rows - 1) * pitch) / 2, pitch, stagger };
 }
 
 /** Centri delle borchie (vedi `studGrid`), per file dal basso. */
 export function studCenters(rect: Rect, p: StudParams): Vec2[] {
   const g = studGrid(rect, p);
   const centers: Vec2[] = [];
-  for (let j = 0; j < g.rows; j++) for (let i = 0; i < g.cols; i++) centers.push([g.x0 + i * g.pitch, g.y0 + j * g.pitch]);
+  for (let j = 0; j < g.rows; j++) for (let i = 0; i < g.cols; i++) centers.push([g.x0 + i * g.pitch + (j % 2 === 1 ? g.stagger : 0), g.y0 + j * g.pitch]);
   return centers;
+}
+
+/**
+ * Centri da usare nel Pattern: la griglia centrata nel rettangolo della faccia ridotto del margine, con tutte le borchie intere
+ * dentro (`studGrid`). Con la griglia centrata nella faccia intera e poi filtrata dal margine, un pezzo piccolo non avrebbe
+ * nessuna borchia: così il margine è una cornice libera e il disegno resta simmetrico. È un calcolo puro (senza il contorno vero
+ * della faccia), così il kernel e il codice OpenSCAD partono dalla stessa lista; sul contorno vero (faccia non rettangolare)
+ * ritaglia poi la regione. Un margine che lascia un rettangolo vuoto non lascia borchie.
+ */
+export function studCentersFor(rect: Rect, params: StudParams, margin: number): Vec2[] {
+  const m = Math.max(0, Number.isFinite(margin) ? margin : 0);
+  const inner = { minX: rect.minX + m, minY: rect.minY + m, maxX: rect.maxX - m, maxY: rect.maxY - m };
+  return inner.maxX > inner.minX && inner.maxY > inner.minY ? studCenters(inner, normalizeRelief(params)) : [];
+}
+
+/**
+ * Piramide a base quadrata (lato 2r) con un piede prismatico che entra di `embed` mm nel pezzo: vertici e triangoli con le
+ * normali verso l'esterno (antiorari visti da fuori). Li usano il kernel e il codice OpenSCAD (che rovescia i triangoli).
+ */
+export function pyramidPolyhedron(r: number, height: number, embed: number): { points: number[][]; faces: number[][] } {
+  const points = [[-r, -r, -embed], [r, -r, -embed], [r, r, -embed], [-r, r, -embed], [-r, -r, 0], [r, -r, 0], [r, r, 0], [-r, r, 0], [0, 0, height]];
+  const faces = [
+    // Fondo e quattro lati del piede, poi le quattro falde del tetto
+    [0, 3, 2], [0, 2, 1], [0, 1, 5], [0, 5, 4], [1, 2, 6], [1, 6, 5], [2, 3, 7], [2, 7, 6], [3, 0, 4], [3, 4, 7],
+    [4, 5, 8], [5, 6, 8], [6, 7, 8], [7, 4, 8],
+  ];
+  return { points, faces };
 }
 
 /**
@@ -567,6 +613,8 @@ export function studCenters(rect: Rect, p: StudParams): Vec2[] {
 export function studProfile(params: StudParams, arcPoints = 6): Vec2[] {
   const p = normalizeRelief(params);
   const r = p.radius;
+  // La piramide non è di rivoluzione (vedi `pyramidPolyhedron`): per chi chiede comunque un profilo, il cono inscritto
+  if (p.shape === 'pyramid') return [[0, p.height], [r, 0]];
   if (p.shape === 'chamfered') {
     const c = Math.min(p.chamfer, p.height, r);
     return [[0, p.height], [r - c, p.height], [r, p.height - c], [r, 0]];
@@ -597,6 +645,12 @@ export function studHeight(rect: Rect, params: StudParams, centers: Vec2[] = stu
   return (x, y) => {
     let height = 0;
     near(x, y, (c) => {
+      // Piramide: la quota scende linearmente con la distanza "a quadrato" dal centro
+      if (p.shape === 'pyramid') {
+        const d = Math.max(Math.abs(x - c.x), Math.abs(y - c.y));
+        if (d < p.radius) height = Math.max(height, p.height * (1 - d / p.radius));
+        return;
+      }
       const r = Math.hypot(x - c.x, y - c.y);
       if (r >= p.radius) return;
       // Interpolazione lineare sul profilo (il raggio dei punti cresce)
