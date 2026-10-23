@@ -2,13 +2,16 @@ import { describe, expect, it } from 'vitest';
 import {
   HAMMERED_DESIGNS,
   MAX_DENTS,
+  MAX_GRID_NODES,
   SCALE_ASPECT,
   WOOD_DESIGNS,
   copperDepth,
   dentList,
+  dentProfile,
   facetDepth,
   facetList,
   grainDepth,
+  gridNodeCount,
   hammerCapped,
   knotList,
   normalizeRelief,
@@ -21,7 +24,8 @@ import {
   woodMaxDepth,
 } from './relief';
 import type { HammeredDesign, HammeredParams, WoodDesign, WoodParams } from './relief';
-import { defaultPatternParams, faceFromBounds, frameRect, normalizePattern, patternRelief, reliefToStore, reliefWarnings, woodGrainLimit } from './pattern';
+import { defaultPatternParams, faceFromBounds, frameRect, gridWarning, normalizePattern, patternRelief, reliefToStore, reliefWarnings, woodGrainLimit } from './pattern';
+import { hammeredScad } from '../codegen/reliefScad';
 import type { PatternParams, Vec3 } from './types';
 
 /** Faccia 80 × 60 mm centrata nell'origine e una meno comoda. */
@@ -333,5 +337,52 @@ describe('Rame battuto e Legno nel Pattern: normalizzazione e avvisi', () => {
     const p = params({ kind: 'wood' });
     const rect = frameRect(p, p.faces[0]);
     expect([rect.maxX - rect.minX, rect.maxY - rect.minY]).toEqual([82, 62]);
+  });
+});
+
+describe('Legno e Rame: residui di A3', () => {
+  it('venatura predefinita 0,4 mm, sempre entro il suo massimo e deterministica', () => {
+    expect(wood.grainDepth).toBe(0.4);
+    const depth = grainDepth(RECT, wood);
+    let max = 0;
+    for (let x = -39.5; x < 40; x += 1.3) for (let y = -29.5; y < 30; y += 0.9) max = Math.max(max, depth(x, y));
+    expect(max).toBeLessThanOrEqual(0.4 + 1e-9);
+    expect(max).toBeGreaterThan(0.2);
+  });
+
+  it('avviso della mappa di altezze grande: oltre 200.000 nodi il codice OpenSCAD pesa centinaia di KB', () => {
+    const bounds = { min: [-150, -150, -2.5] as Vec3, max: [150, 150, 2.5] as Vec3 };
+    const big = { ...defaultPatternParams(bounds, 1), kind: 'wood' as const };
+    const warnings = reliefWarnings(big);
+    expect(warnings).toHaveLength(1);
+    // 302 × 302 mm a passo 0,5 mm sono 365.000 nodi: il passo si allarga a 250.000 e il testo lo dice
+    expect(warnings[0]).toContain('250.000');
+    expect(warnings[0]).toMatch(/pesa circa \d+ KB/);
+    expect(gridNodeCount({ minX: 0, minY: 0, maxX: 302, maxY: 302 }, 0.5)).toBeLessThanOrEqual(MAX_GRID_NODES * 1.02);
+    // Faccia normale: niente avviso; senza venatura nessuna mappa; la tavola unica ha la mappa
+    expect(reliefWarnings({ ...big, bounds: { min: [-40, -30, -2.5], max: [40, 30, 2.5] } })).toEqual([]);
+    expect(reliefWarnings({ ...big, relief: { ...wood, grainDepth: 0 } })).toEqual([]);
+    expect(reliefWarnings({ ...big, design: 'single' })).toHaveLength(1);
+    expect(gridWarning(200_000)).toEqual([]);
+    expect(gridWarning(200_001)).toHaveLength(1);
+  });
+
+  it('arco della calotta del rame: il codice OpenSCAD scrive gli stessi punti del kernel e chiude su (r, 0), anche con d > r', () => {
+    const code = hammeredScad(RECT, hammered).solid.join(' ');
+    expect(code).toContain('[for (k = [0 : 3]) let (r = d[2], h = d[3], R = (r * r + h * h) / (2 * h), t = asin(min(1, r / R)) * k / 4) [R * sin(t), R - h - R * cos(t)]]');
+    expect(code).toContain('[[d[2], 0], [d[2], 0.5], [0, 0.5]]');
+    // La stessa formula valutata in JavaScript (asin in radianti, in OpenSCAD in gradi: stessa cosa) coincide con `dentProfile`
+    for (const [r, d] of [[4, 0.5], [2, 3], [1.5, 1.5], [3, 6]]) {
+      const R = (r * r + d * d) / (2 * d);
+      const scad = [0, 1, 2, 3].map((k) => {
+        const t = (Math.asin(Math.min(1, r / R)) * k) / 4;
+        return [R * Math.sin(t), R - d - R * Math.cos(t)];
+      });
+      const kernel = dentProfile(r, d, R);
+      expect(kernel).toHaveLength(5);
+      scad.forEach((point, k) => point.forEach((v, i) => expect(v).toBeCloseTo(kernel[k][i], 9)));
+      // Il bordo è sempre (r, 0), anche quando l'arco (limitato a 90°) non ci arriva
+      expect(kernel[4]).toEqual([r, 0]);
+    }
   });
 });

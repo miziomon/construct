@@ -4,7 +4,8 @@ import type { NodeMesh } from '../../kernel/evaluate';
 import { useResultStore } from '../../kernel/useKernel';
 import { faceMap } from '../../scene/edgeTool';
 import type { Transform } from '../../scene/math';
-import { defaultPatternParams, hasPlanarFace, isReliefKind, normalizePattern, thicknessAlong } from '../../scene/pattern';
+import { defaultPatternParams, frameRect, hasPlanarFace, isReliefKind, normalizePattern, patternRelief, thicknessAlong } from '../../scene/pattern';
+import { MAX_DENTS, gridNodeCount } from '../../scene/relief';
 import { applyPattern, worldToLocal } from '../../scene/patternTool';
 import { localBounds } from '../../scene/shell';
 import { isLocked, labelled, parentOf, useSceneStore, worldTransform } from '../../scene/store';
@@ -114,9 +115,32 @@ export async function refreshedPattern(scene: Scene, groupId: string): Promise<P
   return { bounds: localBounds(meshes, world), region: regionFor(meshes, pattern.faces, world) };
 }
 
-/** Stima del lavoro: celle del Voronoi (o 60 per le griglie, in media) per il numero di facce. */
+/** Passo (mm) della mappa di altezze nell'anteprima (lo stesso di `PREVIEW_STEP` del kernel). */
+const PREVIEW_MAP_STEP = 0.8;
+
+/** Quanti nodi di una mappa di altezze pesano come una cella dell'avviso `SLOW_PREVIEW_CELLS` (circa 60.000 nodi = 300 celle). */
+export const NODES_PER_CELL = 200;
+
+/** Nodi della mappa di altezze dell'anteprima (Legno con venatura), sommati sulle facce; 0 per i tipi senza mappa. */
+export function estimatedNodes(p: PatternParams): number {
+  if (p.kind !== 'wood') return 0;
+  const { relief } = patternRelief(p);
+  if (relief.kind !== 'wood' || !(relief.grainDepth > 0)) return 0;
+  return p.faces.reduce((sum, face) => sum + gridNodeCount(frameRect(p, face), PREVIEW_MAP_STEP), 0);
+}
+
+/**
+ * Stima del lavoro, in celle: celle del Voronoi (o 60 per le griglie, in media) per il numero di facce; per il rame battuto le
+ * calotte (al più 500 per faccia); per il legno i nodi della mappa di altezze (area / passo²) in celle equivalenti. Le Borchie e i
+ * Mattoni sono leggeri e non fanno comparire l'avviso prima del calcolo.
+ */
 export function estimatedCells(p: PatternParams): number {
-  // Il rilievo non ha celle: il suo calcolo è leggero e non deve far comparire l'avviso delle celle
+  if (p.kind === 'hammered') {
+    const { relief } = patternRelief(p);
+    return relief.kind === 'hammered' ? p.faces.reduce((sum, face) => { const r = frameRect(p, face); return sum + Math.min(MAX_DENTS, Math.round(((r.maxX - r.minX) * (r.maxY - r.minY)) / (0.785 * relief.size * relief.size))); }, 0) : 0;
+  }
+  if (p.kind === 'wood') return Math.ceil(estimatedNodes(p) / NODES_PER_CELL);
+  // Gli altri rilievi sono leggeri: niente avviso delle celle
   if (isReliefKind(p.kind)) return 0;
   return (p.kind === 'voronoi' ? p.cells : 60) * p.faces.length;
 }

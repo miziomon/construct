@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import Module from 'manifold-3d';
 import type { ManifoldToplevel } from 'manifold-3d';
 import { Evaluator } from './evaluate';
@@ -10,6 +10,9 @@ import { defaultPatternParams, faceFromBounds, normalizePattern, studCentersOf, 
 import { reliefDefaults, studCenters } from '../scene/relief';
 import type { StudParams, StudShape } from '../scene/relief';
 import type { GroupNode, PatternParams, PrimitiveNode, Scene, Vec3 } from '../scene/types';
+
+// Calcoli con molte celle: sotto carico (altri test in parallelo) i 5 s predefiniti non bastano
+vi.setConfig({ testTimeout: 60_000 });
 
 let wasm: ManifoldToplevel;
 

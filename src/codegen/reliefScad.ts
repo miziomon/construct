@@ -206,7 +206,8 @@ export function hammeredScad(rect: Rect, params: HammeredParams, id = ''): { dat
   }
   const scales = p.design === 'scales';
   const caps = scales ? scaleList(rect, p).map((c) => [c.x, c.y, c.rx, c.d]) : dentList(rect, p).map((d) => [d.x, d.y, d.r, d.d]);
-  const arc = `polygon(concat([for (k = [0 : 4]) let (r = d[2], h = d[3], R = (r * r + h * h) / (2 * h), t = asin(min(1, r / R)) * k / 4) [R * sin(t), R - h - R * cos(t)]], [[d[2], ${n4(ABOVE)}], [0, ${n4(ABOVE)}]]))`;
+  // Quattro punti dell'arco (k = 0..3) e il bordo fissato a [r, 0] come nel kernel (`dentProfile`), anche se la calotta è più profonda del raggio
+  const arc = `polygon(concat([for (k = [0 : 3]) let (r = d[2], h = d[3], R = (r * r + h * h) / (2 * h), t = asin(min(1, r / R)) * k / 4) [R * sin(t), R - h - R * cos(t)]], [[d[2], 0], [d[2], ${n4(ABOVE)}], [0, ${n4(ABOVE)}]]))`;
   return {
     data: lines(`dents${id}`, caps.map((c) => `[${c.map(n4).join(', ')}]`)),
     solid: [`for (d = dents${id}) translate([d[0], d[1], 0]) ${scales ? `scale([1, ${n4(SCALE_ASPECT)}, 1]) ` : ''}rotate_extrude($fn = 24) ${arc};`],

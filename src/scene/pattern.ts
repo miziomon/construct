@@ -1,7 +1,7 @@
 import { apply, eulerToMatrix, matrixToEuler, round, transpose } from './math';
 import type { Mat3, Transform } from './math';
 import { rotationToDown } from './layFlat';
-import { BRICK_DESIGNS, HAMMERED_DESIGNS, STUD_SHAPES, WOOD_DESIGNS, brickModule, fitBrick, hammerCapped, normalizeRelief, reliefDefaults, scaleSize, studCentersFor, studInnerRect } from './relief';
+import { BRICK_DESIGNS, HAMMERED_DESIGNS, STUD_SHAPES, WOOD_DESIGNS, brickModule, fitBrick, gridNodeCount, hammerCapped, MAX_GRID_NODES, normalizeRelief, reliefDefaults, scaleSize, studCentersFor, studInnerRect } from './relief';
 import type { BrickParams, HammeredParams, ReliefDesign, ReliefParams, StudParams, WoodParams } from './relief';
 import { PATTERN_ALGORITHM, randomVoronoi } from './voronoi';
 import type { Rect, Vec2 } from './voronoi';
@@ -94,7 +94,7 @@ export function reliefDepthLimit(p: PatternParams): number {
 /** Rilievo Mattoni per kernel, codice e pannello: parametri normalizzati e profondità limitata allo spessore (`reliefDepthLimit`). */
 export function brickRelief(p: PatternParams): { design: ReliefDesign; relief: BrickParams & { kind: 'brick' } } {
   const { design, relief } = reliefBase({ ...p, kind: 'brick' });
-  return { design, relief: { ...(relief as BrickParams), kind: 'brick', depth: Math.max(0.05, Math.min((relief as BrickParams).depth, reliefDepthLimit(p))) } };
+  return { design, relief: { ...(relief as BrickParams), kind: 'brick', depth: Math.min(Math.max(0.05, (relief as BrickParams).depth), reliefDepthLimit(p)) } };
 }
 
 /** Rilievo Borchie per kernel, codice e pannello: parametri normalizzati (le borchie non hanno profondità da limitare). */
@@ -119,7 +119,7 @@ export const woodGrainLimit = (p: PatternParams, design: ReliefDesign): number =
 export function hammeredRelief(p: PatternParams): { design: ReliefDesign; relief: HammeredParams & { kind: 'hammered' } } {
   const { design, relief } = reliefBase({ ...p, kind: 'hammered' });
   const r = relief as HammeredParams;
-  return { design, relief: { ...r, kind: 'hammered', depth: Math.max(0.05, Math.min(r.depth, hammeredDepthLimit(p, r.jitter))) } };
+  return { design, relief: { ...r, kind: 'hammered', depth: Math.min(Math.max(0.05, r.depth), hammeredDepthLimit(p, r.jitter)) } };
 }
 
 /** Rilievo Legno: parametri normalizzati, fughe limitate allo spessore (`reliefDepthLimit`) e venatura limitata come `woodGrainLimit`. */
@@ -127,7 +127,7 @@ export function woodRelief(p: PatternParams): { design: ReliefDesign; relief: Wo
   const { design, relief } = reliefBase({ ...p, kind: 'wood' });
   const r = relief as WoodParams;
   const limit = reliefDepthLimit(p);
-  return { design, relief: { ...r, kind: 'wood', gapDepth: Math.max(0.05, Math.min(r.gapDepth, limit)), grainDepth: Math.min(r.grainDepth, woodGrainLimit(p, design)) } };
+  return { design, relief: { ...r, kind: 'wood', gapDepth: Math.min(Math.max(0.05, r.gapDepth), limit), grainDepth: Math.min(r.grainDepth, woodGrainLimit(p, design)) } };
 }
 
 /**
@@ -158,6 +158,24 @@ export const STUD_EMBED = 0.2;
 
 /** Piede della borchia su una faccia: `STUD_EMBED`, ma non più di metà dello spessore (sotto 0,2 mm uscirebbe dalla faccia opposta). */
 export const studEmbedOf = (face: PatternFace) => Math.min(STUD_EMBED, face.thickness / 2);
+
+/** Oltre questi nodi la mappa di altezze (passo 0,5 mm) rende pesante il codice OpenSCAD: il pannello avvisa (il tetto è `MAX_GRID_NODES`). */
+export const GRID_WARN_NODES = 200_000;
+
+/** Circa quanti byte occupa un nodo della mappa nel codice OpenSCAD (quota in centesimi di mm, tre cifre e la virgola): 780 KB per 250.000 nodi. */
+const SCAD_BYTES_PER_NODE = 3.1;
+
+/** Numero con il punto delle migliaia (250.000), per i testi. */
+const thousands = (v: number) => String(Math.round(v)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+
+/**
+ * Avviso sulla mappa di altezze di una faccia grande (`nodes` al passo del risultato): il codice OpenSCAD arriva a centinaia di KB,
+ * e oltre `MAX_GRID_NODES` il passo si allarga. Vuoto sotto `GRID_WARN_NODES`.
+ */
+export function gridWarning(nodes: number): string[] {
+  if (nodes <= GRID_WARN_NODES) return [];
+  return [`Mappa di altezze di circa ${thousands(nodes)} nodi: il codice OpenSCAD pesa circa ${thousands((nodes * SCAD_BYTES_PER_NODE) / 1024)} KB (oltre ${thousands(MAX_GRID_NODES)} nodi il passo si allarga).`];
+}
 
 /** Misura in mm per i testi (una cifra decimale, virgola). */
 const mm = (v: number) => String(round(v, 1)).replace('.', ',');
@@ -202,6 +220,8 @@ export function reliefWarnings(p: PatternParams): string[] {
       const length = Math.max(2, Math.round((relief.plankL + relief.gap) / u)) * u - relief.gap;
       if (Math.abs(length - relief.plankL) > 0.05) out.push(`Il listello misura ${mm(length)} × ${mm(relief.plankW)} mm: la lunghezza si arrotonda a un multiplo della larghezza (fuga compresa).`);
     }
+    // La venatura è una mappa di altezze a 0,5 mm: su una faccia grande il codice OpenSCAD diventa enorme
+    if (relief.grainDepth > 0) out.push(...gridWarning(Math.max(...q.faces.map((face) => gridNodeCount(frameRect(q, face), 0.5)))));
     return out;
   }
   const { design, relief } = brickRelief(q);

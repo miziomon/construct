@@ -3,6 +3,7 @@ import {
   brickLayout,
   craterList,
   dentList,
+  dentProfile,
   facetList,
   grainDepth,
   isAdditive,
@@ -186,16 +187,7 @@ function pyramidStud(wasm: ManifoldToplevel, radius: number, height: number, emb
 /** Calotta concava (cavità di una sfera di raggio R, profondità d, bordo r) con il bordo a z = 0, profondità verso il basso. */
 function dentCutter(wasm: ManifoldToplevel, r: number, d: number, R: number, segments: number): Manifold {
   // Arco dal fondo (0, -d) al bordo (r, 0); gli anelli sono pochi perché la calotta è molto piatta
-  const rings = 4;
-  const maxAngle = Math.asin(Math.min(1, r / R));
-  const profile: [number, number][] = [];
-  for (let k = 0; k <= rings; k++) {
-    const a = (maxAngle * k) / rings;
-    // Centro della sfera a z = R - d: il fondo (a = 0) sta a -d, il bordo a 0
-    profile.push([R * Math.sin(a), R - d - R * Math.cos(a)]);
-  }
-  // L'ultimo punto cade a z = 0 (a meno degli arrotondamenti): lo si fissa
-  profile[profile.length - 1] = [r, 0];
+  const profile = dentProfile(r, d, R, 4);
   return revolved(wasm, profile, ABOVE, segments);
 }
 
@@ -256,6 +248,7 @@ export function reliefCutter(wasm: ManifoldToplevel, region: CrossSection, param
     const scales = p.design === 'scales';
     for (const d of scales ? scaleList(rect, p).map((c) => ({ x: c.x, y: c.y, r: c.rx, d: c.d, R: c.R })) : dentList(rect, p)) {
       const cap = dentCutter(wasm, d.r, d.d, d.R, segments);
+      // Per le scaglie la copia stirata in Y; per le calotte una copia identica, così `stretched` si libera allo stesso modo nei due casi
       const stretched = scales ? cap.scale([1, SCALE_ASPECT, 1]) : cap.translate([0, 0, 0]);
       cap.delete();
       caps.push(stretched.translate([d.x, d.y, 0]));

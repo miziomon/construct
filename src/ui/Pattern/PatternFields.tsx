@@ -5,7 +5,7 @@ import type { BrickDesign, ReliefDesign, ReliefParams, StudLayout, StudShape } f
 import type { PatternParams } from '../../scene/types';
 import { NumberField } from '../NumberField/NumberField';
 import { SliderField } from '../SliderField/SliderField';
-import { SLOW_PREVIEW_CELLS, SLOW_PREVIEW_MS, estimatedCells } from './patternToolStore';
+import { SLOW_PREVIEW_CELLS, SLOW_PREVIEW_MS, estimatedCells, estimatedNodes } from './patternToolStore';
 // Stesso aspetto dei campi della Ripetizione
 import '../Array/ArrayFields.scss';
 
@@ -41,6 +41,18 @@ const DESIGN_TIPS: Record<'brick' | 'studs' | 'hammered' | 'wood', string> = {
   studs: 'Forma della borchia: cupola, cilindro con smusso o piramide a base quadrata (lato = diametro).',
   hammered: 'Martellato: una calotta per cella di Voronoi. Sfaccettato: una faccetta piana inclinata per cella. Scaglie: file sfalsate di calotte ovali che si sovrappongono.',
   wood: 'Doghe: file di doghe affiancate con venatura. Parquet: spina di pesce di listelli (la lunghezza si arrotonda a un multiplo della larghezza, fuga compresa). Tavola unica: venatura lunga con 2-4 nodi, senza fughe.',
+};
+/** Cosa fare quando il calcolo è lento, per tipo. */
+const SLOW_TIPS: Record<PatternParams['kind'], string> = {
+  voronoi: 'Riduci celle o facce, oppure aumenta il passo.',
+  hexagon: 'Riduci celle o facce, oppure aumenta il passo.',
+  circle: 'Riduci celle o facce, oppure aumenta il passo.',
+  diamond: 'Riduci celle o facce, oppure aumenta il passo.',
+  triangle: 'Riduci celle o facce, oppure aumenta il passo.',
+  brick: 'Aumenta le misure del mattone o riduci le facce.',
+  studs: 'Aumenta il passo o il raggio delle borchie, oppure riduci le facce.',
+  hammered: 'Aumenta il diametro o riduci le facce.',
+  wood: 'Aumenta la larghezza della doga o metti a 0 la venatura, oppure riduci le facce.',
 };
 /** Sotto questa parete (circa due passate di un ugello da 0,4 mm) la stampa è inaffidabile. */
 const MIN_PRINTABLE_WALL = 0.8;
@@ -220,7 +232,7 @@ export function PatternFields({ params: p, onChange, disabled, history = true, o
 
       {slow && (
         <p className="array-fields__total array-fields__warning" role="alert">
-          {ms > SLOW_PREVIEW_MS ? `Calcolo lento (${Math.round(ms)} ms).` : `Molte celle (circa ${estimatedCells(p)}): il calcolo può essere lento.`} {relief ? (p.kind === 'studs' ? 'Aumenta il passo o il raggio delle borchie, oppure riduci le facce.' : 'Aumenta le misure del mattone o riduci le facce.') : 'Riduci celle o facce, oppure aumenta il passo.'}
+          {ms > SLOW_PREVIEW_MS ? `Calcolo lento (${Math.round(ms)} ms).` : p.kind === 'wood' ? `Mappa di altezze grande (circa ${estimatedNodes(p)} nodi): il calcolo può essere lento.` : `Molte celle (circa ${estimatedCells(p)}): il calcolo può essere lento.`} {SLOW_TIPS[p.kind]}
         </p>
       )}
       {onSimplified && !relief && (

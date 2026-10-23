@@ -194,7 +194,7 @@ test('Pattern Legno: fughe e venatura tolgono volume, il codice ha l\'elenco e l
   const id = scene.rootIds[0];
   expect(scene.nodes[id]).toMatchObject({ type: 'group', op: 'pattern', name: 'Pattern Legno: Cubo' });
   expect(scene.nodes[id].pattern).toMatchObject({ kind: 'wood', design: 'planks', reliefAlgorithm: 1 });
-  expect(scene.nodes[id].pattern.relief).toMatchObject({ kind: 'wood', plankW: 12, plankL: 60, gap: 0.8, gapDepth: 0.8, grainDepth: 0.25 });
+  expect(scene.nodes[id].pattern.relief).toMatchObject({ kind: 'wood', plankW: 12, plankL: 60, gap: 0.8, gapDepth: 0.8, grainDepth: 0.4 });
   await expect(page.locator('.status-bar')).toContainText('Mesh valida');
   const planks = await volume(page);
   expect(planks).toBeLessThan(8000);

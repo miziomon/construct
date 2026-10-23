@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import Module from 'manifold-3d';
 import type { ManifoldToplevel } from 'manifold-3d';
 import { Evaluator } from './evaluate';
@@ -9,6 +9,9 @@ import { defaultPatternParams, faceFromBounds, frameRect, normalizePattern, patt
 import { HAMMERED_DESIGNS, WOOD_DESIGNS, dentList, facetList, grainDepth, reliefDefaults, reliefDepth, sampleGrid, scaleList, woodBoxes } from '../scene/relief';
 import type { HammeredDesign, HammeredParams, WoodDesign, WoodParams } from '../scene/relief';
 import type { GroupNode, PatternParams, PrimitiveNode, Scene, Vec3 } from '../scene/types';
+
+// Calcoli con molte celle: sotto carico (altri test in parallelo) i 5 s predefiniti non bastano
+vi.setConfig({ testTimeout: 60_000 });
 
 let wasm: ManifoldToplevel;
 
@@ -96,7 +99,7 @@ describe('Pattern Rame battuto nel kernel', () => {
       expect(two.status).toBe('NoError');
       expect(FULL - two.volume).toBeGreaterThan(1.8 * (FULL - one.volume));
     }
-  });
+  }, 60_000);
 
   it('depth e sides del Pattern non contano; una profondità enorme non attraversa il pezzo', () => {
     expect(run(scene({ kind: 'hammered', depth: 2, sides: 'both' })).volume).toBeCloseTo(run(scene({ kind: 'hammered' })).volume, 6);
@@ -186,7 +189,7 @@ describe('Pattern Legno nel kernel', () => {
       expect(Math.abs(preview.volume - one.volume)).toBeLessThan(0.1 * (FULL - one.volume));
     }
     expect(run(scene({ kind: 'wood', margin: 100 })).volume).toBeCloseTo(FULL, 3);
-  });
+  }, 60_000);
 
   it('misure estreme: il calcolo finisce e il solido è valido', () => {
     for (const design of WOOD_DESIGNS) {

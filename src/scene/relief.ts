@@ -123,7 +123,7 @@ export function reliefDefaults(kind: ReliefKind): ReliefParams {
     case 'brick':
       return { kind, design: 'running', brickW: 24, brickH: 8, mortar: 1.2, depth: 0.8 };
     case 'wood':
-      return { kind, design: 'planks', seed: 1, plankW: 12, plankL: 60, gap: 0.8, gapDepth: 0.8, grainDepth: 0.25, ringSpacing: 3 };
+      return { kind, design: 'planks', seed: 1, plankW: 12, plankL: 60, gap: 0.8, gapDepth: 0.8, grainDepth: 0.4, ringSpacing: 3 };
     case 'rust':
       return { kind, seed: 1, baseDepth: 0.5, roughness: 0.35, craterDensity: 3, craterDepth: 0.5, flakes: 0.4 };
     case 'studs':
@@ -476,8 +476,8 @@ function plankGrain(p: WoodParams, box: Box, id: number, x: number, y: number, h
   const phase = u / p.ringSpacing + 3 * warp + valueNoise(id, 0, p.seed);
   // Anelli: creste strette (coseno alla terza) dove la fase è intera
   const ring = Math.pow(0.5 + 0.5 * Math.cos(2 * Math.PI * phase), 3);
-  // Fibra fine: rumore lungo 25 mm e largo circa 0,4 mm
-  const fiber = valueNoise(v / 25, u * 2.5, p.seed + id);
+  // Fibra: rumore lungo 25 mm e largo 1,25 mm (u * 0.8): più largo di due passi della mappa (0,5 mm), così si campiona senza aliasing
+  const fiber = valueNoise(v / 25, u * 0.8, p.seed + id);
   return p.grainDepth * (0.7 * ring + 0.3 * fiber);
 }
 
@@ -522,6 +522,33 @@ export function knotList(rect: Rect, params: WoodParams): Knot[] {
     knots.push({ x, y, r, depth: p.grainDepth * (1.5 + 0.5 * random()) });
   }
   return knots;
+}
+
+/** Nodi di una mappa di altezze su un rettangolo con il passo richiesto (vedi `sampleGrid`: passo minimo e tetto `MAX_GRID_NODES`). */
+export function gridNodeCount(rect: Rect, requestedStep: number): number {
+  const width = rect.maxX - rect.minX;
+  const height = rect.maxY - rect.minY;
+  if (!(width > 0 && height > 0)) return 0;
+  const step = Math.max(Number.isFinite(requestedStep) ? requestedStep : 0.5, 0.05, Math.sqrt((width * height) / MAX_GRID_NODES));
+  return Math.max(2, Math.ceil(width / step) + 1) * Math.max(2, Math.ceil(height / step) + 1);
+}
+
+/**
+ * Profilo (raggio, quota) di una calotta concava di raggio `r`, profondità `d` e raggio di curvatura `R`, dal fondo (0, -d) al
+ * bordo (r, 0), con `rings` segmenti d'arco. L'ultimo punto è fissato a (r, 0) anche quando la calotta è più profonda del suo
+ * raggio (`d > r`: l'arco, limitato a 90 gradi, non ci arriverebbe). Lo usa il kernel; il codice OpenSCAD scrive gli stessi
+ * `rings` punti e chiude con (r, 0).
+ */
+export function dentProfile(r: number, d: number, R: number, rings = 4): Vec2[] {
+  const maxAngle = Math.asin(Math.min(1, r / R));
+  const profile: Vec2[] = [];
+  for (let k = 0; k < rings; k++) {
+    const a = (maxAngle * k) / rings;
+    // Centro della sfera a z = R - d: il fondo (a = 0) sta a -d
+    profile.push([R * Math.sin(a), R - d - R * Math.cos(a)]);
+  }
+  profile.push([r, 0]);
+  return profile;
 }
 
 /** Quanto in basso arriva al massimo il legno (mm): la fuga o, nella tavola unica, il picco di un nodo (2 volte la venatura). */
