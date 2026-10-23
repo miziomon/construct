@@ -8,7 +8,7 @@ editor interattivo, la rigenerazione deterministica e il codice OpenSCAD esporta
 **Esito: fattibilità alta per le facce piane (motore F, riuso quasi totale del codice dei rilievi), media per la mesh intera (motore M, con limiti
 chiari sugli spigoli e sull'ampiezza), alta per l'SVG vettoriale quando basta una quota sola.** Il prototipo (solo studio, **non collegato all'app**)
 calcola entrambi i motori nel kernel, scrive il codice OpenSCAD e il volume del solido esportato coincide con quello del kernel (verificato con
-OpenSCAD, vedi più sotto). Raccomandazione in fondo: **soluzione ibrida**, procedurale/CSG per i casi geometrici (mattoni, borchie, fughe), immagine per
+OpenSCAD su 16 casi, vedi più sotto; **non** verificati il margine reale e le facce inclinate). Raccomandazione in fondo: **soluzione ibrida**, procedurale/CSG per i casi geometrici (mattoni, borchie, fughe), immagine per
 il resto, e il motore M solo come funzione a parte con avvertenze.
 
 ## Cosa c'è nel prototipo
@@ -44,7 +44,7 @@ planare XY, XZ, YZ; scala U/V, scostamento U/V, rotazione. **Ampiezza** da 0 a 1
 fuori, nero verso dentro, "preserva il volume"); un avviso compare quando la profondità supera il 10 % della dimensione minima del modello. Suddivisione
 **adattiva** fino a una lunghezza target del lato, con rispetto degli spigoli (angolo diedro oltre 30 gradi), decimazione QEM, tetto di sicurezza a 10 milioni
 di triangoli. Maschere per angolo (togliere la texture sulle facce quasi orizzontali) e pennello. 101 texture incluse, **immagine personalizzata** come mappa di
-spostamento con sfocatura facoltativa; fino a quattro livelli per modello. Ingresso STL, OBJ, 3MF, STEP; uscita STL binario. Il README non descrive la
+spostamento con sfocatura facoltativa; fino a quattro livelli per modello. Ingresso STL, OBJ, 3MF, STEP; uscita principale STL binario (le novità recenti elencano anche l'export 3MF, che la sezione Export non descrive). Il README non descrive la
 matematica delle normali.
 
 **OpenSCAD `surface(file = "x.png")`**: legge nativamente un PNG (oppure un file di numeri) e produce un solido chiuso. Vedi la rivalutazione qui sotto.
@@ -65,8 +65,9 @@ noti, e poi con la griglia di una faccia di 80 × 60 mm.
 - **Triangolazione a ventaglio** (un nodo al centro di ogni cella): 4 triangoli per cella contro 2 della `zmap`. A 0,5 mm su 80 × 60: 77.300 triangoli in OpenSCAD
   contro 39.190.
 - **Risultato.** Codice OpenSCAD di **0,4 KB** (contro 60 a 73 KB della `zmap` a 0,5 mm) più un PNG di 0,5 a 0,8 KB per la zigrinatura (163 × 123 pixel,
-  molto comprimibile; una pelle è più pesante). Volume: scarto da −1,7 a +6,4 mm³ (0,007 a 0,03 %) rispetto al kernel nella stessa pelle (quantizzazione a 8 bit
-  e triangolazione), contro 0,00 mm³ della `zmap`. Tempo di rendering 0,8 a 0,9 s, simile alla `zmap` (0,8 a 1,2 s).
+  molto comprimibile; una pelle è più pesante). Volume: scarto da −1,7 a +6,4 mm³ (0,007 a 0,03 %) rispetto a una **"pelle" del kernel** sulla stessa griglia (quantizzazione a 8 bit
+  e triangolazione), contro 0,00 mm³ della `zmap`. **Contro il risultato reale del kernel** in modo rilievo e incavo `surface()` differisce di **+27,7 mm³ (rilievo) e −90,0 mm³ (incavo)**, perché non riproduce le
+  convenzioni `FLOOR` del kernel (0,02 mm su tutta la faccia: 4800 × 0,02 ≈ 96 mm³), fisicamente trascurabili; in modo "entrambi" lo scarto è −1,7 mm³. Tempo di rendering 0,8 a 0,9 s, simile alla `zmap` (0,8 a 1,2 s).
 - **Pro:** file `.scad` minuscolo e leggibile, si può aprire il PNG e cambiare la mappa a mano, il dato più compatto (1 byte per nodo). **Contro:** due file da
   tenere insieme (se il PNG non sta accanto, il rendering fallisce), orientamento invertito, fondo a min − 1, niente ritaglio né ripetizione, la quantizzazione a
   8 bit limita l'ampiezza utile (con 0,6 mm sono 0,0024 mm per livello: ok), un formato "grafico" che nasconde l'ampiezza dentro una `scale`.
@@ -76,7 +77,7 @@ noti, e poi con la griglia di una faccia di 80 × 60 mm.
 ## Come si ricava la quota dall'immagine
 
 Convenzioni fissate in `src/scene/textureMap.ts` (e provate dai test): immagine `w × h` a 8 bit, riga 0 in alto, il centro del pixel `(i, j)` sta in
-`((i + 0,5) / w, (j + 0,5) / h)` della piastrella, l'asse Y della faccia va verso l'alto. Una piastrella è larga `tile` mm e alta `tile × h / w` mm.
+`s = (i + 0,5) / w` e `t = 1 − (j + 0,5) / h` della piastrella (`t` verso l'alto, come l'asse Y della faccia, perché la riga 0 è in alto). Una piastrella è larga `tile` mm e alta `tile × h / w` mm.
 Il campionatore è **bilineare**, con ripetizione (indici modulo `w` e `h`, quindi sul bordo si mescolano l'ultimo e il primo pixel) oppure, senza ripetizione, con
 quota 0 fuori dalla piastrella. Rotazione antioraria attorno al punto di scostamento, inversione, sfocatura a scatola separabile (raggio in pixel).
 
@@ -276,7 +277,7 @@ della griglia. Le fotografie qui sotto mostrano il bordo: netto e a spigoli con 
 ![SVG raster](studio-texture/svg-raster-256.png)
 
 Scelta: **offrire entrambe** quando l'immagine è un SVG, con la vettoriale come predefinita se i tracciati sono pieni e un solo livello basta (logo, sigla, marchio) e la raster quando serve
-il grado di grigio (l'SVG con sfumature viene ignorato dalla vettoriale: `parseSvg` legge i tracciati riempiti e scarta quelli con `fill: none`). Limiti: il numero di punti
+il grado di grigio (la vettoriale non vede le sfumature: `parseSvg` scarta solo i tracciati con `fill: none`, quindi un tracciato riempito con una sfumatura diventa un pieno a una quota sola). Limiti: il numero di punti
 (`MAX_POINTS` di `parseSvg`), e il disegno ripetuto a passo fisso (nessuna rotazione né scostamento nel prototipo vettoriale, che sarebbero banali da aggiungere con `rotate` e `translate`).
 
 ## Asset e persistenza
@@ -351,13 +352,16 @@ shader; (4) per il motore M la proiezione triplanare in uno shader di vertici ri
 
 | Motore | Codice | Dimensione | Verifica con OpenSCAD 2025.11.30 (volume contro kernel) |
 |---|---|---|---|
-| F, `zmap` + `polyhedron` | un file, quote in centesimi interi, ritaglio con `intersection()` se la regione non è il rettangolo | 24 KB a 0,8 mm, 58 a 0,5, 158 a 0,3 (pelle); 60 a 73 KB nei test a 0,5 mm con il pannello | **0,00 mm³** su rilievo, incavo, entrambi (pannello 80 × 60 × 5) e entrambi sul cilindro Ø30, rendering 0,3 a 1,2 s |
-| F, `surface()` + PNG | `.scad` di 0,4 KB e PNG a fianco (163 × 123 pixel a 0,5 mm) | 0,4 KB più 0,5 a 0,8 KB (zigrinatura) | da −1,7 a +6,4 mm³ (0,007 a 0,03 %), rendering 0,8 a 0,9 s |
+| F, `zmap` + `polyhedron` | un file, quote in centesimi interi; per le regioni non rettangolari il parametro `clip` (un solido 3D che copre la regione) ritaglia sia la colonna tolta dal pezzo sia il rilievo | 24 KB a 0,8 mm, 58 a 0,5, 158 a 0,3 (pelle); 60 a 73 KB nei test a 0,5 mm con il pannello | **0,00 mm³** su rilievo, incavo, entrambi (pannello 80 × 60 × 5), su entrambi sul cilindro Ø30 (regione = faccia) e su rilievo, incavo, entrambi con un **cerchio r = 20 dentro il pannello** 80 × 60 (regione più piccola della faccia), rendering 0,3 a 1,2 s |
+| F, `surface()` + PNG | `.scad` di 0,4 KB e PNG a fianco (163 × 123 pixel a 0,5 mm) | 0,4 KB più 0,5 a 0,8 KB (zigrinatura) | vedi sotto: da −1,7 a +6,4 mm³ contro una pelle del kernel, +27,7 (rilievo) e −90,0 mm³ (incavo) contro il risultato reale; cerchio nel pannello, entrambi: −0,45 mm³; rendering 0,5 a 0,9 s |
 | M, `polyhedron` dell'oggetto | tutti i punti (3 decimali) e tutte le facce, **catena parametrica persa** | cubo 587 KB, cilindro 1,2 MB, pannello 1,2 MB a lato 0,8 mm; fino a 8,6 MB a 0,3 mm | **0,00 mm³** su cubo, pannello, cilindro (volume atteso della mesh arrotondata a tre decimali), rendering 2,0 a 3,9 s |
 | SVG vettoriale | `polygon(points, paths)`, ciclo sui centri, ritaglio con `intersection()` | 1,8 KB | **0,00 mm³** su rilievo e incavo, rendering 0,2 s |
 
-Verifica con `scripts/relief-openscad-check.mjs` (procedura in fondo): 12 casi su 12 renderizzati da OpenSCAD senza errori (stato `NoError` dove OpenSCAD lo riporta), con le differenze di volume indicate sopra. Non si è verificato il ritaglio
-con un **margine** (come nel primo studio) e nemmeno una faccia inclinata. Il motore F in `zmap` sulle facce curve non esiste (solo piane); il motore M scrive una mesh e basta.
+Verifica con `scripts/relief-openscad-check.mjs` (procedura in fondo): 16 casi su 16 renderizzati da OpenSCAD senza errori (stato `NoError` dove OpenSCAD lo riporta), con le differenze di volume indicate sopra. **Correzione dopo la revisione**: la prima versione
+del modo "entrambi" toglieva dal pezzo un cubo grande quanto il **rettangolo** della regione e non la colonna della **regione**: con un cerchio r = 20 dentro il pannello 80 × 60 e la zigrinatura
+OpenSCAD dava 23.620,6 mm³ contro 23.861,5 del kernel (−241 mm³); ora `clip` ritaglia anche la colonna e lo scarto è 0,00 mm³ (il caso è nei test e nel generatore della verifica). Le regioni verificate
+sono quindi rettangolare, circolare uguale alla faccia (cilindro) e circolare più piccola della faccia (cerchio nel pannello); **non** si è verificata una regione con un **margine reale** (faccia ridotta con
+`offset`, di forma qualunque: servirà scrivere il `clip` con `offset()` e `projection()`) né una faccia inclinata. Il motore F in `zmap` sulle facce curve non esiste (solo piane); il motore M scrive una mesh e basta.
 
 ## Stampabilità FDM (ugello 0,4 mm, strato 0,2 mm)
 
@@ -501,7 +505,7 @@ cucitura?) con un'anteprima 2 × 2; (f) per l'SVG, scostamento e rotazione del d
 
 ## Limiti di questo studio
 
-- **Solo facce piane per il motore F** (facce inclinate funzionerebbero come per i Pattern con `faceFrame`, non provate), regione con margine non verificata in OpenSCAD (solo regione circolare e rettangolare).
+- **Solo facce piane per il motore F** (facce inclinate funzionerebbero come per i Pattern con `faceFrame`, non provate), regione con un margine reale (offset della faccia) non verificata in OpenSCAD: verificate solo regioni rettangolare e circolare (cilindro, cerchio dentro il pannello), che si esprimono con `clip`.
 - Una sola immagine per oggetto, un solo livello (BumpMesh ne ha quattro).
 - La quota usa il grigio, non i canali colore; niente mappe di normali né di rugosità.
 - Nel motore M il raffinamento è uniforme; l'ampiezza ha una regola empirica (spostamento massimo non oltre circa metà lato) dedotta da cinque solidi, non una garanzia.
