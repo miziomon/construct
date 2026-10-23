@@ -16,9 +16,10 @@ import { reliefScad } from '../codegen/reliefScad';
 import { reliefDefaults } from '../scene/relief';
 import type { ReliefKind } from '../scene/relief';
 import sharp from 'sharp';
+import { zlibSync } from 'fflate';
 import { Window } from 'happy-dom';
 import type { Manifold } from 'manifold-3d';
-import { applyTextureFace, displaceSolid, svgReliefSolid } from './textureMap';
+import { applyTextureFace, displaceSolid, selfOverlapVolume, svgReliefSolid } from './textureMap';
 import { meshScad, svgReliefScad, textureFaceScad } from '../codegen/textureScad';
 import { rgbaToGray, textureDefaults } from '../scene/textureMap';
 import { SAMPLE_SVG, makeSample } from '../scene/textureSamples';
@@ -361,5 +362,58 @@ describe.skipIf(!process.env.BENCH)('benchmark texture in rilievo da immagine', 
     }
     panel.delete();
     region.delete();
+  });
+});
+
+// Peso delle immagini nel file di progetto: byte grezzi, zlib (come `encodeAsset`), base64 e PNG (sharp), a 8 bit in scala di grigi
+describe.skipIf(!process.env.BENCH)('peso delle immagini nel progetto', () => {
+  const cases: { kind: SampleKind; size: number }[] = (['knurl', 'waves', 'leather', 'noise'] as const).flatMap((kind) => [256, 512, 1024].map((size) => ({ kind, size })));
+  it.each(cases)('$kind $size', async ({ kind, size }) => {
+    const img = makeSample(kind, size);
+    const zipped = zlibSync(img.data, { level: 6 });
+    const base64 = Math.ceil(zipped.length / 3) * 4;
+    const png = (await sharp(Buffer.from(img.data), { raw: { width: size, height: size, channels: 1 } }).png({ compressionLevel: 9 }).toBuffer()).length;
+    const line = `PESO ${kind.padEnd(8)} ${String(size).padStart(4)}x${size}  grezzo ${String(img.data.length).padStart(8)} B  zlib ${String(zipped.length).padStart(8)} B  base64 ${String(base64).padStart(8)} B  PNG ${String(png).padStart(8)} B`;
+    console.log(line);
+    if (process.env.BENCH_OUT) appendFileSync(process.env.BENCH_OUT, `${line}\n`);
+  });
+});
+
+// Rischi del motore M (docs/studio-texture-immagine.md): per ogni solido, variante delle normali e ampiezza si riportano lo stato di
+// manifold, i triangoli rovesciati, la sovrapposizione (volume di A unito ad A meno volume di A), la crescita dell'ingombro e il volume.
+describe.skipIf(!process.env.BENCH)('rischi del motore M', { timeout: 900_000 }, () => {
+  const solids: Record<string, () => Manifold> = {
+    pannello: () => wasm.Manifold.cube([80, 60, 5], true),
+    cilindro: () => wasm.Manifold.cylinder(40, 15, 15, 96, true),
+    cubo: () => wasm.Manifold.cube([30, 30, 30], true),
+    L: () => wasm.Manifold.cube([40, 40, 10], true).add(wasm.Manifold.cube([10, 40, 40], true).translate([-15, 0, 15])),
+    scatola: () => wasm.Manifold.cube([40, 40, 20], true).subtract(wasm.Manifold.cube([30, 30, 20], true).translate([0, 0, 5])),
+  };
+  const variants = [
+    { label: 'medie', normals: 'smooth', fadeSharp: false },
+    { label: 'medie+fermi', normals: 'smooth', fadeSharp: true },
+    { label: 'miter', normals: 'miter', fadeSharp: false },
+    { label: 'miter+fermi', normals: 'miter', fadeSharp: true },
+    { label: 'separate', normals: 'split', fadeSharp: false },
+  ] as const;
+  const cases = Object.keys(solids).flatMap((solid) => variants.flatMap((variant) => [0.6, 1.2, 2].map((amplitude) => ({ solid, variant, amplitude }))));
+  it.each(cases)('$solid $variant.label ampiezza $amplitude', ({ solid, variant, amplitude }) => {
+    const img = makeSample('knurl', 256);
+    const base = solids[solid]();
+    // Proiezione cilindrica solo per il cilindro (con i tappi planari), triplanare per gli altri
+    const projection = solid === 'cilindro' ? ({ kind: 'cylindrical', axis: 2, radius: 15 } as const) : ({ kind: 'triplanar' } as const);
+    const t0 = performance.now();
+    const { solid: out, stats } = displaceSolid(wasm, base, img, { ...textureDefaults(), tile: 10, amplitude, mode: 'both' }, projection, { edge: 0.8, normals: variant.normals, fadeSharp: variant.fadeSharp });
+    const ms = performance.now() - t0;
+    let overlap = NaN;
+    let growth = NaN;
+    if (out) {
+      overlap = selfOverlapVolume(out);
+      const [b0, b1] = [base.boundingBox(), out.boundingBox()];
+      growth = Math.max(...[0, 1, 2].flatMap((k) => [b1.max[k] - b0.max[k], b0.min[k] - b1.min[k]]));
+    }
+    const line = `RISCHIO M ${solid.padEnd(8)} ${variant.label.padEnd(12)} amp ${String(amplitude).padStart(3)}  ${stats.status.padEnd(24)} rovesciati ${String(stats.flipped).padStart(4)}  sovrapposizione ${Number.isNaN(overlap) ? '     -' : overlap.toFixed(2).padStart(7)} mm3  crescita ${Number.isNaN(growth) ? '   -' : growth.toFixed(2).padStart(5)} mm  volume ${stats.volume.toFixed(0).padStart(6)}/${stats.volumeBefore.toFixed(0)}  ${stats.triangles} tri  ${ms.toFixed(0)} ms`;
+    console.log(line);
+    if (process.env.BENCH_OUT) appendFileSync(process.env.BENCH_OUT, `${line}\n`);
   });
 });
