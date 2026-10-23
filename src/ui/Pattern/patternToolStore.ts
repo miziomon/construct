@@ -4,7 +4,7 @@ import type { NodeMesh } from '../../kernel/evaluate';
 import { useResultStore } from '../../kernel/useKernel';
 import { faceMap } from '../../scene/edgeTool';
 import type { Transform } from '../../scene/math';
-import { defaultPatternParams, hasPlanarFace, normalizePattern, thicknessAlong } from '../../scene/pattern';
+import { defaultPatternParams, hasPlanarFace, isReliefKind, normalizePattern, thicknessAlong } from '../../scene/pattern';
 import { applyPattern, worldToLocal } from '../../scene/patternTool';
 import { localBounds } from '../../scene/shell';
 import { isLocked, labelled, parentOf, useSceneStore, worldTransform } from '../../scene/store';
@@ -117,7 +117,7 @@ export async function refreshedPattern(scene: Scene, groupId: string): Promise<P
 /** Stima del lavoro: celle del Voronoi (o 60 per le griglie, in media) per il numero di facce. */
 export function estimatedCells(p: PatternParams): number {
   // Il rilievo non ha celle: il suo calcolo è leggero e non deve far comparire l'avviso delle celle
-  if (p.kind === 'brick' || p.kind === 'studs') return 0;
+  if (isReliefKind(p.kind)) return 0;
   return (p.kind === 'voronoi' ? p.cells : 60) * p.faces.length;
 }
 
@@ -133,7 +133,8 @@ export const usePatternTool = create<PatternToolState>()((set, get) => {
       sceneStore.temporal.getState().pause();
       set({ base });
     }
-    const result = applyPattern(base, targetId, { ...params, preview: simplified });
+    // I rilievi hanno sempre l'anteprima semplificata (meno segmenti, mappa più rada): il risultato dopo l'OK è a qualità piena
+    const result = applyPattern(base, targetId, { ...params, preview: simplified || isReliefKind(params.kind) });
     if (!result.ok) {
       sceneStore.setState({ scene: base });
       set({ error: result.error, groupId: null });

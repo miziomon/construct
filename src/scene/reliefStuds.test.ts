@@ -185,10 +185,19 @@ describe('Pattern Borchie: normalizzazione e avvisi', () => {
     expect(w({ pitch: 5.8 })).toEqual([]);
     expect(w({ pitch: 5.79 })).toHaveLength(1);
     // Raggio sotto 1 mm o altezza sotto 0,4 mm
-    expect(w({ radius: 0.8, pitch: 12 })[0]).toContain('troppo piccole');
+    expect(w({ radius: 0.8, height: 0.8, pitch: 12 })[0]).toContain('troppo piccole');
     expect(w({ height: 0.3 })[0]).toContain('troppo piccole');
     // Entrambi i problemi: due avvisi
-    expect(w({ pitch: 2, radius: 0.9 })).toHaveLength(2);
+    expect(w({ pitch: 2, radius: 0.9, height: 0.9 })).toHaveLength(2);
+    // Cupola più alta del raggio: l'altezza si riduce al raggio (e lo si dice); la piramide non ha questo limite
+    const tall = w({ height: 4 });
+    expect(tall).toHaveLength(1);
+    expect(tall[0]).toContain('Altezza della cupola ridotta al raggio (2,5 mm)');
+    expect(reliefWarnings(params({ kind: 'studs', design: 'pyramid', relief: { ...studs, height: 4 } }))).toEqual([]);
+    // Faccia (o faccia meno margine) troppo stretta: nessuna borchia
+    const none = reliefWarnings(params({ kind: 'studs', margin: 30 }));
+    expect(none).toHaveLength(1);
+    expect(none[0]).toContain('Nessuna borchia');
     // Vale per le forme e le griglie, non per i tipi a celle
     expect(reliefWarnings(params({ kind: 'studs', design: 'pyramid', relief: { ...studs, pitch: 5, layout: 'staggered' } }))).toHaveLength(1);
     expect(reliefWarnings(params({ kind: 'hexagon' }))).toEqual([]);

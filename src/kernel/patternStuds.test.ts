@@ -3,10 +3,11 @@ import Module from 'manifold-3d';
 import type { ManifoldToplevel } from 'manifold-3d';
 import { Evaluator } from './evaluate';
 import { buildPattern } from './pattern';
+import { studsInRegion } from './relief';
 import { sceneToOpenScad } from '../codegen/openscad';
 import { primitiveDefaults } from '../scene/defaults';
-import { defaultPatternParams, faceFromBounds, normalizePattern, studCentersOf, thicknessAlong } from '../scene/pattern';
-import { reliefDefaults } from '../scene/relief';
+import { defaultPatternParams, faceFromBounds, normalizePattern, studCentersOf, studEmbedOf, thicknessAlong } from '../scene/pattern';
+import { reliefDefaults, studCenters } from '../scene/relief';
 import type { StudParams, StudShape } from '../scene/relief';
 import type { GroupNode, PatternParams, PrimitiveNode, Scene, Vec3 } from '../scene/types';
 
@@ -200,6 +201,64 @@ describe('Pattern Borchie su una faccia inclinata', () => {
     expect(code).toContain('union() {');
     expect(code).toContain('projection(cut = true)');
     expect(code).not.toContain('rotate([0, 0, 0]) intersection()');
+  });
+});
+
+describe('Pattern Borchie: griglia sfalsata, piede e anteprima', () => {
+  it('studsInRegion tiene conto dello sfalsamento delle file dispari (stessi centri della griglia)', () => {
+    const region = wasm.CrossSection.square([80, 60], true);
+    const rect = { minX: -40, minY: -30, maxX: 40, maxY: 30 };
+    for (const layout of ['square', 'staggered'] as const) {
+      const p = { ...studs, layout, pitch: 10, radius: 2 };
+      expect(studsInRegion(region, rect, p)).toEqual(studCenters(rect, p));
+    }
+    // Con una regione più piccola restano solo centri della griglia sfalsata (con lo spostamento delle file dispari)
+    const small = wasm.CrossSection.square([30, 30], true);
+    const p = { ...studs, layout: 'staggered' as const, pitch: 10, radius: 2 };
+    const all = studCenters(rect, p);
+    const kept = studsInRegion(small, rect, p);
+    expect(kept.length).toBeGreaterThan(0);
+    expect(kept.length).toBeLessThan(all.length);
+    expect(kept.every((c) => all.some((a) => a[0] === c[0] && a[1] === c[1]))).toBe(true);
+    [region, small].forEach((r) => r.delete());
+  });
+
+  it('il piede della borchia non supera metà dello spessore (sotto 0,2 mm non esce dalla faccia opposta)', () => {
+    expect(studEmbedOf({ origin: [0, 0, 0], normal: [0, 0, 1], thickness: 5 })).toBe(0.2);
+    expect(studEmbedOf({ origin: [0, 0, 0], normal: [0, 0, 1], thickness: 0.2 })).toBe(0.1);
+    expect(studEmbedOf({ origin: [0, 0, 0], normal: [0, 0, 1], thickness: 0.1 })).toBe(0.05);
+    // Pannello di 0,1 mm: il piede arriva a 0,05 mm e l'ingombro in basso non cambia, per ogni forma
+    const thin: Vec3 = [80, 60, 0.1];
+    const tb = { min: thin.map((v) => -v / 2) as Vec3, max: thin.map((v) => v / 2) as Vec3 };
+    for (const design of ['dome', 'chamfered', 'pyramid'] as StudShape[]) {
+      const cube = { ...primitiveDefaults('box'), id: 'c', name: 'Pannello', position: [0, 0, 0], size: thin } as PrimitiveNode;
+      const g: GroupNode = {
+        id: 'g', name: 'Pattern', type: 'group', op: 'pattern', children: ['c'], position: [0, 0, 0], rotation: [0, 0, 0], mode: 'solid', color: '#4da3ff',
+        pattern: { ...defaultPatternParams(tb, 7), kind: 'studs', margin: 0, design },
+      };
+      const s: Scene = { nodes: { c: cube, g }, rootIds: ['g'] };
+      const m = run(s);
+      expect(m.status).toBe('NoError');
+      expect(m.bbox.min[2]).toBeCloseTo(-0.05, 4);
+      expect(m.volume).toBeGreaterThan(80 * 60 * 0.1);
+      // Il codice usa lo stesso piede
+      const code = sceneToOpenScad(s);
+      expect(code).toContain(design === 'pyramid' ? '-0.05]' : '[2.5, -0.05], [0, -0.05]');
+    }
+  });
+
+  it("l'anteprima semplificata (meno segmenti) dà un volume vicino a quello finale e un risultato valido", () => {
+    const full = run(scene({ design: 'dome' }));
+    const preview = run(scene({ design: 'dome', preview: true }));
+    expect(preview.status).toBe('NoError');
+    expect(Math.abs(preview.volume - full.volume)).toBeLessThan(0.15 * (full.volume - FULL));
+  });
+
+  it('con tutte le borchie dentro una faccia rettangolare il ritaglio si salta e il volume è quello di N borchie', () => {
+    const m = run(scene({ design: 'pyramid', margin: 5 }));
+    const pattern = normalizePattern({ ...defaultPatternParams(bounds, 7), kind: 'studs', margin: 5, design: 'pyramid' });
+    const { centers } = studCentersOf(pattern, pattern.faces[0]);
+    expect(m.volume - FULL).toBeCloseTo(centers.length * studVolume('pyramid', studs), 4);
   });
 });
 

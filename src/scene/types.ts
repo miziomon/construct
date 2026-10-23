@@ -348,7 +348,7 @@ export interface PatternFace {
 export interface PatternParams {
   /** Versione dell'algoritmo casuale (src/scene/voronoi.ts): se cambia, i vecchi progetti cambierebbero disegno. */
   algorithm: number;
-  kind: 'voronoi' | 'hexagon' | 'circle' | 'diamond' | 'triangle' | 'brick' | 'studs';
+  kind: 'voronoi' | 'hexagon' | 'circle' | 'diamond' | 'triangle' | 'brick' | 'studs' | 'hammered' | 'wood';
   /** Fori: si tolgono le celle (restano le pareti); Solchi: si tolgono le pareti (restano le celle in rilievo). */
   mode: 'holes' | 'grooves';
   /** Seme del generatore casuale. */

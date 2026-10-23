@@ -28,13 +28,20 @@ interface Props {
   refreshBlocked?: string;
 }
 
-const KIND_LABELS: Record<PatternParams['kind'], string> = { voronoi: 'Voronoi', hexagon: 'Esagoni', circle: 'Cerchi', diamond: 'Rombi', triangle: 'Triangoli', brick: 'Mattoni', studs: 'Borchie' };
+const KIND_LABELS: Record<PatternParams['kind'], string> = { voronoi: 'Voronoi', hexagon: 'Esagoni', circle: 'Cerchi', diamond: 'Rombi', triangle: 'Triangoli', brick: 'Mattoni', studs: 'Borchie', hammered: 'Rame battuto', wood: 'Legno' };
 /** Tipi a celle e tipi in rilievo: due gruppi della tendina. */
 const CELL_KINDS: PatternParams['kind'][] = ['voronoi', 'hexagon', 'circle', 'diamond', 'triangle'];
-const RELIEF_KINDS: PatternParams['kind'][] = ['brick', 'studs'];
-/** Disegni di ogni rilievo: muratura dei Mattoni, forma delle Borchie. */
-const DESIGN_LABELS: Record<ReliefDesign, string> = { running: 'Sfalsati', herringbone: 'Spina di pesce', basket: 'Cesto', dome: 'Cupola', chamfered: 'Cilindro smussato', pyramid: 'Piramide' };
-const DESIGNS_OF: Record<'brick' | 'studs', ReliefDesign[]> = { brick: ['running', 'herringbone', 'basket'] as BrickDesign[], studs: ['dome', 'chamfered', 'pyramid'] as StudShape[] };
+const RELIEF_KINDS: PatternParams['kind'][] = ['brick', 'studs', 'hammered', 'wood'];
+/** Disegni di ogni rilievo: muratura dei Mattoni, forma delle Borchie, lavorazione del Rame, composizione del Legno. */
+const DESIGN_LABELS: Record<ReliefDesign, string> = { running: 'Sfalsati', herringbone: 'Spina di pesce', basket: 'Cesto', dome: 'Cupola', chamfered: 'Cilindro smussato', pyramid: 'Piramide', dimples: 'Martellato', facets: 'Sfaccettato', scales: 'Scaglie', planks: 'Doghe', parquet: 'Parquet (spina di pesce)', single: 'Tavola unica' };
+const DESIGNS_OF: Record<'brick' | 'studs' | 'hammered' | 'wood', ReliefDesign[]> = { brick: ['running', 'herringbone', 'basket'] as BrickDesign[], studs: ['dome', 'chamfered', 'pyramid'] as StudShape[], hammered: ['dimples', 'facets', 'scales'], wood: ['planks', 'parquet', 'single'] };
+/** Spiegazione della tendina «Disegno» di ogni rilievo. */
+const DESIGN_TIPS: Record<'brick' | 'studs' | 'hammered' | 'wood', string> = {
+  brick: "Sfalsati: file sfalsate di mezzo mattone. Spina di pesce e Cesto: la lunghezza del mattone si arrotonda a un multiplo dell'altezza (fuga compresa) perché il disegno si chiuda.",
+  studs: 'Forma della borchia: cupola, cilindro con smusso o piramide a base quadrata (lato = diametro).',
+  hammered: 'Martellato: una calotta per cella di Voronoi. Sfaccettato: una faccetta piana inclinata per cella. Scaglie: file sfalsate di calotte ovali che si sovrappongono.',
+  wood: 'Doghe: file di doghe affiancate con venatura. Parquet: spina di pesce di listelli (la lunghezza si arrotonda a un multiplo della larghezza, fuga compresa). Tavola unica: venatura lunga con 2-4 nodi, senza fughe.',
+};
 /** Sotto questa parete (circa due passate di un ugello da 0,4 mm) la stampa è inaffidabile. */
 const MIN_PRINTABLE_WALL = 0.8;
 
@@ -103,10 +110,10 @@ export function PatternFields({ params: p, onChange, disabled, history = true, o
 
       {relief && (
         <>
-          <div className="array-fields__row" title={p.kind === 'studs' ? 'Forma della borchia: cupola, cilindro con smusso o piramide a base quadrata (lato = diametro).' : "Sfalsati: file sfalsate di mezzo mattone. Spina di pesce e Cesto: la lunghezza del mattone si arrotonda a un multiplo dell'altezza (fuga compresa) perché il disegno si chiuda."}>
+          <div className="array-fields__row" title={DESIGN_TIPS[p.kind as 'brick' | 'studs' | 'hammered' | 'wood']}>
             <label className="array-fields__label" htmlFor={designId}>Disegno</label>
             <select id={designId} className="array-fields__select" value={effective.design} disabled={disabled} onChange={(e) => onChange({ design: e.target.value as ReliefDesign })}>
-              {DESIGNS_OF[p.kind === 'studs' ? 'studs' : 'brick'].map((d) => (
+              {DESIGNS_OF[p.kind as 'brick' | 'studs' | 'hammered' | 'wood'].map((d) => (
                 <option key={d} value={d}>{DESIGN_LABELS[d]}</option>
               ))}
             </select>
@@ -126,6 +133,35 @@ export function PatternFields({ params: p, onChange, disabled, history = true, o
               {reliefSlider('Raggio', 'Raggio della base, in mm (per la piramide, metà del lato).', 'radius', { min: 1, max: 10, step: 0.1, hardMin: 0.5, unit: 'mm' })}
               {reliefSlider('Altezza', 'Quanto sporge la borchia dalla faccia, in mm. La cupola non supera il suo raggio.', 'height', { min: 0.4, max: 6, step: 0.1, hardMin: 0.2, unit: 'mm' })}
               {effective.design === 'chamfered' && reliefSlider('Smusso', 'Smusso a 45 gradi del bordo del cilindro, in mm.', 'chamfer', { min: 0, max: 3, step: 0.1, hardMin: 0, unit: 'mm' })}
+            </>
+          )}
+          {(effective.relief.kind === 'hammered' || effective.relief.kind === 'wood') && (
+            <div className="array-fields__row" title="Il seme decide il disegno: lo stesso seme dà sempre lo stesso risultato, anche nel codice OpenSCAD.">
+              <span className="array-fields__label">Seme</span>
+              <div className="array-fields__vector">
+                <NumberField label="Seme" value={effective.relief.seed} min={0} max={2 ** 31} step={1} disabled={disabled} onCommit={(seed) => setRelief({ seed })} />
+                <button type="button" className="array-fields__button" disabled={disabled} onClick={() => setRelief({ seed: Math.floor(Math.random() * 100000) })}>
+                  Nuovo seme
+                </button>
+              </div>
+            </div>
+          )}
+          {effective.relief.kind === 'hammered' && (
+            <>
+              {reliefSlider('Diametro', 'Diametro medio di una martellata, di una faccetta o di una scaglia, in mm (al massimo 500 celle: oltre si allargano).', 'size', { min: 3, max: 30, step: 0.5, hardMin: 2, unit: 'mm' })}
+              {reliefSlider('Profondità', "Quanto si scava il rame sotto la faccia, in mm (al massimo lo spessore dell'ingombro del pezzo, meno 0,2 mm).", 'depth', { min: Math.min(0.1, depthLimit), max: Math.min(2, depthLimit), step: 0.05, hardMin: 0.05, hardMax: depthLimit, unit: 'mm' })}
+              {reliefSlider('Variazione', 'Quanto variano a caso profondità e raggio di ogni cella (0 = tutte uguali, 0,9 = molto diverse).', 'jitter', { min: 0, max: 0.9, step: 0.05, hardMin: 0, hardMax: 0.9 })}
+              {effective.design !== 'scales' && reliefSlider('Regolarità', '0 = celle del tutto casuali, 100 = celle quasi uniformi.', 'regularity', { min: 0, max: 100, step: 1, hardMin: 0, hardMax: 100, unit: '%' })}
+            </>
+          )}
+          {effective.relief.kind === 'wood' && (
+            <>
+              {effective.design !== 'single' && reliefSlider(effective.design === 'parquet' ? 'Larghezza listello' : 'Larghezza doga', 'Larghezza di una doga o di un listello, in mm (fuga esclusa).', 'plankW', { min: 4, max: 30, step: 0.5, hardMin: 2, unit: 'mm' })}
+              {effective.design !== 'single' && reliefSlider(effective.design === 'parquet' ? 'Lunghezza listello' : 'Lunghezza doga', 'Lunghezza media di una doga o di un listello, in mm.', 'plankL', { min: 20, max: 120, step: 1, hardMin: 5, unit: 'mm' })}
+              {effective.design !== 'single' && reliefSlider('Fuga', 'Spessore della fuga tra due doghe o listelli, in mm.', 'gap', { min: 0.4, max: 3, step: 0.1, hardMin: 0.2, unit: 'mm' })}
+              {effective.design !== 'single' && reliefSlider('Profondità fuga', "Quanto si scava la fuga sotto la faccia, in mm (al massimo lo spessore dell'ingombro del pezzo, meno 0,2 mm).", 'gapDepth', { min: Math.min(0.2, depthLimit), max: Math.min(3, depthLimit), step: 0.1, hardMin: 0.05, hardMax: depthLimit, unit: 'mm' })}
+              {reliefSlider('Venatura', 'Profondità massima della venatura, in mm (0 = nessuna); sotto 0,3 mm si vede appena in stampa.', 'grainDepth', { min: 0, max: Math.min(1.5, depthLimit), step: 0.05, hardMin: 0, hardMax: depthLimit, unit: 'mm' })}
+              {reliefSlider('Anelli', 'Distanza media tra gli anelli della venatura, in mm.', 'ringSpacing', { min: 1, max: 10, step: 0.5, hardMin: 0.5, unit: 'mm' })}
             </>
           )}
         </>

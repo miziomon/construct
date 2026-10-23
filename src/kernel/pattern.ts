@@ -1,5 +1,5 @@
 import type { CrossSection, Manifold, ManifoldToplevel } from 'manifold-3d';
-import { brickRelief, cutReach, faceFrame, frameRect, isAdditiveKind, isAxisFace, isReliefKind, normalizePattern, patternCells, studCentersOf, studRelief } from '../scene/pattern';
+import { patternRelief, cutReach, faceFrame, frameRect, isAdditiveKind, isAxisFace, isReliefKind, normalizePattern, patternCells, studCentersOf, studEmbedOf, studRelief } from '../scene/pattern';
 import type { FaceFrame } from '../scene/pattern';
 import type { PatternFace, PatternParams, Vec3 } from '../scene/types';
 import { BEST_ENGINE, reliefAddition, reliefCutter } from './relief';
@@ -8,6 +8,8 @@ import { BEST_ENGINE, reliefAddition, reliefCutter } from './relief';
 const ROUND_SEGMENTS = 32;
 /** Segmenti nell'anteprima semplificata: angoli meno lisci ma calcolo molto più veloce. */
 const PREVIEW_SEGMENTS = 8;
+/** Passo (mm) delle mappe di altezze nell'anteprima: più rado di quello del risultato (0,5 mm). */
+const PREVIEW_STEP = 0.8;
 
 /**
  * Cella ridotta di metà parete (più il raggio) e poi arrotondata di `rounding`: così tra due celle resta una parete di
@@ -68,15 +70,16 @@ function backToPiece(solid: Manifold, frame: FaceFrame): Manifold {
 }
 
 /**
- * Rilievo (Mattoni) di una faccia: le fughe da scavare nella regione della faccia (sempre il suo contorno, mai la
- * silhouette: `depth` e `sides` del Pattern non contano), ancorate al rettangolo della faccia così il disegno non si sposta
- * quando cambia il margine. Nel riferimento del pezzo, o null se non toglie nulla.
+ * Rilievo sottrattivo (Mattoni, Rame battuto, Legno) di una faccia: il solido da scavare nella regione della faccia (sempre il
+ * suo contorno, mai la silhouette: `depth` e `sides` del Pattern non contano), ancorato al rettangolo della faccia così il
+ * disegno non si sposta quando cambia il margine. Nell'anteprima semplificata calotte con meno segmenti e mappe di altezze più
+ * rade; il risultato dopo l'OK è a qualità piena. Nel riferimento del pezzo, o null se non toglie nulla.
  */
-function reliefCutterFor(wasm: ManifoldToplevel, child: Manifold, p: PatternParams, face: PatternFace): Manifold | null {
+function reliefCutterFor(wasm: ManifoldToplevel, child: Manifold, p: PatternParams, face: PatternFace, index: number): Manifold | null {
   const found = faceRegion(child, p, face, false, ROUND_SEGMENTS);
   if (!found) return null;
-  const { relief } = brickRelief(p);
-  const cutter = reliefCutter(wasm, found.region, relief, { engine: BEST_ENGINE[relief.kind], rect: frameRect(p, face) });
+  const { relief } = patternRelief(p, index);
+  const cutter = reliefCutter(wasm, found.region, relief, { engine: BEST_ENGINE[relief.kind], rect: frameRect(p, face), segments: p.preview ? PREVIEW_SEGMENTS : undefined, step: p.preview ? PREVIEW_STEP : undefined });
   found.region.delete();
   return cutter ? backToPiece(cutter, found.frame) : null;
 }
@@ -90,7 +93,8 @@ function studAdditionFor(wasm: ManifoldToplevel, child: Manifold, p: PatternPara
   const found = faceRegion(child, p, face, false, ROUND_SEGMENTS);
   if (!found) return null;
   const { rect, centers } = studCentersOf(p, face);
-  const solid = reliefAddition(wasm, found.region, studRelief(p).relief, { engine: BEST_ENGINE.studs, rect, centers });
+  // Anteprima semplificata: cupole e cilindri con meno segmenti; il piede non esce dalla faccia opposta (`studEmbedOf`)
+  const solid = reliefAddition(wasm, found.region, studRelief(p).relief, { engine: BEST_ENGINE.studs, rect, centers, embed: studEmbedOf(face), segments: p.preview ? PREVIEW_SEGMENTS : undefined });
   found.region.delete();
   return solid ? backToPiece(solid, found.frame) : null;
 }
@@ -104,7 +108,7 @@ function studAdditionFor(wasm: ManifoldToplevel, child: Manifold, p: PatternPara
 function cutterFor(wasm: ManifoldToplevel, child: Manifold, p: PatternParams, face: PatternFace, index: number): Manifold | null {
   const { Manifold, CrossSection } = wasm;
   // I rilievi hanno un ramo a parte: niente celle, regione sempre quella della faccia
-  if (isReliefKind(p.kind)) return reliefCutterFor(wasm, child, p, face);
+  if (isReliefKind(p.kind)) return reliefCutterFor(wasm, child, p, face, index);
   const segments = p.preview ? PREVIEW_SEGMENTS : ROUND_SEGMENTS;
   const through = p.depth <= 0;
   const axisFace = isAxisFace(face);

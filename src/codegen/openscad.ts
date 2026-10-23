@@ -10,8 +10,10 @@ import { resolveEnds } from '../scene/edgeEnds';
 import { stretchFactors } from '../scene/ellipse';
 import { isScaled, scaleOf } from '../scene/groupScale';
 import { circularStep, linearStep, normalizeArray } from '../scene/arrayPattern';
-import { cutReach, faceFrame, frameRect, isAdditiveKind, isAxisFace, isReliefKind, normalizePattern, patternCells, studCentersOf, studRelief, brickRelief } from '../scene/pattern';
-import { brickScad, studScad } from './reliefScad';
+import { cutReach, faceFrame, frameRect, isAdditiveKind, isAxisFace, isReliefKind, normalizePattern, patternCells, patternRelief, studCentersOf, studEmbedOf } from '../scene/pattern';
+import { woodMaxDepth } from '../scene/relief';
+import { BEST_ENGINE } from '../kernel/relief';
+import { brickScad, hammeredScad, studScad, woodScad } from './reliefScad';
 import { isRotational, pathContours, revolveParams, shapeContours, svgContours } from '../scene/shapes2d';
 import { hasPlan, planSolid } from '../scene/planSolid';
 import type { PlanSolid } from '../scene/planSolid';
@@ -484,36 +486,51 @@ function arrayLines(params: ArrayParams, child: (depth: number) => string[], dep
 
 /**
  * Codice di un Pattern in rilievo, per ogni faccia i dati del disegno e poi:
- * - Mattoni (sottrattivo): `difference()` con le fughe nel riferimento della faccia, ritagliate sulla regione (sempre il contorno
- *   della faccia, meno il margine) come fa il kernel con `reliefCutter`;
+ * - Mattoni, Rame battuto, Legno (sottrattivi): `difference()` con il rilievo nel riferimento della faccia, ritagliato sulla
+ *   regione (sempre il contorno della faccia, meno il margine) come fa il kernel con `reliefCutter`;
  * - Borchie (additivo): `union()` con le borchie, di cui si esporta l'elenco dei centri già calcolato (gli stessi del kernel,
  *   `studCentersOf`), ritagliate sullo stesso contorno.
+ * Le mappe di altezze (venatura del legno) hanno il passo del risultato (0,5 mm) e i nomi dei dati suffissati con la faccia.
  * `depth` e `sides` del Pattern non contano.
  */
 function reliefPatternLines(p: PatternParams, child: (depth: number) => string[], depth: number): string[] {
   const pad = IND.repeat(depth);
   const at = (d: number, text: string) => `${IND.repeat(d)}${text}`;
   const additive = isAdditiveKind(p.kind);
+  const { design } = patternRelief(p);
   // Dati e solido di ogni faccia (con più facce i nomi dei dati hanno il numero della faccia); le facce senza borchie si saltano
-  const { design, relief } = additive ? studRelief(p) : brickRelief(p);
   const faces = p.faces
     .map((face, i) => {
       const id = p.faces.length > 1 ? `_${i + 1}` : '';
-      if (relief.kind === 'studs') {
-        const { centers } = studCentersOf(p, face);
-        return { face, centers, ...studScad(relief, centers, id) };
+      const { relief } = patternRelief(p, i);
+      const rect = frameRect(p, face);
+      switch (relief.kind) {
+        case 'studs': {
+          const { centers } = studCentersOf(p, face);
+          return { face, centers, below: 1, ...studScad(relief, centers, id, studEmbedOf(face)) };
+        }
+        case 'brick':
+          return { face, centers: [], below: relief.depth + 1, ...brickScad(rect, relief, id) };
+        case 'hammered':
+          // Quanto in basso arrivano al massimo le calotte (come `zMin` del kernel)
+          return { face, centers: [], below: relief.depth * (1 + relief.jitter) + 1.1, ...hammeredScad(rect, relief, id) };
+        case 'wood':
+          return { face, centers: [], below: woodMaxDepth(relief) + 1, ...woodScad(rect, relief, BEST_ENGINE.wood, 0.5, id) };
       }
-      return { face, centers: [], ...brickScad(frameRect(p, face), relief, id) };
     })
     .filter((f) => !additive || f.centers.length > 0);
-  // Quota del prisma di ritaglio: oltre il solido del rilievo (le fughe arrivano a -depth, le borchie a `height`)
-  const below = relief.kind === 'brick' ? relief.depth + 1 : 1;
+  // Quota del prisma di ritaglio: oltre il solido del rilievo (le borchie arrivano a `height`, i tagli a ABOVE)
+  const { relief } = patternRelief(p);
   const above = relief.kind === 'studs' ? (relief.shape === 'dome' ? Math.min(relief.height, relief.radius) : relief.height) + 1 : 2;
-  const what = relief.kind === 'brick' ? `fughe di ${n(relief.depth)} mm scavate` : `${faces.reduce((sum, f) => sum + f.centers.length, 0)} borchie unite`;
+  const what =
+    relief.kind === 'studs' ? `${faces.reduce((sum, f) => sum + f.centers.length, 0)} borchie unite`
+    : relief.kind === 'brick' ? `fughe di ${n(relief.depth)} mm scavate`
+    : relief.kind === 'hammered' ? `rame battuto di ${n(relief.depth)} mm scavato`
+    : 'fughe e venatura scavate';
   const out: string[] = [`${pad}// Pattern ${p.kind}, disegno ${design}: ${what} sulle facce scelte`];
   faces.forEach((f) => out.push(...f.data.map((l) => `${pad}${l}`)));
   out.push(`${pad}${additive ? 'union' : 'difference'}() {`, ...child(depth + 1));
-  faces.forEach(({ face, solid }) => {
+  faces.forEach(({ face, solid, below }) => {
     const frame = faceFrame(face);
     let d = depth + 1;
     out.push(at(d, `translate(${vec(frame.origin)}) rotate(${vec(frame.inverseEuler)}) intersection() {`));
