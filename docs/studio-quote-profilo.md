@@ -9,11 +9,18 @@ codice OpenSCAD e la cronologia di Annulla?
 fisso, coincidente, parallelo, perpendicolare, uguale, punto medio, simmetrico, collineare; raccordo con raggio per nodo; stato dei
 gradi di libertà con i tre colori), **media** per il cerchio quotato (diametro dei fori) e per le espressioni con parametri, **bassa
 e rimandata** per l'arco vero, la curvatura continua e i vincoli sulle maniglie delle curve. Il risolutore proprio (Levenberg-Marquardt
-a norma minima, circa 450 righe di TypeScript con i commenti, senza dipendenze) soddisfa i cinque criteri misurati: rettangolo a 0 gradi di libertà, vincolo
-in più segnalato senza oscillazioni, trascinamento a spostamento minimo, tempi da editor interattivo (mediana sotto 4 ms per un
-fotogramma di trascinamento con 100 segmenti, nel browser sotto 2,5 ms nel caso peggiore con le quote ogni due lati) e casi limite
-gestiti. **Una riserva**: la diagnosi completa (rango dello Jacobiano) costa 35 ms di mediana a 100 segmenti completamente quotati
-(49 ms nel peggiore): va tenuta fuori dal ciclo di trascinamento (dopo il rilascio o in un momento di quiete).
+a norma minima, circa 500 righe di TypeScript con i commenti, senza dipendenze) soddisfa i criteri a, b, c ed e in tutti i casi
+provati: rettangolo a 0 gradi di libertà, vincolo in più segnalato senza oscillazioni, trascinamento a spostamento minimo, casi limite
+gestiti. **Il criterio d (sotto 16 ms con circa 50 entità) vale solo entro i casi misurati.** Con vincoli **lineari** (orizzontale,
+verticale, distanze orizzontali e verticali, fisso: 1-2 iterazioni) un fotogramma di trascinamento a 100 segmenti costa circa 1-3 ms
+di mediana. Con vincoli **non lineari** (lunghezze, uguaglianze e angoli tra lati consecutivi) la mediana è circa 2 ms a 25 segmenti e
+6-10 ms a 50 (nessun fotogramma scartato), ma a **100 segmenti sale a circa 24 ms: lì il criterio non è soddisfatto**. Una prima
+versione, che trascinava con peso 1000 sul nodo mosso, **falliva già a 50 segmenti non lineari** (fino a 17 fotogrammi su 25 non
+convergevano entro 60 iterazioni): ora il peso è 30, la tolleranza durante il trascinamento è 1e-6 mm, un fotogramma quasi risolto
+(sotto 1e-4 mm) si accetta e al rilascio il disegno torna alla precisione piena. **Una riserva**: la diagnosi completa (rango dello
+Jacobiano) a freddo costa, a 100 segmenti, circa 40 ms di mediana con vincoli lineari completamente quotati e circa 70 ms con
+vincoli non lineari (19 ms a 50 segmenti non lineari): va tenuta fuori dal ciclo di trascinamento (dopo il rilascio o in un momento di quiete).
+Per i sistemi non lineari grandi i rimedi sono la soluzione per componenti connesse e la fattorizzazione sparsa (sezione 7).
 
 Il lavoro vero non è il risolutore ma il **modello dati**: oggi i nodi non hanno identità, e un vincolo che cita un nodo per posizione
 nell'elenco si rompe al primo inserimento o cancellazione. Servono id stabili dei nodi, e da lì discendono il formato del commento
@@ -30,11 +37,11 @@ Il prototipo interattivo è in [`docs/prototipi/profilo-quote.html`](prototipi/p
 | File | Contenuto |
 |---|---|
 | `src/ui/ProfileEditor/constraints.ts` | Il **nucleo del risolutore**: funzioni pure, nessun import, 14 tipi di vincolo e quota, `solveSketch` (risoluzione e diagnosi), `measure`, `validateValue`, `maxResidual`. **Non collegato all'app** |
-| `src/ui/ProfileEditor/constraints.test.ts` | 23 test: i criteri a-e, ogni tipo di vincolo, i casi limite, la coincidenza del blocco `CORE` del prototipo con il modulo |
+| `src/ui/ProfileEditor/constraints.test.ts` | 27 test: i criteri a-e, ogni tipo di vincolo, i casi limite, la coincidenza del blocco `CORE` del prototipo con il modulo |
 | `docs/prototipi/profilo-quote.html` | Il prototipo: blocco `CORE-BEGIN` / `CORE-END` generato dal modulo, strumenti Quota (D) e Vincoli (K), cerchio parametrico, raccordo per nodo, parametri ed espressioni, Penna con lunghezza e angolo digitati, tre esempi quotati |
 | `scripts/constraints-core.mjs`, `scripts/constraints-sync.mjs` | Tolgono i tipi da `constraints.ts` (con `stripTypeScriptTypes` di `node:module`, perché TypeScript 7 non ha più l'API JavaScript) e scrivono o verificano il blocco `CORE` del prototipo |
 | `scripts/constraints-bench.mjs` | Misura i criteri a-e **estraendo il blocco `CORE` dal prototipo** (il codice provato è quello della pagina) e stampa le tabelle di questo documento |
-| `scripts/quote-prototype-check.mjs` | Apre il prototipo in Chrome con Playwright (`file://`, nessun server): 44 controlli sui gesti, nessun errore in console, e le immagini `docs/images/profilo-quote-*.png` |
+| `scripts/quote-prototype-check.mjs` | Apre il prototipo in Chrome con Playwright (`file://`, nessun server): 47 controlli sui gesti, nessun errore in console, e le immagini `docs/images/profilo-quote-*.png` |
 | `docs/prototipi/misure-quote.txt` | L'uscita dello script di misura, con la versione di Node |
 
 Il prototipo parte da `profilo-bezier.html` e non lo riscrive: stesso stile e stessi token, gli stessi strumenti (Penna, Seleziona, forme
@@ -103,8 +110,10 @@ un'altra curva).
 - **Colori dello stato**: sottovincolato blu, completamente vincolato nero, sovravincolato rosso con proposta di quota di riferimento.
   *Dalla mia conoscenza, non verificato*: le fonti trovate confermano solo che il colore dipende dall'opzione «Color sketch geometry
   based on constraint status» e che le parentesi indicano una quota di riferimento; non ho trovato una fonte che dia i tre colori.
-  Il prototipo usa **blu, verde e rosso** (il nero sullo sfondo scuro sparirebbe) e in più un testo nel piede, perché il colore non
-  basta (vedi Accessibilità, sezione 5).
+  Il prototipo usa **blu, il colore del testo e rosso** (nero nel tema chiaro, chiaro nel tema scuro, dove il nero sparirebbe) e in più
+  un testo nel piede, perché il colore non basta (vedi Accessibilità, sezione 5). Una prima versione usava il verde per «completamente
+  vincolato»; **a quanto ricordo, in Fusion il verde è la geometria Fissa** (non verificato): per non creare confusione in chi viene
+  da Fusion il verde è stato tolto dal significato di «completamente vincolato».
 - **Vincoli dedotti durante il disegno**: la pagina «Automatically apply sketch constraints while creating sketch curves» esiste nel
   manuale, ma ho letto solo il titolo. *Dalla mia conoscenza, non verificato*: Fusion mostra un'icona vicino al cursore e applica
   orizzontale, verticale, tangente, coincidente quando il tratto si allinea.
@@ -216,11 +225,17 @@ continuano a essere vere (il prototipo oggi lascia il vincolo sulla coppia origi
 | `src/scene/types.ts`: `PathNode` (103-108), `PathContour` (111-114), `Draft` (117-128), variante `kind: 'path'` (236-251) | Campi nuovi: `id`, `r` sui nodi; `circle?` sul contorno; `constraints?` e `params?` su `Draft` e sul nodo. Tutti opzionali |
 | `src/scene/bezier.ts`: `sanitizePaths` (271) | È una **whitelist**: ogni campo in più viene scartato. Va aggiunta la lettura di `id` (stringa breve, unica nel contorno), `r`, `circle`; più una `sanitizeConstraints` (tipo noto, numero di punti giusto, id esistenti, numeri finiti e `v` positivo per le lunghezze, tetto di 1000 vincoli) |
 | `encodePathMeta` / `decodePathMeta` (304 / 309) | Da `{ v: 1, ... }` a `{ v: 2, ..., k: vincoli, q: parametri }`. La lettura accetta `v` 1 e 2: un `v:1` si legge come oggi (gli id si assegnano in lettura, nessun vincolo). Un'app vecchia davanti a un `v:2` restituisce `null` (`v !== 1`): il poligono torna un Poligono qualsiasi, come per un commento rovinato. Comportamento corretto, ma va detto nelle note di versione |
-| `src/scene/store.ts`: `roundPaths` (133) | Oggi arrotonda a 4 decimali. Vedi sotto: si arrotonda **dopo** la soluzione |
+| `src/scene/store.ts`: `roundPaths` (133-138) | È **anch'essa una whitelist**: ricostruisce ogni nodo come `{ p, in?, out?, kind }` e **cancellerebbe `id`, `r` e `circle`** (e i contorni perderebbero `circle`). Va riscritta per copiare i campi nuovi, arrotondando solo le coordinate; poi vale l'arrotondamento a 4 decimali **dopo** la soluzione (vedi sotto) |
 | `addPath` (338), `commitProfile` (365-395) | La `patch` e il `Draft` portano `constraints` e `params`; `compensatePosition` e `pathNaturalSize` non cambiano. Resta un solo `act('Profilo')`: **un'operazione utente, un passo** |
 | `src/ui/ProfileEditor/draft.ts` | La bozza in `localStorage` passa da `v:1` a `v:2`; `loadDraft` valida anche vincoli e parametri e accetta le bozze `v:1` |
 | `src/codegen/openscad.ts` (riga 230) e `src/import/scad/pathMeta.ts` | Il commento `// construct:path` porta i vincoli. `restorePath` confronta i punti campionati con quelli scritti: gli id non entrano nel confronto |
 | `src/ui/ProfileEditor/history.ts` | La cronologia locale salva il `Draft` intero (contorni, vincoli, parametri). Una **risoluzione fa parte della stessa operazione**: aggiungere una quota è un passo, trascinare un nodo è un passo al rilascio (come oggi), non un passo per ogni fotogramma |
+
+**Ridimensionamento e quote.** Le quote sono in millimetri del **sistema dell'editor**, ma il solido è il disegno campionato **scalato** a
+`width × depth` (commento del nodo `path` in `src/scene/types.ts:237-243`). Finché `width` e `depth` sono quelli naturali la quota «60» è 60 mm nel
+solido; ma la Scala in percentuale e il gizmo (`resize.ts`, `hasScale`, riga 198) cambiano `width` e `depth` senza toccare i nodi né le quote, e con una
+misura legata a un parametro `commitProfile` non le aggiorna più (`store.ts:386-387`). Dopo un ridimensionamento le quote mostrate nella modale non
+corrispondono più alle misure del solido. È un rischio vero, non un dettaglio: vedi i rischi (sezione 6) e la decisione 11.
 
 ### Peso del commento `// construct:path`
 
@@ -249,16 +264,16 @@ salvate sono già la soluzione); alla prima modifica si risolve, e i punti si sp
 
 ### Levenberg-Marquardt proprio contro planegcs
 
-| Criterio | Risolutore proprio (`constraints.ts`) | planegcs (`@salusoft89/planegcs` 1.1.7, porta WASM del solver 2D di FreeCAD) |
+| Criterio | Risolutore proprio (`constraints.ts`) | planegcs (`@salusoft89/planegcs` 1.3.0, ultima versione su npm; porta WASM del solver 2D di FreeCAD) |
 |---|---|---|
 | Licenza | Nostra, **MIT** come Construct | **LGPL-2.0-or-later** (campo `license` del `package.json`, letto da jsDelivr). Un WASM incluso nel bundle impone di rendere disponibili i sorgenti della libreria e di consentire la sostituzione: va chiarito con chi ha deciso la licenza MIT |
-| Peso | Circa 20 KB di sorgente con i commenti (circa 11 KB di codice), nessun file binario | `planegcs.wasm` **508.141 byte** più 28 KB di glue JavaScript (elenco dei file di jsDelivr): confrontabile con il WASM di manifold (circa 540 KB) che Construct già porta |
+| Peso | Circa 20 KB di sorgente con i commenti (circa 11 KB di codice), nessun file binario | `planegcs.wasm` **484.003 byte** più 26 KB di glue JavaScript (elenco dei file di jsDelivr della versione 1.3.0; la 1.1.7, su cui avevo fatto la prima misura, pesava 508.141 byte): confrontabile con il WASM di manifold (circa 540 KB) che Construct già porta |
 | Vincoli | I 14 del nucleo (sezione 1) | Tutti quelli di FreeCAD (coincidente, distanza, angolo, tangente, arco, ellisse, parabola...); il README non ne dà l'elenco |
 | Primitive | Solo punti | Punto, linea, cerchio, arco, ellisse e coniche. **B-spline non ancora complete** (README) |
 | Web Worker | Funzioni pure, vanno ovunque | WASM caricabile in un worker, ma **nessun multithreading** (README) e «con Vite occorre impostare l'URL del `.wasm`» |
 | Determinismo | Totale: nessun numero casuale, stessi dati stessi risultati | Non verificato: dipende da DogLeg (predefinito), Levenberg-Marquardt, BFGS, SQP, e dall'ordine dei vincoli |
 | Diagnosi dei gradi di libertà e dei conflitti | `dof`, punti liberi, vincoli ridondanti e in conflitto, dal rango (vedi sotto) | *Dalla mia conoscenza di FreeCAD, non verificato*: il motore GCS dà gradi di libertà e vincoli in conflitto o ridondanti; non ho letto l'API del wrapper |
-| Costo di integrazione | Circa 450 righe già scritte e provate | Wrapper, conversione dei dati dal nostro modello, test |
+| Costo di integrazione | Circa 500 righe già scritte e provate | Wrapper, conversione dei dati dal nostro modello, test |
 
 **Raccomandazione: risolutore proprio**, come scelto dall'utente. planegcs resta come termine di confronto: **non l'ho eseguito**, quindi
 nessun numero di tempo o di robustezza è confrontato. Il motivo per ripensarci sarebbe l'arco vero con tangenze e le ellissi, cioè
@@ -271,19 +286,26 @@ la tappa 6.
 2. **Residui**: una funzione per tipo di vincolo (`evalCon`). Lunghezze in mm; `parallel` e `perpendicular` un seno e un coseno
    normalizzati; **`angle` con `atan2` e non col seno**, perché con il seno passare da 10 a 170 gradi scivola verso la radice
    sbagliata (-10) (c'è un test); `midpoint`, `collinear`, `symmetric` come residui lineari o normalizzati.
-3. **Jacobiano** sparso per **differenze finite centrali** sulle sole variabili del vincolo (passo 1e-6 mm). Più semplice di dieci
-   derivate analitiche, abbastanza preciso (residui finali sotto 1e-9, spesso 1e-12).
+3. **Jacobiano** sparso. **Analitico per `dist` e `angle`** (i tipi che dominano i sistemi non lineari; per `angle` la differenza finita
+   è anche sbagliata a 180 gradi, dove `wrap` salta: un segmento a 180 gradi esatti con quota 0 risultava «in conflitto» con 4 gradi
+   di libertà); **differenze finite centrali** (passo 1e-6 mm) per gli altri tipi, sulle sole variabili del vincolo. Residui finali
+   sotto 1e-9, spesso 1e-12. Estendere l'analitico agli altri tipi è un miglioramento facile (sezione 7).
 4. **Passo**: Levenberg-Marquardt, `min |r + J d|² + λ d' W d`. Con **meno equazioni che variabili** (il caso normale di un disegno
    non vincolato) si risolve nella **forma a norma minima** `d = -W⁻¹ J' (J W⁻¹ J' + λI)⁻¹ r`: è il passo più piccolo che soddisfa le
    equazioni, e per questo la soluzione resta vicina alla configurazione di partenza (criterio c). Con più equazioni che variabili
    si usa la forma normale. Fattorizzazione di Cholesky **a profilo** (si parte dalla prima colonna non nulla di ogni riga): le matrici
-   sono quasi a banda e il passo a 100 segmenti costa circa 3 ms invece di 15.
-5. **Nessuna oscillazione**: un passo si accetta solo se il costo scende, altrimenti `λ` cresce e si riprova (al più 30 volte per
-   iterazione, 60 iterazioni, stop se per tre passi il costo non scende apprezzabilmente). Il costo registrato a ogni iterazione non
-   cresce mai (è un controllo del test).
-6. **Trascinamento**: il nodo trascinato parte già sul mouse con un **peso alto** (1000): si muove solo se i vincoli lo costringono,
-   e gli altri si adattano con lo spostamento minimo. Se il trascinamento non ha soluzione (per esempio su un nodo fisso) il
-   fotogramma si salta e il disegno resta com'era.
+   sono quasi a banda e il passo a 100 segmenti lineari costa circa 3 ms invece di 15.
+5. **Nessuna oscillazione**: un passo si accetta solo se il costo scende; lo smorzamento `λ` segue il rapporto tra riduzione ottenuta e
+   prevista (**Nielsen**): cala in fretta se il modello lineare regge, altrimenti cresce e si riprova (al più 30 volte per
+   iterazione). Il tetto è **60 iterazioni nel trascinamento e 500 altrimenti** (un poligono coerente di 100 lati con angoli e
+   lunghezze ne vuole 50-130: con il vecchio tetto di 60 risultava «in conflitto»), stop se per tre passi il costo non scende
+   apprezzabilmente. Il costo registrato a ogni iterazione non cresce mai (è un controllo del test).
+6. **Trascinamento**: il nodo trascinato parte già sul mouse con un **peso di 30**: si muove solo se i vincoli lo costringono, con
+   uno scarto di circa il 3% della parte che gli altri non riescono ad assorbire (a peso 1000 lo scarto era trascurabile ma i
+   sistemi non lineari a 50 segmenti non convergevano), e gli altri si adattano con lo spostamento minimo. La **tolleranza è 1e-6 mm**
+   (il resto è invisibile) e un fotogramma con residuo sotto 1e-4 mm si accetta anche se non del tutto convergente; se il
+   trascinamento non ha soluzione (per esempio su un nodo fisso) il fotogramma si salta e il disegno resta com'era. Al rilascio, e
+   con le frecce e le coordinate digitate, un passaggio finale (`settle`, fino a 300 iterazioni) porta il disegno alla precisione piena.
 7. **Casi degeneri**: i punti di un segmento di lunghezza nulla che ha una quota o un angolo si separano di 1 µm lungo X prima di
    risolvere (deterministico), tranne se un vincolo «coincidente» li unisce apposta. Una quota a zero, negativa o non finita si
    **rifiuta all'ingresso** (`validateValue`), prima di risolvere.
@@ -296,11 +318,16 @@ doppio passaggio, tolleranza relativa 1e-6): una riga che dipende da quelle prec
 - **Gradi di libertà** = variabili meno rango. Un punto è **libero** se, nella base ortonormale delle righe, la sua coordinata ha
   quota residua `1 - Σ q² > 1e-6` sullo spazio nullo (così si colorano i singoli nodi).
 - **Ridondante**: tutte le righe del vincolo sono dipendenti **e** il residuo è sotto 1e-7 (la misura è già rispettata dagli altri).
-- **In conflitto**: un residuo del vincolo resta sopra 1e-7 nella soluzione (non si possono rispettare tutti). La soluzione si
+- **Non risolto** (`state: 'unsolved'`): il risolutore si è fermato senza convergere **ma il gradiente non è nullo** (`|J'r|∞ > 1e-5·max(1, |r|)`):
+  non si è in un minimo dei quadrati minimi, quindi non si sa se il sistema sia risolubile. **Nessun vincolo viene accusato**; la
+  UI rifiuta l'operazione con un messaggio diverso («il risolutore non è arrivato a una soluzione, non è detto che ci sia un
+  conflitto») e non propone la quota di riferimento. La soglia 1e-5 è empirica (separa il triangolo 3-4-10, minimo vero, da un
+  poligono di 100 lati con poche iterazioni), non dimostrata in generale.
+- **In conflitto**: il risolutore è in un minimo dei quadrati minimi e un residuo del vincolo resta sopra 1e-7 (non si possono rispettare tutti). La soluzione si
   scarta e si dice quale era il vincolo aggiunto per ultimo; l'elenco completo comprende **tutti** i vincoli con residuo, non un
   insieme minimo (nel triangolo 3, 4, 10 ne segnala tre su tre). L'ordine dei vincoli decide solo **chi** è «ridondante»: in
   genere il più recente.
-- Il blocco costa **O(m²·n)**: 35 ms mediani a 100 segmenti completamente quotati. Va **fuori dal ciclo di trascinamento**.
+- Il blocco costa **O(m²·n)**: circa 40 ms mediani a 100 segmenti lineari completamente quotati, circa 70 con vincoli non lineari. Va **fuori dal ciclo di trascinamento**.
 
 ### Misure (Node 26.1, Windows 11, 30 ripetizioni dopo 5 di riscaldamento)
 
@@ -320,38 +347,53 @@ blocco `CORE` del prototipo.
 
 | Vincolo aggiunto | Segnalato come | Iterazioni | Costo mai in salita | Ripetibile | Esito |
 |---|---|---|---|---|---|
-| Diagonale coerente (47,17) | ridondante | 3 | sì | sì | sì |
-| Stessa larghezza due volte (40 e 40) | ridondante | 3 | sì | sì | sì |
+| Diagonale coerente (47,17) | ridondante | 4 | sì | sì | sì |
+| Stessa larghezza due volte (40 e 40) | ridondante | 4 | sì | sì | sì |
 | Larghezza in conflitto (40 e 55) | in conflitto | 4 | sì | sì | sì |
-| Diagonale incompatibile (60) | in conflitto | 11 | sì | sì (scarto 5e-8) | sì |
+| Diagonale incompatibile (60) | in conflitto | 10 | sì | sì (scarto 0) | sì |
 
 **c. Trascinamento di una geometria non del tutto vincolata** (spostamento dei nodi non trascinati):
 
 | Prova | Spostamento dei nodi non trascinati | Il nodo trascinato arriva a (mm dal mouse) | Esito |
 |---|---|---|---|
-| Solo H/V e punto fisso, trascino `c` di 3,61 mm | fisso 5e-13, `b` 3,00, `d` 2,00 (solo ciò che serve) | 0,00 | sì |
-| H/V e due quote, trascino `c` di 3,61 mm | al più 3,59 mm (traslazione rigida) | 0,01 | sì |
-| 60 fotogrammi da 0,56 mm | salto massimo 0,56 mm: nessun salto | | sì |
+| Solo H/V e punto fisso, trascino `c` di 3,61 mm | fisso 7e-10, `b` 2,90, `d` 1,94 (solo ciò che serve) | 0,12 | sì |
+| H/V e due quote, trascino `c` di 3,61 mm | al più 3,28 mm (traslazione rigida) | 0,33 | sì |
+| 60 fotogrammi da 0,56 mm | salto massimo 0,51 mm: nessun salto | | sì |
 
-**d. Tempo di risoluzione**, in ms (mediana e peggiore): «trascinamento» = un fotogramma partendo dalla soluzione, senza diagnosi;
-«a freddo» = tutti i punti sporcati di circa 1,5 mm; «con diagnosi» = a freddo più il rango.
+Con il peso 30 il nodo trascinato resta indietro rispetto al mouse di 0,1-0,3 mm nei casi in cui i vincoli lo costringono (con 1000 era 0,00-0,01):
+è il prezzo del trascinamento rapido dei sistemi non lineari, e sparisce quando il nodo è libero di seguire il mouse.
 
-| Quote | Segmenti | Variabili / equazioni | Trascinamento | A freddo | A freddo con diagnosi |
-|---|---|---|---|---|---|
-| ogni due lati | 10 | 22 / 16 | 0,20 (0,81) | 0,20 (0,67) | 0,37 (1,31) |
-| ogni due lati | 25 | 52 / 38 | 0,34 (0,94) | 0,39 (1,77) | 1,42 (2,94) |
-| ogni due lati | 50 | 102 / 76 | 0,48 (1,19) | 0,43 (0,90) | 3,77 (7,53) |
-| ogni due lati | 100 | 202 / 150 | 0,89 (1,44) | 0,82 (1,33) | **18,9 (25,8)** |
-| tutti i lati (0 DOF) | 10 | 22 / 22 | 0,23 (0,60) | 0,13 (0,41) | 0,30 (2,23) |
-| tutti i lati (0 DOF) | 25 | 52 / 52 | 0,63 (1,32) | 0,43 (0,95) | 1,46 (3,02) |
-| tutti i lati (0 DOF) | 50 | 102 / 102 | 1,44 (2,23) | 0,76 (1,59) | 6,26 (9,52) |
-| tutti i lati (0 DOF) | 100 | 202 / 202 | 2,97 (5,02) | 1,95 (3,67) | **35,5 (49,4)** |
+**d. Tempo di risoluzione**, in ms, **mediane** (il massimo di una singola esecuzione non è riproducibile: a 100 segmenti lineari
+completamente quotati si sono visti massimi da 4 a 24 ms in esecuzioni diverse; i massimi della prima esecuzione sono stati tolti dal testo.
+`misure-quote.txt` riporta anche i massimi di quella esecuzione). «Trascinamento» = un fotogramma partendo dalla soluzione, con i parametri del prototipo
+(peso 30, tolleranza 1e-6, passo di mouse di 0,5 x 0,3 mm), senza diagnosi; «a freddo» = tutti i punti sporcati di circa 1,5 mm, tetto di
+300 iterazioni; «con diagnosi» = a freddo con tetto 500 più il rango. «Non lineare» = poligono chiuso con lunghezza sui lati pari,
+uguaglianza sui dispari, angolo tra lati consecutivi, un nodo fisso e un angolo assoluto (nel bench: `polygon`).
 
-Il **trascinamento sta sotto 16 ms con grande margine a ogni dimensione** (peggiore 5,0 ms a 100 segmenti). A 50 entità anche la
-diagnosi sta sotto 10 ms (peggiore 9,5). A 100 entità la diagnosi supera i 16 ms: si esegue dopo il rilascio o in un momento di quiete.
-**Nel browser** (thread principale di Chrome, stesso codice, `quote-prototype-check.mjs`): trascinamento con quote ogni due lati,
-10, 25, 50 e 100 segmenti: 0,20, 0,40, 0,70 e 1,3 ms di mediana, 2,3 ms il peggiore (altra esecuzione: le misure oscillano di circa un terzo). Il kernel resta nel suo Web Worker; per il
-risolutore il thread principale basta, e un worker dedicato (con Comlink, già in uso) serve solo oltre qualche centinaio di entità.
+| Vincoli | Segmenti | Variabili / equazioni | Trascinamento | A freddo | A freddo con diagnosi | Fotogrammi scartati |
+|---|---|---|---|---|---|---|
+| lineari, quote ogni due lati | 10 | 22 / 16 | 0,18 | 0,15 | 0,42 | 0 / 30 |
+| lineari, quote ogni due lati | 25 | 52 / 38 | 0,27 | 0,27 | 1,09 | 0 / 30 |
+| lineari, quote ogni due lati | 50 | 102 / 76 | 0,48 | 0,46 | 4,31 | 0 / 30 |
+| lineari, quote ogni due lati | 100 | 202 / 150 | 1,06 | 0,98 | **24,5** | 0 / 30 |
+| lineari, tutti i lati (0 DOF) | 10 | 22 / 22 | 0,25 | 0,25 | 0,63 | 0 / 30 |
+| lineari, tutti i lati (0 DOF) | 25 | 52 / 52 | 0,46 | 0,43 | 1,55 | 0 / 30 |
+| lineari, tutti i lati (0 DOF) | 50 | 102 / 102 | 1,22 | 1,31 | 7,51 | 0 / 30 |
+| lineari, tutti i lati (0 DOF) | 100 | 202 / 202 | 3,08 | 3,49 | **41,3** | 0 / 30 |
+| **non lineari** | 10 | 20 / 20 | 0,43 | 0,41 | 0,57 | 0 / 30 |
+| **non lineari** | 25 | 50 / 50 | 2,28 | 2,35 | 3,40 | 0 / 30 |
+| **non lineari** | 50 | 100 / 100 | **9,98** | 13,5 | **19,4** | 0 / 30 |
+| **non lineari** | 100 | 200 / 200 | **23,6** | 28,6 | **70,5** | 0 / 30 |
+
+**Che cosa dimostra e che cosa no.** Per i vincoli **lineari** il trascinamento sta sotto 16 ms con grande margine a ogni dimensione
+(3 ms a 100 segmenti). Per i **non lineari** sta sotto 16 ms di mediana fino a **50 segmenti** (in un'altra esecuzione la stessa riga è
+uscita a 5,7 ms: il valore dipende dai nodi trascinati), ma **a 100 segmenti non è soddisfatto** (circa 24 ms). Nessun fotogramma è scartato
+in nessuna riga; con peso 1000, invece, a 50 segmenti non lineari fino a 17 fotogrammi su 25 non convergevano entro 60 iterazioni. La
+diagnosi a freddo supera i 16 ms a 100 segmenti (lineari) e già a 50 (non lineari): si esegue dopo il rilascio o in un momento di quiete.
+**Nel browser** (thread principale di Chrome, stesso codice, `quote-prototype-check.mjs`, mediana su 30 fotogrammi): lineari da 10 a 100
+segmenti 0,2-1,0 ms; non lineari a 10, 25 e 50 segmenti circa 0,4, 2 e 4-6 ms (massimo su 30 fotogrammi fino a 17 ms a 50 segmenti),
+nessun fotogramma scartato. Il kernel resta nel suo Web Worker; per il risolutore il thread principale basta fino a circa 50 entità
+non lineari, oltre servono la soluzione per componenti connesse o un worker dedicato (con Comlink, già in uso).
 
 **e. Casi limite:**
 
@@ -359,25 +401,32 @@ risolutore il thread principale basta, e un worker dedicato (con Comlink, già i
 |---|---|---|
 | Quota a zero o negativa | Rifiutata: «La misura deve essere maggiore di zero» | sì |
 | Quota non numerica | Rifiutata | sì |
-| Triangolo impossibile (3, 4, 10) | Non converge, tre vincoli in conflitto, 17 iterazioni, nessun NaN | sì |
+| Triangolo impossibile (3, 4, 10) | Non converge, in un minimo (non «non risolto»), tre vincoli in conflitto, 16 iterazioni, nessun NaN | sì |
 | Orizzontale e verticale sullo stesso segmento con lunghezza 10 | Non converge, in conflitto con la quota | sì |
 | Segmento di lunghezza nulla con quota 12 e angolo 30 | Separato e risolto: 12,000000 mm e 30,0000° | sì |
 | Dato non finito nei punti | Nessun calcolo, esito non convergente | sì |
-| Angolo da 10 a 170 gradi | Ramo giusto (nessuna inversione) | sì |
+| Angolo da 10 a 170 gradi | Ramo giusto (nessuna inversione); nel prototipo il segmento viene prima ruotato attorno a un estremo, così nessun nodo salta | sì |
+| Segmento a 180 gradi esatti con quota di 0 gradi | Converge (Jacobiano analitico), non è un conflitto | sì |
+| Poligono coerente di 100 lati, angoli e lunghezze | Con il tetto di 500 iterazioni converge a «completamente vincolato»; con 5 iterazioni è «non risolto», non un conflitto | sì |
 
 **Errore dopo l'arrotondamento a 4 decimali**: 0,000084 a 0,000093 (10, 50 e 100 segmenti), vedi sezione 3.
 
 ### Limiti noti del nucleo
 
-- Jacobiano per differenze finite: 1e-9 di precisione sui residui, abbastanza ma non esatto; la diagnosi usa soglie relative.
+- Jacobiano analitico solo per `dist` e `angle`; gli altri tipi per differenze finite (1e-9 di precisione sui residui: abbastanza ma non esatto); la diagnosi usa soglie relative.
+- **«Non risolto» e «in conflitto» si distinguono dal gradiente** (soglia empirica 1e-5): un sistema difficile che si ferma per `still` o per il tetto di iterazioni in un punto con gradiente piccolo, ma non nullo, può essere scambiato per un conflitto; con i vincoli lineari non è mai successo nelle prove, con i non lineari il caso si è presentato solo con il tetto troppo basso (ora 500).
+- **Convergenza dei sistemi non lineari grandi**: a 100 segmenti con angoli e lunghezze servono 50-130 iterazioni da freddo e il trascinamento supera i 16 ms; vedi sezione 7.
 - Nessuna decomposizione in componenti connesse: un disegno con più parti indipendenti risolve tutto insieme (non è un problema a 100
   segmenti con la forma a profilo).
 - L'insieme dei vincoli in conflitto non è minimo; il criterio «l'ultimo aggiunto» funziona perché la UI rifiuta sempre il conflitto
   prima che entri nel disegno.
-- `angle` accetta valori da -360 a 360 e ha un salto a ±180 gradi tra i due rami; il prototipo presenta sempre l'angolo positivo.
+- `angle` accetta valori da -360 a 360 e ha un salto a ±180 gradi tra i due rami (il residuo è corretto e la derivata analitica locale, ma il passo
+  può attraversare il salto); il prototipo presenta sempre l'angolo positivo e **ruota il segmento al nuovo angolo prima di risolvere**, attorno
+  all'estremo più vincolato: da 10 a 170 gradi, senza questo, il segmento passava da 10,15 a 27 mm e il nodo di partenza si spostava di circa 36 mm.
 - **Strumenti di prova**: `constraints.test.ts` esegue `scripts/constraints-sync.mjs`, che usa `stripTypeScriptTypes` di `node:module`:
   il test di coincidenza del prototipo richiede quindi un Node recente (la funzione è sperimentale e, per quanto ricordo dalla
-  documentazione di Node, esiste dalle versioni 22.13 e 23.2: **non verificato**, provato solo su Node 26.1). Il nucleo
+  documentazione di Node, esiste dalle versioni 22.13 e 23.2: **non verificato**, provato solo su Node 26.1). `package.json` non ha
+  `engines`, e il test **si salta da solo** (`it.skipIf`, con il motivo nel titolo) se la funzione non esiste. Il nucleo
   `constraints.ts` in sé non ha dipendenze: se la funzione sparisse basta togliere quel test o usare `esbuild-wasm`, già in
   `node_modules`.
 - Tutto in millimetri: nessuna scala di normalizzazione per disegni molto grandi (oltre qualche metro) o molto piccoli (sotto 0,01 mm).
@@ -424,7 +473,7 @@ Mockup della modale con la sezione nuova (ASCII, dall'esempio della piastra):
 
 ### Stato e colori
 
-Nodo e contorno cambiano colore in base al rango: **blu** ancora libero (sottovincolato), **verde** completamente vincolato, **rosso**
+Nodo e contorno cambiano colore in base al rango: **blu** ancora libero (sottovincolato), **nero** (colore del testo) completamente vincolato, **rosso**
 sovravincolato, con i vincoli in conflitto evidenziati. Nel piede un chip testuale riassume: «Sottovincolato: N gradi di libertà»,
 «Completamente vincolato: 0 gradi di libertà», «Sovravincolato: N in conflitto, M ridondanti». Il colore **non basta**: i fori (che sono
 già rossi in `profilo-bezier.html`) diventano **tratteggiati** quando ci sono vincoli, e lo stato è anche scritto nel piede.
@@ -433,6 +482,7 @@ già rossi in `profilo-bezier.html`) diventano **tratteggiati** quando ci sono v
 
 ### Sovravincoli e quote di riferimento
 
+- Se il risolutore **non arriva a una soluzione** (esito «non risolto») l'operazione è rifiutata con un messaggio diverso, senza accusare nessun vincolo e senza proporre il riferimento.
 - Un **vincolo geometrico ridondante** o **in conflitto** è rifiutato con un messaggio (che nomina i vincoli in conflitto, evidenziati
   in rosso per tre secondi); il disegno resta com'era.
 - Una **quota ridondante** (già rispettata dagli altri vincoli) diventa da sola **di riferimento**: etichetta tra parentesi, nella
@@ -448,7 +498,7 @@ già rossi in `profilo-bezier.html`) diventano **tratteggiati** quando ci sono v
 ### Vincoli dedotti durante il disegno
 
 Con l'opzione «Deduci orizzontale, verticale e rettangoli mentre disegni» (attiva) un tratto della Penna che scatta in allineamento
-(la stessa soglia di 6 pixel dello snap esistente `snapOrtho`, in `model.ts:397`) diventa davvero **orizzontale** o **verticale**, e
+(il prototipo usa 6 pixel, in `snapPoint` di `profilo-quote.html`; nell'app lo snap ha raggio `SNAP_RADIUS_PX = 8`, `DrawingCanvas.tsx:106`, passato come `radius` a `snapPoint` di `model.ts:397`) diventa davvero **orizzontale** o **verticale**, e
 il Rettangolo nasce con i suoi quattro vincoli H/V, così trascinato resta un rettangolo. Il Cerchio nasce con il suo vincolo nascosto.
 La soglia è in pixel (non in gradi): a zoom diverso corrisponde a angoli diversi; la soglia angolare (per esempio 3 gradi) è una
 decisione aperta.
@@ -538,16 +588,17 @@ nulla di visibile.
 | **Diagnosi lenta oltre 100 entità** | Bassa | Fuori dal ciclo di trascinamento (idle o dopo il rilascio); worker dedicato se servisse |
 | **Instabilità numerica** vicino a configurazioni degeneri (segmenti paralleli e perpendicolari insieme, angolo di 180°) | Media | Il nucleo gestisce lunghezza nulla e rami dell'angolo; vanno aggiunti test su configurazioni quasi singolari quando si collega all'app |
 | **Interfaccia affollata** (due sezioni nuove nella barra, più il campo del raccordo) | Bassa | Sezione «Quote e vincoli» ripiegabile; la lista è lo stesso elenco dei vincoli |
+| **Ridimensionamento**: una quota «60» digitata nella modale non è più 60 mm nel solido | Alta | Il nodo `path` scala il disegno campionato a `width × depth` (commento in `src/scene/types.ts:237-243`); la Scala in percentuale e il gizmo cambiano `width` e `depth` (`src/scene/resize.ts`, `hasScale` a riga 198), e con una misura legata a un parametro `commitProfile` non aggiorna più `width` e `depth` (`src/scene/store.ts:386-387`). Lo studio sul Bézier cita già il rischio (`docs/studio-profili-bezier.md:410`: «Ridimensionamento che deve scalare i nodi e non solo i punti campionati»). Vedi decisione 11 |
 | **Licenza** se si ripiegasse su planegcs (LGPL-2.0-or-later) | Media | Non adottato; da chiarire prima di adottarlo |
 | **Cerchio e import SVG**: un cerchio importato è 4 nodi, non un cerchio parametrico | Bassa | Solo i cerchi disegnati con lo strumento sono parametrici; «Converti in cerchio» (4 nodi simmetrici equidistanti dal centro) a richiesta |
 
 ### Test e documentazione
 
-- **Unit** (Vitest): il nucleo è già coperto (23 test). In tappa 1: roundtrip di `encodePathMeta` `v:2` e lettura `v:1`, `sanitizePaths`
+- **Unit** (Vitest): il nucleo è già coperto (27 test). In tappa 1: roundtrip di `encodePathMeta` `v:2` e lettura `v:1`, `sanitizePaths`
   con id e `r`, `sanitizeConstraints` con dati rovinati, bozza `v:2`.
 - **e2e** (Playwright, `e2e/profile-editor.spec.ts`, che ha già `addPath`, `openEditor`, `drag`): quota digitata e risolta, vincolo
   rifiutato, quota di riferimento, Annulla di un vincolo in un solo passo, penna con misure. Lo script `quote-prototype-check.mjs`
-  è già una bozza di questi casi (44 controlli sul prototipo).
+  è già una bozza di questi casi (47 controlli sul prototipo).
 - **Scorciatoie e tooltip** (CLAUDE.md del repo): nella modale vera i tasti `d` e `k` vanno in `ProfileEditor.tsx` accanto a quelli
   esistenti (573-578), i pulsanti in `EditorToolbar.tsx` con `title`, e il testo del comando `profile` in
   `src/ui/Toolbar/toolbarHelp.ts` (elenco degli strumenti della modale) va aggiornato. `useShortcuts.ts` non cambia: con
@@ -567,7 +618,10 @@ Miglioramenti che il prototipo suggerisce:
 - **Quota di una distanza dall'asse** in rotazione, con il nome «Raggio» al posto di «Orizzontale» quando un estremo è sull'asse.
 - **Nodo «auto liscio»** (già nelle idee rimandate di `docs/studio-profili-bezier.md:393`): una conseguenza naturale della tangente.
 - **Converti in cerchio** i cerchi esistenti di 4 nodi simmetrici, per quotarli.
-- **Soglia angolare** (circa 3 gradi) per la deduzione di orizzontale e verticale, al posto dei 6 pixel.
+- **Soglia angolare** (circa 3 gradi) per la deduzione di orizzontale e verticale, al posto dei 6 pixel del prototipo (8 nell'app).
+- **Soluzione per componenti connesse**: le parti del disegno che nessun vincolo collega si risolvono (e si diagnosticano) separatamente; è il rimedio principale per i tempi non lineari a 100 segmenti, dove il costo dominante è la fattorizzazione di una matrice sola.
+- **Jacobiano analitico per tutti i tipi** (oggi solo `dist` e `angle`): `equal`, `parallel`, `perpendicular`, `midpoint`, `collinear`, `symmetric`; riduce le valutazioni dei residui e la sensibilità numerica.
+- **Fattorizzazione sparsa** con riordino (per esempio minimo grado) al posto del profilo, per i sistemi non lineari oltre 50 segmenti.
 
 Decisioni che servono dall'utente (le mie risposte provvisorie in corsivo):
 
@@ -581,6 +635,7 @@ Decisioni che servono dall'utente (le mie risposte provvisorie in corsivo):
 8. **Lettura**: alla lettura non si risolve mai (le coordinate salvate sono già la soluzione). *Sì.*
 9. **Diagnosi**: nel thread principale dopo il rilascio, senza worker? *Sì, fino a 100 entità.*
 10. **Licenza**: se un giorno si adottasse planegcs, chi decide sulla LGPL-2.0-or-later? *Non adottato.*
+11. **Ridimensionamento dei profili quotati**: dopo la Scala in percentuale o il gizmo le quote della modale non sono più le misure del solido. Tre strade: (a) **avvisare** in modale («il profilo è stato ridimensionato di un fattore f: le quote sono nel disegno originale») e mostrare il fattore; (b) **bloccare la scala** dei profili con quote (il lucchetto delle proporzioni sempre chiuso e Scala disattivata, e il gizmo di ridimensionamento nascosto, come per le mesh); (c) **scalare insieme nodi e valori delle quote** (i nodi si scalano davvero e le quote pilotanti si moltiplicano per il fattore), come proponeva lo studio sul Bézier (`docs/studio-profili-bezier.md:164` e `:410`) e poi superato dalla fase 1. *Provvisoria: (a) in tappa 2 e (c) in una tappa successiva, perché (b) toglie una funzione che oggi esiste.*
 
 ## Segnalazioni (non corrette)
 
@@ -620,7 +675,7 @@ node --no-warnings scripts/constraints-sync.mjs --check
 # (--from-ts usa il modulo invece del prototipo)
 node --no-warnings scripts/constraints-bench.mjs --runs=30 --out=docs/prototipi/misure-quote.txt
 
-# Il prototipo in Chrome: 44 controlli, nessun errore in console, e le immagini
+# Il prototipo in Chrome: 47 controlli, nessun errore in console, e le immagini
 node --no-warnings scripts/quote-prototype-check.mjs --shots
 
 # Aprire il prototipo
@@ -632,7 +687,7 @@ Start-Process docs/prototipi/profilo-quote.html
 - **Fusion 360 non è stato usato**: i colori dello stato (blu, nero, rosso), il comportamento di Tab nella linea, i vincoli dedotti e le
   espressioni nel campo quota vengono dalla mia conoscenza e da riassunti di ricerca (due pagine Autodesk e il forum, solo in parte
   lette per intero), non da prove.
-- **planegcs non è stato eseguito**: licenza e peso del WASM sono quelli letti da jsDelivr (versione 1.1.7); tempi, robustezza e API
+- **planegcs non è stato eseguito**: licenza (`LGPL-2.0-or-later`, campo `license` del `package.json`) e peso del WASM (484.003 byte) sono quelli letti da jsDelivr per la versione 1.3.0, la più recente su npm; README e limiti (B-spline incomplete, nessun multithreading) vengono dalla 1.1.7 e non li ho riletti sulla 1.3.0; tempi, robustezza e API
   di diagnosi non sono confrontati.
 - **Il nucleo non è collegato all'app**: nessuna integrazione con `store.ts`, `bezier.ts`, kernel, codice OpenSCAD, import `.scad`,
   né con la cronologia vera; le ripercussioni della sezione 3 sono una **stima dal codice letto**, non un'implementazione.
@@ -643,6 +698,11 @@ Start-Process docs/prototipi/profilo-quote.html
   schermi piccoli (sotto 900 px il layout è quello di `profilo-bezier.html`, non verificato con le quote).
 - **Tempi**: misurati su una sola macchina; i valori del browser sono quelli di un thread principale libero, senza l'anteprima 3D che
   nel prototipo vera si ricalcola a ogni fotogramma. Diagnosi oltre 100 entità non misurata.
+- **Criterio d con vincoli non lineari**: soddisfatto solo fino a 50 segmenti; **a 100 segmenti non lo è** (circa 24 ms di mediana). I casi misurati sono
+  poligoni con lunghezze, uguaglianze e angoli: altre combinazioni (per esempio molti angoli assoluti, simmetrie, più contorni collegati) non sono state
+  provate e potrebbero convergere peggio. Il peso di trascinamento 30 e la soglia di accettazione 1e-4 mm sono scelte empiriche su questi casi.
+- **Il massimo dei tempi non è riproducibile**: oscilla molto tra un'esecuzione e l'altra (garbage collector, altri processi); il testo cita le mediane.
+- **Esito «non risolto»**: la soglia del gradiente (1e-5) è empirica; non ho una dimostrazione che separi sempre un conflitto vero da un risolutore fermo.
 - **Accessibilità da tastiera** delle etichette SVG: non raggiungibili da tastiera (vedi sezione 5); nessuna prova con uno
   screen reader.
 - **Più contorni con quote tra contorni diversi, import SVG con quote, profilo aperto in rotazione con quote dall'asse**: non provati
