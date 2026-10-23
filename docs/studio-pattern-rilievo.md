@@ -10,6 +10,8 @@ condizione per la ruggine (mappa di altezze, export OpenSCAD pesante).** Il prot
 all'app**) calcola tutte e cinque le texture nel kernel, le scrive in OpenSCAD e il risultato di OpenSCAD coincide con quello
 del kernel (verificato, vedi più sotto).
 
+Seguito: `docs/studio-texture-immagine.md` valuta le texture da immagine (JPG, PNG, SVG) come superficie in rilievo, con il confronto tra le due soluzioni.
+
 ## Cosa c'è nel prototipo
 
 | File | Contenuto |
@@ -51,7 +53,7 @@ solido va da −0,2 mm (entra nel pezzo, nessuna fessura nell'unione) alla super
 (rumore, venature). Limiti: bordi a gradini (si vede la griglia), triangoli proporzionali all'area / passo², **codice OpenSCAD
 proporzionale ai punti** (un `polyhedron` con tutti i valori).
 
-OpenSCAD offre anche `surface(file = "...dat")`, ma richiede un file separato e rompe l'export in un file solo: scartato.
+OpenSCAD offre anche `surface(file = "...dat")`, ma richiede un file separato e rompe l'export in un file solo: scartato. Con una texture da immagine il file esterno esiste comunque: lo scarto è stato **rivalutato** in `docs/studio-texture-immagine.md`.
 Non si può nemmeno ricalcolare il rumore dentro OpenSCAD: manca l'aritmetica intera (`Math.imul` del hash) e non
 garantirebbe lo stesso disegno del kernel.
 
