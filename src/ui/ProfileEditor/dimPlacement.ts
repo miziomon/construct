@@ -175,7 +175,10 @@ function segmentsCross([p, q]: Seg, [r, s]: Seg, eps: number): boolean {
   return t > eps && t < 1 - eps && u >= 0 && u <= 1;
 }
 
-/** Contorni campionati: segmenti (per gli urti) e poligoni (per sapere se un punto è dentro il disegno). */
+/**
+ * Contorni campionati: segmenti (per gli urti, tutti i contorni) e poligoni (per sapere se un punto è dentro il disegno
+ * pieno: solo i contorni CHIUSI, un contorno aperto non delimita nessuna area).
+ */
 function contourGeometry(paths: PathContour[]): { segments: Seg[]; polygons: Vec2[][] } {
   const sampled = samplePaths(paths, PATH_DEFAULT_TOLERANCE).contours;
   const segments: Seg[] = [];
@@ -183,7 +186,12 @@ function contourGeometry(paths: PathContour[]): { segments: Seg[]; polygons: Vec
     const n = c.points.length;
     for (let i = 0; i < (c.closed ? n : n - 1); i++) segments.push([c.points[i], c.points[(i + 1) % n]]);
   }
-  return { segments, polygons: sampled.map((c) => c.points).filter((p) => p.length >= 3) };
+  return { segments, polygons: sampled.filter((c) => c.closed && c.points.length >= 3).map((c) => c.points) };
+}
+
+/** Il punto sta nel disegno pieno: regola pari-dispari sui contorni chiusi (un foro è fuori, un contorno aperto non conta). */
+export function insideDrawing(paths: PathContour[], p: Vec2): boolean {
+  return contourGeometry(paths).polygons.filter((poly) => pointInPolygon(poly, p)).length % 2 === 1;
 }
 
 /** Baricentro di un contorno campionato (con l'area; senza area la media dei punti). */
@@ -206,8 +214,8 @@ function centroid(points: Vec2[]): Vec2 {
 const dimSegments = (l: DimLayout): Seg[] => [[l.a2, l.b2], [l.a, l.a2], [l.b, l.b2]];
 
 /**
- * Posizione automatica di una quota nuova: fuori dal disegno, dalla parte opposta al baricentro del contorno del primo
- * nodo, a `DIM_GAP_PX` pixel; se l'etichetta cadrebbe dentro il disegno, su un contorno, su un'altra etichetta o linea di
+ * Posizione automatica di una quota nuova: fuori dal disegno pieno, dalla parte opposta al baricentro del contorno del primo
+ * nodo (su un foro «fuori» è anche dentro il foro, che è vuoto: una quota sul bordo di un foro può finirci dentro, se c'è posto), a `DIM_GAP_PX` pixel; se l'etichetta cadrebbe dentro il disegno, su un contorno, su un'altra etichetta o linea di
  * quota (o la linea di quota taglia il contorno o un'altra etichetta) si allontana a passi di `STEP_PX` pixel. Si sceglie
  * la parte (opposta al baricentro, o l'altra) che chiede meno passi; se da nessuna c'è posto entro `MAX_STEPS` resta alla distanza iniziale. `others` sono le
  * quote già posizionate (quelle senza nodi nel disegno si ignorano). `at` è sempre 0,5.
@@ -222,7 +230,7 @@ export function placeDimension(paths: PathContour[], others: ProfileConstraint[]
   const geometry = contourGeometry(paths);
   // Baricentro del contorno del primo nodo
   const owner = paths.findIndex((c) => c.nodes.some((n) => n.id === con.p[0]));
-  const ownerPoints = geometry.polygons.length && owner >= 0 ? samplePaths([paths[owner]], PATH_DEFAULT_TOLERANCE).contours[0].points : [...pm.values()];
+  const ownerPoints = owner >= 0 ? samplePaths([paths[owner]], PATH_DEFAULT_TOLERANCE).contours[0].points : [...pm.values()];
   const c = centroid(ownerPoints.length ? ownerPoints : [...pm.values()]);
   const mid: Vec2 = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
   // Verso positivo e scostamento minimo (mm) dalla posizione di riferimento della linea

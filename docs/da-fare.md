@@ -170,6 +170,12 @@ Chiusi dalla fase 2: modale di disegno con Penna e Seleziona, anteprima 3D, voce
 - **Fori**: `contourHoles` usa il primo punto campionato di ogni contorno; se due contorni si toccano proprio lì l'esito è ambiguo.
 - **Chiusura dei sottotracciati SVG**: la tolleranza di 1e-4 della diagonale guarda solo i nodi e non le maniglie; una "goccia" fatta di una sola curva chiusa con un piccolo errore resta di 2 nodi.
 
+## Quote e vincoli del Profilo: punti aperti (tappa 2)
+
+- **Scala e quote**: Larghezza, Profondità, Scala in percentuale e gizmo di un Profilo con quote avvisano che le quote non si aggiornano (decisione 11a dello studio); scalare insieme nodi e valori è la tappa «c», non fatta. La scala di un gruppo che contiene il Profilo non avvisa: è applicata dal gruppo sopra il disegno e non tocca i nodi né le quote, che restano coerenti nella modale.
+- **Quote senza posizione** (da un file scritto a mano): nascono a 30 pixel sul lato sinistro del segmento, spesso dentro il disegno; «Riposiziona quote» le dispone, ma al caricamento non si fa nulla.
+- **Quote d'angolo e di cerchio**: ci sono nel risolutore, non nell'interfaccia (né la posizione automatica).
+
 ## Sagoma di rotazione: punti aperti dalla prima versione (0.70.0)
 
 Studio e prototipo: `docs/prototipi/profilo-sagoma.html` (geometria) e la modale del Profilo con la funzione sperimentale (interfaccia). Il solido è salvato e costruito dal kernel (`src/scene/planSolid.ts`, la stessa mesh del codice OpenSCAD). Restano:

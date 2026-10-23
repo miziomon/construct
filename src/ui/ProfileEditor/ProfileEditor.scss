@@ -357,10 +357,10 @@
     stroke: color('danger');
   }
 
+  // Etichette e icone prendono il puntatore solo con Seleziona e Quota: con la Penna e le forme base il clic va al disegno sotto
   &__qlabel,
   &__qglyph {
-    cursor: pointer;
-    pointer-events: auto;
+    pointer-events: none;
 
     rect,
     circle {
@@ -414,17 +414,31 @@
     }
   }
 
-  // Linea di quota: un tracciato trasparente e largo per afferrarla; etichetta: si trascina o, con un clic, apre il campo
+  // Linea di quota: un tracciato trasparente e largo per afferrarla; etichetta: si trascina o, con un clic, apre il campo.
+  // Il cursore c'è solo dove il gesto vale (Seleziona e Quota); le icone dei vincoli (e le quote d'angolo) non si trascinano: puntatore
   &__qline {
     fill: none;
     stroke: transparent;
     stroke-width: 12;
+    pointer-events: none;
+  }
+
+  &__canvas[data-tool='select'] &__qline,
+  &__canvas[data-tool='dim'] &__qline {
     cursor: move;
     pointer-events: stroke;
   }
 
-  &__qlabel {
+  &__canvas[data-tool='select'] &__qlabel,
+  &__canvas[data-tool='dim'] &__qlabel {
     cursor: grab;
+    pointer-events: auto;
+  }
+
+  &__canvas[data-tool='select'] &__qglyph,
+  &__canvas[data-tool='dim'] &__qglyph {
+    cursor: pointer;
+    pointer-events: auto;
   }
 
   // Avviso sopra il disegno con il pulsante per la quota di riferimento

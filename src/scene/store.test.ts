@@ -529,6 +529,15 @@ describe('avviso di ridimensionamento di un Profilo con quote', () => {
     expect(toasts()).toEqual([]);
   });
 
+  it('con una misura legata a un parametro non avvisa (come la modale: lì la scala non si incorpora)', () => {
+    const id = st().addPath({ paths: [rect], constraints: [width] });
+    useSceneStore.setState((state) => {
+      (state.scene.nodes[id] as { exprs?: unknown }).exprs = { width: { expr: '40', deps: [] } };
+    });
+    st().updateNode(id, { depth: 40 });
+    expect(toasts()).toEqual([]);
+  });
+
   it('un cambio di scala successivo avvisa di nuovo (un fattore diverso)', () => {
     const id = st().addPath({ paths: [rect], constraints: [width] });
     st().updateNode(id, { width: 60, depth: 30 });

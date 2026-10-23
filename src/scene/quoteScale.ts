@@ -31,5 +31,5 @@ export function quoteScaleWarning(node: PathShape, subject: string): string | nu
   const factors = pathScaleFactors(node);
   const quote = node.constraints?.find((c) => !c.ref && c.v !== undefined && (c.t === 'dist' || c.t === 'distX' || c.t === 'distY' || c.t === 'angle'));
   if (!factors || !quote || quote.v === undefined) return null;
-  return `${subject}: ridimensionato ×${fmt(factors.sx)} in X e ×${fmt(factors.sy)} in Y. Le quote non si aggiornano: ${fmt(quote.v)} ${quote.t === 'angle' ? '°' : 'mm'} resta il valore salvato`;
+  return `${subject}: ridimensionato ×${fmt(factors.sx)} in X e ×${fmt(factors.sy)} in Y. Le quote non si aggiornano: ${fmt(quote.v)}${quote.t === 'angle' ? '°' : ' mm'} resta il valore salvato`;
 }

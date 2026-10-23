@@ -166,7 +166,7 @@ export type Applied<T> = { ok: true; draft: T; report: Report } | { ok: false; m
 
 const UNSOLVED = 'Il risolutore non è arrivato a una soluzione (non è detto che ci sia un conflitto): prova un valore più vicino a quello attuale.';
 
-/** Descrizione breve di un vincolo, per i messaggi e il pannello: «Lunghezza P1.1-P1.2». */
+/** Descrizione breve di un vincolo, per i messaggi e il pannello: «Distanza P1.1-P1.2». */
 export function describeConstraint(c: ProfileConstraint, names: Map<string, string>): string {
   return `${CONSTRAINT_NAMES[c.t]} ${c.p.map((id) => names.get(id) ?? '?').join('-')}`;
 }
@@ -301,8 +301,11 @@ export function createDimension(paths: PathContour[], mode: DimMode, idA: string
 /**
  * Aggiunge una quota di riferimento: mostra la misura attuale (tra parentesi sul disegno), non entra nel risolutore e non si
  * modifica. Serve quando una quota nuova sarebbe ridondante o in conflitto con le altre. Non risolve: il disegno non cambia.
+ * Lavora sul disegno `d` che le si dà (chi chiama passa quello CORRENTE, non quello di quando la quota è stata rifiutata) e
+ * restituisce null se un nodo della quota non c'è più.
  */
-export function addReferenceDimension<T extends ProfileGeometry>(d: T, con: Omit<ProfileConstraint, 'id'>): T {
+export function addReferenceDimension<T extends ProfileGeometry>(d: T, con: Omit<ProfileConstraint, 'id'>): T | null {
+  if (!con.p.every((id) => pointMap(d.paths).has(id))) return null;
   const list = d.constraints ?? [];
   const id = constraintIdMaker(list)();
   const ref: ProfileConstraint = { ...con, id, ref: true };

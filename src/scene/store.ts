@@ -513,7 +513,8 @@ export const useSceneStore = create<SceneState>()(
         if (held) noteHeld(before?.name);
         // Profilo con quote ridimensionato (Larghezza, Profondità, Scala, gizmo): le quote non si aggiornano, l'utente lo sa
         const after = get().scene.nodes[id];
-        if (before?.type === 'shape2d' && before.kind === 'path' && after?.type === 'shape2d' && after.kind === 'path' && ('width' in patch || 'depth' in patch)) {
+        // (Non con misure legate a un parametro: la modale non incorpora la scala, come per le quote il disegno resta quello dei nodi)
+        if (before?.type === 'shape2d' && before.kind === 'path' && after?.type === 'shape2d' && after.kind === 'path' && !hasBoundDimension(after) && ('width' in patch || 'depth' in patch)) {
           const [was, now] = [pathScaleFactors(before), pathScaleFactors(after)];
           if (now && (!was || Math.abs(was.sx - now.sx) > 1e-6 || Math.abs(was.sy - now.sy) > 1e-6)) {
             const warning = quoteScaleWarning(after, `«${after.name}»`);

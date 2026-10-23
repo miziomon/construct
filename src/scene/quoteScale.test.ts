@@ -23,7 +23,7 @@ describe('ridimensionamento di un Profilo con quote', () => {
     const scaled = make({ width: 80, depth: 40, constraints: [{ id: 'k0', t: 'horizontal', p: ['n1', 'n2'] }, { ...dist, id: 'r', v: 99, ref: true }, dist] });
     expect(quoteScaleWarning(scaled, 'Il profilo')).toBe('Il profilo: ridimensionato ×2 in X e ×2 in Y. Le quote non si aggiornano: 40 mm resta il valore salvato');
     expect(quoteScaleWarning(make({ width: 60, depth: 20, constraints: [dist] }), '«Staffa»')).toContain('×1,5 in X e ×1 in Y');
-    expect(quoteScaleWarning(make({ width: 60, depth: 20, constraints: [{ id: 'a', t: 'angle', p: ['n1', 'n2'], v: 30 }] }), 'x')).toContain('30 ° resta');
+    expect(quoteScaleWarning(make({ width: 60, depth: 20, constraints: [{ id: 'a', t: 'angle', p: ['n1', 'n2'], v: 30 }] }), 'x')).toContain('30° resta');
   });
 
   it('nessun avviso senza quote pilotanti o senza ridimensionamento', () => {

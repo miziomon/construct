@@ -411,6 +411,7 @@ function Editor({ target }: { target: ProfileTarget }) {
   /** Modifica in corso di un parametro (slider): il disegno cambia subito, il passo si chiude al rilascio (`settle`). */
   const liveDraft = (patch: Partial<Draft>) => {
     finishPen();
+    setRefOffer(null);
     const next = { ...stateRef.current.draft, ...patch };
     stateRef.current = { ...stateRef.current, draft: next };
     pendingLive.current = true;
@@ -468,6 +469,7 @@ function Editor({ target }: { target: ProfileTarget }) {
     history.current!.push(next);
     committed.current = next;
     resumedPaths.current = null;
+    setRefOffer(null);
     setSettled((n) => n + 1);
   };
   /** Termina il contorno della Penna in corso (i nodi sono già passi della cronologia). Con meno di 2 nodi sparisce. */
@@ -515,6 +517,9 @@ function Editor({ target }: { target: ProfileTarget }) {
   const changeTool = (next: Tool) => {
     finishPen();
     setDimPick([]);
+    // Cambiando strumento l'avviso della quota rifiutata e la quota scelta non servono più
+    setRefOffer(null);
+    setSelCon(null);
     dispatch({ type: 'tool', tool: next });
   };
 
@@ -529,6 +534,10 @@ function Editor({ target }: { target: ProfileTarget }) {
     setQuoteEditState(next);
   };
   const [selCon, setSelCon] = useState<string | null>(null);
+  // Cambiando la selezione dei nodi nessuna quota resta «scelta» (Canc deve eliminare i nodi o niente, non una quota di prima)
+  useEffect(() => {
+    setSelCon(null);
+  }, [selection]);
   const [flash, setFlash] = useState<Set<string>>(NONE);
   // Quota che il disegno rifiuta perché ridondante o in conflitto: si può aggiungere come quota di riferimento (non vincola)
   const [refOffer, setRefOffer] = useState<{ message: string; base: Draft; con: Omit<ProfileConstraint, 'id'> } | null>(null);
@@ -579,6 +588,8 @@ function Editor({ target }: { target: ProfileTarget }) {
   const onDimClick = (hit: DimHit, pxPerMm: number) => {
     // Con un campo aperto il clic lo conferma (l'uscita dal campo) e non fa altro
     if (quoteEditRef.current) return;
+    // L'azione successiva: la quota scelta (anche quella appena creata) non resta tale
+    setSelCon(null);
     if (hit.kind === 'segment') {
       setDimPick([]);
       const contour = stateRef.current.draft.paths[hit.seg.path];
@@ -653,7 +664,13 @@ function Editor({ target }: { target: ProfileTarget }) {
   const addReference = () => {
     const offer = refOffer;
     if (!offer) return;
-    const next = addReferenceDimension(offer.base, offer.con);
+    setRefOffer(null);
+    // Sul disegno di ADESSO (non su quello di quando la quota è stata rifiutata: nel frattempo si è potuto lavorare), se i nodi ci sono ancora
+    const next = addReferenceDimension(normalizeProfile(stateRef.current.draft), offer.con);
+    if (!next) {
+      notify.error('La quota non si può aggiungere: i suoi nodi non ci sono più');
+      return;
+    }
     commitDraft(next);
     setSelCon(next.constraints?.at(-1)?.id ?? null);
   };
@@ -844,6 +861,7 @@ function Editor({ target }: { target: ProfileTarget }) {
     onEditCommit: commitQuote,
     onEditCancel: cancelQuote,
     onQuoteMove: moveQuote,
+    onDeselect: () => setSelCon(null),
     onScale: (px) => {
       scaleRef.current = px;
     },
@@ -878,7 +896,7 @@ function Editor({ target }: { target: ProfileTarget }) {
   const scaleChip = !!init.scaleWarning && !!draft.constraints?.some((c) => isDimension(c) && !c.ref);
   if (scaleChip) chips.push({ kind: 'warn', text: init.scaleWarning! });
   // Già salvato dopo un ridimensionamento il fattore non c'è più, ma il disaccordo sì: lo scarto lo segnala (non due volte alla prima apertura)
-  else if (mismatch !== null) chips.push({ kind: 'warn', text: `Le quote non corrispondono al disegno (scarto fino a ${fmt(mismatch)} mm): alla prossima modifica i nodi tornano alle quote` });
+  else if (mismatch !== null) chips.push({ kind: 'warn', text: `Le quote non corrispondono al disegno (scarto fino a ${fmt(mismatch).replace('.', ',')} mm): alla prossima modifica i nodi tornano alle quote` });
 
   if (!init.valid) return null;
 

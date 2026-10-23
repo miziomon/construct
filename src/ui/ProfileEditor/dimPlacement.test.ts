@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dimLayout, dimText, dimensionValue, dragDimension, fmtDim, pillWidthPx, placeDimension, pointMap, repositionDimensions } from './dimPlacement';
+import { dimLayout, dimText, dimensionValue, dragDimension, fmtDim, insideDrawing, pillWidthPx, placeDimension, pointMap, repositionDimensions } from './dimPlacement';
 import { createDimension } from './dimensions';
 import { pointInPolygon } from './model';
 import type { PathContour, ProfileConstraint, Vec2 } from '../../scene/types';
@@ -108,6 +108,28 @@ describe('disposizione automatica delle quote', () => {
     const inner = createAll(ushape, [['h', 'n6', 'n5']])[0];
     const innerLabel = dimLayout(inner, pointMap(ushape), 0)!.label;
     expect(pointInPolygon(ushape[0].nodes.map((n) => n.p), innerLabel)).toBe(false);
+  });
+
+  it('un foro è fuori dal disegno pieno: una quota sul suo bordo può stare dentro il foro; un contorno aperto non conta come area', () => {
+    // Rettangolo 40 x 20 con un foro quadrato 12 x 12 al centro (nodi n5..n8: lato in basso da n5 a n6)
+    const hole: PathContour[] = [
+      ...rect,
+      { closed: true, nodes: [[14, 4], [26, 4], [26, 16], [14, 16]].map((p, i) => ({ id: `n${i + 5}`, p: p as Vec2, kind: 'corner' as const })) },
+    ];
+    expect(insideDrawing(hole, [5, 10])).toBe(true);
+    expect(insideDrawing(hole, [20, 10])).toBe(false);
+    expect(insideDrawing(hole, [50, 10])).toBe(false);
+    // Un contorno aperto (una C) non delimita area: il punto «dentro» non è nel disegno
+    const open: PathContour[] = [{ closed: false, nodes: [[0, 0], [40, 0], [40, 20], [0, 20]].map((p, i) => ({ id: `o${i + 1}`, p: p as Vec2, kind: 'corner' as const })) }];
+    expect(insideDrawing(open, [20, 10])).toBe(false);
+    // La quota del lato in basso del foro: l'etichetta finisce nel vuoto del foro (sopra il lato), mai nel materiale tra il foro e il bordo
+    const list = createAll(hole, [['len', 'n5', 'n6']]);
+    const label = dimLayout(list[0], pointMap(hole), 0)!.label;
+    expect(insideDrawing(hole, label)).toBe(false);
+    expect(label[0]).toBeGreaterThan(14);
+    expect(label[0]).toBeLessThan(26);
+    expect(label[1]).toBeGreaterThan(4);
+    expect(label[1]).toBeLessThan(16);
   });
 
   it('quota dove non c\'è posto fuori: resta alla distanza iniziale (non si blocca)', () => {

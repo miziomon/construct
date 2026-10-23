@@ -4,7 +4,7 @@ import { MAX_PATH_CONTOURS, cubicPoint, segmentOf } from '../../scene/bezier';
 import type { PathContour, PathNode, ProfileConstraint, Vec2 } from '../../scene/types';
 import { appendPenNode, baseShapeContour, contourContains, cycleKind, gridStep, insertNodeWithConstraints, joinContours, moveHandle, moveNodes, nearestSegment, resumeContour, setNodeKind, snapPoint } from './model';
 import type { HandleRef, NodeRef, SegmentRef } from './model';
-import { dragDimension, dragFrame, isLinearDimension, pointMap, settlePaths } from './dimensions';
+import { DIM_GAP_PX, dimLayout, dragDimension, dragFrame, isLinearDimension, pointMap, settlePaths } from './dimensions';
 import type { NodeState } from './dimensions';
 import { QuoteOverlay, quoteLabelPoint } from './QuoteOverlay';
 
@@ -46,6 +46,8 @@ export interface QuoteProps {
   onEditCancel: () => void;
   /** Trascinamento dell'etichetta o della linea di quota: nuova posizione (`off`, `at`) in corso; il passo di cronologia lo chiude il rilascio. */
   onQuoteMove: (id: string, off: number, at: number) => void;
+  /** Clic nel vuoto: nessuna quota o vincolo resta scelto. */
+  onDeselect: () => void;
   /** Lo zoom (pixel per mm) ogni volta che cambia: serve alla disposizione automatica delle quote. */
   onScale: (pxPerMm: number) => void;
 }
@@ -200,7 +202,8 @@ type Drag =
   // Quota di sezione: si trascina solo con Seleziona, dopo nodi, maniglie e curve
   | { type: 'section' }
   // Etichetta (`label`: cambia `at` e `off`) o linea (`line`: cambia `off`) di una quota di lunghezza; senza movimento un clic sull'etichetta apre il campo
-  | { type: 'quote'; id: string; part: 'label' | 'line'; sx: number; sy: number; moved: boolean }
+  // `grab`: scarto (mm) dal puntatore al centro dell'etichetta al clic, così al primo movimento l'etichetta non salta sotto il puntatore
+  | { type: 'quote'; id: string; part: 'label' | 'line'; sx: number; sy: number; moved: boolean; grab: Vec2 }
   // Penna, ripresa da un estremo (maniglia in uscita) o chiusura sul primo nodo (`close`, maniglia in entrata opposta al mouse): il trascinamento la disegna
   // (nodo liscio, spigolo con Alt); `last` parte dal nodo reso liscio
   | { type: 'resume'; ref: HandleRef; current: number; close: boolean; base: PathContour[]; last: PathContour[]; frozen: PathContour[]; to: Vec2 | null; sx: number; sy: number; moved: boolean; alt: boolean }
@@ -486,15 +489,19 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
     const target = quote && (tool === 'select' || tool === 'dim') && e.target instanceof Element ? e.target : null;
     const labelId = target?.closest('[data-qid]')?.getAttribute('data-qid');
     if (labelId && quote) {
-      if (constraints?.some((c) => c.id === labelId && isLinearDimension(c))) drag.current = { type: 'quote', id: labelId, part: 'label', sx, sy, moved: false };
-      else quote.onLabelClick(labelId);
+      const con = constraints?.find((c) => c.id === labelId && isLinearDimension(c));
+      if (con) {
+        const label = dimLayout(con, pointMap(paths), DIM_GAP_PX / view.s)?.label;
+        const at = toW(sx, sy);
+        drag.current = { type: 'quote', id: labelId, part: 'label', sx, sy, moved: false, grab: label ? [label[0] - at[0], label[1] - at[1]] : [0, 0] };
+      } else quote.onLabelClick(labelId);
       return;
     }
     const lineId = target?.closest('[data-qline]')?.getAttribute('data-qline');
     if (lineId && quote) {
       const under = hitTest(sx, sy);
       if (under.type !== 'node' && under.type !== 'handle') {
-        drag.current = { type: 'quote', id: lineId, part: 'line', sx, sy, moved: false };
+        drag.current = { type: 'quote', id: lineId, part: 'line', sx, sy, moved: false, grab: [0, 0] };
         return;
       }
     }
@@ -723,7 +730,7 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
       // La quota passa per il puntatore (senza aggancio: la posizione è libera)
       const con = constraints?.find((c) => c.id === d.id);
       if (con && quote) {
-        const moved = dragDimension(con, pointMap(paths), w, d.part);
+        const moved = dragDimension(con, pointMap(paths), [w[0] + d.grab[0], w[1] + d.grab[1]], d.part);
         quote.onQuoteMove(d.id, moved.off, moved.at);
       }
     } else if (d.type === 'pan') {
@@ -833,7 +840,8 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
       else if (d.live) onShapeCancel();
     } else if (d.type === 'box') {
       if (!d.moved) {
-        // Clic nel vuoto: azzera la selezione (con Maiusc la lascia)
+        // Clic nel vuoto: azzera la selezione (con Maiusc la lascia) e la quota scelta
+        if (!d.shift) quote?.onDeselect();
         if (!d.shift && selection.length) onSelect([]);
         return;
       }

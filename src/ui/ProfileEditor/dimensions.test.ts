@@ -306,7 +306,7 @@ describe('quota di riferimento', () => {
       expect(r.ok).toBe(false);
       if (!r.ok) expect(r.reason).toBe(reason);
     }
-    const out = addReferenceDimension(d, { t: 'dist', p: ['n1', 'n3'], v: 10 });
+    const out = addReferenceDimension(d, { t: 'dist', p: ['n1', 'n3'], v: 10 })!;
     const ref = out.constraints!.at(-1)!;
     expect(ref).toMatchObject({ t: 'dist', p: ['n1', 'n3'], ref: true });
     // Il valore è la misura attuale (la diagonale 44,72), non il 10 digitato
@@ -324,9 +324,24 @@ describe('quota di riferimento', () => {
     expect(setConstraintValue(out, ref.id, 5)).toMatchObject({ ok: false, message: 'Questa quota non ha un valore da cambiare' });
   });
 
+  it('si costruisce sul disegno corrente: il lavoro fatto dopo il rifiuto non si perde; senza i nodi della quota non si aggiunge', () => {
+    const rejected = full();
+    const offer = { t: 'dist' as const, p: ['n1', 'n3'], v: 10 };
+    // Dopo il rifiuto l'utente ha trascinato una quota (off, at) e spostato la larghezza: il riferimento va sul disegno di adesso
+    const worked = must(setConstraintValue({ ...rejected, constraints: rejected.constraints!.map((c) => (c.id === 'k6' ? { ...c, off: -9, at: 0.7 } : c)) }, 'k6', 80));
+    const out = addReferenceDimension(worked, offer)!;
+    expect(out.paths).toBe(worked.paths);
+    expect(out.constraints!.find((c) => c.id === 'k6')).toMatchObject({ v: 80, off: -9, at: 0.7 });
+    expect(out.constraints).toHaveLength(worked.constraints!.length + 1);
+    expect(dimensionValue(out.constraints!.at(-1)!, out.paths)).toBeCloseTo(Math.hypot(80, 20), 9);
+    // Se un nodo è stato cancellato nel frattempo, niente
+    const without = deleteNodesWithConstraints(worked, [{ path: 0, node: 2 }]);
+    expect(addReferenceDimension(without, offer)).toBeNull();
+  });
+
   it('l\'id della quota di riferimento è nuovo e la posizione (off, at) della proposta si conserva', () => {
     const d = full();
-    const out = addReferenceDimension(d, { t: 'distX', p: ['n1', 'n2'], s: 1, v: 40, off: -4, at: 0.3 });
+    const out = addReferenceDimension(d, { t: 'distX', p: ['n1', 'n2'], s: 1, v: 40, off: -4, at: 0.3 })!;
     const ref = out.constraints!.at(-1)!;
     expect(d.constraints!.some((c) => c.id === ref.id)).toBe(false);
     expect(ref).toMatchObject({ ref: true, off: -4, at: 0.3 });

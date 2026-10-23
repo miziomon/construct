@@ -1,13 +1,10 @@
 import type { ReactNode } from 'react';
-import { CONSTRAINT_GLYPHS, DIM_GAP_PX, dimLayout, dimText, fmtDim, isDimension, nodeNames, pointMap, describeConstraint } from './dimensions';
+import { CONSTRAINT_GLYPHS, DIM_GAP_PX, dimLayout, dimText, isDimension, nodeNames, pillWidthPx, pointMap, describeConstraint } from './dimensions';
 import type { NodeRef } from './model';
 import type { PathContour, ProfileConstraint, Vec2 } from '../../scene/types';
 
 /** Coordinata per l'attributo SVG: un decimale basta e tiene corto il markup. */
 const f1 = (n: number) => n.toFixed(1);
-// Il testo delle etichette sta in dimensions.ts (serve anche alla disposizione automatica): si riesporta da qui
-export { dimText, fmtDim };
-
 /** Punto (pixel) al centro dell'etichetta di una quota, o null se un nodo citato non c'è: serve a posizionare il campo che la modifica. */
 export function quoteLabelPoint(c: ProfileConstraint, paths: PathContour[], toS: (p: Vec2) => Vec2, pxPerMm: number): Vec2 | null {
   const layout = dimLayout(c, pointMap(paths), DIM_GAP_PX / Math.max(pxPerMm, 1e-6));
@@ -58,7 +55,7 @@ export function QuoteOverlay({ paths, constraints, toS, pxPerMm, bad, flash, sel
   };
 
   const pill = (key: string, x: number, y: number, text: string, state: string[]): ReactNode => {
-    const w = text.length * 6.6 + 14;
+    const w = pillWidthPx(text);
     return (
       <g key={`l:${key}`} className={bem('profile-editor__qlabel', state)} data-qid={key} data-quote-label={key}>
         <rect x={f1(x - w / 2)} y={f1(y - 9)} width={f1(w)} height={18} rx={9} />

@@ -382,29 +382,34 @@ test('una quota ridondante si aggiunge come quota di riferimento: misura tra par
   await expect(labels(page).last()).toContainText('(40)');
 });
 
-test('Alt+clic su un segmento sceglie i suoi due nodi: Orizzontale si applica a quel lato con un clic', async ({ page }) => {
+test('Alt+clic su un segmento sceglie i suoi due nodi: Orizzontale vale per quel lato e il trascinamento lo rispetta', async ({ page }) => {
   const id = await addProfile(page, []);
   await openEditor(page, id);
   const horizontal = editor(page).locator('[data-constraint-button="horizontal"]');
   await expect(horizontal).toBeDisabled();
-  // Un clic normale su un segmento sceglie tutto il contorno; con Alt solo i due nodi del segmento
-  const [a, b] = [await center(node(page, '0:1')), await center(node(page, '0:2'))];
+  // Alt+clic sul lato in basso (A e B): si scelgono solo i suoi due nodi, non tutto il contorno
+  const [a, b] = [await center(node(page, '0:0')), await center(node(page, '0:1'))];
   await page.keyboard.down('Alt');
   await page.mouse.click((a.x + b.x) / 2, (a.y + b.y) / 2);
   await page.keyboard.up('Alt');
   await expect(editor(page).locator('.profile-editor__node--selected')).toHaveCount(2);
+  await expect(node(page, '0:0')).toHaveClass(/profile-editor__node--selected/);
   await expect(node(page, '0:1')).toHaveClass(/profile-editor__node--selected/);
-  await expect(node(page, '0:2')).toHaveClass(/profile-editor__node--selected/);
   await expect(horizontal).toBeEnabled();
-  await editor(page).locator('[data-constraint-button="vertical"]').click();
+  await horizontal.click();
   await expect(editor(page).locator('[data-constraint]')).toHaveCount(1);
+  // Senza il vincolo B salirebbe da solo: con Orizzontale A lo segue e la y resta la stessa
+  // Un clic su B lo lascia solo nella selezione (il trascinamento sposterebbe tutti i nodi scelti)
+  await clickNode(page, '0:1');
+  await dragBy(page, await center(node(page, '0:1')), 0, -30);
   await ok(page).click();
   await expect(editor(page)).toHaveCount(0);
   await settled(page);
-  // B (40, 0) e C (40, 20) erano già sulla stessa verticale: il vincolo non muove nulla
   const saved = await getNode(page, id);
   expect(saved.constraints).toHaveLength(1);
-  expect(saved.paths[0].nodes[1].p[0]).toBeCloseTo(saved.paths[0].nodes[2].p[0], 3);
+  const p = saved.paths[0].nodes.map((n) => n.p);
+  expect(Math.abs(p[1][1])).toBeGreaterThan(0.5);
+  expect(p[0][1]).toBeCloseTo(p[1][1], 3);
 });
 
 test('ridimensionare un Profilo con quote avvisa con il fattore, anche all\'apertura della modale, e non riscrive le quote', async ({ page }) => {

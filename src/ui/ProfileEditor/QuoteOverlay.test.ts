@@ -1,7 +1,8 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { QuoteOverlay, dimText, fmtDim, quoteLabelPoint } from './QuoteOverlay';
+import { dimText, fmtDim } from './dimPlacement';
+import { QuoteOverlay, quoteLabelPoint } from './QuoteOverlay';
 import type { PathContour, ProfileConstraint, Vec2 } from '../../scene/types';
 
 /** Rettangolo 40 x 20 con id n1..n4. */
