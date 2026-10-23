@@ -514,7 +514,7 @@ cucitura?) con un'anteprima 2 × 2; (f) per l'SVG, scostamento e rotazione del d
 - **Solo facce piane per il motore F** (facce inclinate funzionerebbero come per i Pattern con `faceFrame`, non provate), regione con un margine reale (offset della faccia) non verificata in OpenSCAD: verificate solo regioni rettangolare e circolare (cilindro, cerchio dentro il pannello), che si esprimono con `clip`.
 - Una sola immagine per oggetto, un solo livello (BumpMesh ne ha quattro).
 - La quota usa il grigio, non i canali colore; niente mappe di normali né di rugosità.
-- Nel motore M il raffinamento è uniforme; l'ampiezza ha una regola empirica (spostamento massimo non oltre circa metà lato) dedotta da cinque solidi, non una garanzia.
+- Nel motore M il raffinamento è uniforme; l'ampiezza ha una regola empirica (spostamento massimo non oltre circa metà lato) estrapolata da cinque solidi con un solo lato (0,8 mm), non una garanzia.
 - **Precisione numerica tra motori JavaScript**: `Math.sin`, `Math.cos`, `Math.atan2` e `**` non sono garantiti identici al bit tra browser; la quota arrotondata al centesimo di mm può cambiare di un livello in pochi punti.
   Il codice OpenSCAD contiene valori già calcolati e non ne risente.
 
