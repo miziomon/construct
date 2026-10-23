@@ -6,7 +6,7 @@
  *
  * Convenzioni:
  * - l'immagine è `w x h` pixel, riga 0 in alto (come in PNG, JPG e canvas), valori 0 (nero) a 255 (bianco);
- * - il centro del pixel (i, j) sta in ((i + 0,5) / w, (j + 0,5) / h) della piastrella; `t` cresce verso l'alto (asse Y della faccia);
+ * - il centro del pixel (i, j) sta in s = (i + 0,5) / w e t = 1 - (j + 0,5) / h della piastrella (`t` cresce verso l'alto, come l'asse Y della faccia, perché la riga 0 è in alto);
  * - una piastrella è larga `tile` mm e alta `tile * h / w` mm (le proporzioni dell'immagine restano);
  * - il valore bianco è alto: con `invert` si scambiano.
  */

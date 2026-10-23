@@ -1201,11 +1201,11 @@ function textureFaceScad(rect, img, params, step = .5, piece, clip) {
 	// `clip` (facoltativo): solido 3D che copre la regione quando non è il rettangolo (per esempio un cilindro): come nel kernel, il rilievo si ritaglia
 	out.push(clip ? "module relief_raw() {" : "module relief() {", ...polyhedronLines(surface.grid, surface.planeZ, surface.side).map((l) => `  ${l}`), "}");
 	if (clip) out.push(`module relief() intersection() { relief_raw(); ${clip} }`);
-	if (piece) out.push(...combine(surface.op, surface.column, rect, piece));
+	if (piece) out.push(...combine(surface.op, surface.column, rect, piece, clip));
 	return out.join("\n");
 }
 /** Come si combina il solido della texture con il pezzo, secondo l'operazione di `faceSurface`. */
-function combine(op, column, rect, piece) {
+function combine(op, column, rect, piece, clip) {
 	const w = rect.maxX - rect.minX;
 	const h = rect.maxY - rect.minY;
 	if (op === "subtract") return [
@@ -1220,12 +1220,20 @@ function combine(op, column, rect, piece) {
 		"  relief();",
 		"}"
 	];
-	// Pelle: si toglie la colonna del rettangolo fino a un piano sotto l'incavo più profondo e si unisce la superficie intera
+	// Pelle: si toglie la colonna della REGIONE (il rettangolo, ritagliato con `clip` se la regione è più piccola, come `prism(region)` del kernel) fino a un
+	// piano sotto l'incavo più profondo e si unisce la superficie, anch'essa ritagliata sulla regione
+	const cube = `translate([${n(rect.minX)}, ${n(rect.minY)}, ${n(column[0])}]) cube([${n(w)}, ${n(h)}, ${n(column[1] - column[0])}]);`;
+	const column3d = clip ? [
+		"    intersection() {",
+		`      ${cube}`,
+		`      ${clip}`,
+		"    }"
+	] : [`    ${cube}`];
 	return [
 		"union() {",
 		"  difference() {",
 		`    ${piece}`,
-		`    translate([${n(rect.minX)}, ${n(rect.minY)}, ${n(column[0])}]) cube([${n(w)}, ${n(h)}, ${n(column[1] - column[0])}]);`,
+		...column3d,
 		"  }",
 		"  relief();",
 		"}"
@@ -1237,7 +1245,7 @@ function combine(op, column, rect, piece) {
 * (colonna i, riga dal basso j) in (i, j), e la scala riporta tutto in mm. Costruisce sempre la "pelle": togliere la colonna
 * e unire la superficie, per qualunque modo (un incavo è una pelle con quote negative).
 */
-function textureSurfaceScad(rect, img, params, step, pngName, piece) {
+function textureSurfaceScad(rect, img, params, step, pngName, piece, clip) {
 	const tex = normalizeTexture(params);
 	const h = makeTextureHeight(img, tex);
 	const [lo] = heightRange(tex);
@@ -1260,8 +1268,9 @@ function textureSurfaceScad(rect, img, params, step, pngName, piece) {
 		"module relief() intersection() {",
 		`  translate([${n4(rect.minX - grid.dx)}, ${n4(rect.minY - grid.dy)}, ${n4(zBase)}]) scale([${n4(grid.dx)}, ${n4(grid.dy)}, ${n4(scaleZ)}]) surface(file = "${pngName}", center = false, convexity = 10);`,
 		`  translate([${n4(rect.minX)}, ${n4(rect.minY)}, ${n4(zBase - 1)}]) cube([${n4(width)}, ${n4(height)}, ${n4(zTop - zBase + 2)}]);`,
+		...clip ? [`  ${clip}`] : [],
 		"}",
-		...piece ? combine("skin", [base, Math.max(...grid.z, 0) + 1], rect, piece) : []
+		...piece ? combine("skin", [base, Math.max(...grid.z, 0) + 1], rect, piece, clip) : []
 	].join("\n");
 	return {
 		code,
