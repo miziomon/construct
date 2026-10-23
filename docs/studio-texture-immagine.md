@@ -136,7 +136,7 @@ Letture:
   alla booleana (32.000 a 0,8 mm); la zigrinatura è per metà sotto il livello medio, quella parte resta dentro il pannello e sparisce (15.500). Il modo "entrambi"
   ha 39.400 triangoli perché il pannello perde la parte alta della colonna.
 - **Il tempo cresce con 1/passo²** come per la mappa di altezze procedurale, ma con più triangoli: una texture da immagine ha dettaglio dappertutto, i rilievi
-  procedurali no. A 0,8 mm (anteprima) sono 120 a 150 ms su questa macchina; nel prototipo in Chrome, con la stessa 80 × 60 e passo 0,8, 46 a 91 ms.
+  procedurali no. A 0,8 mm (anteprima) sono 120 a 150 ms su questa macchina in modo rilievo (tabella). Il prototipo in Chrome misura 46 a 91 ms, ma **non è la stessa prova**: parte in modo "entrambi" (pelle, 91 ms; le onde del PNG e del JPG, 46 a 50 ms), che costa molto meno del rilievo (a 0,5 mm: entrambi 170 ms contro rilievo 468 ms, tabella), quindi la differenza viene dal modo e dall'immagine, non dal browser.
 - **Il codice OpenSCAD** è quello della `zmap` (24 KB a 0,8, 58 a 0,5, 158 a 0,3 mm): dipende dai nodi, non dall'immagine. Il PNG sorgente non c'entra.
 - **Il passo dev'essere comparabile al pixel.** A 20 mm per piastrella e 256 pixel un pixel è 0,078 mm: il passo di 0,3 a 0,8 mm lo campiona molto
   più grossolano e, per immagini con dettaglio fine, **fa aliasing** (moiré). Rimedio proposto (non implementato): sfocare di circa `passo / (2 × pixel)`
@@ -194,11 +194,13 @@ fermi (spigolo dritto), squadrate (simili alle medie).
 Cinque solidi: pannello 80 × 60 × 5 (triplanare), cilindro Ø30 × 40 (**proiezione cilindrica** con tappi planari), cubo 30 mm (triplanare), **profilo a L**
 40 × 40 × 10 con parete 10 × 40 × 40 e **scatola** 40 × 40 × 20 con cavità 30 × 30 (per gli **spigoli concavi**). Zigrinatura (scala 10 mm), modo "entrambi", lato
 0,8 mm. Per ogni variante: triangoli rovesciati / sovrapposizione in mm³ a tre ampiezze (0,6 · 1,2 · 2 mm; lo spostamento massimo è la metà dell'ampiezza).
-`status()` è `NoError` in **tutte** le righe tranne "separate" (errore). Comando: `-t "rischi del motore M"`.
+`status()` è `NoError` in **tutte** le righe tranne "separate" (errore). Ogni cella dà, per le tre ampiezze, **triangoli rovesciati / sovrapposizione**; la sovrapposizione è il volume dell'unione del solido con se stesso
+meno il volume del solido, quindi **un valore negativo indica sovrapposizione** (più è negativo, più superficie si incrocia) e valori entro circa ±0,1 sono **rumore** numerico (per esempio +0,02 nel profilo a L). Comando: `-t "rischi del motore M"`.
+I test unitari fissano solo ampiezza 0,6 con lato 0,8 mm; quanto si dice a 1,2 e 2 mm viene dal benchmark (senza asserzioni, escluso da `npm test`).
 
 | Solido | Medie | Medie + spigoli fermi | Squadrate | Squadrate + spigoli fermi |
 |---|---|---|---|---|
-| Pannello | 8 / −0,02 · 48 / −0,09 · 224 / −11,6 | 0 / −0,02 · 0 / −0,03 · 0 / −11,1 | 16 / −0,03 · 124 / −0,18 · 548 / −13,9 | 0 · 0 · 0, come le medie |
+| Pannello | 8 / −0,02 · 48 / −0,09 · 224 / −11,6 | 0 / −0,02 · 0 / −0,03 · 0 / −11,1 | 16 / −0,03 · 124 / −0,18 · 548 / −13,9 | 0 / −0,02 · 0 / −0,03 · 0 / −11,1, identica alle medie con spigoli fermi |
 | Cilindro | 44 / −0,04 · 90 / −0,50 · 332 / −7,1 | 0 / −0,02 · 0 / −0,33 · 192 / −5,3 | 56 · 110 · 514 / −8,1 | come le medie con spigoli fermi |
 | Cubo | 0 / 0,00 · 60 / −0,23 · 228 / −21,0 | 0 / 0,00 · 0 / −0,58 · 0 / −26,3 | 36 / 0,00 · 144 / −0,32 · 372 / −22,5 | come le medie con spigoli fermi |
 | L (concavo) | 0 / 0,00 · 42 / −0,02 · 121 / −10,2 | 0 / 0,02 · 0 / −0,01 · 0 / −8,8 | 4 / 0,00 · 92 / −0,04 · 415 / −11,0 | come le medie con spigoli fermi |
@@ -206,10 +208,14 @@ Cinque solidi: pannello 80 × 60 × 5 (triplanare), cilindro Ø30 × 40 (**proie
 
 Letture:
 
-- **Sotto 0,6 mm di ampiezza (spostamento massimo 0,3 mm, meno della metà del lato di 0,8 mm) tutto è valido**, con spigoli fermi; senza spigoli fermi restano pochi triangoli rovesciati su pannello (8) e cilindro (44), senza sovrapposizione misurabile. A 1,2 mm cominciano i triangoli rovesciati dei metodi senza spigoli
-  fermi e una sovrapposizione piccola ma reale (da −0,3 a −0,6 mm³). A 2 mm la sovrapposizione è di 5 a 26 mm³ **in tutte le varianti, anche con gli spigoli fermi**,
-  e `status()` non se ne accorge. **Regola proposta: spostamento massimo (metà dell'ampiezza nel modo "entrambi") non oltre circa la metà del lato dei triangoli**; BumpMesh
-  usa una regola diversa (avviso oltre il 10 % della dimensione minima del modello) e raffina in modo adattivo, qui il raffinamento è uniforme.
+- **Fino a 0,6 mm di ampiezza (spostamento massimo 0,3 mm, meno della metà del lato di 0,8 mm) tutto è valido** con spigoli fermi; senza spigoli fermi restano pochi triangoli rovesciati su pannello (8) e cilindro (44),
+  senza sovrapposizione misurabile. A 1,2 mm le varianti **senza** spigoli fermi hanno già triangoli rovesciati (da 42 a 144, medie e squadrate) ma una sovrapposizione piccola: da −0,02 a −0,18 mm³ in sei casi su dieci (soglia di rumore 0,1), con le eccezioni
+  del cubo (−0,23 e −0,32) e del cilindro (−0,50 e −0,62). Le sovrapposizioni più nette a 1,2 mm sono proprio **con** spigoli fermi sul cubo (−0,58) e sul cilindro (−0,33): i rovesciati spariscono, la sovrapposizione no. A 2 mm la
+  sovrapposizione è di 5 a 26 mm³ **in tutte le varianti, anche con gli spigoli fermi**, e `status()` non se ne accorge. **Regola proposta: spostamento massimo (metà dell'ampiezza nel modo "entrambi") non oltre circa
+  la metà del lato dei triangoli. È un'estrapolazione**: in tutte le prove il lato è sempre 0,8 mm, quindi i dati non distinguono questa regola da un limite assoluto di circa 0,3 mm di spostamento; per
+  distinguerle servirebbe variare il lato (non fatto). BumpMesh usa un'altra regola (avviso oltre il 10 % della dimensione minima del modello) e raffina in modo adattivo, qui il raffinamento è uniforme.
+- **`selfOverlapVolume` è un'euristica, non una garanzia**: unisce il solido con se stesso con le booleane di manifold, che su un ingresso autointersecante hanno comportamento non definito (la documentazione di `warp`
+  lo avverte). Dà un segnale coerente con i triangoli rovesciati e con l'ampiezza, ma un valore nullo non dimostra che la superficie sia valida.
 - **Gli spigoli concavi non hanno dato problemi aggiuntivi** a ampiezze valide (L e scatola si comportano come cubo e pannello): in un angolo concavo gli spostamenti
   verso l'esterno dei due piani si avvicinano, ma il metodo con lo spigolo fermo e lo spostamento ridotto dentro un lato di triangolo non ha prodotto autointersezioni
   misurabili sotto i limiti sopra. Resta il rischio in angoli molto acuti o con rientranze strette (non provate).
@@ -237,7 +243,7 @@ motore F, che tocca una faccia sola). Pelle, ampiezza 0,6 mm, "entrambi", spigol
 
 Il costo cresce con l'area totale e con 1/lato²; il codice OpenSCAD è un `polyhedron` con tutti i punti e tutte le facce (coordinate a tre decimali): **da 0,6 a 8,6 MB**.
 Il volume coincide con quello del kernel entro 0,00 mm³ (cubo, pannello, cilindro), ma a questa dimensione è un esercizio di verifica, non un export praticabile.
-Nel prototipo in Chrome: pannello 100 ms, cilindro 73 ms, cubo 49 ms a 0,8 mm.
+Nel prototipo in Chrome (zigrinatura, ampiezza 0,8 mm, "entrambi", spigoli fermi, lato 0,8 mm, non la pelle a 0,6 mm della tabella): pannello 100 ms, cubo 49 ms e **cilindro Ø30 × 20** (non × 40 come nel benchmark: 28.192 triangoli contro 42.784) 73 ms.
 
 ### Dove il motore M fallisce o va limitato
 
@@ -341,7 +347,7 @@ decodifica. Il file originale si può tenere come allegato facoltativo per rifar
 (`PlaneGeometry` con un segmento ogni 0,8 mm, cioè circa 100 × 75 per 80 × 60 mm) e un `MeshStandardMaterial` con `displacementMap` (una `DataTexture` del grigio a 8 bit, `LinearFilter`) e
 `displacementScale` = ampiezza, `displacementBias` per il livello medio. Scala, rotazione e scostamento si applicano alla matrice della texture (`repeat`, `rotation`, `offset`,
 `center` di three) e la ripetizione con `RepeatWrapping`. Il costo è quello di una mesh da circa 15.000 triangoli: la GPU lo assorbe senza problemi, contro i 50 a 150 ms di un ricalcolo
-del kernel a passo 0,8 mm (misurati qui: 120 a 150 ms nel benchmark carico, 46 a 91 ms nel prototipo in Chrome). **Vantaggio**: il trascinamento dei cursori (ampiezza, scala, rotazione, scostamento) è
+del kernel a passo 0,8 mm (misurati qui: 120 a 150 ms nel benchmark carico in modo rilievo; 46 a 91 ms nel prototipo in Chrome, ma in modo "entrambi", vedi sopra). **Vantaggio**: il trascinamento dei cursori (ampiezza, scala, rotazione, scostamento) è
 a 60 fotogrammi al secondo; il kernel lavora solo al rilascio, come per gli altri overlay. **Limiti**: (1) **non mostra gli incavi** sotto la faccia (il piano sta sopra il pezzo), quindi per
 incavo e "entrambi" serve il mesh del kernel o un taglio con `clippingPlanes`; (2) il filtro bilineare e la conversione 8 bit in virgola mobile della GPU non coincidono bit per bit con il
 campionatore del kernel (differenza di aspetto minima, ma non uguale); (3) la sfocatura, il livello medio nei modi "rilievo" e "incavo" (non lineare) vanno riscritti in un piccolo
@@ -405,8 +411,8 @@ STL e `.scad`. Il blocco `CORE-BEGIN`/`CORE-END` è **generato dai sorgenti Type
 confronta bit per bit con le funzioni TypeScript (texture di esempio, grigio, quota, spostamento per ogni proiezione, solidi del motore F e M, codice OpenSCAD, STL).
 
 Provato in Chrome con Playwright (`node scripts/texture-prototype-check.mjs`): **nessun errore né avviso in console**, tema chiaro e scuro, caricamento di un PNG, di un JPG e di un SVG, cambio di motore e di oggetto,
-normali separate (il prototipo mostra che manifold rifiuta la mesh), scarico dei due file. Esiti: pannello F pelle 15.620 triangoli in 91 ms, pannello M 40.380 in 100 ms, cilindro M 28.192 in 73 ms, cubo M 21.408 in
-49 ms, nessun triangolo rovesciato.
+normali separate (il prototipo mostra che manifold rifiuta la mesh), scarico dei due file. Esiti: pannello F, pelle, modo "entrambi", passo 0,8 mm: 15.620 triangoli in 91 ms; motore M con zigrinatura, ampiezza 0,8 mm, "entrambi", lato 0,8 mm, spigoli fermi: pannello 40.380 triangoli in 100 ms, cilindro
+Ø30 × 20 28.192 in 73 ms, cubo 21.408 in 49 ms, nessun triangolo rovesciato. I tempi non sono omogenei con quelli del benchmark (modo, oggetto e texture diversi).
 
 ![Pannello, motore F, pelle](studio-texture/01-pannello-F-pelle-light.png)
 ![Pannello, motore F, tema scuro](studio-texture/01-pannello-F-pelle-dark.png)
