@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import * as nodeModule from 'node:module';
 import { describe, expect, it } from 'vitest';
 import { maxResidual, measure, solveSketch, validateValue, type Constraint, type Pt } from './constraints';
 
@@ -46,7 +47,7 @@ describe('criterio a: rettangolo quotato', () => {
     expect(r.free.sort()).toEqual(['a', 'b', 'c', 'd']);
   });
 
-  it('con una sola quota restano 3 gradi e solo i punti coinvolti dalla quota mancante sono liberi', () => {
+  it('con una sola quota resta 1 grado e solo i punti coinvolti dalla quota mancante sono liberi', () => {
     const cons = rectangle(true).filter((c) => !(c.t === 'distY'));
     const r = solveSketch(skewed(), cons);
     expect(r.dof).toBe(1);
@@ -186,9 +187,60 @@ describe('criterio e: casi limite', () => {
     const r = solveSketch(pts, cons);
     expect(r.converged).toBe(false);
     expect(r.state).toBe('over');
+    // È un conflitto vero (minimo dei quadrati minimi), non un risolutore fermo prima del tempo
+    expect(r.unsolved).toBe(false);
     expect(r.conflicting.length).toBeGreaterThan(0);
     for (const p of r.points) expect(Number.isFinite(p.x + p.y)).toBe(true);
-    expect(r.iterations).toBeLessThanOrEqual(60);
+    expect(r.iterations).toBeLessThanOrEqual(500);
+  });
+
+  /** Poligono chiuso di n lati: lunghezza 10 sui lati pari, uguaglianza sui dispari, angolo tra lati consecutivi (non lineare). */
+  const polygon = (n: number): { pts: Pt[]; cons: Constraint[] } => {
+    const R = (10 * n) / (2 * Math.PI);
+    const pts = Array.from({ length: n }, (_, i) => P(`p${i}`, R * Math.cos((2 * Math.PI * i) / n) + 0.7 * Math.sin(i * 1.7), R * Math.sin((2 * Math.PI * i) / n) + 0.5 * Math.cos(i * 2.3)));
+    const cons: Constraint[] = [C('fixed', ['p0'], { x: pts[0].x, y: pts[0].y }), C('angle', ['p0', 'p1'], { v: 90 + 180 / n })];
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      cons.push(i % 2 === 0 ? C('dist', [`p${i}`, `p${j}`], { v: 10 }) : C('equal', [`p${i}`, `p${j}`, `p${(i + n - 1) % n}`, `p${i}`]));
+      if (i < n - 3) cons.push(C('angle', [`p${i}`, `p${j}`, `p${j}`, `p${(i + 2) % n}`], { v: 360 / n }));
+    }
+    return { pts, cons };
+  };
+
+  it('poligono coerente di 100 lati: con le iterazioni predefinite converge a completamente vincolato, nessun «conflitto»', () => {
+    const { pts, cons } = polygon(100);
+    const r = solveSketch(pts, cons);
+    expect(r.converged).toBe(true);
+    expect(r.state).toBe('full');
+    expect(r.conflicting).toEqual([]);
+  });
+
+  it('con poche iterazioni lo stesso poligono è «non risolto»: nessun vincolo accusato, a differenza di un conflitto vero', () => {
+    const { pts, cons } = polygon(100);
+    const r = solveSketch(pts, cons, { maxIter: 5 });
+    expect(r.converged).toBe(false);
+    expect(r.unsolved).toBe(true);
+    expect(r.state).toBe('unsolved');
+    expect(r.conflicting).toEqual([]);
+    expect(r.redundant).toEqual([]);
+    // Con più iterazioni, dalla stessa partenza, si risolve
+    expect(solveSketch(pts, cons, { maxIter: 500 }).converged).toBe(true);
+  });
+
+  it('angolo di 0 gradi da un segmento a 180 gradi esatti (salto di wrap): converge, non è un conflitto', () => {
+    for (const y of [1e-7, -1e-7, 0]) {
+      const r = solveSketch([P('a', 0, 0), P('b', -10, y)], [C('angle', ['a', 'b'], { v: 0 })]);
+      expect(r.converged).toBe(true);
+      expect(r.conflicting).toEqual([]);
+      expect(Math.abs(measure({ id: 'k', t: 'angle', p: ['a', 'b'] }, r.points))).toBeLessThan(1e-6);
+    }
+  });
+
+  it('lunghezza e angolo insieme (Jacobiano analitico): convergono in pochi passi alla soluzione esatta', () => {
+    const a = solveSketch([P('a', 0, 0), P('b', 9, 4)], [C('fixed', ['a'], { x: 0, y: 0 }), C('dist', ['a', 'b'], { v: 12 }), C('angle', ['a', 'b'], { v: 37 })]);
+    expect(Math.hypot(at(a.points, 'b').x, at(a.points, 'b').y)).toBeCloseTo(12, 8);
+    expect((Math.atan2(at(a.points, 'b').y, at(a.points, 'b').x) * 180) / Math.PI).toBeCloseTo(37, 6);
+    expect(a.iterations).toBeLessThanOrEqual(12);
   });
 
   it('vincoli contraddittori: orizzontale e verticale sullo stesso segmento con lunghezza positiva', () => {
@@ -265,8 +317,11 @@ describe('scala e arrotondamento', () => {
   });
 });
 
+// stripTypeScriptTypes di node:module è sperimentale e manca nei Node più vecchi (package.json non ha `engines`): senza, il test si salta
+const hasStrip = typeof (nodeModule as unknown as Record<string, unknown>).stripTypeScriptTypes === 'function';
+
 describe('prototipo', () => {
-  it('il blocco CORE di docs/prototipi/profilo-quote.html è lo stesso testo di constraints.ts (tolti i tipi)', () => {
+  it.skipIf(!hasStrip)('il blocco CORE di docs/prototipi/profilo-quote.html è lo stesso testo di constraints.ts (tolti i tipi; saltato se questo Node non ha stripTypeScriptTypes)', () => {
     // Lo script rigenera il blocco dal modulo e lo confronta con quello del prototipo: esce con 1 se differiscono
     expect(() => execFileSync(process.execPath, ['--no-warnings', 'scripts/constraints-sync.mjs', '--check'], { stdio: 'pipe' })).not.toThrow();
   });

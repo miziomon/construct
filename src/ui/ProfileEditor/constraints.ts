@@ -38,7 +38,10 @@ export interface Constraint {
   ref?: boolean;
 }
 
-/** Opzioni: `weights` = peso per punto (più alto = si muove meno), `diagnose` = false salta la diagnosi (trascinamenti). */
+/**
+ * Opzioni: `weights` = peso per punto (più alto = si muove meno), `diagnose` = false salta la diagnosi (trascinamenti),
+ * `tol` = residuo massimo accettato (mm), `maxIter` = tetto delle iterazioni (predefinito 60 con `diagnose: false`, 500 altrimenti).
+ */
 export interface SolveOptions {
   weights?: Record<string, number>;
   maxIter?: number;
@@ -57,13 +60,19 @@ export interface Report {
   residual: number;
   /** Gradi di libertà residui (variabili meno rango dello Jacobiano). */
   dof: number;
-  /** under = sottovincolato, full = completamente vincolato, over = ridondanze o conflitti. */
-  state: 'under' | 'full' | 'over';
+  /**
+   * under = sottovincolato, full = completamente vincolato, over = ridondanze o conflitti,
+   * unsolved = il risolutore si è fermato prima di una soluzione ma NON ha dimostrato un conflitto (riprovare con più
+   * iterazioni): non si accusa nessun vincolo.
+   */
+  state: 'under' | 'full' | 'over' | 'unsolved';
+  /** Non convergente e non in un minimo dei quadrati minimi: non si sa se il sistema sia risolubile (vedi `state`). */
+  unsolved: boolean;
   /** Id dei punti che hanno ancora un grado di libertà. */
   free: string[];
   /** Vincoli che non aggiungono informazione e sono soddisfatti. */
   redundant: string[];
-  /** Vincoli con residuo non nullo nella soluzione: non possono valere insieme agli altri. */
+  /** Vincoli con residuo non nullo in un minimo dei quadrati minimi (gradiente nullo): non possono valere insieme agli altri. */
   conflicting: string[];
   /** Costo (metà della somma dei quadrati dei residui) a ogni iterazione: non cresce mai. */
   costs: number[];
@@ -165,7 +174,30 @@ function residuals(rows: Row[], x: Float64Array): number[] {
   return r;
 }
 
-/** Jacobiano sparso: per ogni residuo le colonne (variabili) non nulle e i valori, per differenze finite centrali. */
+/**
+ * Derivate analitiche (una riga per residuo, una colonna per coordinata locale) di `dist` e `angle`; null per gli altri tipi,
+ * che usano le differenze finite. Per `angle` serve: con la differenza finita il salto di `wrap` a 180 gradi la falsa.
+ * La derivata dell'angolo di un vettore (x, y) è (-y, x) / |v|^2.
+ */
+function analytic(c: Constraint, q: number[]): number[][] | null {
+  const ux = q[2] - q[0];
+  const uy = q[3] - q[1];
+  if (c.t === 'dist') {
+    const l = safe(Math.hypot(ux, uy));
+    return [[-ux / l, -uy / l, ux / l, uy / l]];
+  }
+  if (c.t !== 'angle') return null;
+  const lu = safe(ux * ux + uy * uy);
+  // Due punti: angolo di ab rispetto all'asse X
+  if (c.p.length === 2) return [[uy / lu, -ux / lu, -uy / lu, ux / lu]];
+  // Quattro punti: angolo di cd meno angolo di ab
+  const sx = q[6] - q[4];
+  const sy = q[7] - q[5];
+  const ls = safe(sx * sx + sy * sy);
+  return [[-uy / lu, ux / lu, uy / lu, -ux / lu, sy / ls, -sx / ls, -sy / ls, sx / ls]];
+}
+
+/** Jacobiano sparso: per ogni residuo le colonne (variabili) non nulle e i valori (analitici dove ci sono, altrimenti differenze finite centrali). */
 function jacobian(rows: Row[], x: Float64Array): { cols: number[][]; vals: number[][] } {
   const cols: number[][] = [];
   const vals: number[][] = [];
@@ -176,17 +208,22 @@ function jacobian(rows: Row[], x: Float64Array): { cols: number[][]; vals: numbe
       cols.push([]);
       vals.push([]);
     }
+    const exact = analytic(row.c, q);
     for (let j = 0; j < q.length; j++) {
       // Derivata rispetto alla coordinata j del vincolo; se lo stesso punto compare due volte, le derivate si sommano
-      const keep = q[j];
-      q[j] = keep + FD_STEP;
-      const hi = evalCon(row.c, q);
-      q[j] = keep - FD_STEP;
-      const lo = evalCon(row.c, q);
-      q[j] = keep;
+      let hi: number[] = [];
+      let lo: number[] = [];
+      if (!exact) {
+        const keep = q[j];
+        q[j] = keep + FD_STEP;
+        hi = evalCon(row.c, q);
+        q[j] = keep - FD_STEP;
+        lo = evalCon(row.c, q);
+        q[j] = keep;
+      }
       const col = 2 * row.ix[j >> 1] + (j & 1);
       for (let k = 0; k < row.nres; k++) {
-        const d = (hi[k] - lo[k]) / (2 * FD_STEP);
+        const d = exact ? exact[k][j] : (hi[k] - lo[k]) / (2 * FD_STEP);
         const at = cols[base + k].indexOf(col);
         if (at >= 0) vals[base + k][at] += d;
         else {
@@ -356,7 +393,8 @@ function compile(constraints: Constraint[], index: Map<string, number>): Row[] {
  */
 export function solveSketch(points: Pt[], constraints: Constraint[], opts: SolveOptions = {}): Report {
   const tol = opts.tol ?? 1e-9;
-  const maxIter = opts.maxIter ?? 60;
+  // Fuori dal trascinamento si può aspettare: un poligono di 100 lati con angoli e lunghezze vuole oltre 130 iterazioni
+  const maxIter = opts.maxIter ?? (opts.diagnose === false ? 60 : 500);
   const n = points.length;
   const index = new Map(points.map((p, i) => [p.id, i]));
   const x = new Float64Array(2 * n);
@@ -369,19 +407,24 @@ export function solveSketch(points: Pt[], constraints: Constraint[], opts: Solve
   const rows = compile(constraints, index);
   const finite = Array.from(x).every(Number.isFinite) && constraints.every((c) => [c.v, c.x, c.y, c.s].every((v) => v === undefined || Number.isFinite(v)));
   const out = (xs: Float64Array): Pt[] => points.map((p, i) => ({ id: p.id, x: xs[2 * i] + 0, y: xs[2 * i + 1] + 0 }));
-  if (!finite) return { points: out(Float64Array.from(points.flatMap((p) => [p.x, p.y]))), converged: false, iterations: 0, residual: Infinity, dof: 0, state: 'over', free: [], redundant: [], conflicting: constraints.filter((c) => !c.ref).map((c) => c.id), costs: [] };
+  if (!finite) return { points: out(Float64Array.from(points.flatMap((p) => [p.x, p.y]))), converged: false, iterations: 0, residual: Infinity, dof: 0, state: 'over', unsolved: false, free: [], redundant: [], conflicting: constraints.filter((c) => !c.ref).map((c) => c.id), costs: [] };
 
   nudge(rows, x);
-  // Levenberg-Marquardt: un passo si accetta solo se il costo scende, altrimenti si smorza di più (nessuna oscillazione)
+  // Levenberg-Marquardt: un passo si accetta solo se il costo scende, altrimenti si smorza di più (nessuna oscillazione).
+  // Lo smorzamento segue il rapporto tra riduzione ottenuta e prevista (Nielsen): cala in fretta se il modello lineare regge.
   let r = residuals(rows, x);
   let cost = r.reduce((s, v) => s + v * v, 0) / 2;
   const costs = [cost];
-  let lambda = 1e-4;
+  let lambda = 1e-3;
+  let nu = 2;
   let iterations = 0;
   let still = 0;
   while (iterations < maxIter && maxAbs(r) >= tol) {
     iterations++;
     const jac = jacobian(rows, x);
+    // Gradiente J'r: serve a prevedere di quanto scende il costo con un passo
+    const g = new Float64Array(2 * n);
+    jac.cols.forEach((cs, i) => cs.forEach((c, k) => (g[c] += jac.vals[i][k] * r[i])));
     let accepted = false;
     for (let tries = 0; tries < 30 && !accepted; tries++) {
       const d = lmStep(jac, r, w, 2 * n, lambda);
@@ -390,24 +433,41 @@ export function solveSketch(points: Pt[], constraints: Constraint[], opts: Solve
         const rt = residuals(rows, trial);
         const ct = rt.reduce((s, v) => s + v * v, 0) / 2;
         if (Number.isFinite(ct) && ct < cost) {
+          let predicted = 0;
+          for (let i = 0; i < d.length; i++) predicted += lambda * w[i] * d[i] * d[i] - g[i] * d[i];
+          predicted /= 2;
+          const rho = predicted > 0 ? (cost - ct) / predicted : 1;
           // Poco progresso per tre passi di fila: ci si ferma (sistema incompatibile, minimo locale)
           still = cost - ct < 1e-14 * cost ? still + 1 : 0;
           x.set(trial);
           r = rt;
           cost = ct;
           accepted = true;
-          lambda = Math.max(lambda * 0.3, 1e-12);
+          lambda = Math.min(1e12, Math.max(1e-12, lambda * Math.max(1 / 3, 1 - (2 * rho - 1) ** 3)));
+          nu = 2;
         }
       }
-      if (!accepted) lambda *= 5;
+      if (!accepted) {
+        lambda = Math.min(1e12, lambda * nu);
+        nu *= 2;
+      }
     }
     costs.push(cost);
     if (!accepted || still >= 3) break;
   }
   const residual = maxAbs(r);
   const converged = residual < Math.max(tol, 1e-9);
-  const base = { points: out(x), converged, iterations, residual, costs };
-  if (opts.diagnose === false) return { ...base, dof: 0, state: converged ? 'under' : 'over', free: [], redundant: [], conflicting: [] };
+  // Non convergente: è un conflitto vero solo se si è in un minimo dei quadrati minimi (gradiente quasi nullo).
+  // Altrimenti il risolutore si è fermato presto (iterazioni finite, passo troppo piccolo): «non risolto», nessun colpevole.
+  let unsolved = false;
+  if (!converged) {
+    const j0 = jacobian(rows, x);
+    const g0 = new Float64Array(2 * n);
+    j0.cols.forEach((cs, i) => cs.forEach((c, k) => (g0[c] += j0.vals[i][k] * r[i])));
+    unsolved = maxAbs(g0) > 1e-5 * Math.max(1, residual);
+  }
+  const base = { points: out(x), converged, iterations, residual, costs, unsolved };
+  if (opts.diagnose === false) return { ...base, dof: 0, state: converged ? 'under' : unsolved ? 'unsolved' : 'over', free: [], redundant: [], conflicting: [] };
 
   // Diagnosi: righe dello Jacobiano ortogonalizzate una alla volta (Gram-Schmidt con doppio passaggio), in ordine
   const jac = jacobian(rows, x);
@@ -451,6 +511,8 @@ export function solveSketch(points: Pt[], constraints: Constraint[], opts: Solve
     else if (mine.every((k) => dependent[k])) redundant.push(row.c.id);
   }
   const dof = 2 * n - basis.length;
+  // Non risolto: nessun colpevole, perché il sistema potrebbe essere risolubile con più iterazioni
+  if (unsolved) return { ...base, dof, state: 'unsolved', free, redundant: [], conflicting: [] };
   const over = redundant.length > 0 || conflicting.length > 0 || !converged;
   return { ...base, dof, state: over ? 'over' : dof === 0 ? 'full' : 'under', free, redundant, conflicting };
 }
