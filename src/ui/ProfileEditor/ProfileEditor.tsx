@@ -21,7 +21,7 @@ import type { GridSettings, Tool } from './DrawingCanvas';
 import { clearDraft, flushDrafts, loadDraft, saveDraft } from './draft';
 import { createHistory } from './history';
 import type { History } from './history';
-import { POLYGON_SIDES, canCloseContour, closeContour, contourHoles, deleteNodes, draftContours, draftFromNode, dropLastNode, emptyDraft, moveHandle, moveNodes, pathCenter, setNodesKind, trimDuplicateTail } from './model';
+import { POLYGON_SIDES, canCloseContour, closeContour, contourHoles, deleteNodes, draftContours, draftFromNode, dropLastNode, emptyDraft, moveHandle, moveNodes, normalizeProfile, pathCenter, setNodesKind, trimDuplicateTail } from './model';
 import type { Draft, NodeRef } from './model';
 import { insertPlanNode } from './planEdit';
 import { PlanSidebar } from './PlanSidebar';
@@ -111,13 +111,15 @@ function Editor({ target }: { target: ProfileTarget }) {
   const [init] = useState(() => {
     const node = nodeId ? useSceneStore.getState().scene.nodes[nodeId] : undefined;
     const path = node?.type === 'shape2d' && node.kind === 'path' ? node : undefined;
-    const draft = path ? draftFromNode(path) : emptyDraft();
+    const opened = path ? draftFromNode(path) : emptyDraft();
+    // I profili vecchi ricevono qui gli id dei nodi (non al caricamento della scena); `baked` si decide prima, sul disegno aperto
+    const draft = normalizeProfile(opened);
     return {
       valid: nodeId === null || !!path,
       draft,
       before: pathCenter(draft),
       // La scala è stata incorporata nei nodi: anche un OK senza modifiche deve scriverli
-      baked: !!path && draft.paths !== path.paths,
+      baked: !!path && opened.paths !== path.paths,
       // Misure legate a un parametro: il disegno si scala alla misura della formula
       bound: path ? { is: hasBoundDimension(path), width: path.width, depth: path.depth } : { is: false, width: 0, depth: 0 },
       // Campi legati a un parametro (altezza, torsione...): la modale non li cambia, all'OK la formula vincerebbe comunque
@@ -284,7 +286,9 @@ function Editor({ target }: { target: ProfileTarget }) {
   useEffect(() => {
     if (!init.valid) return;
     let alive = true;
-    const stored = loadDraft(nodeId);
+    // Anche una bozza v:1 (senza id) si normalizza, per confrontarla con il disegno di partenza e per riprenderla con gli id
+    const loaded = loadDraft(nodeId);
+    const stored = loaded && normalizeProfile(loaded);
     if (stored && JSON.stringify(stored) !== JSON.stringify(init.draft)) {
       void confirmDialog('Ripristinare il disegno non salvato?', 'Ripristina').then((ok) => {
         if (!alive) return;

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { POLYGON_SIDES, appendPenNode, bakeScale, baseShapeContour, canCloseContour, closeContour, contourContains, contourHoles, cycleKind, deleteNodes, draftContours, draftFromNode, dropLastNode, emptyDraft, gridStep, insertNode, isOpenEnd, joinContours, moveHandle, moveNodes, nearestSegment, pathCenter, pointInPolygon, resumeContour, setNodeKind, setNodesKind, snapPoint, trimDuplicateTail } from './model';
+import { POLYGON_SIDES, appendPenNode, bakeScale, baseShapeContour, canCloseContour, closeContour, contourContains, contourHoles, cycleKind, deleteNodes, deleteNodesWithConstraints, draftContours, draftFromNode, dropLastNode, emptyDraft, gridStep, insertNode, insertNodeWithConstraints, isOpenEnd, joinContours, moveHandle, moveNodes, nearestSegment, normalizeProfile, pathCenter, pointInPolygon, resumeContour, setNodeKind, setNodesKind, snapPoint, trimDuplicateTail } from './model';
 import { bboxOf, cubicPoint, segmentOf, signedArea, splitCubic } from '../../scene/bezier';
 import { pathContours, pathNaturalSize } from '../../scene/shapes2d';
 import { shape2dDefaults } from '../../scene/defaults';
-import type { PathContour, PathNode, Shape2DNode, Vec2 } from '../../scene/types';
+import type { PathContour, PathNode, ProfileConstraint, Shape2DNode, Vec2 } from '../../scene/types';
 
 const node = (p: Vec2, out?: Vec2, inn?: Vec2, kind: PathNode['kind'] = 'corner'): PathNode => ({ p, ...(inn ? { in: inn } : {}), ...(out ? { out } : {}), kind });
 
@@ -692,5 +692,113 @@ describe('baseShapeContour', () => {
     expect(shapeAt('rect', [20, 10])).toBeNull();
     expect(shapeAt('ellipse', [10, 30])).toBeNull();
     expect(shapeAt('polygon', [10, 10])).toBeNull();
+  });
+});
+
+describe('id dei nodi e vincoli nelle operazioni sui nodi', () => {
+  const id = (n: PathNode, name: string): PathNode => ({ id: name, ...n });
+  /** Quadrato con id `n1`..`n4` (segmenti: n1-n2 in basso, n2-n3 a destra, n3-n4 in alto, n4-n1 a sinistra, chiusura). */
+  const sq = (): PathContour[] => [{ closed: true, nodes: [id(node([0, 0]), 'n1'), id(node([20, 0]), 'n2'), id(node([20, 20]), 'n3'), id(node([0, 20]), 'n4')] }];
+  const con = (cid: string, t: ProfileConstraint['t'], p: string[], extra: Partial<ProfileConstraint> = {}): ProfileConstraint => ({ id: cid, t, p, ...extra });
+
+  it('le operazioni che ricostruiscono un nodo ne conservano id e r (maniglia, tipo, inserimento, inversione, scala)', () => {
+    const c: PathContour[] = [{ closed: false, nodes: [{ id: 'n1', r: 3, ...node([0, 0], [5, 0], undefined, 'smooth') }, { id: 'n2', ...node([10, 0], undefined, [-5, 0], 'smooth') }, { id: 'n3', ...node([20, 10]) }] }];
+    expect(moveHandle(c, { path: 0, node: 0, side: 'out' }, [4, 4], false)[0].nodes[0]).toMatchObject({ id: 'n1', r: 3 });
+    expect(setNodeKind(c, { path: 0, node: 2 }, 'smooth')[0].nodes[2].id).toBe('n3');
+    expect(moveNodes(c, [{ path: 0, node: 0 }], [1, 1])[0].nodes[0]).toMatchObject({ id: 'n1', r: 3 });
+    // Inserimento su una curva: gli estremi ricostruiti tengono id e r, il nodo nuovo non ne ha
+    const ins = insertNode(c, { path: 0, segment: 0 }, 0.5)!;
+    expect(ins.paths[0].nodes.map((n) => n.id)).toEqual(['n1', undefined, 'n2', 'n3']);
+    expect(ins.paths[0].nodes[0].r).toBe(3);
+    expect(bakeScale(c, 2, 2, 0, 0)[0].nodes[0]).toMatchObject({ id: 'n1', r: 3 });
+    // Contorno ripreso dal primo nodo: si inverte, gli id restano
+    expect(resumeContour(c, { path: 0, node: 0 })!.paths[0].nodes.map((n) => n.id)).toEqual(['n3', 'n2', 'n1']);
+  });
+
+  it('normalizeProfile assegna gli id mancanti e toglie i vincoli che citano nodi inesistenti; senza nulla da fare restituisce lo stesso oggetto', () => {
+    const d = { paths: [{ closed: true, nodes: [id(node([0, 0]), 'n1'), node([5, 0]), id(node([5, 5]), 'n2')] }], constraints: [con('k1', 'dist', ['n1', 'n2'], { v: 3 }), con('k2', 'horizontal', ['n1', 'n9'])] };
+    const out = normalizeProfile(d);
+    expect(out.paths[0].nodes.map((n) => n.id)).toEqual(['n1', 'n3', 'n2']);
+    expect(out.constraints).toEqual([d.constraints[0]]);
+    expect(normalizeProfile(out)).toBe(out);
+    // Tolti tutti i vincoli il campo sparisce
+    expect('constraints' in normalizeProfile({ paths: d.paths, constraints: [con('k2', 'horizontal', ['n1', 'n9'])] })).toBe(false);
+    // Senza vincoli e con id presenti non cambia nulla
+    const plain = { paths: sq() };
+    expect(normalizeProfile(plain)).toBe(plain);
+  });
+
+  it('deleteNodesWithConstraints toglie i vincoli che citano il nodo cancellato, e solo quelli', () => {
+    const d = { paths: sq(), constraints: [con('k1', 'dist', ['n1', 'n2'], { v: 20 }), con('k2', 'horizontal', ['n2', 'n3']), con('k3', 'equal', ['n1', 'n2', 'n3', 'n4']), con('k4', 'vertical', ['n3', 'n4'])] };
+    const out = deleteNodesWithConstraints(d, [{ path: 0, node: 1 }]);
+    expect(out.paths[0].nodes.map((n) => n.id)).toEqual(['n1', 'n3', 'n4']);
+    expect(out.constraints!.map((c) => c.id)).toEqual(['k4']);
+    // Un contorno che sparisce porta via i vincoli dei suoi nodi
+    const two = deleteNodesWithConstraints({ paths: [{ closed: false, nodes: [id(node([0, 0]), 'n1'), id(node([1, 0]), 'n2')] }], constraints: [con('k1', 'horizontal', ['n1', 'n2'])] }, [{ path: 0, node: 0 }]);
+    expect(two.paths).toEqual([]);
+    expect(two.constraints).toBeUndefined();
+    // Funziona anche su profili senza id: nessun vincolo possibile, gli id nascono
+    expect(deleteNodesWithConstraints({ paths: [square()] }, [{ path: 0, node: 0 }]).paths[0].nodes.map((n) => n.id)).toEqual(['n2', 'n3', 'n4']);
+  });
+
+  it('insertNodeWithConstraints: su un segmento retto i vincoli di direzione passano alle due metà, con l\'ordine e gli altri punti del vincolo', () => {
+    const d = {
+      paths: sq(),
+      constraints: [
+        con('k1', 'horizontal', ['n1', 'n2']),
+        con('k2', 'vertical', ['n3', 'n2']),
+        con('k3', 'parallel', ['n3', 'n4', 'n1', 'n2'], { off: 4 }),
+        con('k4', 'perpendicular', ['n4', 'n1', 'n1', 'n2']),
+        con('k5', 'angle', ['n1', 'n2'], { v: 0 }),
+        con('k6', 'dist', ['n1', 'n2'], { v: 20, off: 5, at: 0.3 }),
+        con('k7', 'equal', ['n1', 'n2', 'n3', 'n4']),
+        con('k8', 'distX', ['n1', 'n2'], { v: 20, s: 1 }),
+        con('k9', 'midpoint', ['n3', 'n1', 'n2']),
+      ],
+    };
+    const out = insertNodeWithConstraints(d, { path: 0, segment: 0 }, 0.25)!;
+    expect(out.node).toEqual({ path: 0, node: 1 });
+    expect(out.paths[0].nodes.map((n) => n.id)).toEqual(['n1', 'n5', 'n2', 'n3', 'n4']);
+    const ids = out.constraints!.map((c) => c.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    // Orizzontale n1-n2: due vincoli, (n1, n5) con l'id originale e (n5, n2) con un id nuovo
+    expect(out.constraints!.find((c) => c.id === 'k1')!.p).toEqual(['n1', 'n5']);
+    expect(out.constraints!.filter((c) => c.t === 'horizontal').map((c) => c.p)).toEqual([['n1', 'n5'], ['n5', 'n2']]);
+    // Verticale n3-n2 non riguarda il segmento n1-n2: resta com'è
+    expect(out.constraints!.filter((c) => c.t === 'vertical').map((c) => c.p)).toEqual([['n3', 'n2']]);
+    // Parallelo: il segmento è la seconda coppia (n1, n2): l'altra coppia resta, la posizione grafica passa a entrambe
+    expect(out.constraints!.filter((c) => c.t === 'parallel').map((c) => [c.p, c.off])).toEqual([[['n3', 'n4', 'n1', 'n5'], 4], [['n3', 'n4', 'n5', 'n2'], 4]]);
+    // Perpendicolare: il segmento è la seconda coppia (n1, n2), la prima (n4, n1) non cambia
+    expect(out.constraints!.filter((c) => c.t === 'perpendicular').map((c) => c.p)).toEqual([['n4', 'n1', 'n1', 'n5'], ['n4', 'n1', 'n5', 'n2']]);
+    // Angolo a due punti rispetto all'asse X: passa alle due metà
+    expect(out.constraints!.filter((c) => c.t === 'angle').map((c) => [c.p, c.v])).toEqual([[['n1', 'n5'], 0], [['n5', 'n2'], 0]]);
+    // Quote di lunghezza, uguale, distanza in X e punto medio restano sugli estremi originali, intatte
+    for (const k of ['k6', 'k7', 'k8', 'k9']) expect(out.constraints!.find((c) => c.id === k)).toEqual(d.constraints.find((c) => c.id === k));
+    // Gli id nuovi proseguono il contatore dei vincoli
+    expect(ids.filter((i) => !d.constraints.some((c) => c.id === i))).toEqual(['k10', 'k11', 'k12', 'k13']);
+  });
+
+  it('insertNodeWithConstraints: la direzione invertita (b, a) resta invertita; su una curva i vincoli restano sugli estremi', () => {
+    const rev = insertNodeWithConstraints({ paths: sq(), constraints: [con('k1', 'horizontal', ['n2', 'n1'])] }, { path: 0, segment: 0 }, 0.5)!;
+    expect(rev.constraints!.map((c) => c.p)).toEqual([['n2', 'n5'], ['n5', 'n1']]);
+    // Ultimo segmento di un contorno chiuso (n4 -> n1): il nodo nuovo va in fondo
+    const last = insertNodeWithConstraints({ paths: sq(), constraints: [con('k1', 'vertical', ['n4', 'n1'])] }, { path: 0, segment: 3 }, 0.5)!;
+    expect(last.paths[0].nodes.map((n) => n.id)).toEqual(['n1', 'n2', 'n3', 'n4', 'n5']);
+    expect(last.constraints!.map((c) => c.p)).toEqual([['n4', 'n5'], ['n5', 'n1']]);
+    // Curva: nessuno spostamento di vincoli
+    const curved: PathContour[] = [{ closed: false, nodes: [id(node([0, 0], [5, 5]), 'n1'), id(node([10, 0], undefined, [-5, 5]), 'n2')] }];
+    const constraints = [con('k1', 'horizontal', ['n1', 'n2'])];
+    const out = insertNodeWithConstraints({ paths: curved, constraints }, { path: 0, segment: 0 }, 0.5)!;
+    expect(out.constraints).toEqual(constraints);
+    expect(out.paths[0].nodes.map((n) => n.id)).toEqual(['n1', 'n3', 'n2']);
+  });
+
+  it('insertNodeWithConstraints dà gli id a un profilo vecchio, restituisce null se l\'inserimento non è possibile e non modifica l\'input', () => {
+    const old = freeze({ paths: [square()] });
+    const out = insertNodeWithConstraints(old, { path: 0, segment: 0 }, 0.5)!;
+    expect(out.paths[0].nodes.map((n) => n.id)).toEqual(['n1', 'n5', 'n2', 'n3', 'n4']);
+    expect(out.constraints).toBeUndefined();
+    expect(insertNodeWithConstraints(old, { path: 0, segment: 9 }, 0.5)).toBeNull();
+    expect(insertNodeWithConstraints(old, { path: 0, segment: 0 }, 1)).toBeNull();
   });
 });

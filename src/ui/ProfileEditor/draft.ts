@@ -1,4 +1,4 @@
-import { PATH_MAX_TOLERANCE, PATH_MIN_TOLERANCE, sanitizePaths } from '../../scene/bezier';
+import { PATH_MAX_TOLERANCE, PATH_MIN_TOLERANCE, sanitizeConstraints, sanitizeParams, sanitizePaths } from '../../scene/bezier';
 import type { Draft } from './model';
 
 /**
@@ -27,7 +27,7 @@ export function saveDraft(nodeId: string | null, draft: Draft, storage?: Pick<St
     pending.delete(key);
     try {
       const clean: Draft = { ...draft, paths: draft.paths.filter((c) => c.nodes.length >= 2) };
-      (storage ?? localStorage).setItem(key, JSON.stringify({ v: 1, draft: clean }));
+      (storage ?? localStorage).setItem(key, JSON.stringify({ v: 2, draft: clean }));
     } catch {
       // Spazio esaurito o storage non disponibile: senza bozza si lavora lo stesso
     }
@@ -46,20 +46,31 @@ export function flushDrafts(): void {
 /** Numero finito entro l'intervallo (estremi inclusi). */
 const inRange = (v: unknown, min: number, max: number): v is number => typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max;
 
-/** Bozza salvata, oppure null se non c'è o non è valida (JSON rovinato, contorni o parametri fuori dai limiti). */
+/**
+ * Bozza salvata, oppure null se non c'è o non è valida (JSON rovinato, contorni o parametri fuori dai limiti). La versione 2
+ * aggiunge `constraints` e `params` (e gli id dei nodi nei contorni); la 1 si legge ancora, senza vincoli. Come per il
+ * commento del codice, vincoli e parametri non validi si scartano senza rifiutare la bozza.
+ */
 export function loadDraft(nodeId: string | null, storage?: Pick<Storage, 'getItem'>): Draft | null {
   try {
     const text = (storage ?? localStorage).getItem(keyOf(nodeId));
     if (!text) return null;
     const data = JSON.parse(text) as { v?: unknown; draft?: Record<string, unknown> };
     const d = data?.draft;
-    if (data?.v !== 1 || typeof d !== 'object' || d === null) return null;
+    if ((data?.v !== 1 && data?.v !== 2) || typeof d !== 'object' || d === null) return null;
     const paths = sanitizePaths(d.paths);
     if (!paths) return null;
     // Limiti larghi (quelli dei campi sono più stretti): servono solo a scartare dati rovinati
     if (!inRange(d.tolerance, PATH_MIN_TOLERANCE, PATH_MAX_TOLERANCE) || (d.extrusion !== 'linear' && d.extrusion !== 'rotate')) return null;
     if (!inRange(d.height, 0.01, 1e5) || !inRange(d.twist, -3600, 3600) || !inRange(d.scaleTop, 0, 1000) || !inRange(d.revolveAngle, 1, 360) || !inRange(d.revolveSegments, 3, 256)) return null;
-    return { paths, tolerance: d.tolerance, extrusion: d.extrusion, height: d.height, twist: d.twist, scaleTop: d.scaleTop, revolveAngle: d.revolveAngle, revolveSegments: d.revolveSegments };
+    // Vincoli e parametri esistono solo dalla versione 2
+    const constraints = data.v === 2 ? sanitizeConstraints(d.constraints, paths) : [];
+    const params = data.v === 2 ? sanitizeParams(d.params) : undefined;
+    return {
+      paths, tolerance: d.tolerance, extrusion: d.extrusion, height: d.height, twist: d.twist, scaleTop: d.scaleTop, revolveAngle: d.revolveAngle, revolveSegments: d.revolveSegments,
+      ...(constraints.length ? { constraints } : {}),
+      ...(params ? { params } : {}),
+    };
   } catch {
     // JSON non valido o storage non disponibile
     return null;

@@ -463,6 +463,33 @@ describe('import di file OpenSCAD: Profilo di Bézier (andata e ritorno)', () =>
     near(result.position, [10, 20, 5]);
   });
 
+  it('id dei nodi, raggio, vincoli e parametri fanno andata e ritorno nel commento; la geometria non cambia', () => {
+    const withIds = [
+      { closed: true, nodes: [{ id: 'n1', ...corner([0, 0]) }, { id: 'n2', r: 1.5, ...corner([20, 0]) }, { id: 'n3', ...corner([10, 18]) }] },
+    ];
+    const constraints = [{ id: 'k1', t: 'dist' as const, p: ['n1', 'n2'], v: 20, off: 6, at: 0.4 }, { id: 'k2', t: 'horizontal' as const, p: ['n1', 'n2'] }];
+    const original = node({ paths: withIds, constraints, params: { w: 20 }, width: 20, depth: 18 } as Partial<Shape2DNode>);
+    const result = back(codeOf(original)) as Extract<Shape2DNode, { kind: 'path' }>;
+    expect(result.kind).toBe('path');
+    expect(result.paths).toStrictEqual(withIds);
+    expect(result.constraints).toStrictEqual(constraints);
+    expect(result.params).toStrictEqual({ w: 20 });
+    // Senza vincoli il nodo importato non ha i campi
+    const plain = back(codeOf(node({ paths: withIds, width: 20, depth: 18 } as Partial<Shape2DNode>))) as Extract<Shape2DNode, { kind: 'path' }>;
+    expect(plain).not.toHaveProperty('constraints');
+    expect(plain).not.toHaveProperty('params');
+    // Il codice con i vincoli ha gli stessi punti di quello senza: i vincoli non influenzano la geometria
+    const strip = (c: string) => c.split('\n').filter((l) => !l.includes('construct:path')).join('\n');
+    expect(strip(codeOf(original))).toBe(strip(codeOf(node({ paths: withIds, width: 20, depth: 18 } as Partial<Shape2DNode>))));
+  });
+
+  it('un commento v:1 di un file vecchio si importa ancora come Profilo', () => {
+    const code = codeOf(node());
+    const v1 = code.replace('"v":2', '"v":1');
+    expect(back(v1)).toMatchObject({ kind: 'path' });
+    expect((back(v1) as Extract<Shape2DNode, { kind: 'path' }>).paths).toStrictEqual(PATHS);
+  });
+
   it('rotazione: torna un Profilo senza revolveRadius', () => {
     const original = node({ extrusion: 'rotate', revolveAngle: 270, revolveSegments: 48, paths: [{ closed: false, nodes: [corner([25, 0]), corner([35, 0]), corner([35, 20])] }], width: 10, depth: 20 } as Partial<Shape2DNode>);
     const result = back(codeOf(original)) as Extract<Shape2DNode, { kind: 'path' }>;
@@ -511,7 +538,7 @@ ${codeOf(turned)}
     expect(back(code.replace(/(polygon\(points = \[\s*\[)(-?[\d.]+)/, (_m, a, b) => `${a}${Number(b) + 0.5}`))).toMatchObject({ kind: 'svg' });
     expect(back(code.replace(/(\/\/ construct:path [^\n]*\n)/, '$1\n'))).toMatchObject({ kind: 'svg' });
     expect(back(code.replace('"paths":', '"paths"'))).toMatchObject({ kind: 'svg' });
-    expect(back(code.replace('"v":1', '"v":7'))).toMatchObject({ kind: 'svg' });
+    expect(back(code.replace('"v":2', '"v":7'))).toMatchObject({ kind: 'svg' });
     // Senza commento resta il Poligono di sempre
     expect(back(code.split('\n').filter((l) => !l.includes('construct:path')).join('\n'))).toMatchObject({ kind: 'svg' });
   });

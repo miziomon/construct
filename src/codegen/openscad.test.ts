@@ -331,7 +331,7 @@ describe('sceneToOpenScad: Profilo di Bézier', () => {
     expect(at).toBeGreaterThan(-1);
     expect(rows[at + 1]).toMatch(/^polygon\(/);
     const meta = JSON.parse(rows[at].replace('// construct:path ', ''));
-    expect(meta).toMatchObject({ v: 1, w: 10, d: 20, t: 0.05 });
+    expect(meta).toMatchObject({ v: 2, w: 10, d: 20, t: 0.05 });
     expect(meta.paths).toStrictEqual(node.paths);
   });
 

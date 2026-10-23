@@ -4,7 +4,7 @@ import { current } from 'immer';
 import { temporal } from 'zundo';
 import type { PlanDraft } from './planShape';
 import type { ScadImport } from '../import/scad/toScene';
-import type { Binding, CornerNode, Draft, EdgeNode, GroupNode, GroupOp, MeshNode, Param, PathContour, PrimitiveKind, PrimitiveNode, Scene, SceneNode, Shape2DKind, Shape2DNode, Vec2, Vec3 } from './types';
+import type { Binding, CornerNode, Draft, EdgeNode, GroupNode, GroupOp, MeshNode, Param, PathContour, PrimitiveKind, PrimitiveNode, ProfileConstraint, ProfileParams, Scene, SceneNode, Shape2DKind, Shape2DNode, Vec2, Vec3 } from './types';
 import { notify } from '../ui/notify/notifyStore';
 import { applyBindings, boundValue, formulaDeps, holdBound, nameProblem, renameInExpr, resolveParams, setPath } from './params';
 import { randomColor } from './color';
@@ -17,6 +17,7 @@ import { addImportedRoots, addPlateScene, moveRootsToPlate, plateName, platesOf,
 import { composeTransform, conjugate, eulerToMatrix, matrixToEuler, normalizeMirror, round, toLocalTransform } from './math';
 import type { Mirror, Transform } from './math';
 import { pathNaturalSize } from './shapes2d';
+import { nodeIds } from './bezier';
 import { hasBoundDimension } from './resize';
 import { compensatePosition } from './pathPlacement';
 import { convertToPath as convertShapeToPath } from './convertPath';
@@ -42,7 +43,7 @@ interface SceneState {
    * Aggiunge un Profilo di Bézier (forma 2D `path`) dai contorni dati, appoggiato sul piatto. I nodi si arrotondano a 4
    * decimali; larghezza e profondità sono quelle naturali delle curve. Per ora nasce solo da qui (test) e dall'import di .scad.
    */
-  addPath: (input: { paths: PathContour[]; tolerance?: number; extrusion?: 'linear' | 'rotate'; height?: number; twist?: number; scaleTop?: number; revolveAngle?: number; revolveSegments?: number; plan?: PlanDraft; at?: [number, number]; name?: string }) => string;
+  addPath: (input: { paths: PathContour[]; tolerance?: number; extrusion?: 'linear' | 'rotate'; height?: number; twist?: number; scaleTop?: number; revolveAngle?: number; revolveSegments?: number; plan?: PlanDraft; constraints?: ProfileConstraint[]; params?: ProfileParams; at?: [number, number]; name?: string }) => string;
   /**
    * Applica il disegno della modale a un Profilo esistente in un solo passo di Annulla ("Profilo"): contorni a 4 decimali,
    * parametri di estrusione, `width × depth` = misure naturali del disegno (non scritte se qualche misura è legata a un
@@ -134,8 +135,17 @@ export function roundPaths(paths: PathContour[]): PathContour[] {
   const r4 = ([x, y]: Vec2): Vec2 => [round(x, 4) || 0, round(y, 4) || 0];
   return paths.map((c) => ({
     closed: c.closed,
-    nodes: c.nodes.map((n) => ({ p: r4(n.p), ...(n.in ? { in: r4(n.in) } : {}), ...(n.out ? { out: r4(n.out) } : {}), kind: n.kind })),
+    // `id` e `r` (raggio di raccordo, 4 decimali) restano; le quote dei vincoli non si arrotondano (si salvano esatte)
+    nodes: c.nodes.map((n) => ({ ...(n.id ? { id: n.id } : {}), p: r4(n.p), ...(n.in ? { in: r4(n.in) } : {}), ...(n.out ? { out: r4(n.out) } : {}), kind: n.kind, ...(n.r ? { r: round(n.r, 4) } : {}) })),
   }));
+}
+
+/** Vincoli che citano solo nodi esistenti (un nodo cancellato porta via i suoi vincoli), oppure undefined se non ne resta nessuno. */
+function liveConstraints(list: ProfileConstraint[] | undefined, paths: PathContour[]): ProfileConstraint[] | undefined {
+  if (!list?.length) return undefined;
+  const ids = nodeIds(paths);
+  const kept = list.filter((c) => c.p.every((id) => ids.has(id)));
+  return kept.length ? kept : undefined;
 }
 
 export const emptyScene = (): Scene => ({ nodes: {}, rootIds: [] });
@@ -338,12 +348,16 @@ export const useSceneStore = create<SceneState>()(
       addPath: (input) => {
         const id = newId();
         act('Aggiungi Profilo', (s) => {
-          const { paths, at, name, ...params } = input;
+          const { paths, at, name, constraints, params: profileParams, ...params } = input;
           const rounded = roundPaths(paths);
           const size = pathNaturalSize({ paths: rounded });
+          const live = liveConstraints(constraints, rounded);
           const node = {
             ...shape2dDefaults('path'),
             ...params,
+            // Vincoli e parametri del profilo: solo se ce ne sono, per non scrivere campi vuoti nel nodo
+            ...(live ? { constraints: live } : {}),
+            ...(profileParams && Object.keys(profileParams).length ? { params: profileParams } : {}),
             paths: rounded,
             width: size.width,
             depth: size.depth,
@@ -393,6 +407,12 @@ export const useSceneStore = create<SceneState>()(
           const path = target as Extract<Shape2DNode, { kind: 'path' }>;
           if (draft.plan) path.plan = draft.plan;
           else delete path.plan;
+          // Vincoli e parametri della modale: quelli che non ci sono più si tolgono dal nodo
+          const live = liveConstraints(draft.constraints, rounded);
+          if (live) path.constraints = live;
+          else delete path.constraints;
+          if (draft.params && Object.keys(draft.params).length) path.params = draft.params;
+          else delete path.params;
         });
         // Come in updateNode: se un campo legato doveva cambiare, l'utente lo sa invece di vederlo restare com'era
         if (held) noteHeld(node.name);

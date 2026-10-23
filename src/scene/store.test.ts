@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { isHidden, isLocked, useSceneStore } from './store';
+import { isHidden, isLocked, roundPaths, useSceneStore } from './store';
 import { useNotifyStore } from '../ui/notify/notifyStore';
 import { composeTransform, eulerToMatrix, matrixToEuler } from './math';
 import { draftFromNode, pathCenter } from '../ui/ProfileEditor/model';
@@ -400,6 +400,73 @@ describe('commitProfile: applica il disegno della modale', () => {
     expect(scalePercent(after)).toBeCloseTo(100, 9);
     const boxAfter = bboxOf(pathContours(after))!;
     for (const key of ['minX', 'maxX', 'minY', 'maxY'] as const) expect(boxAfter[key]).toBeCloseTo(boxBefore[key], 3);
+  });
+});
+
+describe('Profilo con id dei nodi, vincoli e parametri', () => {
+  type PathNodeShape = Extract<Shape2DNode, { kind: 'path' }>;
+  const tri = () => ({ closed: true, nodes: [{ id: 'n1', p: [0, 0] as [number, number], kind: 'corner' as const }, { id: 'n2', p: [40.123456, 0] as [number, number], kind: 'corner' as const, r: 2.123456 }, { id: 'n3', p: [20, 30] as [number, number], kind: 'corner' as const }] });
+  const constraints = [{ id: 'k1', t: 'dist' as const, p: ['n1', 'n2'], v: 40.123456789, off: 7, at: 0.5 }, { id: 'k2', t: 'horizontal' as const, p: ['n1', 'n2'] }];
+  const get = (id: string) => st().scene.nodes[id] as PathNodeShape;
+
+  it('roundPaths arrotonda le coordinate a 4 decimali e conserva id e r (r arrotondato, senza campi vuoti)', () => {
+    const out = roundPaths([tri()]);
+    expect(out[0].nodes.map((n) => n.id)).toEqual(['n1', 'n2', 'n3']);
+    expect(out[0].nodes[1]).toEqual({ id: 'n2', p: [40.1235, 0], kind: 'corner', r: 2.1235 });
+    expect(out[0].nodes[0]).toStrictEqual({ id: 'n1', p: [0, 0], kind: 'corner' });
+    // Senza id né r i nodi restano com'erano
+    expect(roundPaths([{ closed: false, nodes: [{ p: [1, 2], kind: 'corner' }, { p: [3, 4], kind: 'corner' }] }])[0].nodes[0]).toStrictEqual({ p: [1, 2], kind: 'corner' });
+  });
+
+  it('addPath porta nodi con id, vincoli e parametri nel nodo; la quota si salva esatta', () => {
+    const id = st().addPath({ paths: [tri()], constraints, params: { w: 40 } });
+    expect(get(id).paths[0].nodes.map((n) => n.id)).toEqual(['n1', 'n2', 'n3']);
+    expect(get(id).paths[0].nodes[1].r).toBe(2.1235);
+    expect(get(id).constraints).toStrictEqual(constraints);
+    expect(get(id).constraints![0].v).toBe(40.123456789);
+    expect(get(id).params).toStrictEqual({ w: 40 });
+    // Senza vincoli né parametri (o vuoti) il nodo non ha i campi
+    const plain = st().addPath({ paths: [tri()], constraints: [], params: {} });
+    expect(get(plain)).not.toHaveProperty('constraints');
+    expect(get(plain)).not.toHaveProperty('params');
+  });
+
+  it('un vincolo che cita un nodo inesistente non arriva al nodo (addPath e commitProfile); i vincoli validi restano', () => {
+    const orphan = { id: 'k9', t: 'horizontal' as const, p: ['n1', 'n8'] };
+    const id = st().addPath({ paths: [tri()], constraints: [...constraints, orphan] });
+    expect(get(id).constraints).toStrictEqual(constraints);
+    const onlyOrphan = st().addPath({ paths: [tri()], constraints: [orphan] });
+    expect(get(onlyOrphan)).not.toHaveProperty('constraints');
+    const draft = { ...draftFromNode(get(id)), constraints: [...constraints, orphan] };
+    expect(st().commitProfile(id, draft, { before: pathCenter(draft), after: pathCenter(draft) })).toBe(true);
+    expect(get(id).constraints).toStrictEqual(constraints);
+    // Un nodo senza id non può essere citato: con i nodi senza id nessun vincolo sopravvive
+    const noIds = { ...draft, paths: [{ closed: true, nodes: tri().nodes.map(({ id: _id, ...n }) => n) }] };
+    expect(st().commitProfile(id, noIds, { before: pathCenter(noIds), after: pathCenter(noIds) })).toBe(true);
+    expect(get(id)).not.toHaveProperty('constraints');
+  });
+
+  it('commitProfile conserva id e vincoli in un solo passo e li toglie quando la modale non li ha più', () => {
+    const id = st().addPath({ paths: [tri()] });
+    useSceneStore.temporal.getState().clear();
+    const draft = { ...draftFromNode(get(id)), constraints, params: { w: 40 } };
+    expect(st().commitProfile(id, draft, { before: pathCenter(draft), after: pathCenter(draft) })).toBe(true);
+    expect(useSceneStore.temporal.getState().pastStates).toHaveLength(1);
+    expect(get(id).paths[0].nodes.map((n) => n.id)).toEqual(['n1', 'n2', 'n3']);
+    expect(get(id).constraints).toStrictEqual(constraints);
+    expect(get(id).params).toStrictEqual({ w: 40 });
+    // La bozza di un secondo giro parte dal nodo: porta i vincoli con sé
+    const again = draftFromNode(get(id));
+    expect(again.constraints).toStrictEqual(constraints);
+    expect(again.params).toStrictEqual({ w: 40 });
+    // Un disegno senza vincoli li toglie dal nodo
+    const cleared = { ...again, constraints: undefined, params: undefined };
+    expect(st().commitProfile(id, cleared, { before: pathCenter(cleared), after: pathCenter(cleared) })).toBe(true);
+    expect(get(id)).not.toHaveProperty('constraints');
+    expect(get(id)).not.toHaveProperty('params');
+    // Annulla riporta i vincoli
+    undo();
+    expect(get(id).constraints).toStrictEqual(constraints);
   });
 });
 

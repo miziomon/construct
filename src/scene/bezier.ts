@@ -1,4 +1,5 @@
-import type { PathContour, PathNode, Vec2 } from './types';
+import type { ConstraintType } from '../ui/ProfileEditor/constraints';
+import type { PathContour, PathNode, ProfileConstraint, ProfileParams, Vec2 } from './types';
 
 /**
  * Curve di Bézier cubiche dei profili `path`: campionamento in poligoni, riquadro, autointersezioni e validazione.
@@ -264,13 +265,20 @@ function vec2(value: unknown): Vec2 | null {
   return [x || 0, y || 0];
 }
 
+/** Un id valido (di nodo o di vincolo): poche lettere, cifre, trattini (finisce nel commento del codice OpenSCAD). */
+const NODE_ID = /^[A-Za-z0-9_-]{1,16}$/;
+
 /**
  * Valida contorni arrivati da fuori (file .scad, bozze): al massimo 100 contorni di 2-500 nodi, numeri finiti entro
  * ±1e5, tipi del nodo noti. Restituisce oggetti nuovi, senza i campi in più, oppure null se qualcosa non va.
+ * `id` e `r` sono facoltativi e non fanno fallire la lettura: un `id` malformato o già usato da un altro nodo del profilo
+ * (si tiene il primo) e un `r` non valido o nullo si scartano, e `assignNodeIds` ridà un id al nodo che ne è privo.
  */
 export function sanitizePaths(value: unknown): PathContour[] | null {
   if (!Array.isArray(value) || value.length > MAX_PATH_CONTOURS) return null;
   const result: PathContour[] = [];
+  // Id già visti in tutto il profilo: devono essere unici anche tra contorni diversi
+  const seen = new Set<string>();
   for (const raw of value) {
     if (typeof raw !== 'object' || raw === null) return null;
     const { closed, nodes } = raw as { closed?: unknown; nodes?: unknown };
@@ -278,18 +286,122 @@ export function sanitizePaths(value: unknown): PathContour[] | null {
     const clean: PathNode[] = [];
     for (const n of nodes) {
       if (typeof n !== 'object' || n === null) return null;
-      const { p, in: inn, out, kind } = n as { p?: unknown; in?: unknown; out?: unknown; kind?: unknown };
+      const { id, p, in: inn, out, kind, r } = n as { id?: unknown; p?: unknown; in?: unknown; out?: unknown; kind?: unknown; r?: unknown };
       const position = vec2(p);
       if (!position || typeof kind !== 'string' || !KINDS.has(kind as PathNode['kind'])) return null;
       // Le maniglie sono facoltative: se ci sono devono essere valide, se mancano il campo non esiste proprio
       const handleIn = inn === undefined ? undefined : vec2(inn);
       const handleOut = out === undefined ? undefined : vec2(out);
       if (handleIn === null || handleOut === null) return null;
-      clean.push({ p: position, ...(handleIn ? { in: handleIn } : {}), ...(handleOut ? { out: handleOut } : {}), kind: kind as PathNode['kind'] });
+      // Id: stringa breve e mai vista prima, altrimenti il campo non c'è
+      const nodeId = typeof id === 'string' && NODE_ID.test(id) && !seen.has(id) ? id : undefined;
+      if (nodeId) seen.add(nodeId);
+      // Raggio di raccordo: numero finito positivo entro il limite delle coordinate
+      const radius = typeof r === 'number' && Number.isFinite(r) && r > 0 && r <= MAX_COORD ? r : undefined;
+      clean.push({ ...(nodeId ? { id: nodeId } : {}), p: position, ...(handleIn ? { in: handleIn } : {}), ...(handleOut ? { out: handleOut } : {}), kind: kind as PathNode['kind'], ...(radius ? { r: radius } : {}) });
     }
     result.push({ closed, nodes: clean });
   }
   return result;
+}
+
+/** Numero di punti che richiede ogni tipo di vincolo (`angle` ne accetta anche 4: vedi `sanitizeConstraints`). Specchio di NPTS in constraints.ts. */
+const CONSTRAINT_POINTS: Record<ConstraintType, number> = { fixed: 1, horizontal: 2, vertical: 2, coincident: 2, dist: 2, distX: 2, distY: 2, angle: 2, parallel: 4, perpendicular: 4, equal: 4, midpoint: 3, collinear: 4, symmetric: 4 };
+/** Tetti dei dati dei vincoli (anche per quelli che arrivano da un file .scad non fidato). */
+export const MAX_CONSTRAINTS = 1000;
+export const MAX_PARAMS = 100;
+/** Numero finito entro ±1e5 (coordinate, misure, scostamenti). */
+const bounded = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x) && Math.abs(x) <= MAX_COORD;
+
+/** Tutti gli id dei nodi di un profilo. */
+export const nodeIds = (paths: PathContour[]): Set<string> => new Set(paths.flatMap((c) => c.nodes.flatMap((n) => (n.id ? [n.id] : []))));
+
+/**
+ * Valida i vincoli arrivati da fuori contro i contorni (già validati) a cui si riferiscono. A differenza di `sanitizePaths`
+ * non fallisce mai: scarta i vincoli sbagliati e tiene gli altri (al più 1000). Si scarta un vincolo con tipo ignoto,
+ * numero di punti sbagliato, nodi inesistenti, valori non finiti o mancanti (`v` per le quote, `x` e `y` per `fixed`; una
+ * quota di riferimento può non avere `v`) e l'id già usato da un vincolo precedente. Restituisce oggetti nuovi, senza i
+ * campi in più, e una lista vuota per un dato che non è un elenco.
+ */
+export function sanitizeConstraints(value: unknown, paths: PathContour[]): ProfileConstraint[] {
+  if (!Array.isArray(value)) return [];
+  const ids = nodeIds(paths);
+  const seen = new Set<string>();
+  const result: ProfileConstraint[] = [];
+  for (const raw of value) {
+    if (result.length >= MAX_CONSTRAINTS) break;
+    if (typeof raw !== 'object' || raw === null) continue;
+    const { id, t, p, v, s, x, y, ref, off, at } = raw as Record<string, unknown>;
+    if (typeof id !== 'string' || !NODE_ID.test(id) || seen.has(id)) continue;
+    if (typeof t !== 'string' || !Object.hasOwn(CONSTRAINT_POINTS, t)) continue;
+    const type = t as ConstraintType;
+    // Punti: il numero giusto per il tipo (l'angolo anche 4: dal segmento ab al segmento cd) e tutti esistenti
+    const want = CONSTRAINT_POINTS[type];
+    if (!Array.isArray(p) || (p.length !== want && !(type === 'angle' && p.length === 4)) || !p.every((q) => typeof q === 'string' && ids.has(q))) continue;
+    const isRef = ref === true;
+    // Misura: obbligatoria per le quote (tranne il riferimento), positiva per la lunghezza, con segno solo l'angolo
+    const measured = type === 'dist' || type === 'distX' || type === 'distY' || type === 'angle';
+    if (measured && !isRef && !(bounded(v) && (type === 'angle' || (type === 'dist' ? v > 0 : v >= 0)))) continue;
+    if (type === 'fixed' && !(bounded(x) && bounded(y))) continue;
+    // Campi facoltativi non validi: il campo si perde, il vincolo resta
+    result.push({
+      id,
+      t: type,
+      p: [...(p as string[])],
+      ...(measured && bounded(v) ? { v } : {}),
+      ...(s === 1 || s === -1 ? { s } : {}),
+      ...(type === 'fixed' ? { x: x as number, y: y as number } : {}),
+      ...(isRef ? { ref: true } : {}),
+      ...(bounded(off) ? { off } : {}),
+      ...(typeof at === 'number' && at >= 0 && at <= 1 ? { at } : {}),
+    });
+    seen.add(id);
+  }
+  return result;
+}
+
+/** Nomi dei parametri: un identificatore, e mai quelli che toccherebbero il prototipo dell'oggetto. */
+const PARAM_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,31}$/;
+const RESERVED_NAMES = new Set(['__proto__', 'constructor', 'prototype']);
+/** Lunghezza massima di un'espressione di parametro. */
+const MAX_EXPR = 200;
+
+/** Valida i parametri del profilo (numeri finiti o brevi espressioni): scarta le voci non valide; undefined se non ne resta nessuna. */
+export function sanitizeParams(value: unknown): ProfileParams | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
+  const result: ProfileParams = {};
+  let count = 0;
+  for (const [name, v] of Object.entries(value)) {
+    if (count >= MAX_PARAMS) break;
+    if (!PARAM_NAME.test(name) || RESERVED_NAMES.has(name)) continue;
+    if (!(bounded(v) || (typeof v === 'string' && v.length <= MAX_EXPR))) continue;
+    result[name] = v;
+    count++;
+  }
+  return count ? result : undefined;
+}
+
+/**
+ * Assegna un id ai nodi che non ne hanno, con un contatore per profilo (`n1`, `n2`...) che riparte dopo il numero più alto
+ * già usato; gli id esistenti non cambiano. Se tutti i nodi ne hanno già, restituisce gli stessi contorni (stesso
+ * riferimento, così la cache e la cronologia non vedono un cambiamento).
+ */
+export function assignNodeIds(paths: PathContour[]): PathContour[] {
+  if (paths.every((c) => c.nodes.every((n) => n.id))) return paths;
+  // Il contatore parte oltre il più alto `n<k>` presente, e un id già preso (anche non numerico) non si riusa
+  const taken = nodeIds(paths);
+  let counter = 0;
+  for (const id of taken) {
+    const k = /^n(\d+)$/.exec(id);
+    if (k) counter = Math.max(counter, Number(k[1]));
+  }
+  // Nuovo id: il prossimo numero libero
+  const fresh = (): string => {
+    do counter++;
+    while (taken.has(`n${counter}`));
+    return `n${counter}`;
+  };
+  return paths.map((c) => (c.nodes.every((n) => n.id) ? c : { ...c, nodes: c.nodes.map((n) => (n.id ? n : { ...n, id: fresh() })) }));
 }
 
 /** Dati di un profilo `path` che finiscono nel commento del codice OpenSCAD. */
@@ -298,14 +410,24 @@ interface PathMeta {
   tolerance: number;
   width: number;
   depth: number;
+  constraints?: ProfileConstraint[];
+  params?: ProfileParams;
 }
 
-/** Commento `// construct:path`: i dati su una sola riga di JSON, senza arrotondamenti (i nodi sono già arrotondati dallo store). */
+/**
+ * Commento `// construct:path`: i dati su una sola riga di JSON, senza arrotondamenti (i nodi sono già arrotondati dallo
+ * store). Versione 2: i nodi portano `id` e `r`, `k` sono i vincoli e `q` i parametri (omessi se vuoti). Un'app che
+ * conosce solo la versione 1 non riconosce il commento e il poligono resta un Poligono qualsiasi.
+ */
 export function encodePathMeta(p: PathMeta): string {
-  return JSON.stringify({ v: 1, w: p.width, d: p.depth, t: p.tolerance, paths: p.paths });
+  return JSON.stringify({ v: 2, w: p.width, d: p.depth, t: p.tolerance, paths: p.paths, ...(p.constraints?.length ? { k: p.constraints } : {}), ...(p.params && Object.keys(p.params).length ? { q: p.params } : {}) });
 }
 
-/** Rilegge il commento: null se non è JSON, la versione è ignota, le misure non sono valide o i contorni non passano `sanitizePaths`. */
+/**
+ * Rilegge il commento (versione 1 o 2): null se non è JSON, la versione è ignota, le misure non sono valide o i contorni
+ * non passano `sanitizePaths`. Una versione 1 non ha vincoli. I vincoli e i parametri non validi si scartano senza
+ * rifiutare il profilo, che è comunque la forma scritta nel codice.
+ */
 export function decodePathMeta(text: string): PathMeta | null {
   let data: unknown;
   try {
@@ -314,9 +436,17 @@ export function decodePathMeta(text: string): PathMeta | null {
     return null;
   }
   if (typeof data !== 'object' || data === null) return null;
-  const { v, w, d, t, paths } = data as { v?: unknown; w?: unknown; d?: unknown; t?: unknown; paths?: unknown };
+  const { v, w, d, t, paths, k, q } = data as { v?: unknown; w?: unknown; d?: unknown; t?: unknown; paths?: unknown; k?: unknown; q?: unknown };
   const finite = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x) && x > 0 && x <= MAX_COORD;
-  if (v !== 1 || !finite(w) || !finite(d) || !finite(t)) return null;
+  if ((v !== 1 && v !== 2) || !finite(w) || !finite(d) || !finite(t)) return null;
   const clean = sanitizePaths(paths);
-  return clean ? { paths: clean, tolerance: clampTolerance(t), width: w, depth: d } : null;
+  if (!clean) return null;
+  const result: PathMeta = { paths: clean, tolerance: clampTolerance(t), width: w, depth: d };
+  if (v === 2) {
+    const constraints = sanitizeConstraints(k, clean);
+    const params = sanitizeParams(q);
+    if (constraints.length) result.constraints = constraints;
+    if (params) result.params = params;
+  }
+  return result;
 }

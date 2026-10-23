@@ -95,8 +95,8 @@ describe('bozza del disegno', () => {
     expect(loadDraft('abc', s)).toBeNull();
     s.data.set(key, '{non json');
     expect(loadDraft('abc', s)).toBeNull();
-    const put = (draft: unknown, v = 1) => s.data.set(key, JSON.stringify({ v, draft }));
-    put(triangle, 2);
+    const put = (draft: unknown, v = 2) => s.data.set(key, JSON.stringify({ v, draft }));
+    put(triangle, 3);
     expect(loadDraft('abc', s)).toBeNull();
     put({ ...triangle, paths: [{ closed: true, nodes: [{ p: [0, 'x'], kind: 'corner' }, { p: [1, 1], kind: 'corner' }] }] });
     expect(loadDraft('abc', s)).toBeNull();
@@ -142,5 +142,45 @@ describe('store della modale del Profilo', () => {
     expect(useProfileEditor.getState().target).toEqual({ new: true, at: [5, 6] });
     useProfileEditor.getState().close();
     expect(useProfileEditor.getState().target).toBeNull();
+  });
+});
+
+describe('bozza v:2 con id, vincoli e parametri', () => {
+  const withIds: Draft = {
+    ...triangle,
+    paths: [{ closed: true, nodes: [{ id: 'n1', p: [0, 0], kind: 'corner' }, { id: 'n2', r: 1, p: [10, 0], kind: 'corner' }, { id: 'n3', p: [5, 8], kind: 'corner' }] }],
+    constraints: [{ id: 'k1', t: 'dist', p: ['n1', 'n2'], v: 10, off: 3 }],
+    params: { w: 10 },
+  };
+
+  it('si salva con versione 2 e si rilegge uguale, vincoli e parametri compresi', () => {
+    const s = fakeStorage();
+    saveDraft('abc', withIds, s);
+    vi.advanceTimersByTime(500);
+    expect(JSON.parse(s.data.get('construct:profile-draft:abc')!).v).toBe(2);
+    expect(loadDraft('abc', s)).toEqual(withIds);
+  });
+
+  it('una bozza v:1 si legge ancora (senza vincoli, anche se ne contiene) e il prossimo salvataggio è v:2', () => {
+    const s = fakeStorage();
+    const key = 'construct:profile-draft:abc';
+    s.data.set(key, JSON.stringify({ v: 1, draft: withIds }));
+    const old = loadDraft('abc', s)!;
+    expect(old.constraints).toBeUndefined();
+    expect(old.params).toBeUndefined();
+    expect(old.paths).toEqual(withIds.paths);
+    saveDraft('abc', old, s);
+    vi.advanceTimersByTime(500);
+    expect(JSON.parse(s.data.get(key)!).v).toBe(2);
+  });
+
+  it('i vincoli che citano nodi mancanti o rovinati si scartano senza rifiutare la bozza', () => {
+    const s = fakeStorage();
+    const key = 'construct:profile-draft:abc';
+    const bad = { ...withIds, constraints: [...withIds.constraints!, { id: 'k2', t: 'dist', p: ['n1', 'n9'], v: 5 }, { id: 'k3', t: 'dist', p: ['n1', 'n2'], v: NaN }], params: { w: 1, '1x': 2 } };
+    s.data.set(key, JSON.stringify({ v: 2, draft: bad }));
+    const loaded = loadDraft('abc', s)!;
+    expect(loaded.constraints).toEqual(withIds.constraints);
+    expect(loaded.params).toEqual({ w: 1 });
   });
 });
