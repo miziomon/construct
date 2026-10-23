@@ -1,6 +1,8 @@
 import { apply, eulerToMatrix, matrixToEuler, round, transpose } from './math';
 import type { Mat3, Transform } from './math';
 import { rotationToDown } from './layFlat';
+import { BRICK_DESIGNS, normalizeRelief, reliefDefaults } from './relief';
+import type { BrickDesign, ReliefParams } from './relief';
 import { PATTERN_ALGORITHM, randomVoronoi } from './voronoi';
 import type { Rect, Vec2 } from './voronoi';
 import type { PatternFace, PatternParams, Vec3 } from './types';
@@ -32,6 +34,29 @@ export function faceFromBounds(bounds: Bounds, direction: FaceDirection): Patter
   const normal: Vec3 = [0, 0, 0];
   normal[axis] = positive ? 1 : -1;
   return { origin: origin.map((v) => round(v, 3)) as Vec3, normal, thickness: round(sizeOf(bounds)[axis], 3) };
+}
+
+/** Vero per i Pattern in rilievo (gruppo «Rilievo» della tendina): una texture incisa sulla faccia invece di celle forate. */
+export const isReliefKind = (kind: PatternParams['kind']) => kind === 'brick';
+
+/** Versione corrente del rumore e delle liste dei rilievi (`PatternParams.reliefAlgorithm`). */
+export const RELIEF_ALGORITHM = 1;
+
+/** Sotto questa fuga (circa due passate di un ugello da 0,4 mm) la fuga si chiude in stampa. */
+export const MIN_PRINTABLE_MORTAR = 0.8;
+
+/** Disegno e parametri del rilievo Mattoni, entro i limiti e con i valori di partenza per ciò che manca (progetti nuovi e vecchi). */
+export function brickRelief(p: PatternParams): { design: BrickDesign; relief: ReliefParams & { kind: 'brick' } } {
+  const design = BRICK_DESIGNS.includes(p.design as BrickDesign) ? (p.design as BrickDesign) : 'running';
+  const relief = normalizeRelief({ ...reliefDefaults('brick'), ...(p.relief?.kind === 'brick' ? p.relief : {}), kind: 'brick', design } as ReliefParams) as ReliefParams & { kind: 'brick' };
+  return { design, relief };
+}
+
+/** Avvisi di stampabilità del rilievo (testi per il pannello); vuoto per i Pattern a celle. */
+export function reliefWarnings(p: PatternParams): string[] {
+  if (p.kind !== 'brick') return [];
+  const { relief } = brickRelief(p);
+  return relief.mortar < MIN_PRINTABLE_MORTAR ? [`Fuga sotto ${MIN_PRINTABLE_MORTAR} mm: tende a chiudersi in stampa.`] : [];
 }
 
 /** Quanto una normale può scostarsi da un asse per contare come allineata (cos ≈ 1,8°, come per la faccia aperta del Guscio). */
@@ -146,10 +171,13 @@ export function normalizePattern(p: PatternParams): PatternParams {
   const { face: legacy, ...rest } = p;
   const given = p.faces?.length ? p.faces : legacy ? [legacy] : [faceFromBounds(p.bounds, 'z+')];
   const faces = given.map(normalizeFace).filter((f, i, all) => all.findIndex((o) => sameFace(o, f)) === i);
-  const kind = (['voronoi', 'hexagon', 'circle', 'diamond', 'triangle'] as string[]).includes(p.kind) ? p.kind : 'voronoi';
+  const kind = (['voronoi', 'hexagon', 'circle', 'diamond', 'triangle', 'brick'] as string[]).includes(p.kind) ? p.kind : 'voronoi';
+  // Disegno e misure dei rilievi: solo per i Pattern in rilievo, così gli altri progetti restano identici a prima
+  const reliefFields = kind === 'brick' ? { ...brickRelief({ ...p, kind }), reliefAlgorithm: RELIEF_ALGORITHM as 1 } : {};
   return {
     ...rest,
     kind,
+    ...reliefFields,
     seed: int(p.seed, 0, 2 ** 31),
     cells: int(p.cells, 3, PATTERN_MAX_CELLS),
     regularity: Math.min(100, Math.max(0, num(p.regularity, 0))),
@@ -253,6 +281,8 @@ function gridCells(p: PatternParams, rect: Rect): Vec2[][] {
 /** Le celle del pattern per la faccia `faceIndex` (poligoni nel riferimento della faccia, prima della riduzione per la parete). */
 export function patternCells(params: PatternParams, rect: Rect, faceIndex = 0): Vec2[][] {
   const p = normalizePattern(params);
+  // I rilievi non hanno celle: il disegno lo calcolano `reliefCutter` e `reliefScad`
+  if (isReliefKind(p.kind)) return [];
   // Ogni faccia ha il suo disegno: il seme cambia con l'indice (la prima faccia usa il seme così com'è)
   if (p.kind === 'voronoi') return randomVoronoi(p.cells, rect, p.seed + faceIndex, p.regularity).map((cell) => cell.map(([x, y]) => [round(x, 4), round(y, 4)] as Vec2));
   return gridCells(p, rect);

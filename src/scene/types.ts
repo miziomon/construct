@@ -1,4 +1,5 @@
 // Modello dati della scena. Unità: millimetri, asse Z verso l'alto (come slicer e OpenSCAD).
+import type { BrickDesign, ReliefParams } from './relief';
 
 export type Vec3 = [number, number, number];
 
@@ -347,7 +348,7 @@ export interface PatternFace {
 export interface PatternParams {
   /** Versione dell'algoritmo casuale (src/scene/voronoi.ts): se cambia, i vecchi progetti cambierebbero disegno. */
   algorithm: number;
-  kind: 'voronoi' | 'hexagon' | 'circle' | 'diamond' | 'triangle';
+  kind: 'voronoi' | 'hexagon' | 'circle' | 'diamond' | 'triangle' | 'brick';
   /** Fori: si tolgono le celle (restano le pareti); Solchi: si tolgono le pareti (restano le celle in rilievo). */
   mode: 'holes' | 'grooves';
   /** Seme del generatore casuale. */
@@ -366,6 +367,12 @@ export interface PatternParams {
   rounding: number;
   /** Cornice piena che resta attorno al disegno, in mm. */
   margin: number;
+  /** Rilievo Mattoni: disegno della muratura (se manca vale 'running', i mattoni sfalsati). */
+  design?: BrickDesign;
+  /** Rilievo Mattoni: misure e profondità delle fughe (se mancano valgono quelle di partenza, vedi reliefDefaults). */
+  relief?: ReliefParams;
+  /** Rilievo: versione del rumore e delle liste casuali (src/scene/relief.ts), come `algorithm` per il Voronoi. */
+  reliefAlgorithm?: 1;
   /** Facce da cui parte il taglio (almeno una); ogni faccia ha il proprio disegno (seme + indice). */
   faces: PatternFace[];
   /** Solo nei progetti della 0.20.0: la faccia unica di allora (si converte in `faces`, vedi normalizePattern). */

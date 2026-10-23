@@ -1,5 +1,5 @@
-import { brickPitch, craterList, dentList, grainDepth, normalizeRelief, plankLayout, reliefDepth, sampleGrid, studCenters, studGrid, studHeight, studProfile } from '../scene/relief';
-import type { HeightGrid, ReliefParams } from '../scene/relief';
+import { brickLayout, brickPitch, craterList, dentList, fitBrick, grainDepth, normalizeRelief, plankLayout, reliefDepth, sampleGrid, studCenters, studGrid, studHeight, studProfile } from '../scene/relief';
+import type { BrickParams, HeightGrid, ReliefParams } from '../scene/relief';
 import type { Rect, Vec2 } from '../scene/voronoi';
 import type { HeightSide, ReliefEngine } from '../kernel/relief';
 
@@ -64,6 +64,39 @@ function boxesLines(name: string, boxes: number[][]): string[] {
 }
 
 /**
+ * Mattoni: i dati (`bricks`, solo per spina di pesce e cesto) e il solido da sottrarre, in righe senza rientro, nel
+ * riferimento della faccia. Il solido è il rettangolo meno i mattoni, esteso in profondità: è la stessa regione
+ * `rettangolo - mattoni` del kernel, ma ancora non ritagliata sulla faccia (lo fa il chiamante). `id` suffissa i nomi dei dati,
+ * così più facce di un Pattern non si pestano i piedi. Niente `module`: il chiamante inserisce le righe dove servono.
+ */
+export function brickScad(rect: Rect, params: BrickParams, id = ''): { data: string[]; solid: string[] } {
+  const p = fitBrick(rect, params);
+  const w = rect.maxX - rect.minX;
+  const h = rect.maxY - rect.minY;
+  const head = `translate([${n(rect.minX)}, ${n(rect.minY)}, ${n(-p.depth)}]) linear_extrude(${n(p.depth + ABOVE)}) difference() {`;
+  if (p.design === 'running') {
+    // Mattoni sfalsati: due cicli, nessun dato
+    const [px, py] = brickPitch(p);
+    return {
+      data: [],
+      solid: [
+        head,
+        `  square([${n(w)}, ${n(h)}]);`,
+        `  for (r = [0 : ${Math.ceil(h / py) - 1}], c = [0 : ${Math.ceil(w / px)}])`,
+        `    translate([c * ${n(px)} - (r % 2) * ${n(px / 2)} + ${n(p.mortar / 2)}, r * ${n(py)} + ${n(p.mortar / 2)}]) square([${n(p.brickW)}, ${n(p.brickH)}]);`,
+        '}',
+      ],
+    };
+  }
+  // Spina di pesce e cesto: un elenco, una riga per mattone (coordinate relative all'angolo del rettangolo)
+  const bricks = brickLayout(rect, p).map((b) => b.map((v, k) => (k % 2 === 0 ? v - rect.minX : v - rect.minY)));
+  return {
+    data: boxesLines(`bricks${id}`, bricks),
+    solid: [head, `  square([${n(w)}, ${n(h)}]);`, `  for (b = bricks${id}) translate([b[0], b[1]]) square([b[2] - b[0], b[3] - b[1]]);`, '}'],
+  };
+}
+
+/**
  * Modulo `relief()` con il codice OpenSCAD della texture nel motore dato; `step` è il passo della mappa di altezze.
  * Per le borchie `centers` (facoltativo) sono i centri effettivamente scritti, per esempio quelli rimasti dentro la
  * regione (`studsInRegion` del kernel): se mancano vale la griglia centrata, scritta con due cicli.
@@ -113,16 +146,8 @@ export function reliefScad(rect: Rect, params: ReliefParams, engine: ReliefEngin
   }
 
   if (p.kind === 'brick') {
-    const [px, py] = brickPitch(p);
-    out.push(
-      'module relief() {',
-      `  translate([${n(rect.minX)}, ${n(rect.minY)}, ${n(-p.depth)}]) linear_extrude(${n(p.depth + ABOVE)}) difference() {`,
-      `    square([${n(w)}, ${n(h)}]);`,
-      `    for (r = [0 : ${Math.ceil(h / py) - 1}], c = [0 : ${Math.ceil(w / px)}])`,
-      `      translate([c * ${n(px)} - (r % 2) * ${n(px / 2)} + ${n(p.mortar / 2)}, r * ${n(py)} + ${n(p.mortar / 2)}]) square([${n(p.brickW)}, ${n(p.brickH)}]);`,
-      '  }',
-      '}',
-    );
+    const { data, solid } = brickScad(rect, p);
+    out.push(...data, 'module relief() {', ...solid.map((l) => `  ${l}`), '}');
   } else if (p.kind === 'wood') {
     const planks = plankLayout(rect, p).flat().map((pl) => pl.box.map((v, k) => (k % 2 === 0 ? v - rect.minX : v - rect.minY)));
     out.push(

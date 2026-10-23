@@ -10,9 +10,16 @@ import type { Rect, Vec2 } from './voronoi';
 
 export type ReliefKind = 'brick' | 'wood' | 'rust' | 'studs' | 'hammered';
 
-/** Muro di mattoni: file sfalsate di mezzo mattone, fughe incise. */
+/** Disegno della muratura: mattoni sfalsati, spina di pesce (90°) o cesto. */
+export type BrickDesign = 'running' | 'herringbone' | 'basket';
+
+export const BRICK_DESIGNS: BrickDesign[] = ['running', 'herringbone', 'basket'];
+
+/** Muro di mattoni: fughe incise (file sfalsate di mezzo mattone, spina di pesce o cesto). */
 export interface BrickParams {
   kind: 'brick';
+  /** Disegno (se manca vale 'running', i mattoni sfalsati). */
+  design?: BrickDesign;
   /** Larghezza e altezza del mattone (mm), senza la fuga. */
   brickW: number;
   brickH: number;
@@ -85,7 +92,7 @@ export const isAdditive = (p: ReliefParams): p is StudParams => p.kind === 'stud
 export function reliefDefaults(kind: ReliefKind): ReliefParams {
   switch (kind) {
     case 'brick':
-      return { kind, brickW: 24, brickH: 8, mortar: 1.2, depth: 0.8 };
+      return { kind, design: 'running', brickW: 24, brickH: 8, mortar: 1.2, depth: 0.8 };
     case 'wood':
       return { kind, seed: 1, plankW: 12, plankL: 60, gap: 0.8, gapDepth: 0.8, grainDepth: 0.25, ringSpacing: 3 };
     case 'rust':
@@ -115,7 +122,7 @@ export function normalizeRelief<T extends ReliefParams>(p: T): T {
   };
   switch (p.kind) {
     case 'brick':
-      return { ...p, brickW: num('brickW', 2), brickH: num('brickH', 2), mortar: num('mortar', 0.2), depth: num('depth', 0.05) };
+      return { ...p, design: BRICK_DESIGNS.includes(p.design as BrickDesign) ? p.design : 'running', brickW: num('brickW', 2), brickH: num('brickH', 2), mortar: num('mortar', 0.2), depth: num('depth', 0.05) };
     case 'wood':
       return { ...p, seed: Math.round(num('seed', 0, 2 ** 31)), plankW: num('plankW', 2), plankL: num('plankL', 5), gap: num('gap', 0.2), gapDepth: num('gapDepth', 0.05), grainDepth: num('grainDepth', 0), ringSpacing: num('ringSpacing', 0.5) } as T;
     case 'rust':
@@ -247,9 +254,97 @@ export const brickPitch = (p: BrickParams): Vec2 => [p.brickW + p.mortar, p.bric
 /** Posizione x di inizio dei mattoni della fila `row`: le file dispari sono sfalsate di mezzo mattone. */
 const brickRowStart = (rect: Rect, p: BrickParams, row: number) => rect.minX - (row % 2 === 0 ? 0 : brickPitch(p)[0] / 2);
 
+/** Mattoni massimi su una faccia: oltre, le misure si allargano (come il tetto di celle del Voronoi). */
+export const MAX_BRICKS = 4000;
+
+/**
+ * Spina di pesce e cesto: il mattone è un rettangolo lungo `n` volte il passo corto `u` (altezza più fuga). Il disegno si
+ * chiude solo se `n` è intero, quindi la lunghezza si arrotonda al multiplo più vicino (almeno 2): con 24 x 8 e fuga 1,2
+ * il mattone diventa 26,4 x 8. Il muro a mattoni sfalsati usa invece le misure così come sono.
+ */
+export function brickModule(p: BrickParams): { u: number; n: number } {
+  const u = p.brickH + p.mortar;
+  return { u, n: Math.max(2, Math.round((p.brickW + p.mortar) / u)) };
+}
+
+/** Area della cella (mattone più fuga) del disegno, per contare i mattoni di una faccia. */
+const brickCellArea = (p: BrickParams) => {
+  if (p.design === 'herringbone' || p.design === 'basket') {
+    const { u, n } = brickModule(p);
+    return n * u * u;
+  }
+  return (p.brickW + p.mortar) * (p.brickH + p.mortar);
+};
+
+/**
+ * Parametri dei mattoni entro i limiti e, se sul rettangolo ne servirebbero più di MAX_BRICKS, con le misure (fuga esclusa)
+ * ingrandite quanto basta: i valori normali non cambiano.
+ */
+export function fitBrick(rect: Rect, params: BrickParams): BrickParams & { design: BrickDesign } {
+  const p = normalizeRelief(params) as BrickParams & { design: BrickDesign };
+  const count = ((rect.maxX - rect.minX) * (rect.maxY - rect.minY)) / brickCellArea(p);
+  if (!(count > MAX_BRICKS)) return p;
+  const f = Math.sqrt(count / MAX_BRICKS);
+  return { ...p, brickW: (p.brickW + p.mortar) * f - p.mortar, brickH: (p.brickH + p.mortar) * f - p.mortar };
+}
+
+/** Rettangolo della cella ridotto di mezza fuga per lato: il mattone vero. */
+const shrinkCell = ([x0, y0, x1, y1]: Box, mortar: number): Box => [x0 + mortar / 2, y0 + mortar / 2, x1 - mortar / 2, y1 - mortar / 2];
+
+/** Vero se la cella ha area in comune con il rettangolo (toccarsi sul bordo non conta). */
+const touches = (rect: Rect, [x0, y0, x1, y1]: Box) => x0 < rect.maxX && x1 > rect.minX && y0 < rect.maxY && y1 > rect.minY;
+
+/**
+ * Celle (mattone più fuga) della spina di pesce a 90°: due mattoni per passo, uno orizzontale `[0, L] x [0, u]` e uno
+ * verticale `[L, L + u] x [u - L, u]` accanto alla sua punta; la scala si ripete lungo la diagonale (u, u) e le scale vicine
+ * sono spostate di (L + u, u - L). Si enumerano gli indici (a, b) delle due direzioni la cui origine può toccare il rettangolo.
+ */
+function herringboneCells(rect: Rect, u: number, n: number): Box[] {
+  const w = rect.maxX - rect.minX;
+  const h = rect.maxY - rect.minY;
+  const length = n * u;
+  // Origini possibili di una coppia: in x da -(L + u) a w, in y da -u a h + L - u (rispetto all'angolo del rettangolo)
+  const corners: Vec2[] = [[-(length + u), -u], [w, -u], [-(length + u), h + length - u], [w, h + length - u]];
+  // Indici nella base (u, u), (L + u, u - L): b = (x - y) / (2 n u) e a = x / u - b (n + 1), lineari, quindi basta guardare gli angoli
+  const bs = corners.map(([x, y]) => (x - y) / (2 * n * u));
+  const as = corners.map(([x], k) => x / u - bs[k] * (n + 1));
+  const cells: Box[] = [];
+  for (let a = Math.floor(Math.min(...as)) - 1; a <= Math.ceil(Math.max(...as)) + 1; a++) {
+    for (let b = Math.floor(Math.min(...bs)) - 1; b <= Math.ceil(Math.max(...bs)) + 1; b++) {
+      const x = rect.minX + (a + b * (n + 1)) * u;
+      const y = rect.minY + (a + b * (1 - n)) * u;
+      for (const cell of [[x, y, x + length, y + u], [x + length, y + u - length, x + length + u, y + u]] as Box[]) if (touches(rect, cell)) cells.push(cell);
+    }
+  }
+  return cells;
+}
+
+/** Celle del cesto: blocchi quadrati di lato `n u` con `n` mattoni affiancati, orizzontali e verticali a scacchiera. */
+function basketCells(rect: Rect, u: number, n: number): Box[] {
+  const side = n * u;
+  const cells: Box[] = [];
+  for (let j = 0; j < Math.ceil((rect.maxY - rect.minY) / side); j++) {
+    for (let i = 0; i < Math.ceil((rect.maxX - rect.minX) / side); i++) {
+      const x = rect.minX + i * side;
+      const y = rect.minY + j * side;
+      for (let k = 0; k < n; k++) {
+        const cell: Box = (i + j) % 2 === 0 ? [x, y + k * u, x + side, y + (k + 1) * u] : [x + k * u, y, x + (k + 1) * u, y + side];
+        // L'ultimo blocco di una riga o di una colonna può uscire dal rettangolo: si tengono solo i mattoni che lo toccano
+        if (touches(rect, cell)) cells.push(cell);
+      }
+    }
+  }
+  return cells;
+}
+
 /** I mattoni che toccano il rettangolo (la fuga sta a cavallo dei bordi del passo, quindi il primo mattone parte a metà fuga). */
 export function brickLayout(rect: Rect, params: BrickParams): Box[] {
-  const p = normalizeRelief(params);
+  const p = fitBrick(rect, params);
+  // Spina di pesce e cesto: celle a incastro, ridotte di mezza fuga
+  if (p.design === 'herringbone' || p.design === 'basket') {
+    const { u, n } = brickModule(p);
+    return (p.design === 'herringbone' ? herringboneCells(rect, u, n) : basketCells(rect, u, n)).map((cell) => shrinkCell(cell, p.mortar));
+  }
   const [px, py] = brickPitch(p);
   const boxes: Box[] = [];
   const rows = Math.ceil((rect.maxY - rect.minY) / py);
@@ -260,9 +355,32 @@ export function brickLayout(rect: Rect, params: BrickParams): Box[] {
   return boxes;
 }
 
-/** Profondità delle fughe: `depth` dentro la fuga, 0 sul mattone (versione analitica, per la mappa di altezze). */
+/** Test "il punto sta dentro uno dei rettangoli" con cassetti spaziali (i mattoni sono migliaia: niente scansione di tutti). */
+function boxLookup(boxes: Box[], rect: Rect): (x: number, y: number) => boolean {
+  const size = boxes.reduce((m, b) => Math.max(m, b[2] - b[0], b[3] - b[1]), 1);
+  const cols = Math.ceil((rect.maxX - rect.minX) / size) + 1;
+  const rows = Math.ceil((rect.maxY - rect.minY) / size) + 1;
+  const bins: Box[][] = Array.from({ length: cols * rows }, () => []);
+  const col = (x: number) => Math.min(cols - 1, Math.max(0, Math.floor((x - rect.minX) / size)));
+  const row = (y: number) => Math.min(rows - 1, Math.max(0, Math.floor((y - rect.minY) / size)));
+  // Ogni rettangolo sta in tutti i cassetti che tocca
+  for (const b of boxes) {
+    for (let j = row(b[1]); j <= row(b[3]); j++) for (let i = col(b[0]); i <= col(b[2]); i++) bins[j * cols + i].push(b);
+  }
+  return (x, y) => {
+    if (x < rect.minX || x > rect.maxX || y < rect.minY || y > rect.maxY) return false;
+    return bins[row(y) * cols + col(x)].some((b) => x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3]);
+  };
+}
+
+/** Profondità delle fughe: `depth` dentro la fuga, 0 sul mattone (versione analitica o a cassetti, per la mappa di altezze). */
 export function brickDepth(rect: Rect, params: BrickParams): (x: number, y: number) => number {
-  const p = normalizeRelief(params);
+  const p = fitBrick(rect, params);
+  // Spina di pesce e cesto: si cerca il mattone nei cassetti
+  if (p.design !== 'running') {
+    const inBrick = boxLookup(brickLayout(rect, p), rect);
+    return (x, y) => (inBrick(x, y) ? 0 : p.depth);
+  }
   const [px, py] = brickPitch(p);
   return (x, y) => {
     const row = Math.floor((y - rect.minY) / py);

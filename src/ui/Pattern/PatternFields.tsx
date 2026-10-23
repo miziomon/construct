@@ -1,6 +1,7 @@
 import { useId } from 'react';
 import { useResultStore } from '../../kernel/useKernel';
-import { PATTERN_MAX_CELLS, faceName, isAxisFace } from '../../scene/pattern';
+import { PATTERN_MAX_CELLS, brickRelief, faceName, isAxisFace, isReliefKind, reliefWarnings } from '../../scene/pattern';
+import type { BrickDesign, BrickParams } from '../../scene/relief';
 import type { PatternParams } from '../../scene/types';
 import { NumberField } from '../NumberField/NumberField';
 import { SliderField } from '../SliderField/SliderField';
@@ -27,7 +28,11 @@ interface Props {
   refreshBlocked?: string;
 }
 
-const KIND_LABELS: Record<PatternParams['kind'], string> = { voronoi: 'Voronoi', hexagon: 'Esagoni', circle: 'Cerchi', diamond: 'Rombi', triangle: 'Triangoli' };
+const KIND_LABELS: Record<PatternParams['kind'], string> = { voronoi: 'Voronoi', hexagon: 'Esagoni', circle: 'Cerchi', diamond: 'Rombi', triangle: 'Triangoli', brick: 'Mattoni' };
+/** Tipi a celle e tipi in rilievo: due gruppi della tendina. */
+const CELL_KINDS: PatternParams['kind'][] = ['voronoi', 'hexagon', 'circle', 'diamond', 'triangle'];
+const RELIEF_KINDS: PatternParams['kind'][] = ['brick'];
+const DESIGN_LABELS: Record<BrickDesign, string> = { running: 'Sfalsati', herringbone: 'Spina di pesce', basket: 'Cesto' };
 /** Sotto questa parete (circa due passate di un ugello da 0,4 mm) la stampa è inaffidabile. */
 const MIN_PRINTABLE_WALL = 0.8;
 
@@ -52,6 +57,14 @@ export function PatternFields({ params: p, onChange, disabled, history = true, o
       </div>
     </div>
   );
+  // Rilievo: disegno e misure dei mattoni (con i valori di partenza per ciò che manca)
+  const relief = isReliefKind(p.kind);
+  const brick = brickRelief(p);
+  const designId = useId();
+  /** Slider di una misura del rilievo: modifica `relief` e non un campo del Pattern. */
+  const reliefSlider = (label: string, tip: string, key: 'brickW' | 'brickH' | 'mortar' | 'depth', range: { min: number; max: number; step: number; hardMin?: number; unit?: string }) => (
+    <SliderField label={label} tooltip={tip} value={brick.relief[key]} disabled={disabled} history={history} onCommit={(v) => onChange({ relief: { ...brick.relief, [key]: v } as BrickParams })} {...range} />
+  );
   const slider = (label: string, tip: string, key: 'cells' | 'regularity' | 'size' | 'angle' | 'wall' | 'rounding' | 'margin' | 'depth', range: { min: number; max: number; step: number; hardMin?: number; hardMax?: number; unit?: string }) => (
     <SliderField label={label} tooltip={tip} value={p[key]} disabled={disabled} history={history} onCommit={(v) => onChange({ [key]: v })} {...range} />
   );
@@ -66,14 +79,38 @@ export function PatternFields({ params: p, onChange, disabled, history = true, o
   return (
     <div className="array-fields">
       {/* Il tipo è una tendina: cinque scelte non stanno bene in una riga di pulsanti */}
-      <div className="array-fields__row" title="Voronoi: celle casuali riproducibili dal seme; Esagoni, Cerchi, Rombi e Triangoli: griglia regolare.">
+      <div className="array-fields__row" title="Voronoi: celle casuali riproducibili dal seme; Esagoni, Cerchi, Rombi e Triangoli: griglia regolare. Rilievo Mattoni: fughe scavate sulla faccia, senza forare.">
         <label className="array-fields__label" htmlFor={kindId}>Tipo</label>
         <select id={kindId} className="array-fields__select" value={p.kind} disabled={disabled} onChange={(e) => onChange({ kind: e.target.value as PatternParams['kind'] })}>
-          {(Object.keys(KIND_LABELS) as PatternParams['kind'][]).map((k) => (
-            <option key={k} value={k}>{KIND_LABELS[k]}</option>
-          ))}
+          <optgroup label="Celle">
+            {CELL_KINDS.map((k) => (
+              <option key={k} value={k}>{KIND_LABELS[k]}</option>
+            ))}
+          </optgroup>
+          <optgroup label="Rilievo">
+            {RELIEF_KINDS.map((k) => (
+              <option key={k} value={k}>{KIND_LABELS[k]}</option>
+            ))}
+          </optgroup>
         </select>
       </div>
+
+      {relief && (
+        <>
+          <div className="array-fields__row" title="Sfalsati: file sfalsate di mezzo mattone. Spina di pesce e Cesto: la lunghezza del mattone si arrotonda a un multiplo dell'altezza (fuga compresa) perché il disegno si chiuda.">
+            <label className="array-fields__label" htmlFor={designId}>Disegno</label>
+            <select id={designId} className="array-fields__select" value={brick.design} disabled={disabled} onChange={(e) => onChange({ design: e.target.value as BrickDesign })}>
+              {(Object.keys(DESIGN_LABELS) as BrickDesign[]).map((d) => (
+                <option key={d} value={d}>{DESIGN_LABELS[d]}</option>
+              ))}
+            </select>
+          </div>
+          {reliefSlider('Larghezza mattone', 'Lunghezza del mattone, in mm (fuga esclusa).', 'brickW', { min: 8, max: 80, step: 0.5, hardMin: 2, unit: 'mm' })}
+          {reliefSlider('Altezza mattone', 'Altezza del mattone, in mm (fuga esclusa).', 'brickH', { min: 4, max: 40, step: 0.5, hardMin: 2, unit: 'mm' })}
+          {reliefSlider('Fuga', 'Spessore della fuga tra due mattoni, in mm.', 'mortar', { min: 0.4, max: 5, step: 0.1, hardMin: 0.2, unit: 'mm' })}
+          {reliefSlider('Profondità fuga', 'Quanto si scava la fuga sotto la faccia, in mm.', 'depth', { min: 0.2, max: 3, step: 0.1, hardMin: 0.05, unit: 'mm' })}
+        </>
+      )}
 
       {p.kind === 'voronoi' && (
         <div className="array-fields__row" title="Il seme decide il disegno: lo stesso seme dà sempre lo stesso risultato, anche nel codice OpenSCAD.">
@@ -96,9 +133,9 @@ export function PatternFields({ params: p, onChange, disabled, history = true, o
         </>
       )}
 
-      {choice('Modo', 'Fori: si tolgono le celle e restano le pareti. Solchi: si tolgono le pareti e restano le celle in rilievo.', p.mode, [['holes', 'Fori'], ['grooves', 'Solchi']], (mode) => onChange({ mode }))}
-      {slider('Parete', 'Spessore della parete tra due celle, in mm.', 'wall', { min: 0.4, max: 6, step: 0.1, hardMin: 0.1, unit: 'mm' })}
-      {slider('Arrotondamento', 'Raggio degli angoli delle celle, in mm.', 'rounding', { min: 0, max: 5, step: 0.1, hardMin: 0, unit: 'mm' })}
+      {!relief && choice('Modo', 'Fori: si tolgono le celle e restano le pareti. Solchi: si tolgono le pareti e restano le celle in rilievo.', p.mode, [['holes', 'Fori'], ['grooves', 'Solchi']], (mode) => onChange({ mode }))}
+      {!relief && slider('Parete', 'Spessore della parete tra due celle, in mm.', 'wall', { min: 0.4, max: 6, step: 0.1, hardMin: 0.1, unit: 'mm' })}
+      {!relief && slider('Arrotondamento', 'Raggio degli angoli delle celle, in mm.', 'rounding', { min: 0, max: 5, step: 0.1, hardMin: 0, unit: 'mm' })}
       {slider('Margine', 'Cornice piena che resta attorno al disegno, in mm.', 'margin', { min: 0, max: 20, step: 0.5, hardMin: 0, unit: 'mm' })}
 
       <div className="array-fields__row" title="Faccia da cui parte il taglio. Per forare altre facce applica di nuovo il Pattern.">
@@ -116,16 +153,19 @@ export function PatternFields({ params: p, onChange, disabled, history = true, o
         </p>
       )}
 
-      {slider('Profondità', 'Quanto entra il taglio dalla faccia, in mm. 0 = passante.', 'depth', { min: 0, max: Math.max(1, Math.round(Math.max(...p.faces.map((f) => f.thickness)))), step: 0.1, hardMin: 0, unit: 'mm' })}
-      {partial && bothSides && choice('Lati', 'Il taglio parte dalla sola faccia scelta oppure anche da quella opposta, con la stessa profondità.', p.sides, [['one', 'Una faccia'], ['both', 'Entrambe']], (sides) => onChange({ sides }))}
-      {p.wall < MIN_PRINTABLE_WALL && <p className="array-fields__total" role="status">Parete sotto {MIN_PRINTABLE_WALL} mm: difficile da stampare.</p>}
+      {!relief && slider('Profondità', 'Quanto entra il taglio dalla faccia, in mm. 0 = passante.', 'depth', { min: 0, max: Math.max(1, Math.round(Math.max(...p.faces.map((f) => f.thickness)))), step: 0.1, hardMin: 0, unit: 'mm' })}
+      {!relief && partial && bothSides && choice('Lati', 'Il taglio parte dalla sola faccia scelta oppure anche da quella opposta, con la stessa profondità.', p.sides, [['one', 'Una faccia'], ['both', 'Entrambe']], (sides) => onChange({ sides }))}
+      {!relief && p.wall < MIN_PRINTABLE_WALL && <p className="array-fields__total" role="status">Parete sotto {MIN_PRINTABLE_WALL} mm: difficile da stampare.</p>}
+      {reliefWarnings(p).map((text) => (
+        <p key={text} className="array-fields__total" role="status">{text}</p>
+      ))}
 
       {slow && (
         <p className="array-fields__total array-fields__warning" role="alert">
           {ms > SLOW_PREVIEW_MS ? `Calcolo lento (${Math.round(ms)} ms).` : `Molte celle (circa ${estimatedCells(p)}): il calcolo può essere lento.`} Riduci celle o facce, oppure aumenta il passo.
         </p>
       )}
-      {onSimplified && (
+      {onSimplified && !relief && (
         <label className="array-fields__row array-fields__check" title="Durante l'anteprima gli angoli arrotondati hanno meno segmenti: il calcolo è più veloce. Il risultato dopo l'OK è sempre a qualità piena.">
           <span className="array-fields__label">Anteprima semplificata</span>
           <input type="checkbox" checked={!!simplified} onChange={(e) => onSimplified(e.target.checked)} />

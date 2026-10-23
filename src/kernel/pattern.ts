@@ -1,6 +1,8 @@
 import type { CrossSection, Manifold, ManifoldToplevel } from 'manifold-3d';
-import { cutReach, faceFrame, frameRect, isAxisFace, normalizePattern, patternCells } from '../scene/pattern';
+import { brickRelief, cutReach, faceFrame, frameRect, isAxisFace, isReliefKind, normalizePattern, patternCells } from '../scene/pattern';
+import type { FaceFrame } from '../scene/pattern';
 import type { PatternFace, PatternParams, Vec3 } from '../scene/types';
+import { BEST_ENGINE, reliefCutter } from './relief';
 
 /** Segmenti del cerchio nelle giunzioni arrotondate (gli stessi degli angoli arrotondati delle forme 2D). */
 const ROUND_SEGMENTS = 32;
@@ -27,21 +29,16 @@ function shrunk(wasm: ManifoldToplevel, cell: [number, number][], wall: number, 
 }
 
 /**
- * Il solido da togliere per una faccia, nel riferimento del pezzo (o null se la faccia non taglia nulla).
- * Passi: 1) si porta il pezzo nel riferimento della faccia (faccia su z = 0, pezzo sotto); 2) la regione da forare è la
- * silhouette del pezzo (passante con `region` 'silhouette') o la sua sezione appena sotto la faccia (il contorno vero della
- * faccia, anche con `region` 'face'), ridotta del margine; 3) le celle si riducono
- * per la parete, si arrotondano e si intersecano con la regione (Fori) oppure si tolgono da essa (Solchi); 4) si estrude
- * a partire dalla faccia (e dalla faccia opposta con `sides: 'both'`) e si riporta nel riferimento del pezzo.
+ * Regione da lavorare di una faccia, nel riferimento della faccia (o null se è vuota). Passi: 1) si porta il pezzo nel
+ * riferimento della faccia (faccia su z = 0, pezzo sotto); 2) la regione è la silhouette del pezzo (se `through`, `region`
+ * non è 'face' e la faccia sta sugli assi) o la sua sezione appena sotto la faccia (il contorno vero della faccia), ridotta
+ * del margine. Il chiamante possiede la regione.
  */
-function cutterFor(wasm: ManifoldToplevel, child: Manifold, p: PatternParams, face: PatternFace, index: number): Manifold | null {
-  const { Manifold, CrossSection } = wasm;
-  const segments = p.preview ? PREVIEW_SEGMENTS : ROUND_SEGMENTS;
+function faceRegion(child: Manifold, p: PatternParams, face: PatternFace, through: boolean, segments: number): { region: CrossSection; frame: FaceFrame } | null {
   const frame = faceFrame(face);
   const shifted = child.translate([-frame.origin[0], -frame.origin[1], -frame.origin[2]]);
   const inFrame = shifted.rotate(frame.euler);
   shifted.delete();
-  const through = p.depth <= 0;
   // Faccia inclinata: la silhouette del pezzo lungo la normale invaderebbe le facce vicine, quindi la regione è sempre il
   // contorno della faccia e il taglio parte solo da lì (niente faccia opposta)
   const axisFace = isAxisFace(face);
@@ -58,6 +55,48 @@ function cutterFor(wasm: ManifoldToplevel, child: Manifold, p: PatternParams, fa
     region.delete();
     return null;
   }
+  return { region, frame };
+}
+
+/** Riporta un solido dal riferimento della faccia a quello del pezzo (rotazione inversa e traslazione); `solid` si libera. */
+function backToPiece(solid: Manifold, frame: FaceFrame): Manifold {
+  const turned = solid.rotate(frame.inverseEuler);
+  solid.delete();
+  const moved = turned.translate(frame.origin as Vec3);
+  turned.delete();
+  return moved;
+}
+
+/**
+ * Rilievo (Mattoni) di una faccia: le fughe da scavare nella regione della faccia (sempre il suo contorno, mai la
+ * silhouette: `depth` e `sides` del Pattern non contano), ancorate al rettangolo della faccia così il disegno non si sposta
+ * quando cambia il margine. Nel riferimento del pezzo, o null se non toglie nulla.
+ */
+function reliefCutterFor(wasm: ManifoldToplevel, child: Manifold, p: PatternParams, face: PatternFace): Manifold | null {
+  const found = faceRegion(child, p, face, false, ROUND_SEGMENTS);
+  if (!found) return null;
+  const { relief } = brickRelief(p);
+  const cutter = reliefCutter(wasm, found.region, relief, { engine: BEST_ENGINE[relief.kind], rect: frameRect(p, face) });
+  found.region.delete();
+  return cutter ? backToPiece(cutter, found.frame) : null;
+}
+
+/**
+ * Il solido da togliere per una faccia, nel riferimento del pezzo (o null se la faccia non taglia nulla).
+ * Passi: 1) regione della faccia (vedi `faceRegion`); 2) le celle si riducono
+ * per la parete, si arrotondano e si intersecano con la regione (Fori) oppure si tolgono da essa (Solchi); 3) si estrude
+ * a partire dalla faccia (e dalla faccia opposta con `sides: 'both'`) e si riporta nel riferimento del pezzo.
+ */
+function cutterFor(wasm: ManifoldToplevel, child: Manifold, p: PatternParams, face: PatternFace, index: number): Manifold | null {
+  const { Manifold, CrossSection } = wasm;
+  // I rilievi hanno un ramo a parte: niente celle, regione sempre quella della faccia
+  if (isReliefKind(p.kind)) return reliefCutterFor(wasm, child, p, face);
+  const segments = p.preview ? PREVIEW_SEGMENTS : ROUND_SEGMENTS;
+  const through = p.depth <= 0;
+  const axisFace = isAxisFace(face);
+  const found = faceRegion(child, p, face, through, segments);
+  if (!found) return null;
+  const { region, frame } = found;
 
   const shapes = patternCells(p, frameRect(p, face), index)
     .map((cell) => shrunk(wasm, cell, p.wall, p.rounding, segments))
@@ -86,11 +125,7 @@ function cutterFor(wasm: ManifoldToplevel, child: Manifold, p: PatternParams, fa
   cut.delete();
   const cutterInFrame = prisms.length === 1 ? prisms[0] : Manifold.union(prisms);
   if (prisms.length > 1) prisms.forEach((m) => m.delete());
-  const turned = cutterInFrame.rotate(frame.inverseEuler);
-  cutterInFrame.delete();
-  const cutter = turned.translate(frame.origin as Vec3);
-  turned.delete();
-  return cutter;
+  return backToPiece(cutterInFrame, frame);
 }
 
 /**
