@@ -333,3 +333,226 @@ PNG e JPG coincidono con libvips alla nostra formula, **su questa macchina e in 
 dell'alfa, **non provato**). Il profilo colore sposta al più un livello. L'SVG dipende dal rasterizzatore e **non è riproducibile tra motori**. Da qui la scelta che risolve tutto: **si salva e
 si identifica con l'hash il grigio decodificato** (sorgente di verità del progetto), mai il file originale: dopo l'importazione il risultato è identico ovunque, e riaprire il progetto non rifà la
 decodifica. Il file originale si può tenere come allegato facoltativo per rifare l'importazione.
+
+## Anteprima nella vista 3D
+
+`PatternOverlay` (`src/viewport`) oggi evidenzia solo le facce con `FaceHighlight`. Un overlay per la texture si può fare in R3F con un **piano suddiviso** nel riferimento della faccia
+(`PlaneGeometry` con un segmento ogni 0,8 mm, cioè circa 100 × 75 per 80 × 60 mm) e un `MeshStandardMaterial` con `displacementMap` (una `DataTexture` del grigio a 8 bit, `LinearFilter`) e
+`displacementScale` = ampiezza, `displacementBias` per il livello medio. Scala, rotazione e scostamento si applicano alla matrice della texture (`repeat`, `rotation`, `offset`,
+`center` di three) e la ripetizione con `RepeatWrapping`. Il costo è quello di una mesh da circa 15.000 triangoli: la GPU lo assorbe senza problemi, contro i 50 a 150 ms di un ricalcolo
+del kernel a passo 0,8 mm (misurati qui: 120 a 150 ms nel benchmark carico, 46 a 91 ms nel prototipo in Chrome). **Vantaggio**: il trascinamento dei cursori (ampiezza, scala, rotazione, scostamento) è
+a 60 fotogrammi al secondo; il kernel lavora solo al rilascio, come per gli altri overlay. **Limiti**: (1) **non mostra gli incavi** sotto la faccia (il piano sta sopra il pezzo), quindi per
+incavo e "entrambi" serve il mesh del kernel o un taglio con `clippingPlanes`; (2) il filtro bilineare e la conversione 8 bit in virgola mobile della GPU non coincidono bit per bit con il
+campionatore del kernel (differenza di aspetto minima, ma non uguale); (3) la sfocatura, il livello medio nei modi "rilievo" e "incavo" (non lineare) vanno riscritti in un piccolo
+shader; (4) per il motore M la proiezione triplanare in uno shader di vertici richiede la normale a ogni vertice e una mesh già fitta, quindi conviene mostrare direttamente il risultato del kernel.
+**Valutato, non implementato e non misurato su GPU.** Proposta: overlay solo per il motore F in modo "rilievo" (e per "entrambi" con la faccia leggermente sotto), kernel per il resto.
+
+## Export OpenSCAD per motore
+
+| Motore | Codice | Dimensione | Verifica con OpenSCAD 2025.11.30 (volume contro kernel) |
+|---|---|---|---|
+| F, `zmap` + `polyhedron` | un file, quote in centesimi interi, ritaglio con `intersection()` se la regione non è il rettangolo | 24 KB a 0,8 mm, 58 a 0,5, 158 a 0,3 (pelle); 60 a 73 KB nei test a 0,5 mm con il pannello | **0,00 mm³** su rilievo, incavo, entrambi (pannello 80 × 60 × 5) e entrambi sul cilindro Ø30, rendering 0,3 a 1,2 s |
+| F, `surface()` + PNG | `.scad` di 0,4 KB e PNG a fianco (163 × 123 pixel a 0,5 mm) | 0,4 KB più 0,5 a 0,8 KB (zigrinatura) | da −1,7 a +6,4 mm³ (0,007 a 0,03 %), rendering 0,8 a 0,9 s |
+| M, `polyhedron` dell'oggetto | tutti i punti (3 decimali) e tutte le facce, **catena parametrica persa** | cubo 587 KB, cilindro 1,2 MB, pannello 1,2 MB a lato 0,8 mm; fino a 8,6 MB a 0,3 mm | **0,00 mm³** su cubo, pannello, cilindro (volume atteso della mesh arrotondata a tre decimali), rendering 2,0 a 3,9 s |
+| SVG vettoriale | `polygon(points, paths)`, ciclo sui centri, ritaglio con `intersection()` | 1,8 KB | **0,00 mm³** su rilievo e incavo, rendering 0,2 s |
+
+Verifica con `scripts/relief-openscad-check.mjs` (procedura in fondo): 12 casi su 12 renderizzati da OpenSCAD senza errori (stato `NoError` dove OpenSCAD lo riporta), con le differenze di volume indicate sopra. Non si è verificato il ritaglio
+con un **margine** (come nel primo studio) e nemmeno una faccia inclinata. Il motore F in `zmap` sulle facce curve non esiste (solo piane); il motore M scrive una mesh e basta.
+
+## Stampabilità FDM (ugello 0,4 mm, strato 0,2 mm)
+
+Valgono le regole del primo studio (`docs/studio-pattern-rilievo.md`: rilievo minimo, larghezze minime, orientamento). In più, per le texture da immagine:
+
+- **Ampiezza minima.** Con strati da 0,2 mm una quota sulla faccia superiore ha **un livello ogni 0,2 mm**: ampiezza 0,6 mm = 3 gradini visibili, 0,4 mm = 2, sotto 0,3 mm la
+  texture è quasi invisibile (come per le venature del primo studio). Per una texture "organica" a sfumature continue conviene **0,5 a 1,0 mm**, con strati da 0,1 mm o altezza strato variabile. Nel modo
+  "entrambi" l'ampiezza si divide attorno al livello medio: 0,6 mm sono ±0,3 mm.
+- **Risoluzione dell'immagine contro l'ugello.** Il più piccolo dettaglio che si stampa è circa 0,4 a 0,5 mm (una linea di estrusione). Quindi il **passo della griglia utile è 0,25 mm** (due campioni
+  per dettaglio) e un pixel più fine di 0,1 mm non si vede. A scala 20 mm per piastrella bastano 200 pixel; a 80 mm per piastrella, 320. Dettagli sotto 0,4 mm di larghezza (tratti fini di una foto o di
+  un SVG) **spariscono o diventano rumore**: sfocare o semplificare prima.
+- **Facce laterali.** Su una faccia verticale la quota si forma nel piano XY e la risoluzione è quella dell'ugello (0,4 mm) più i segni degli strati (0,2 mm), che si sovrappongono alla texture: ampiezza
+  almeno 0,5 mm. Una texture a quota continua sulle facce laterali ha **pendenze che guardano in basso**: oltre circa 45 gradi dalla verticale servono supporti o ponti, quindi per le pareti si preferiscono pendenze
+  dolci (ampiezza piccola rispetto alla scala) o un'ampiezza che non superi circa la metà del lato (limite già imposto al motore M).
+- **Facce rivolte al piatto.** La texture si imprime contro il piatto e perde nitidezza; il rilievo (aggiunta) non si stampa proprio senza supporti. Orientare il pezzo con la texture verso l'alto o di lato.
+- **Motore M su tutto l'oggetto**: le facce rivolte verso il basso hanno sbalzi che l'immagine non conosce (BumpMesh offre una maschera per angolo; qui lo spigolo fermo copre solo gli spigoli vivi,
+  non le facce orizzontali). Proposta: una maschera angolare come in BumpMesh (soglia 0 a 90 gradi sulle facce orizzontali).
+- **Sono regole pratiche, non misurate con una stampa.**
+
+## Come integrare nell'app
+
+1. **Tipi** (`src/scene/types.ts`): per il motore F, un nuovo `kind: 'texture'` del Pattern (o gruppo "Rilievo" del selettore) con `imageId` e `TextureParams`; per il motore M un **nodo operazione**
+   separato (come le deformazioni: opera su un figlio, non su una faccia). Versione dell'algoritmo (`textureAlgorithm: 1`) per bloccare la formula di grigio e il campionamento.
+2. **`normalizePattern`**: usare `normalizeTexture` (limiti obbligatori già nel prototipo). Il passo ha il tetto di 250.000 nodi di `sampleGrid`, il motore M il tetto di triangoli (`maxTriangles`) e la regola dell'ampiezza.
+3. **Kernel**: `cutterFor` calcola già il riferimento della faccia e la regione ridotta del margine. Il motore F produce **utensili** invece di un solido finito, così si inserisce nel `buildPattern` esistente e nel
+   ramo additivo previsto per le borchie: incavo = un cutter (`difference`); rilievo = una addizione (`union`, come `reliefAddition`); "entrambi" = un cutter (la colonna) più una addizione (la pelle), nell'ordine
+   differenza poi unione. Il lavoro in più rispetto ai rilievi procedurali è **solo la gestione delle immagini** (punto seguente): la geometria è `sampleGrid` e `heightSolid`, già nel primo studio.
+4. **Asset** (`src/import/assets.ts`, `restore.ts`, `kernel.worker.ts`): `ImageAsset`, impronta del grigio, `registerImage`, ripristino (sezione "Asset e persistenza").
+5. **Codegen** (`src/codegen/openscad.ts`): `textureFaceScad` dentro `translate(origine) rotate(inverseEuler)` come i Pattern; opzione di export `surface()` con PNG; il motore M scrive il `polyhedron` (con un avviso
+   sulla dimensione) o, meglio, si esporta in STL/3MF.
+6. **UI**: caricamento del file (PNG, JPG, SVG; trascinamento), scelta tra le texture di esempio, cursori (ampiezza, livello medio, scala, rotazione, scostamento X e Y, sfocatura), interruttori (inversione, ripetizione),
+   modo (rilievo, incavo, entrambi), proiezione e normali per il motore M; avvisi (ampiezza troppo alta rispetto al lato, immagine oltre 512 pixel, spigoli).
+7. **Test e documentazione**: quelli del prototipo, più un e2e (importa un PNG, applica, controlla il solido e l'export) e l'aggiornamento di README e tooltip.
+
+## Il prototipo `docs/prototipi/texture-immagine.html`
+
+File unico con tema chiaro e scuro (stessi token di `deformazioni.html`), manifold-3d 3.5.4 e three 0.186.1 da jsDelivr. Funzioni: caricare PNG, JPG, SVG (decodifica con canvas) o scegliere una delle sei texture di
+esempio; oggetto pannello, cilindro o cubo; motore F o M; ampiezza, livello medio, scala in mm per piastrella, rotazione, scostamento, inversione, ripetizione, sfocatura, passo o lato, modo (rilievo, incavo, entrambi),
+proiezione, normali e spigoli fermi; vista 3D con luce radente (direzione regolabile); metriche in tempo reale (tempo, triangoli, stato di manifold, triangoli rovesciati, volume, KB di STL e di OpenSCAD); scarico di
+STL e `.scad`. Il blocco `CORE-BEGIN`/`CORE-END` è **generato dai sorgenti TypeScript** con `node scripts/texture-core.mjs write` e un test (`src/kernel/textureCore.test.ts`) lo estrae, lo esegue in Node e lo
+confronta bit per bit con le funzioni TypeScript (texture di esempio, grigio, quota, spostamento per ogni proiezione, solidi del motore F e M, codice OpenSCAD, STL).
+
+Provato in Chrome con Playwright (`node scripts/texture-prototype-check.mjs`): **nessun errore né avviso in console**, tema chiaro e scuro, caricamento di un PNG, di un JPG e di un SVG, cambio di motore e di oggetto,
+normali separate (il prototipo mostra che manifold rifiuta la mesh), scarico dei due file. Esiti: pannello F pelle 15.620 triangoli in 91 ms, pannello M 40.380 in 100 ms, cilindro M 28.192 in 73 ms, cubo M 21.408 in
+49 ms, nessun triangolo rovesciato.
+
+![Pannello, motore F, pelle](studio-texture/01-pannello-F-pelle-light.png)
+![Pannello, motore F, tema scuro](studio-texture/01-pannello-F-pelle-dark.png)
+![PNG caricato](studio-texture/02-pannello-F-png-light.png)
+![JPG caricato](studio-texture/03-pannello-F-jpg-light.png)
+![SVG caricato](studio-texture/04-pannello-F-svg-light.png)
+![Pannello, motore M](studio-texture/05-pannello-M-light.png)
+![Cilindro, motore M, proiezione cilindrica](studio-texture/06-cilindro-M-light.png)
+![Cubo, motore M](studio-texture/07-cubo-M-light.png)
+![Cubo, normali separate: nessun solido](studio-texture/08-cubo-M-separate-light.png)
+![Cilindro, motore F](studio-texture/09-cilindro-F-light.png)
+
+Le sei texture di esempio, come immagini in scala di grigi:
+
+![Texture di esempio](studio-texture/campioni.png)
+
+## Confronto con i rilievi procedurali
+
+### Tabella omogenea (stessa faccia 80 × 60 mm su pannello di 5 mm, stessa sessione di misura)
+
+Le righe procedurali sono **rieseguite nella stessa sessione** delle righe immagine (stesso benchmark, stesse colonne): per questo sono più lente (circa 30 a 50 %) dei numeri del primo documento. Contano
+l'ordine di grandezza e i rapporti, non il millisecondo (variabilità fino a circa ±30 %).
+
+| Soluzione | Motore | Passo (mm) | Tempo (ms) | Triangoli | STL (KB) | OpenSCAD (KB) |
+|---|---|---|---:|---:|---:|---:|
+| **Mattoni** (procedurale) | CSG | | 7 | 456 | 22 | 0,3 |
+| Mattoni | mappa | 0,5 | 166 | 6.596 | 322 | 47 |
+| **Borchie** (procedurale, additiva) | CSG | | 56 | 10.162 | 496 | 0,3 |
+| **Rame battuto** (procedurale) | CSG | | 303 | 18.312 | 894 | 3,2 |
+| Rame battuto | mappa | 0,8 | 64 | 15.700 | 767 | 31 |
+| Rame battuto | mappa | 0,5 | 157 | 39.246 | 1.916 | 77 |
+| **Ruggine** (procedurale) | mappa | 0,8 | 62 | 15.354 | 750 | 32 |
+| Ruggine | mappa | 0,5 | 214 | 38.958 | 1.902 | 78 |
+| **Legno** (procedurale) | ibrido | 0,5 | 274 | 38.328 | 1.872 | 62 |
+| **Immagine, pelle** | motore F, rilievo | 0,8 | 153 | 32.068 | 1.566 | 24 |
+| Immagine, pelle | motore F, rilievo | 0,5 | 468 | 77.666 | 3.792 | 58 |
+| Immagine, zigrinatura | motore F, rilievo | 0,5 | 204 | 33.832 | 1.652 | 59 |
+| Immagine, pelle | motore F, entrambi | 0,5 | 170 | 39.438 | 1.926 | 63 |
+| **Immagine, SVG** | vettoriale (celle) | | 13 | 3.078 | 150 | 1,8 |
+| Immagine, SVG | raster, motore F | 0,5 | 167 | 13.858 | 677 | 59 |
+| **Immagine, pelle** | **motore M** (oggetto intero) | 0,8 | 145 | 40.380 | 1.972 | 1.165 |
+
+Il motore M tocca tutte le facce: i suoi triangoli e il suo codice OpenSCAD non sono confrontabili 1 a 1 con quelli del motore F.
+
+Il motore F con l'immagine **costa come la mappa di altezze procedurale** (stessa geometria, `sampleGrid` e `heightSolid`) con un fattore da 1 a 2 in più nei triangoli, perché l'immagine ha dettaglio ovunque. I casi
+geometrici (mattoni, borchie, rame) **in CSG restano molto più economici nel codice OpenSCAD** (0,3 a 3,2 KB contro 24 a 59 KB) e nei triangoli quando la forma è semplice.
+
+### Criteri qualitativi
+
+| Criterio | Rilievi procedurali (CSG, mappa, ibrido) | Texture da immagine |
+|---|---|---|
+| **Qualità dei bordi** | Esatti in CSG (mattoni, fughe, borchie); a gradini nella mappa di altezze | A gradini della griglia (motore F), eccetto l'SVG vettoriale (esatto, un livello). Il motore M dipende dal lato dei triangoli |
+| **Determinismo e seme** | Seme intero e rumore con hash intero: stesso disegno ovunque (campo di versione dell'algoritmo) | Nessun seme: determinismo dato dal grigio salvato (hash). Decodifica di PNG e JPG uguale in Chrome e Node (provato); SVG dipende dal rasterizzatore: si salva il grigio |
+| **Peso del progetto** | Solo i parametri (poche centinaia di byte) | I parametri più il grigio: 165 a 256 KB zlib per 512 × 512 pixel (da 1 a 10 KB per texture regolari) |
+| **Superfici supportate** | Solo facce piane | F: facce piane. M: **mesh intera**, curva o piana, con proiezioni (triplanare, cilindrica, planare). Prima del motore M nessuna superficie curva |
+| **Libertà creativa** | Cinque disegni scelti e parametrici, ognuno con la sua geometria; ampliare significa scrivere codice | Qualunque immagine dell'utente: foto, scansioni, loghi, texture scaricate (come BumpMesh e le sue 101 texture) |
+| **Export OpenSCAD** | Piccolo e leggibile in CSG (0,3 a 3 KB), polyhedron da 30 a 200 KB nella mappa | F: `zmap` 24 a 160 KB, oppure `surface()` con PNG (0,4 KB più PNG); M: polyhedron da 0,6 a 8,6 MB (catena persa); SVG vettoriale 1,8 KB |
+| **Parametri esposti** | Per tipo (larghezza mattone, fuga, profondità, seme, diametro delle martellate) | Uniformi: ampiezza, livello medio, scala, rotazione, scostamento, inversione, ripetizione, sfocatura, modo, passo; M aggiunge proiezione e spigoli |
+| **Costo di integrazione** | 9 a 10 giorni per cinque texture (primo studio), di cui 2 di infrastruttura (tipi, normalize, ramo additivo, `patternLines`, UI) | Motore F: 4 a 5 giorni **sopra** l'infrastruttura già fatta per i rilievi (la geometria è già scritta), SVG vettoriale 1,5 a 2, M 4 a 5 (nodo operazione con avvertenze) |
+| **Rischi** | Qualità della ruggine e del legno a 0,4 mm, `.scad` da 78 KB (ruggine), tetti sui cicli | Aliasing con immagini dettagliate, grigio e alfa non identici tra browser (Firefox e Safari non provati), peso dell'immagine nel progetto, ampiezza oltre il limite del motore M, dettagli sotto l'ugello che non si stampano |
+
+### Raccomandazione
+
+**Soluzione ibrida, con un'unica interfaccia "Rilievo".** Procedurale/CSG per i casi **geometrici e periodici** (mattoni, fughe, borchie, rame battuto): bordi esatti, codice OpenSCAD di pochi byte, nessuna dipendenza da
+file, progetto leggero, seme riproducibile. **Immagine per il resto**: texture organiche (pelle, tessuto, fibra), marchi e loghi, qualunque disegno portato dall'utente. Non una cosa al posto dell'altra: il motore F con
+l'immagine **riusa** `sampleGrid`, `heightSolid` e il ramo additivo dei rilievi, quindi costa poco sopra l'infrastruttura già prevista. Ordine consigliato, ognuno con una versione minor:
+
+1. **Rilievi procedurali, tappe 1 e 2 del primo studio** (mattoni, borchie con il ramo additivo; rame): invariate, danno l'infrastruttura (tipi, `normalizePattern`, additivo, `patternLines`, UI). Prima di tutto, dopo il branch
+   B sulla regione e sul selettore.
+2. **Texture da immagine, motore F** (PNG, JPG, esempi; rilievo, incavo, entrambi; asset immagine con grigio salvato, registrazione nel worker, chiave di cache per impronta; export `zmap`): **stima 4 a 5 giorni** (1 per
+   l'asset e la decodifica con il test di determinismo, 1,5 per tipi, `normalize` e kernel come utensili, 1 per la UI, 0,5 per l'export con `intersection()` per le regioni non rettangolari, 1 per test, e2e e documentazione). Più
+   0,5 giorni per l'export opzionale con `surface()` e PNG.
+3. **SVG**: vettoriale (celle estruse, `parseSvg` già esistente) e raster (stessa strada del grigio): **1,5 a 2 giorni**; la vettoriale è il predefinito per i tracciati pieni.
+4. **Anteprima GPU** (`displacementMap` su un piano suddiviso, per rilievo): **circa 2 giorni**, facoltativa; rende fluido il trascinamento dei cursori.
+5. **Motore M** come nodo operazione (come le deformazioni) con spigoli fermi, controllo dell'ampiezza (spostamento massimo non oltre circa metà lato), triangoli rovesciati e sovrapposizione, avviso sull'export
+   OpenSCAD: **4 a 5 giorni**, **solo se emerge la richiesta** (mesh importate, oggetti curvi): è la parte con più limiti e senza export OpenSCAD praticabile. Non implementare le normali squadrate né quelle separate.
+
+Totale: **6 a 7 giorni** per il nucleo (2 e 3), **circa 13 giorni** con anteprima e motore M. Il motore F su **più facce** si ottiene ripetendo la chiamata per faccia, come per i rilievi.
+
+**Miglioramenti proposti** (non implementati): (a) **sfocatura automatica anti-aliasing** pari a circa `passo / (2 × pixel)` prima del campionamento; (b) **livello medio automatico** (media del grigio) per non perdere o
+guadagnare volume senza volerlo; (c) i rilievi procedurali (ruggine, legno, rame) **come generatori di immagine** in 512 pixel che passano per lo stesso motore F e lo stesso asset: unifica codice e UI, e dà l'export
+`surface()` anche a loro; (d) **maschera angolare** sul motore M come in BumpMesh (soglia sulle facce orizzontali), e raffinamento **adattivo** dei lati vicino agli spigoli; (e) un **controllo di ripetibilità** (la texture è senza
+cucitura?) con un'anteprima 2 × 2; (f) per l'SVG, scostamento e rotazione del disegno nella strada vettoriale; (g) un nastro di triangoli sugli spigoli per rendere usabili le normali separate, solo se servisse davvero.
+
+### Decisioni ancora aperte
+
+1. **Peso nel progetto**: va bene salvare il grigio decodificato (165 a 256 KB zlib per 512 × 512, fino a 350 KB in base64 nei casi duri), oppure si preferisce un riferimento al file con ricalcolo? (Il grigio è la sola scelta che dà
+   lo stesso risultato ovunque.)
+2. **Formula del grigio e trasparenza**: la formula intera di Rec. 601 sui valori sRGB, trasparenza composta sul **bianco**: da confermare (con un fondo nero un logo trasparente invertirebbe il rilievo).
+3. **Lato massimo dell'immagine**: 512 pixel come predefinito, 1024 su richiesta?
+4. **Modo predefinito e livello medio**: "entrambi" con 0,5 (come Blender e BumpMesh, perde volume con una texture scura) oppure "rilievo" da 0 ad A?
+5. **Export OpenSCAD del motore F**: `zmap` in un file solo come predefinito e `surface()` con PNG come opzione, o il contrario? E per il motore M, un `polyhedron` da megabyte con avviso o solo STL e 3MF?
+6. **Ampiezza troppo alta sul motore M**: avviso oppure blocco?
+7. **SVG**: strada vettoriale o raster come predefinita per i file con tracciati pieni?
+8. **Motore M adesso o poi**: se non c'è richiesta di texture sui pezzi curvi, si può lasciare fuori dalla prima versione.
+
+## Limiti di questo studio
+
+- **Solo facce piane per il motore F** (facce inclinate funzionerebbero come per i Pattern con `faceFrame`, non provate), regione con margine non verificata in OpenSCAD (solo regione circolare e rettangolare).
+- Una sola immagine per oggetto, un solo livello (BumpMesh ne ha quattro).
+- La quota usa il grigio, non i canali colore; niente mappe di normali né di rugosità.
+- Nel motore M il raffinamento è uniforme; l'ampiezza ha una regola empirica (spostamento massimo non oltre circa metà lato) dedotta da cinque solidi, non una garanzia.
+- **Precisione numerica tra motori JavaScript**: `Math.sin`, `Math.cos`, `Math.atan2` e `**` non sono garantiti identici al bit tra browser; la quota arrotondata al centesimo di mm può cambiare di un livello in pochi punti.
+  Il codice OpenSCAD contiene valori già calcolati e non ne risente.
+
+## Cosa non è stato verificato
+
+- **Firefox e Safari**: decodifica di PNG, JPG, profili colore e alfa, canvas, prototipo. Solo Chrome (e libvips/librsvg in Node).
+- **Stampa reale**: tutte le regole di stampabilità sono pratiche, non provate con una stampa.
+- **Documentazione di Blender**: la pagina del modificatore Displace non si è caricata; la descrizione è dalla conoscenza del programma. Il funzionamento interno di BumpMesh (matematica delle normali) non è descritto dal suo README e non si è letto il codice.
+- **`createImageBitmap` nel worker dell'app** (provato solo in una pagina di prova in Chrome), e il ripristino da IndexedDB delle immagini: l'estensione di `assets.ts` non è implementata.
+- **Anteprima GPU** con `displacementMap`: valutata, non realizzata e non misurata.
+- **Immagini grandi** (oltre 1024 pixel) e memoria: non provate. Il prototipo riduce a 512 pixel.
+- **Margine e facce inclinate** del motore F nel codice OpenSCAD; faccia a regione non convessa.
+- **Mesh importate** (STL, 3MF) e solidi non convessi con rientranze strette o pareti sottili nel motore M (provati: pannello, cilindro, cubo, profilo a L, scatola).
+- **Esportazione 3MF** del risultato e apertura in uno slicer.
+- **Integrazione nell'app**: nessun collegamento a store, worker, UI; nessun test e2e (come il primo studio).
+- **Differenze tra l'anteprima in tempo reale e il risultato** del kernel (per l'overlay).
+
+## Riproducibilità: comandi
+
+Dalla radice del repository, in PowerShell:
+
+```
+# Test del prototipo (funzioni pure, kernel, codice OpenSCAD, blocco CORE dell'HTML)
+npx vitest run src/scene/textureMap.test.ts src/kernel/textureMap.test.ts src/codegen/textureScad.test.ts src/kernel/textureCore.test.ts src/scene/relief.test.ts src/kernel/relief.test.ts
+npx tsc --noEmit
+
+# Benchmark: tabella dei rilievi con le righe immagine, motore M, SVG, peso delle immagini, rischi del motore M
+$env:BENCH='1'; $env:BENCH_OUT='bench.txt'; npx vitest run src/kernel/bench.test.ts -t "texture in rilievo"
+$env:BENCH='1'; $env:BENCH_OUT='bench.txt'; npx vitest run src/kernel/bench.test.ts -t "peso delle immagini"
+$env:BENCH='1'; $env:BENCH_OUT='bench.txt'; npx vitest run src/kernel/bench.test.ts -t "rischi del motore M"
+
+# Verifica del codice OpenSCAD: .scad, PNG e volumi attesi, poi OpenSCAD su ciascuno
+$env:TEXTURE_SCAD_DIR='C:\temp\texture'; npx vitest run src/codegen/textureScad.test.ts -t "verifica OpenSCAD"
+node scripts/relief-openscad-check.mjs C:\temp\texture
+
+# Blocco CORE del prototipo: rigenerarlo dai sorgenti e controllarlo
+node scripts/texture-core.mjs write
+node scripts/texture-core.mjs check
+
+# Prototipo in Chrome: console, caricamento di PNG, JPG, SVG, schermate in docs/studio-texture (serve la rete per jsDelivr)
+node scripts/texture-prototype-check.mjs
+
+# Decodifica delle immagini in Chrome contro Node, anche nel worker
+node scripts/texture-decode-check.mjs
+
+# Foto degli STL (cubo con normali medie e spigoli fermi, passi del motore F, SVG vettoriale e raster) fuori dal repository
+$env:TEXTURE_SAMPLES='C:\temp\texture-img'; npx vitest run src/kernel/textureMap.test.ts -t esempi
+node scripts/texture-render.mjs C:\temp\texture-img C:\temp\texture-img\png
+```
+
+`scripts/relief-openscad-check.mjs` usa OpenSCAD con `--backend=manifold` (percorso predefinito `C:/Program Files/OpenSCAD/openscad.com`, variabile `OPENSCAD`) e confronta il volume dell'STL di OpenSCAD con `expected.json`.
