@@ -22,7 +22,7 @@ Seguito: `docs/studio-texture-immagine.md` valuta le texture da immagine (JPG, P
 | `src/scene/relief.test.ts`, `src/kernel/relief.test.ts` | 68 test: determinismo, validità (`NoError`, volume > 0, un solo solido), ruvidità della lamiera in ogni riquadro di 5 × 5 mm, volumi delle borchie, pareti della mappa di altezze (nessun triangolo rovesciato o degenere), regione vuota e parametri estremi, ritaglio sulla regione, codice OpenSCAD |
 | `src/kernel/bench.test.ts` | In coda, dietro `BENCH=1`: tempi, triangoli, STL e codice OpenSCAD per ogni texture e motore |
 | `scripts/relief-render.mjs`, `scripts/relief-openscad-check.mjs` | Fotografia degli STL con three.js in Chrome e verifica del codice OpenSCAD con OpenSCAD (comandi in fondo al documento) |
-| `docs/studio-rilievo/` | STL e immagini di esempio (pannello 40 × 30 × 4 mm, motore scelto). **Gli STL (circa 1,9 MB) vanno tolti prima di un eventuale merge** (si rigenerano con un comando, vedi in fondo); i PNG si possono tenere |
+| `docs/studio-rilievo/` | Immagini PNG di esempio (pannello 40 × 30 × 4 mm, motore scelto). Gli STL da cui sono fotografate (circa 1,9 MB) **non sono nel repository**: si rigenerano con il comando in fondo al documento |
 
 Tutte le funzioni lavorano nel **riferimento della faccia** (faccia su z = 0, pezzo sotto, come `cutterFor` in
 `src/kernel/pattern.ts`) e ricevono la regione della faccia come `CrossSection` (già ridotta del margine), non la calcolano:
@@ -129,8 +129,8 @@ controllabile.
 
 ## Le cinque texture
 
-Esempi in `docs/studio-rilievo/` (STL e PNG; pannello 40 × 30 × 4 mm, motore scelto per la texture, mappe di altezze a
-0,4 mm; luce radente da sinistra per far risaltare il rilievo). Comandi per rigenerarli in fondo al documento.
+Esempi in `docs/studio-rilievo/` (PNG; gli STL non sono versionati e si rigenerano con i comandi in fondo al documento; pannello 40 × 30 × 4 mm, motore scelto per la texture, mappe di altezze a
+0,4 mm; luce radente da sinistra per far risaltare il rilievo).
 
 ### 1. Muro di mattoni
 
