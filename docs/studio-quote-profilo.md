@@ -13,11 +13,16 @@ a norma minima, circa 500 righe di TypeScript con i commenti, senza dipendenze) 
 provati: rettangolo a 0 gradi di libertà, vincolo in più segnalato senza oscillazioni, trascinamento a spostamento minimo, casi limite
 gestiti. **Il criterio d (sotto 16 ms con circa 50 entità) vale solo entro i casi misurati.** Con vincoli **lineari** (orizzontale,
 verticale, distanze orizzontali e verticali, fisso: 1-2 iterazioni) un fotogramma di trascinamento a 100 segmenti costa circa 1-3 ms
-di mediana. Con vincoli **non lineari** (lunghezze, uguaglianze e angoli tra lati consecutivi) la mediana è circa 2 ms a 25 segmenti e
-6-10 ms a 50 (nessun fotogramma scartato), ma a **100 segmenti sale a circa 24 ms: lì il criterio non è soddisfatto**. Una prima
-versione, che trascinava con peso 1000 sul nodo mosso, **falliva già a 50 segmenti non lineari** (fino a 17 fotogrammi su 25 non
-convergevano entro 60 iterazioni): ora il peso è 30, la tolleranza durante il trascinamento è 1e-6 mm, un fotogramma quasi risolto
-(sotto 1e-4 mm) si accetta e al rilascio il disegno torna alla precisione piena. **Una riserva**: la diagnosi completa (rango dello
+di mediana. Con vincoli **non lineari** (lunghezze, uguaglianze e angoli tra lati consecutivi) la mediana è circa 2-3 ms a 25 segmenti e
+7-15 ms a 50 (nessun fotogramma scartato; l'intervallo viene da due esecuzioni), ma a **100 segmenti sale a 44-59 ms con un nodo fisso e a
+circa 26 ms senza: lì il criterio non è soddisfatto**. Il trascinamento ha avuto tre versioni. Con peso 1000 sul nodo mosso
+**falliva già a 50 segmenti non lineari** (fino a 17 fotogrammi su 25 non convergevano entro 60 iterazioni). Con peso 30, tolleranza
+1e-6 mm e fotogramma accettato sotto 1e-4 mm convergeva, ma lasciava il nodo **indietro rispetto al mouse, e il ritardo cresce con il numero
+di nodi** quando il disegno può seguire il mouse solo con un moto rigido (profilo tutto quotato senza nodo fisso, il caso comune): per un
+fotogramma da 0,58 mm 0,22 mm a 25 nodi, 0,31 a 50, 0,41 a 100 (si perde il 37%, 53%, 70% dello spostamento), e in un trascinamento
+continuo di 60 fotogrammi, a regime, 0,44 mm a 25 nodi, 0,91 a 50 e 1,8 a 100. Ora ogni fotogramma ha **due tentativi** (`dragSketch`): prima il
+nodo è un vincolo fisso sul mouse (nessun peso: ritardo 0,000 mm quando il disegno può seguire, a ogni dimensione), e solo se non riesce
+(nodo fisso, quota che lo impedisce) si passa al peso 30; al rilascio il disegno torna alla precisione piena. **Una riserva**: la diagnosi completa (rango dello
 Jacobiano) a freddo costa, a 100 segmenti, circa 40 ms di mediana con vincoli lineari completamente quotati e circa 70 ms con
 vincoli non lineari (19 ms a 50 segmenti non lineari): va tenuta fuori dal ciclo di trascinamento (dopo il rilascio o in un momento di quiete).
 Per i sistemi non lineari grandi i rimedi sono la soluzione per componenti connesse e la fattorizzazione sparsa (sezione 7).
@@ -36,12 +41,12 @@ Il prototipo interattivo è in [`docs/prototipi/profilo-quote.html`](prototipi/p
 
 | File | Contenuto |
 |---|---|
-| `src/ui/ProfileEditor/constraints.ts` | Il **nucleo del risolutore**: funzioni pure, nessun import, 14 tipi di vincolo e quota, `solveSketch` (risoluzione e diagnosi), `measure`, `validateValue`, `maxResidual`. **Non collegato all'app** |
-| `src/ui/ProfileEditor/constraints.test.ts` | 27 test: i criteri a-e, ogni tipo di vincolo, i casi limite, la coincidenza del blocco `CORE` del prototipo con il modulo |
+| `src/ui/ProfileEditor/constraints.ts` | Il **nucleo del risolutore**: funzioni pure, nessun import, 14 tipi di vincolo e quota, `solveSketch` (risoluzione e diagnosi), `dragSketch` (un fotogramma di trascinamento), `measure`, `validateValue`, `maxResidual`. **Non collegato all'app** |
+| `src/ui/ProfileEditor/constraints.test.ts` | 30 test: i criteri a-e, ogni tipo di vincolo, i casi limite, la coincidenza del blocco `CORE` del prototipo con il modulo |
 | `docs/prototipi/profilo-quote.html` | Il prototipo: blocco `CORE-BEGIN` / `CORE-END` generato dal modulo, strumenti Quota (D) e Vincoli (K), cerchio parametrico, raccordo per nodo, parametri ed espressioni, Penna con lunghezza e angolo digitati, tre esempi quotati |
 | `scripts/constraints-core.mjs`, `scripts/constraints-sync.mjs` | Tolgono i tipi da `constraints.ts` (con `stripTypeScriptTypes` di `node:module`, perché TypeScript 7 non ha più l'API JavaScript) e scrivono o verificano il blocco `CORE` del prototipo |
 | `scripts/constraints-bench.mjs` | Misura i criteri a-e **estraendo il blocco `CORE` dal prototipo** (il codice provato è quello della pagina) e stampa le tabelle di questo documento |
-| `scripts/quote-prototype-check.mjs` | Apre il prototipo in Chrome con Playwright (`file://`, nessun server): 47 controlli sui gesti, nessun errore in console, e le immagini `docs/images/profilo-quote-*.png` |
+| `scripts/quote-prototype-check.mjs` | Apre il prototipo in Chrome con Playwright (`file://`, nessun server): 48 controlli sui gesti, nessun errore in console, e le immagini `docs/images/profilo-quote-*.png` |
 | `docs/prototipi/misure-quote.txt` | L'uscita dello script di misura, con la versione di Node |
 
 Il prototipo parte da `profilo-bezier.html` e non lo riscrive: stesso stile e stessi token, gli stessi strumenti (Penna, Seleziona, forme
@@ -300,12 +305,16 @@ la tappa 6.
    iterazione). Il tetto è **60 iterazioni nel trascinamento e 500 altrimenti** (un poligono coerente di 100 lati con angoli e
    lunghezze ne vuole 50-130: con il vecchio tetto di 60 risultava «in conflitto»), stop se per tre passi il costo non scende
    apprezzabilmente. Il costo registrato a ogni iterazione non cresce mai (è un controllo del test).
-6. **Trascinamento**: il nodo trascinato parte già sul mouse con un **peso di 30**: si muove solo se i vincoli lo costringono, con
-   uno scarto di circa il 3% della parte che gli altri non riescono ad assorbire (a peso 1000 lo scarto era trascurabile ma i
-   sistemi non lineari a 50 segmenti non convergevano), e gli altri si adattano con lo spostamento minimo. La **tolleranza è 1e-6 mm**
-   (il resto è invisibile) e un fotogramma con residuo sotto 1e-4 mm si accetta anche se non del tutto convergente; se il
-   trascinamento non ha soluzione (per esempio su un nodo fisso) il fotogramma si salta e il disegno resta com'era. Al rilascio, e
-   con le frecce e le coordinate digitate, un passaggio finale (`settle`, fino a 300 iterazioni) porta il disegno alla precisione piena.
+6. **Trascinamento** (`dragSketch`): due tentativi per fotogramma. **Rigido**: il nodo mosso è un vincolo «fisso» sul mouse, senza pesi, e gli altri
+   si adattano con lo spostamento minimo; se il disegno può seguire il mouse (anche con un moto rigido di cento nodi) il nodo ci arriva
+   esattamente. **Morbido**, se il rigido non ha soluzione (nodo fisso, quota che lo impedisce): peso 30 sul nodo, che resta indietro di
+   quanto i vincoli non gli permettono di avanzare. Il solo peso fisso non bastava: **con peso 30 il ritardo cresce con il numero di nodi**, perché lo
+   spostamento rigido di n nodi a peso 1 compete con un solo nodo a peso 30 (0,22 / 0,31 / 0,41 mm per un fotogramma da 0,58 mm a 25 / 50 / 100
+   nodi; 0,44 / 0,91 mm a regime in un trascinamento continuo), e con peso 1000 la convergenza dei sistemi non lineari a 50 segmenti
+   falliva. Dopo un primo fallimento del rigido il resto del trascinamento va subito al morbido (altrimenti ogni fotogramma sprecherebbe
+   fino a 30 iterazioni). La **tolleranza è 1e-6 mm** (il resto è invisibile) e un fotogramma con residuo sotto 1e-4 mm si accetta anche se non del tutto
+   convergente; se non c'è soluzione il fotogramma si salta e il disegno resta com'era. Al rilascio, e con le frecce e le coordinate
+   digitate, un passaggio finale (`settle`, fino a 300 iterazioni) porta il disegno alla precisione piena.
 7. **Casi degeneri**: i punti di un segmento di lunghezza nulla che ha una quota o un angolo si separano di 1 µm lungo X prima di
    risolvere (deterministico), tranne se un vincolo «coincidente» li unisce apposta. Una quota a zero, negativa o non finita si
    **rifiuta all'ingresso** (`validateValue`), prima di risolvere.
@@ -356,44 +365,58 @@ blocco `CORE` del prototipo.
 
 | Prova | Spostamento dei nodi non trascinati | Il nodo trascinato arriva a (mm dal mouse) | Esito |
 |---|---|---|---|
-| Solo H/V e punto fisso, trascino `c` di 3,61 mm | fisso 7e-10, `b` 2,90, `d` 1,94 (solo ciò che serve) | 0,12 | sì |
-| H/V e due quote, trascino `c` di 3,61 mm | al più 3,28 mm (traslazione rigida) | 0,33 | sì |
-| 60 fotogrammi da 0,56 mm | salto massimo 0,51 mm: nessun salto | | sì |
+| Solo H/V e punto fisso, trascino `c` di 3,61 mm | fisso 7e-10, `b` 3,00, `d` 2,00 (solo ciò che serve) | 0,00 | sì |
+| H/V e due quote (senza nodo fisso), trascino `c` di 3,61 mm | 3,61 mm (traslazione rigida) | 0,00 | sì |
+| 60 fotogrammi da 0,56 mm | salto massimo 0,56 mm: nessun salto | | sì |
+| Poligono non lineare di 25 lati, tutto quotato, senza nodo fisso, 60 fotogrammi da 0,56 mm | ritardo a regime 0,44 mm con il solo peso 30, **0,00 con dragSketch** | 0,00 | sì |
+| Lo stesso con 50 lati | 0,91 mm con il solo peso 30, **0,00 con dragSketch** | 0,00 | sì |
+| Lo stesso con 100 lati | 1,80 mm con il solo peso 30, **0,00 con dragSketch** | 0,00 | sì |
 
-Con il peso 30 il nodo trascinato resta indietro rispetto al mouse di 0,1-0,3 mm nei casi in cui i vincoli lo costringono (con 1000 era 0,00-0,01):
-è il prezzo del trascinamento rapido dei sistemi non lineari, e sparisce quando il nodo è libero di seguire il mouse.
+Una versione precedente trascinava solo con il peso 30 e questa tabella riportava 0,12 e 0,33 mm di ritardo sui due rettangoli (il 9% dello spostamento a 4 nodi) e
+la frase che il ritardo «sparisce quando il nodo è libero di seguire il mouse» era **sbagliata**: con un disegno che può seguire il mouse solo con un
+moto rigido il ritardo **cresce con i nodi** (vedi il punto 6 sopra). Il ritardo con il solo peso 30 si misura anche su un fotogramma solo da 2,24 mm
+(0,83, 1,17 e 1,54 mm a 25, 50 e 100 nodi); con il peso 1000 il trascinamento continuo restava tra 0,01 e 0,03 mm, ma non converge a 50 segmenti non lineari.
+Con `dragSketch` il ritardo è nullo **se il disegno può seguire il mouse**; se non può (nodo fisso, disegno ancorato e tutto quotato) il nodo non si muove
+affatto, ed è il comportamento voluto.
 
 **d. Tempo di risoluzione**, in ms, **mediane** (il massimo di una singola esecuzione non è riproducibile: a 100 segmenti lineari
-completamente quotati si sono visti massimi da 4 a 24 ms in esecuzioni diverse; i massimi della prima esecuzione sono stati tolti dal testo.
-`misure-quote.txt` riporta anche i massimi di quella esecuzione). «Trascinamento» = un fotogramma partendo dalla soluzione, con i parametri del prototipo
-(peso 30, tolleranza 1e-6, passo di mouse di 0,5 x 0,3 mm), senza diagnosi; «a freddo» = tutti i punti sporcati di circa 1,5 mm, tetto di
-300 iterazioni; «con diagnosi» = a freddo con tetto 500 più il rango. «Non lineare» = poligono chiuso con lunghezza sui lati pari,
-uguaglianza sui dispari, angolo tra lati consecutivi, un nodo fisso e un angolo assoluto (nel bench: `polygon`).
+completamente quotati si sono visti massimi da 4 a 24 ms in esecuzioni diverse; `misure-quote.txt` riporta anche i massimi di quella esecuzione).
+«Trascinamento» = il **secondo fotogramma** di un trascinamento con `dragSketch` (rigido, poi morbido con peso 30; il primo decide se il rigido riesce), passo di mouse
+di 0,5 x 0,25 mm, senza diagnosi; «a freddo» = tutti i punti sporcati di circa 1,5 mm, tetto di 300 iterazioni; «con diagnosi» = a freddo con tetto 500
+più il rango. «Non lineare» = poligono chiuso con lunghezza sui lati pari, uguaglianza sui dispari, angolo tra lati consecutivi (nel bench: `polygon`),
+ancorato con un nodo fisso e un angolo assoluto oppure no (3 gradi di libertà). Il bench è stato eseguito due volte: questa tabella è la prima, e le
+righe non lineari della seconda hanno dato, a 25 / 50 / 100 segmenti, ancorati 2,2 / 7,1 / 44 ms e non ancorati 3,8 / 10,9 / 25 ms
+(a 50 e 100 segmenti i valori oscillano di un fattore fino a 2 tra le esecuzioni).
 
 | Vincoli | Segmenti | Variabili / equazioni | Trascinamento | A freddo | A freddo con diagnosi | Fotogrammi scartati |
 |---|---|---|---|---|---|---|
-| lineari, quote ogni due lati | 10 | 22 / 16 | 0,18 | 0,15 | 0,42 | 0 / 30 |
-| lineari, quote ogni due lati | 25 | 52 / 38 | 0,27 | 0,27 | 1,09 | 0 / 30 |
-| lineari, quote ogni due lati | 50 | 102 / 76 | 0,48 | 0,46 | 4,31 | 0 / 30 |
-| lineari, quote ogni due lati | 100 | 202 / 150 | 1,06 | 0,98 | **24,5** | 0 / 30 |
-| lineari, tutti i lati (0 DOF) | 10 | 22 / 22 | 0,25 | 0,25 | 0,63 | 0 / 30 |
-| lineari, tutti i lati (0 DOF) | 25 | 52 / 52 | 0,46 | 0,43 | 1,55 | 0 / 30 |
-| lineari, tutti i lati (0 DOF) | 50 | 102 / 102 | 1,22 | 1,31 | 7,51 | 0 / 30 |
-| lineari, tutti i lati (0 DOF) | 100 | 202 / 202 | 3,08 | 3,49 | **41,3** | 0 / 30 |
-| **non lineari** | 10 | 20 / 20 | 0,43 | 0,41 | 0,57 | 0 / 30 |
-| **non lineari** | 25 | 50 / 50 | 2,28 | 2,35 | 3,40 | 0 / 30 |
-| **non lineari** | 50 | 100 / 100 | **9,98** | 13,5 | **19,4** | 0 / 30 |
-| **non lineari** | 100 | 200 / 200 | **23,6** | 28,6 | **70,5** | 0 / 30 |
+| lineari, quote ogni due lati | 10 | 22 / 16 | 0,30 | 0,25 | 0,63 | 0 / 30 |
+| lineari, quote ogni due lati | 25 | 52 / 38 | 0,51 | 0,46 | 2,15 | 0 / 30 |
+| lineari, quote ogni due lati | 50 | 102 / 76 | 0,77 | 0,68 | 6,61 | 0 / 30 |
+| lineari, quote ogni due lati | 100 | 202 / 150 | 1,44 | 1,45 | 40,65 | 0 / 30 |
+| lineari, tutti i lati (0 DOF) | 10 | 22 / 22 | 0,24 | 0,24 | 0,54 | 0 / 30 |
+| lineari, tutti i lati (0 DOF) | 25 | 52 / 52 | 0,82 | 0,98 | 2,67 | 0 / 30 |
+| lineari, tutti i lati (0 DOF) | 50 | 102 / 102 | 1,51 | 1,81 | 11,62 | 0 / 30 |
+| lineari, tutti i lati (0 DOF) | 100 | 202 / 202 | 4,02 | 4,56 | 73,60 | 0 / 30 |
+| **non lineari**, ancorati (nodo fisso e angolo assoluto) | 10 | 20 / 20 | 0,58 | 0,53 | 0,81 | 0 / 30 |
+| **non lineari**, ancorati (nodo fisso e angolo assoluto) | 25 | 50 / 50 | 3,16 | 3,56 | 5,26 | 0 / 30 |
+| **non lineari**, ancorati (nodo fisso e angolo assoluto) | 50 | 100 / 100 | 15,46 | 20,61 | 34,48 | 0 / 30 |
+| **non lineari**, ancorati (nodo fisso e angolo assoluto) | 100 | 200 / 200 | 59,43 | 61,73 | 152,26 | 0 / 30 |
+| **non lineari, non ancorati** (3 DOF, moto rigido) | 10 | 20 / 17 | 0,46 | 0,54 | 0,73 | 0 / 30 |
+| **non lineari, non ancorati** (3 DOF, moto rigido) | 25 | 50 / 47 | 3,50 | 4,44 | 5,61 | 0 / 30 |
+| **non lineari, non ancorati** (3 DOF, moto rigido) | 50 | 100 / 97 | 10,39 | 17,92 | 28,03 | 0 / 30 |
+| **non lineari, non ancorati** (3 DOF, moto rigido) | 100 | 200 / 197 | 25,99 | 66,55 | 133,47 | 0 / 30 |
 
 **Che cosa dimostra e che cosa no.** Per i vincoli **lineari** il trascinamento sta sotto 16 ms con grande margine a ogni dimensione
-(3 ms a 100 segmenti). Per i **non lineari** sta sotto 16 ms di mediana fino a **50 segmenti** (in un'altra esecuzione la stessa riga è
-uscita a 5,7 ms: il valore dipende dai nodi trascinati), ma **a 100 segmenti non è soddisfatto** (circa 24 ms). Nessun fotogramma è scartato
-in nessuna riga; con peso 1000, invece, a 50 segmenti non lineari fino a 17 fotogrammi su 25 non convergevano entro 60 iterazioni. La
-diagnosi a freddo supera i 16 ms a 100 segmenti (lineari) e già a 50 (non lineari): si esegue dopo il rilascio o in un momento di quiete.
-**Nel browser** (thread principale di Chrome, stesso codice, `quote-prototype-check.mjs`, mediana su 30 fotogrammi): lineari da 10 a 100
-segmenti 0,2-1,0 ms; non lineari a 10, 25 e 50 segmenti circa 0,4, 2 e 4-6 ms (massimo su 30 fotogrammi fino a 17 ms a 50 segmenti),
-nessun fotogramma scartato. Il kernel resta nel suo Web Worker; per il risolutore il thread principale basta fino a circa 50 entità
-non lineari, oltre servono la soluzione per componenti connesse o un worker dedicato (con Comlink, già in uso).
+(circa 4 ms a 100 segmenti). Per i **non lineari** sta sotto 16 ms di mediana fino a **50 segmenti**, ma **a 100 segmenti non è soddisfatto**
+(44-59 ms ancorati, circa 26 ms non ancorati). Nessun fotogramma è scartato in nessuna riga. Il tentativo rigido di `dragSketch` rende nullo il ritardo del nodo,
+ma costa: nei disegni non ancorati si fanno fino a 30 iterazioni per un moto rigido (il peso 30 da solo era più veloce a 50 segmenti, circa 6-10 ms, e lasciava indietro il nodo di 0,9 mm).
+La diagnosi a freddo supera i 16 ms a 100 segmenti (lineari) e già a 50 (non lineari): si esegue dopo il rilascio o in un momento di quiete.
+**Nel browser** (thread principale di Chrome, stesso codice, `quote-prototype-check.mjs`, mediana su 30 fotogrammi, stesso protocollo a due fotogrammi): lineari da 10 a 100
+segmenti 0,4-1,5 ms; non lineari ancorati a 10, 25 e 50 segmenti circa 0,6, 3 e 9 ms (massimo su 30 fotogrammi 23 ms a 50 segmenti); non lineari non ancorati
+0,5, 3,4 e 12 ms (massimo 16 ms a 50). Per i non lineari ancorati a 50 segmenti la mediana è uscita tra **4 e 9 ms su 5 esecuzioni** (4,3, 5,8 e 6,4 ms con il vecchio protocollo
+di un solo fotogramma; 8,0 ms con il controllo rilanciato dal revisore; 9,2 ms con il protocollo attuale), con massimi fino a 23 ms. Il kernel resta nel suo Web
+Worker; per il risolutore il thread principale basta fino a circa 50 entità non lineari, oltre servono la soluzione per componenti connesse o un worker dedicato (con Comlink, già in uso).
 
 **e. Casi limite:**
 
@@ -415,13 +438,14 @@ non lineari, oltre servono la soluzione per componenti connesse o un worker dedi
 
 - Jacobiano analitico solo per `dist` e `angle`; gli altri tipi per differenze finite (1e-9 di precisione sui residui: abbastanza ma non esatto); la diagnosi usa soglie relative.
 - **«Non risolto» e «in conflitto» si distinguono dal gradiente** (soglia empirica 1e-5): un sistema difficile che si ferma per `still` o per il tetto di iterazioni in un punto con gradiente piccolo, ma non nullo, può essere scambiato per un conflitto; con i vincoli lineari non è mai successo nelle prove, con i non lineari il caso si è presentato solo con il tetto troppo basso (ora 500).
+- **Trascinamento con `dragSketch`**: se il tentativo rigido fallisce, nel primo fotogramma si spendono fino a 30 iterazioni a vuoto; da lì il trascinamento è morbido, quindi un disegno che diventa di nuovo seguibile dal mouse (per esempio dopo aver superato un limite) resta morbido fino al rilascio. Il ritardo del morbido (peso 30) cresce con il numero di nodi (punto 6 sopra).
 - **Convergenza dei sistemi non lineari grandi**: a 100 segmenti con angoli e lunghezze servono 50-130 iterazioni da freddo e il trascinamento supera i 16 ms; vedi sezione 7.
 - Nessuna decomposizione in componenti connesse: un disegno con più parti indipendenti risolve tutto insieme (non è un problema a 100
   segmenti con la forma a profilo).
 - L'insieme dei vincoli in conflitto non è minimo; il criterio «l'ultimo aggiunto» funziona perché la UI rifiuta sempre il conflitto
   prima che entri nel disegno.
 - `angle` accetta valori da -360 a 360 e ha un salto a ±180 gradi tra i due rami (il residuo è corretto e la derivata analitica locale, ma il passo
-  può attraversare il salto); il prototipo presenta sempre l'angolo positivo e **ruota il segmento al nuovo angolo prima di risolvere**, attorno
+  può attraversare il salto); il prototipo presenta sempre l'angolo positivo e **ruota il segmento al nuovo angolo prima di risolvere** (alla creazione della quota, alla modifica e quando l'angolo cambia perché cambia un parametro dell'espressione), attorno
   all'estremo più vincolato: da 10 a 170 gradi, senza questo, il segmento passava da 10,15 a 27 mm e il nodo di partenza si spostava di circa 36 mm.
 - **Strumenti di prova**: `constraints.test.ts` esegue `scripts/constraints-sync.mjs`, che usa `stripTypeScriptTypes` di `node:module`:
   il test di coincidenza del prototipo richiede quindi un Node recente (la funzione è sperimentale e, per quanto ricordo dalla
@@ -594,11 +618,11 @@ nulla di visibile.
 
 ### Test e documentazione
 
-- **Unit** (Vitest): il nucleo è già coperto (27 test). In tappa 1: roundtrip di `encodePathMeta` `v:2` e lettura `v:1`, `sanitizePaths`
+- **Unit** (Vitest): il nucleo è già coperto (30 test). In tappa 1: roundtrip di `encodePathMeta` `v:2` e lettura `v:1`, `sanitizePaths`
   con id e `r`, `sanitizeConstraints` con dati rovinati, bozza `v:2`.
 - **e2e** (Playwright, `e2e/profile-editor.spec.ts`, che ha già `addPath`, `openEditor`, `drag`): quota digitata e risolta, vincolo
   rifiutato, quota di riferimento, Annulla di un vincolo in un solo passo, penna con misure. Lo script `quote-prototype-check.mjs`
-  è già una bozza di questi casi (47 controlli sul prototipo).
+  è già una bozza di questi casi (48 controlli sul prototipo).
 - **Scorciatoie e tooltip** (CLAUDE.md del repo): nella modale vera i tasti `d` e `k` vanno in `ProfileEditor.tsx` accanto a quelli
   esistenti (573-578), i pulsanti in `EditorToolbar.tsx` con `title`, e il testo del comando `profile` in
   `src/ui/Toolbar/toolbarHelp.ts` (elenco degli strumenti della modale) va aggiornato. `useShortcuts.ts` non cambia: con
@@ -619,6 +643,7 @@ Miglioramenti che il prototipo suggerisce:
 - **Nodo «auto liscio»** (già nelle idee rimandate di `docs/studio-profili-bezier.md:393`): una conseguenza naturale della tangente.
 - **Converti in cerchio** i cerchi esistenti di 4 nodi simmetrici, per quotarli.
 - **Soglia angolare** (circa 3 gradi) per la deduzione di orizzontale e verticale, al posto dei 6 pixel del prototipo (8 nell'app).
+- **Peso proporzionale ai nodi del componente connesso, oppure traslare prima rigidamente il componente e poi risolvere**: rimedi possibili per il ritardo del trascinamento morbido, **non implementati**. Il primo non è provato (a pesi alti la convergenza dei sistemi non lineari peggiora, già a 1000). Il secondo si può applicare solo se il componente è rigido (tutto quotato, senza nodo fisso: ma per saperlo serve il rango del componente, mentre una traslazione applicata a un disegno deformabile ne cambierebbe il comportamento da «stira» a «trasla»): in questo caso `dragSketch` rigido, già implementato, ottiene lo stesso risultato senza peso.
 - **Soluzione per componenti connesse**: le parti del disegno che nessun vincolo collega si risolvono (e si diagnosticano) separatamente; è il rimedio principale per i tempi non lineari a 100 segmenti, dove il costo dominante è la fattorizzazione di una matrice sola.
 - **Jacobiano analitico per tutti i tipi** (oggi solo `dist` e `angle`): `equal`, `parallel`, `perpendicular`, `midpoint`, `collinear`, `symmetric`; riduce le valutazioni dei residui e la sensibilità numerica.
 - **Fattorizzazione sparsa** con riordino (per esempio minimo grado) al posto del profilo, per i sistemi non lineari oltre 50 segmenti.
@@ -675,7 +700,7 @@ node --no-warnings scripts/constraints-sync.mjs --check
 # (--from-ts usa il modulo invece del prototipo)
 node --no-warnings scripts/constraints-bench.mjs --runs=30 --out=docs/prototipi/misure-quote.txt
 
-# Il prototipo in Chrome: 47 controlli, nessun errore in console, e le immagini
+# Il prototipo in Chrome: 48 controlli, nessun errore in console, e le immagini
 node --no-warnings scripts/quote-prototype-check.mjs --shots
 
 # Aprire il prototipo
@@ -698,9 +723,10 @@ Start-Process docs/prototipi/profilo-quote.html
   schermi piccoli (sotto 900 px il layout è quello di `profilo-bezier.html`, non verificato con le quote).
 - **Tempi**: misurati su una sola macchina; i valori del browser sono quelli di un thread principale libero, senza l'anteprima 3D che
   nel prototipo vera si ricalcola a ogni fotogramma. Diagnosi oltre 100 entità non misurata.
-- **Criterio d con vincoli non lineari**: soddisfatto solo fino a 50 segmenti; **a 100 segmenti non lo è** (circa 24 ms di mediana). I casi misurati sono
+- **Criterio d con vincoli non lineari**: soddisfatto solo fino a 50 segmenti; **a 100 segmenti non lo è** (26-59 ms di mediana, secondo l'ancoraggio e l'esecuzione). I casi misurati sono
   poligoni con lunghezze, uguaglianze e angoli: altre combinazioni (per esempio molti angoli assoluti, simmetrie, più contorni collegati) non sono state
   provate e potrebbero convergere peggio. Il peso di trascinamento 30 e la soglia di accettazione 1e-4 mm sono scelte empiriche su questi casi.
+- **`dragSketch`**: il ritardo nullo è misurato sui poligoni non lineari, sul rettangolo e sull'esagono; disegni parzialmente vincolati in molti modi diversi, più componenti, cerchi e quote tra contorni diversi non sono stati provati con il tentativo rigido. Quando il disegno è tutto quotato e ancorato il nodo non si muove (voluto), ma nel prototipo non c'è ancora un segno visivo che lo dica; il tentativo rigido a 100 nodi non ancorati costa circa 26 ms per fotogramma (sopra i 16 ms). Il ritardo del solo peso 30 (0,22-1,8 mm) è misurato su poligoni non lineari di 25-100 lati e su rettangolo ed esagono (0,04-0,06 mm), non su altri disegni.
 - **Il massimo dei tempi non è riproducibile**: oscilla molto tra un'esecuzione e l'altra (garbage collector, altri processi); il testo cita le mediane.
 - **Esito «non risolto»**: la soglia del gradiente (1e-5) è empirica; non ho una dimostrazione che separi sempre un conflitto vero da un risolutore fermo.
 - **Accessibilità da tastiera** delle etichette SVG: non raggiungibili da tastiera (vedi sezione 5); nessuna prova con uno
