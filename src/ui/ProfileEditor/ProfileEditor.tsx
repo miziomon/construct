@@ -10,7 +10,7 @@ import type { PlanDraft } from '../../scene/planShape';
 import { hasBoundDimension } from '../../scene/resize';
 import { pathNaturalBox } from '../../scene/shapes2d';
 import { useSceneStore } from '../../scene/store';
-import type { PathContour, PathNode, Vec2 } from '../../scene/types';
+import type { PathContour, PathNode, ProfileConstraint, Vec2 } from '../../scene/types';
 import { Modal } from '../Modal/Modal';
 import { useUiStore } from '../uiStore';
 import { confirmDialog, notify } from '../notify/notifyStore';
@@ -21,7 +21,7 @@ import type { GridSettings, Tool } from './DrawingCanvas';
 import { clearDraft, flushDrafts, loadDraft, saveDraft } from './draft';
 import { createHistory } from './history';
 import type { History } from './history';
-import { POLYGON_SIDES, canCloseContour, closeContour, contourHoles, deleteNodes, draftContours, draftFromNode, dropLastNode, emptyDraft, moveHandle, moveNodes, normalizeProfile, pathCenter, setNodesKind, trimDuplicateTail } from './model';
+import { POLYGON_SIDES, canCloseContour, closeContour, contourHoles, deleteNodesWithConstraints, draftContours, draftFromNode, dropLastNode, emptyDraft, moveHandle, moveNodes, normalizeProfile, pathCenter, setNodesKind, trimDuplicateTail } from './model';
 import type { Draft, NodeRef } from './model';
 import { insertPlanNode } from './planEdit';
 import { PlanSidebar } from './PlanSidebar';
@@ -373,7 +373,9 @@ function Editor({ target }: { target: ProfileTarget }) {
     committed.current = next;
     dispatch({ type: 'replace', draft: next, selection: nextSelection });
   };
-  const commitPaths = (paths: PathContour[], nextSelection: NodeRef[] = stateRef.current.selection) => commitDraft({ ...stateRef.current.draft, paths }, nextSelection);
+  // `constraints` (se c'è) sostituisce quelli del disegno: serve all'inserimento di un nodo, che può dividere un vincolo
+  const commitPaths = (paths: PathContour[], nextSelection: NodeRef[] = stateRef.current.selection, constraints?: ProfileConstraint[]) =>
+    commitDraft({ ...stateRef.current.draft, paths, ...(constraints ? { constraints } : {}) }, nextSelection);
   /** Modifica in corso di un parametro (slider): il disegno cambia subito, il passo si chiude al rilascio (`settle`). */
   const liveDraft = (patch: Partial<Draft>) => {
     finishPen();
@@ -592,7 +594,7 @@ function Editor({ target }: { target: ProfileTarget }) {
         // Sagoma: i nodi si tolgono con Seleziona e la forma resta chiusa (almeno tre nodi)
         if (stateRef.current.tool === 'select' && planState.selection.length && !planState.deleteSelected()) notify.info('Una sagoma ha almeno tre nodi: la forma deve restare chiusa');
       } else if (penIndex !== null) penBackspace();
-      else if (sel.length && stateRef.current.tool === 'select') commitPaths(deleteNodes(stateRef.current.draft.paths, sel), []);
+      else if (sel.length && stateRef.current.tool === 'select') commitDraft(deleteNodesWithConstraints(stateRef.current.draft, sel), []);
     } else if (key.startsWith('arrow')) {
       // Frecce: un passo di griglia (Maiusc: dieci)
       e.preventDefault();
@@ -694,6 +696,7 @@ function Editor({ target }: { target: ProfileTarget }) {
                     section={planAvailable && profileGeo && showSection ? { y: zs, label: `quota z = ${fmt(zs)} mm` } : undefined}
                     onSection={profileGeo ? (y) => setSection(Math.min(1, Math.max(0, (y - profileGeo.zmin) / (profileGeo.zmax - profileGeo.zmin || 1)))) : undefined}
                     onLive={(paths, sel) => dispatch({ type: 'paths', paths, selection: sel })}
+                    constraints={draft.constraints}
                     onCommit={commitPaths}
                     onSelect={(sel) => dispatch({ type: 'select', selection: sel })}
                     onPenLive={(paths, current, sel) => dispatch({ type: 'paths', paths, selection: sel, pen: current })}
@@ -809,7 +812,7 @@ function Editor({ target }: { target: ProfileTarget }) {
               onGrid={(patch) => setGrid((g) => ({ ...g, ...patch }))}
               onSelectPath={(i) => dispatch({ type: 'select', selection: draft.paths[i].nodes.map((_, node) => ({ path: i, node })) })}
               onClosePath={(i) => commitPaths(closeContour(draft.paths, i))}
-              onDeletePath={(i) => commitPaths(draft.paths.filter((_, k) => k !== i), [])}
+              onDeletePath={(i) => commitDraft(normalizeProfile({ ...draft, paths: draft.paths.filter((_, k) => k !== i) }), [])}
             />
           )}
         </div>

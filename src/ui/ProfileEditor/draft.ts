@@ -1,4 +1,4 @@
-import { PATH_MAX_TOLERANCE, PATH_MIN_TOLERANCE, sanitizeConstraints, sanitizeParams, sanitizePaths } from '../../scene/bezier';
+import { PATH_MAX_TOLERANCE, PATH_MIN_TOLERANCE, metaVersion, sanitizeConstraints, sanitizeParams, sanitizePaths } from '../../scene/bezier';
 import type { Draft } from './model';
 
 /**
@@ -27,7 +27,7 @@ export function saveDraft(nodeId: string | null, draft: Draft, storage?: Pick<St
     pending.delete(key);
     try {
       const clean: Draft = { ...draft, paths: draft.paths.filter((c) => c.nodes.length >= 2) };
-      (storage ?? localStorage).setItem(key, JSON.stringify({ v: 2, draft: clean }));
+      (storage ?? localStorage).setItem(key, JSON.stringify({ v: metaVersion(clean), draft: clean }));
     } catch {
       // Spazio esaurito o storage non disponibile: senza bozza si lavora lo stesso
     }
@@ -48,7 +48,7 @@ const inRange = (v: unknown, min: number, max: number): v is number => typeof v 
 
 /**
  * Bozza salvata, oppure null se non c'è o non è valida (JSON rovinato, contorni o parametri fuori dai limiti). La versione 2
- * aggiunge `constraints` e `params` (e gli id dei nodi nei contorni); la 1 si legge ancora, senza vincoli. Come per il
+ * (scritta solo se ci sono vincoli o parametri, come nel commento del codice) aggiunge `constraints` e `params` (e gli id dei nodi nei contorni); la 1 si legge ancora, senza vincoli. Come per il
  * commento del codice, vincoli e parametri non validi si scartano senza rifiutare la bozza.
  */
 export function loadDraft(nodeId: string | null, storage?: Pick<Storage, 'getItem'>): Draft | null {

@@ -1,4 +1,5 @@
-import type { ConstraintType } from '../ui/ProfileEditor/constraints';
+// Dipendenza da ui/ProfileEditor: `constraints.ts` è il risolutore puro, senza import; andrà spostato in scene/ (rimandato)
+import { NPTS, type ConstraintType } from '../ui/ProfileEditor/constraints';
 import type { PathContour, PathNode, ProfileConstraint, ProfileParams, Vec2 } from './types';
 
 /**
@@ -305,8 +306,22 @@ export function sanitizePaths(value: unknown): PathContour[] | null {
   return result;
 }
 
-/** Numero di punti che richiede ogni tipo di vincolo (`angle` ne accetta anche 4: vedi `sanitizeConstraints`). Specchio di NPTS in constraints.ts. */
-const CONSTRAINT_POINTS: Record<ConstraintType, number> = { fixed: 1, horizontal: 2, vertical: 2, coincident: 2, dist: 2, distX: 2, distY: 2, angle: 2, parallel: 4, perpendicular: 4, equal: 4, midpoint: 3, collinear: 4, symmetric: 4 };
+/** Tipi di vincolo tra due segmenti (4 punti, `angle` anche 2) in cui i segmenti possono avere in comune un nodo. */
+const SHARED_NODE_OK = new Set<ConstraintType>(['angle', 'parallel', 'perpendicular', 'equal', 'collinear']);
+
+/**
+ * Punti ripetuti: un segmento non ha due estremi uguali, i due segmenti non sono lo stesso, e il nodo condiviso è ammesso
+ * solo nei vincoli tra segmenti (angolo, parallelo, perpendicolare, uguale, collineare). Punto medio e simmetrico vogliono
+ * punti tutti diversi.
+ */
+function distinctPoints(type: ConstraintType, p: string[]): boolean {
+  if (p.length >= 2 && p[0] === p[1]) return false;
+  if (p.length === 4) {
+    if (p[2] === p[3] || (p[0] === p[2] && p[1] === p[3]) || (p[0] === p[3] && p[1] === p[2])) return false;
+    return SHARED_NODE_OK.has(type) || new Set(p).size === 4;
+  }
+  return p.length !== 3 || new Set(p).size === 3;
+}
 /** Tetti dei dati dei vincoli (anche per quelli che arrivano da un file .scad non fidato). */
 export const MAX_CONSTRAINTS = 1000;
 export const MAX_PARAMS = 100;
@@ -333,11 +348,12 @@ export function sanitizeConstraints(value: unknown, paths: PathContour[]): Profi
     if (typeof raw !== 'object' || raw === null) continue;
     const { id, t, p, v, s, x, y, ref, off, at } = raw as Record<string, unknown>;
     if (typeof id !== 'string' || !NODE_ID.test(id) || seen.has(id)) continue;
-    if (typeof t !== 'string' || !Object.hasOwn(CONSTRAINT_POINTS, t)) continue;
+    if (typeof t !== 'string' || !Object.hasOwn(NPTS, t)) continue;
     const type = t as ConstraintType;
     // Punti: il numero giusto per il tipo (l'angolo anche 4: dal segmento ab al segmento cd) e tutti esistenti
-    const want = CONSTRAINT_POINTS[type];
+    const want = NPTS[type];
     if (!Array.isArray(p) || (p.length !== want && !(type === 'angle' && p.length === 4)) || !p.every((q) => typeof q === 'string' && ids.has(q))) continue;
+    if (!distinctPoints(type, p)) continue;
     const isRef = ref === true;
     // Misura: obbligatoria per le quote (tranne il riferimento), positiva per la lunghezza, con segno solo l'angolo
     const measured = type === 'dist' || type === 'distX' || type === 'distY' || type === 'angle';
@@ -416,11 +432,20 @@ interface PathMeta {
 
 /**
  * Commento `// construct:path`: i dati su una sola riga di JSON, senza arrotondamenti (i nodi sono già arrotondati dallo
- * store). Versione 2: i nodi portano `id` e `r`, `k` sono i vincoli e `q` i parametri (omessi se vuoti). Un'app che
- * conosce solo la versione 1 non riconosce il commento e il poligono resta un Poligono qualsiasi.
+ * store). La versione è 2 SOLO se ci sono `k` (vincoli) o `q` (parametri): un'app che conosce solo la versione 1 non la
+ * riconosce e il poligono resta un Poligono qualsiasi. Senza, resta 1: gli `id` dei nodi e il raccordo `r` che non
+ * cambia la forma non rendono illeggibile il commento (il lettore v:1 li ignora o li legge). Quando `r` cambierà la
+ * forma, anche `r` dovrà portare alla versione 2.
  */
 export function encodePathMeta(p: PathMeta): string {
-  return JSON.stringify({ v: 2, w: p.width, d: p.depth, t: p.tolerance, paths: p.paths, ...(p.constraints?.length ? { k: p.constraints } : {}), ...(p.params && Object.keys(p.params).length ? { q: p.params } : {}) });
+  const k = p.constraints?.length ? { k: p.constraints } : {};
+  const q = p.params && Object.keys(p.params).length ? { q: p.params } : {};
+  return JSON.stringify({ v: metaVersion(p), w: p.width, d: p.depth, t: p.tolerance, paths: p.paths, ...k, ...q });
+}
+
+/** Versione del formato del commento e della bozza: 2 solo se ci sono vincoli o parametri, altrimenti 1. */
+export function metaVersion(p: { constraints?: unknown[]; params?: object }): 1 | 2 {
+  return p.constraints?.length || (p.params && Object.keys(p.params).length) ? 2 : 1;
 }
 
 /**

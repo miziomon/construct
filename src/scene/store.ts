@@ -17,7 +17,7 @@ import { addImportedRoots, addPlateScene, moveRootsToPlate, plateName, platesOf,
 import { composeTransform, conjugate, eulerToMatrix, matrixToEuler, normalizeMirror, round, toLocalTransform } from './math';
 import type { Mirror, Transform } from './math';
 import { pathNaturalSize } from './shapes2d';
-import { nodeIds } from './bezier';
+import { assignNodeIds, nodeIds } from './bezier';
 import { hasBoundDimension } from './resize';
 import { compensatePosition } from './pathPlacement';
 import { convertToPath as convertShapeToPath } from './convertPath';
@@ -349,9 +349,11 @@ export const useSceneStore = create<SceneState>()(
         const id = newId();
         act('Aggiungi Profilo', (s) => {
           const { paths, at, name, constraints, params: profileParams, ...params } = input;
-          const rounded = roundPaths(paths);
+          const drawn = roundPaths(paths);
+          // Prima i vincoli (sugli id che i contorni hanno ora), poi gli id mancanti: il contatore può riusare l'id di un nodo cancellato
+          const live = liveConstraints(constraints, drawn);
+          const rounded = assignNodeIds(drawn);
           const size = pathNaturalSize({ paths: rounded });
-          const live = liveConstraints(constraints, rounded);
           const node = {
             ...shape2dDefaults('path'),
             ...params,
@@ -383,7 +385,10 @@ export const useSceneStore = create<SceneState>()(
         let held = false;
         act('Profilo', (s) => {
           const target = s.scene.nodes[id] as Shape2DNode;
-          const rounded = roundPaths(draft.paths);
+          const drawn = roundPaths(draft.paths);
+          // Vincoli orfani via prima di assegnare gli id mancanti (vedi addPath)
+          const live = liveConstraints(draft.constraints, drawn);
+          const rounded = assignNodeIds(drawn);
           const size = pathNaturalSize({ paths: rounded });
           const patch: Record<string, unknown> = {
             paths: rounded,
@@ -408,7 +413,6 @@ export const useSceneStore = create<SceneState>()(
           if (draft.plan) path.plan = draft.plan;
           else delete path.plan;
           // Vincoli e parametri della modale: quelli che non ci sono più si tolgono dal nodo
-          const live = liveConstraints(draft.constraints, rounded);
           if (live) path.constraints = live;
           else delete path.constraints;
           if (draft.params && Object.keys(draft.params).length) path.params = draft.params;

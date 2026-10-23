@@ -728,6 +728,18 @@ describe('id dei nodi e vincoli nelle operazioni sui nodi', () => {
     expect(normalizeProfile(plain)).toBe(plain);
   });
 
+  it('un id cancellato non si riassegna a un nodo nuovo con il vecchio vincolo appeso: si filtra prima di assegnare', () => {
+    const nodes = ['n1', 'n2', 'n3', 'n4', 'n5'].map((name, i) => id(node([i * 10, i % 2 ? 5 : 0]), name));
+    const constraints = [con('k1', 'horizontal', ['n4', 'n5']), con('k2', 'horizontal', ['n1', 'n2'])];
+    // Cancello n5 con la funzione semplice (i vincoli restano appesi), poi aggiungo un nodo senza id e normalizzo
+    const deleted = deleteNodes([{ closed: false, nodes }], [{ path: 0, node: 4 }]);
+    const added = [{ ...deleted[0], nodes: [...deleted[0].nodes, node([99, 0])] }];
+    const out = normalizeProfile({ paths: added, constraints });
+    // Il nodo nuovo riprende il numero n5, ma il vincolo su n4, n5 non gli si attacca
+    expect(out.paths[0].nodes.map((n) => n.id)).toEqual(['n1', 'n2', 'n3', 'n4', 'n5']);
+    expect(out.constraints!.map((c) => c.id)).toEqual(['k2']);
+  });
+
   it('deleteNodesWithConstraints toglie i vincoli che citano il nodo cancellato, e solo quelli', () => {
     const d = { paths: sq(), constraints: [con('k1', 'dist', ['n1', 'n2'], { v: 20 }), con('k2', 'horizontal', ['n2', 'n3']), con('k3', 'equal', ['n1', 'n2', 'n3', 'n4']), con('k4', 'vertical', ['n3', 'n4'])] };
     const out = deleteNodesWithConstraints(d, [{ path: 0, node: 1 }]);
@@ -793,8 +805,15 @@ describe('id dei nodi e vincoli nelle operazioni sui nodi', () => {
     expect(out.paths[0].nodes.map((n) => n.id)).toEqual(['n1', 'n3', 'n2']);
   });
 
+  it('insertNodeWithConstraints non lascia agganciato al nodo nuovo un vincolo appeso a un id che non esiste più', () => {
+    // n1..n4 esistono, n5 no: il nodo inserito prende n5, ma il vincolo su n5 era di un nodo cancellato
+    const out = insertNodeWithConstraints({ paths: sq(), constraints: [con('k1', 'horizontal', ['n1', 'n5']), con('k2', 'vertical', ['n2', 'n3'])] }, { path: 0, segment: 0 }, 0.5)!;
+    expect(out.paths[0].nodes.map((n) => n.id)).toEqual(['n1', 'n5', 'n2', 'n3', 'n4']);
+    expect(out.constraints!.map((c) => c.id)).toEqual(['k2']);
+  });
+
   it('insertNodeWithConstraints dà gli id a un profilo vecchio, restituisce null se l\'inserimento non è possibile e non modifica l\'input', () => {
-    const old = freeze({ paths: [square()] });
+    const old: { paths: PathContour[]; constraints?: ProfileConstraint[] } = freeze({ paths: [square()] });
     const out = insertNodeWithConstraints(old, { path: 0, segment: 0 }, 0.5)!;
     expect(out.paths[0].nodes.map((n) => n.id)).toEqual(['n1', 'n5', 'n2', 'n3', 'n4']);
     expect(out.constraints).toBeUndefined();

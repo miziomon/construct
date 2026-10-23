@@ -484,8 +484,9 @@ describe('import di file OpenSCAD: Profilo di Bézier (andata e ritorno)', () =>
   });
 
   it('un commento v:1 di un file vecchio si importa ancora come Profilo', () => {
-    const code = codeOf(node());
-    const v1 = code.replace('"v":2', '"v":1');
+    // Senza vincoli il file è scritto in versione 1 (anche gli id dei nodi vi stanno senza cambiarla)
+    const v1 = codeOf(node());
+    expect(v1).toContain('"v":1');
     expect(back(v1)).toMatchObject({ kind: 'path' });
     expect((back(v1) as Extract<Shape2DNode, { kind: 'path' }>).paths).toStrictEqual(PATHS);
   });
@@ -538,7 +539,7 @@ ${codeOf(turned)}
     expect(back(code.replace(/(polygon\(points = \[\s*\[)(-?[\d.]+)/, (_m, a, b) => `${a}${Number(b) + 0.5}`))).toMatchObject({ kind: 'svg' });
     expect(back(code.replace(/(\/\/ construct:path [^\n]*\n)/, '$1\n'))).toMatchObject({ kind: 'svg' });
     expect(back(code.replace('"paths":', '"paths"'))).toMatchObject({ kind: 'svg' });
-    expect(back(code.replace('"v":2', '"v":7'))).toMatchObject({ kind: 'svg' });
+    expect(back(code.replace('"v":1', '"v":7'))).toMatchObject({ kind: 'svg' });
     // Senza commento resta il Poligono di sempre
     expect(back(code.split('\n').filter((l) => !l.includes('construct:path')).join('\n'))).toMatchObject({ kind: 'svg' });
   });

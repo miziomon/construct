@@ -161,7 +161,19 @@ describe('bozza v:2 con id, vincoli e parametri', () => {
     expect(loadDraft('abc', s)).toEqual(withIds);
   });
 
-  it('una bozza v:1 si legge ancora (senza vincoli, anche se ne contiene) e il prossimo salvataggio è v:2', () => {
+  it('senza vincoli né parametri la bozza si salva ancora in versione 1, con gli id dei nodi', () => {
+    const s = fakeStorage();
+    const plain: Draft = { ...withIds, constraints: undefined, params: undefined };
+    saveDraft('abc', plain, s);
+    vi.advanceTimersByTime(500);
+    expect(JSON.parse(s.data.get('construct:profile-draft:abc')!).v).toBe(1);
+    expect(loadDraft('abc', s)?.paths).toEqual(withIds.paths);
+    saveDraft('abc', { ...plain, constraints: [] , params: {} }, s);
+    vi.advanceTimersByTime(500);
+    expect(JSON.parse(s.data.get('construct:profile-draft:abc')!).v).toBe(1);
+  });
+
+  it('una bozza v:1 si legge ancora (senza vincoli, anche se ne contiene); con vincoli il prossimo salvataggio è v:2', () => {
     const s = fakeStorage();
     const key = 'construct:profile-draft:abc';
     s.data.set(key, JSON.stringify({ v: 1, draft: withIds }));
@@ -169,7 +181,7 @@ describe('bozza v:2 con id, vincoli e parametri', () => {
     expect(old.constraints).toBeUndefined();
     expect(old.params).toBeUndefined();
     expect(old.paths).toEqual(withIds.paths);
-    saveDraft('abc', old, s);
+    saveDraft('abc', { ...old, constraints: withIds.constraints }, s);
     vi.advanceTimersByTime(500);
     expect(JSON.parse(s.data.get(key)!).v).toBe(2);
   });

@@ -226,7 +226,7 @@ describe('dati non fidati', () => {
     const text = encodePathMeta(meta);
     expect(decodePathMeta(text.slice(0, -3))).toBeNull();
     expect(decodePathMeta('42')).toBeNull();
-    expect(decodePathMeta(text.replace('"v":2', '"v":3'))).toBeNull();
+    expect(decodePathMeta(text.replace('"v":1', '"v":3'))).toBeNull();
     expect(decodePathMeta(text.replace('"w":10', '"w":-1'))).toBeNull();
     expect(decodePathMeta(text.replace('"closed":true', '"closed":1'))).toBeNull();
   });
@@ -291,6 +291,29 @@ describe('id dei nodi, raccordo, vincoli e parametri (formato v:2)', () => {
     expect(sanitizeConstraints(good, [])).toEqual([]);
   });
 
+  it('sanitizeConstraints scarta i punti ripetuti non previsti dal tipo e ammette il nodo condiviso tra due segmenti', () => {
+    const paths: PathContour[] = [{ closed: true, nodes: [{ id: 'n1', ...node([0, 0]) }, { id: 'n2', ...node([10, 0]) }, { id: 'n3', ...node([10, 10]) }, { id: 'n4', ...node([0, 10]) }] }];
+    const one = (t: string, p: string[], extra: object = {}) => sanitizeConstraints([{ id: 'k1', t, p, ...extra }], paths).length;
+    // Un segmento non ha due estremi uguali
+    expect(one('horizontal', ['n1', 'n1'])).toBe(0);
+    expect(one('dist', ['n2', 'n2'], { v: 5 })).toBe(0);
+    expect(one('parallel', ['n1', 'n2', 'n3', 'n3'])).toBe(0);
+    // Gli stessi due segmenti (anche rovesciati) non sono due segmenti
+    expect(one('parallel', ['n1', 'n2', 'n1', 'n2'])).toBe(0);
+    expect(one('perpendicular', ['n1', 'n2', 'n2', 'n1'])).toBe(0);
+    // Il nodo condiviso va bene tra segmenti: angolo, parallelo, perpendicolare, uguale, collineare
+    expect(one('angle', ['n1', 'n2', 'n2', 'n3'], { v: 90 })).toBe(1);
+    expect(one('perpendicular', ['n1', 'n2', 'n1', 'n4'])).toBe(1);
+    expect(one('parallel', ['n1', 'n2', 'n4', 'n3'])).toBe(1);
+    expect(one('equal', ['n1', 'n2', 'n1', 'n4'])).toBe(1);
+    expect(one('collinear', ['n1', 'n2', 'n2', 'n3'])).toBe(1);
+    // Simmetrico e punto medio vogliono punti tutti diversi
+    expect(one('symmetric', ['n1', 'n2', 'n2', 'n3'])).toBe(0);
+    expect(one('symmetric', ['n1', 'n2', 'n3', 'n4'])).toBe(1);
+    expect(one('midpoint', ['n1', 'n1', 'n2'])).toBe(0);
+    expect(one('midpoint', ['n3', 'n1', 'n2'])).toBe(1);
+  });
+
   it('sanitizeParams tiene numeri finiti e brevi espressioni, scarta nomi cattivi e il prototipo', () => {
     expect(sanitizeParams({ w: 10, h: 'w * 2' })).toStrictEqual({ w: 10, h: 'w * 2' });
     const out = sanitizeParams(JSON.parse('{"__proto__": 1, "constructor": 2, "1x": 3, "ok": 4, "nan": null, "big": 1e300, "long": "' + 'x'.repeat(201) + '"}'))!;
@@ -309,6 +332,11 @@ describe('id dei nodi, raccordo, vincoli e parametri (formato v:2)', () => {
     expect(decodePathMeta(text)).toStrictEqual(meta);
     const plain = encodePathMeta({ paths: tri(), tolerance: 0.05, width: 10, depth: 10 });
     expect(Object.keys(JSON.parse(plain))).toEqual(['v', 'w', 'd', 't', 'paths']);
+    // La versione è 2 solo con vincoli o parametri: senza, resta 1 anche con gli id nei nodi, e un'app v:1 lo legge
+    expect(JSON.parse(plain).v).toBe(1);
+    expect(JSON.parse(encodePathMeta({ ...meta, constraints: undefined })).v).toBe(2);
+    expect(JSON.parse(encodePathMeta({ ...meta, params: undefined })).v).toBe(2);
+    expect(JSON.parse(encodePathMeta({ ...meta, constraints: [], params: {} })).v).toBe(1);
     expect(decodePathMeta(plain)).toStrictEqual({ paths: tri(), tolerance: 0.05, width: 10, depth: 10 });
   });
 

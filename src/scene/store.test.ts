@@ -446,6 +446,22 @@ describe('Profilo con id dei nodi, vincoli e parametri', () => {
     expect(get(id)).not.toHaveProperty('constraints');
   });
 
+  it('addPath e commitProfile assegnano gli id ai nodi che non ce li hanno, dopo aver scartato i vincoli orfani', () => {
+    const bare = { closed: true, nodes: tri().nodes.map(({ id: _id, ...n }) => n) };
+    const id = st().addPath({ paths: [bare] });
+    expect(get(id).paths[0].nodes.map((n) => n.id)).toEqual(['n1', 'n2', 'n3']);
+    // Un profilo con n1..n3 e un nodo senza id: il nodo nuovo prende n4 (il contatore riparte dopo il più alto)
+    const grown = { ...draftFromNode(get(id)), paths: [{ closed: true, nodes: [...get(id).paths[0].nodes, { p: [5, 5] as [number, number], kind: 'corner' as const }] }] };
+    st().commitProfile(id, grown, { before: pathCenter(grown), after: pathCenter(grown) });
+    expect(get(id).paths[0].nodes.map((n) => n.id)).toEqual(['n1', 'n2', 'n3', 'n4']);
+    // Un vincolo su n4 scritto prima che esistesse (nodo cancellato e ricreato) non si attacca al nodo nuovo
+    const stale = { ...draftFromNode(get(id)), paths: [{ closed: true, nodes: get(id).paths[0].nodes.slice(0, 3) }], constraints: [{ id: 'k1', t: 'horizontal' as const, p: ['n3', 'n4'] }] };
+    const withNew = { ...stale, paths: [{ closed: true, nodes: [...stale.paths[0].nodes, { p: [7, 7] as [number, number], kind: 'corner' as const }] }] };
+    st().commitProfile(id, withNew, { before: pathCenter(withNew), after: pathCenter(withNew) });
+    expect(get(id).paths[0].nodes[3].id).toBe('n4');
+    expect(get(id)).not.toHaveProperty('constraints');
+  });
+
   it('commitProfile conserva id e vincoli in un solo passo e li toglie quando la modale non li ha più', () => {
     const id = st().addPath({ paths: [tri()] });
     useSceneStore.temporal.getState().clear();

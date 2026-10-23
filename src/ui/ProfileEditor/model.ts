@@ -168,13 +168,17 @@ export function deleteNodes(paths: PathContour[], refs: NodeRef[]): PathContour[
 export type ProfileGeometry = Pick<Draft, 'paths' | 'constraints'>;
 
 /**
- * Normalizza un profilo dopo una modifica ai nodi, in un solo punto: dà un id ai nodi che non l'hanno (contatore del
- * profilo) e toglie i vincoli che citano nodi che non esistono più. Restituisce lo stesso oggetto se non c'è nulla da fare.
+ * Normalizza un profilo dopo una modifica ai nodi, in un solo punto: toglie i vincoli che citano nodi che non esistono
+ * più e dà un id ai nodi che non l'hanno (contatore del profilo). L'ORDINE conta: si filtra sugli id esistenti PRIMA di
+ * assegnare i nuovi, perché il contatore può riusare l'id di un nodo cancellato e un vincolo rimasto appeso finirebbe
+ * sul nodo sbagliato. Restituisce lo stesso oggetto se non c'è nulla da fare.
  */
 export function normalizeProfile<T extends ProfileGeometry>(d: T): T {
-  const paths = assignNodeIds(d.paths);
-  const ids = nodeIds(paths);
+  // Prima i vincoli, sugli id che i contorni hanno ora
+  const ids = nodeIds(d.paths);
   const kept = d.constraints?.filter((c) => c.p.every((id) => ids.has(id)));
+  // Poi gli id mancanti
+  const paths = assignNodeIds(d.paths);
   if (paths === d.paths && kept?.length === d.constraints?.length) return d;
   // Senza più vincoli il campo non c'è (non una lista vuota)
   const result: T = { ...d, paths };
@@ -203,7 +207,7 @@ function constraintIdMaker(list: ProfileConstraint[]): () => string {
  * collineare) passano a entrambe le metà (a-m e m-b), perché il nuovo nodo sta sulla stessa retta. Se è una curva, o per
  * ogni altro vincolo (lunghezze, uguale, punto medio...), restano sugli estremi originali, dove continuano a essere veri.
  */
-export function insertNodeWithConstraints(d: ProfileGeometry, seg: SegmentRef, t: number): (ProfileGeometry & { node: NodeRef }) | null {
+export function insertNodeWithConstraints<T extends ProfileGeometry>(d: T, seg: SegmentRef, t: number): (T & { node: NodeRef }) | null {
   // Prima gli id: servono per riconoscere gli estremi del segmento nei vincoli
   const base = normalizeProfile(d);
   const inserted = insertNode(base.paths, seg, t);
@@ -232,7 +236,7 @@ export function insertNodeWithConstraints(d: ProfileGeometry, seg: SegmentRef, t
 }
 
 /** Come `deleteNodes`, e i vincoli che citano un nodo cancellato spariscono con lui (nello stesso passo di cronologia). */
-export function deleteNodesWithConstraints(d: ProfileGeometry, refs: NodeRef[]): ProfileGeometry {
+export function deleteNodesWithConstraints<T extends ProfileGeometry>(d: T, refs: NodeRef[]): T {
   // Prima gli id (gli indici dei riferimenti non cambiano), poi la cancellazione e la pulizia dei vincoli rimasti appesi
   const base = normalizeProfile(d);
   return normalizeProfile({ ...base, paths: deleteNodes(base.paths, refs) });
@@ -582,6 +586,8 @@ export function draftFromNode(node: Extract<Shape2DNode, { kind: 'path' }>): Dra
     // Stesso minimo di `svgContours`, così il disegno coincide con quello che il kernel scala
     const sx = Math.max(0.01, node.width) / box.width;
     const sy = Math.max(0.01, node.depth) / box.depth;
+    // Attenzione: con la scala incorporata i valori `v` delle quote e `x`, `y` di `fixed` NON si scalano e non corrispondono più
+    // ai nodi (decisione 11 dello studio quote: rimandata, fase B3)
     if (sx !== 1 || sy !== 1) paths = bakeScale(paths, sx, sy, box.cx, box.cy);
   }
   return {

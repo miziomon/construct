@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type MutableRefObject, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { TrianglesCenterlineDashedVertical, Maximize, ZoomIn, ZoomOut } from 'lucide-react';
 import { MAX_PATH_CONTOURS, cubicPoint, segmentOf } from '../../scene/bezier';
-import type { PathContour, PathNode, Vec2 } from '../../scene/types';
-import { appendPenNode, baseShapeContour, contourContains, cycleKind, gridStep, insertNode, joinContours, moveHandle, moveNodes, nearestSegment, resumeContour, setNodeKind, snapPoint } from './model';
+import type { PathContour, PathNode, ProfileConstraint, Vec2 } from '../../scene/types';
+import { appendPenNode, baseShapeContour, contourContains, cycleKind, gridStep, insertNodeWithConstraints, joinContours, moveHandle, moveNodes, nearestSegment, resumeContour, setNodeKind, snapPoint } from './model';
 import type { HandleRef, NodeRef, SegmentRef } from './model';
 
 /** Aggancio e griglia: il passo (mm) serve anche a disegnare le righe; gli interruttori dicono a cosa ci si aggancia. */
@@ -37,6 +37,8 @@ interface Props {
   onClosedOnly?: () => void;
   /** Inserimento di un nodo sulla curva al posto di quello del modello (la sagoma lo fa anche negli speculari). */
   insertOverride?: (paths: PathContour[], seg: SegmentRef, t: number) => { paths: PathContour[]; node: NodeRef } | null;
+  /** Vincoli del disegno: l'inserimento di un nodo li tiene coerenti (i vincoli di direzione passano alle due metà). */
+  constraints?: ProfileConstraint[];
   /** Disegno sotto i contorni (ingombro, livelli, assi di simmetria...). */
   underlay?: (ctx: CanvasContext) => ReactNode;
   /** Riquadro (x0, y0, x1, y1) in mm che «Adatta» e l'apertura inquadrano, al posto dei nodi; cambiandolo si inquadra di nuovo. */
@@ -59,7 +61,7 @@ interface Props {
   /** Modifica in corso (trascinamento): non è un passo della cronologia. */
   onLive: (paths: PathContour[], selection?: NodeRef[]) => void;
   /** Modifica conclusa: un passo della cronologia. */
-  onCommit: (paths: PathContour[], selection: NodeRef[]) => void;
+  onCommit: (paths: PathContour[], selection: NodeRef[], constraints?: ProfileConstraint[]) => void;
   onSelect: (selection: NodeRef[]) => void;
   tool: Tool;
   /** Vista specchiata in orizzontale (solo in rotazione): la parte non ruotata sta a destra dell'asse. Non cambia i dati. */
@@ -177,7 +179,7 @@ type Drag =
  * zoom sul puntatore, Spazio o tasto centrale per la panoramica. Le modifiche passano da `onLive` (durante il gesto) e
  * `onCommit` (al rilascio): un gesto è un solo passo della cronologia.
  */
-export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, insertOverride, underlay, fitBox, section, onSection, refit, contours, crossings, holes, selection, grid, spaceDown, onLive, onCommit, onSelect, tool, flip, onFlip, pen, onPenLive, onPenResume, onPenClose, onPenFinish, onPenLimit, onPenStep, onShapeLimit, onShapeCancel, fitRequest, sides }: Props) {
+export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, insertOverride, constraints, underlay, fitBox, section, onSection, refit, contours, crossings, holes, selection, grid, spaceDown, onLive, onCommit, onSelect, tool, flip, onFlip, pen, onPenLive, onPenResume, onPenClose, onPenFinish, onPenLimit, onPenStep, onShapeLimit, onShapeCancel, fitRequest, sides }: Props) {
   const wrap = useRef<HTMLDivElement>(null);
   const svg = useRef<SVGSVGElement>(null);
   const [size, setSize] = useState({ w: 600, h: 400 });
@@ -197,6 +199,9 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
   const [altHeld, setAltHeld] = useState(false);
   // Penna, senza contorno in corso: punto della curva in cui un clic inserirebbe un nodo; estremo aperto che un clic riprenderebbe o unirebbe
   const [insertAt, setInsertAt] = useState<Vec2 | null>(null);
+  /** Inserisce un nodo sulla curva: quello della sagoma se c'è, altrimenti quello del modello, che tiene coerenti id e vincoli. */
+  const insertOnCurve = (seg: SegmentRef, t: number): { paths: PathContour[]; node: NodeRef; constraints?: ProfileConstraint[] } | null =>
+    insertOverride ? insertOverride(paths, seg, t) : insertNodeWithConstraints({ paths, constraints }, seg, t);
   const [endHot, setEndHot] = useState<NodeRef | null>(null);
   const lastPointer = useRef<[number, number] | null>(null);
   // Panoramica in corso: il cursore diventa una mano chiusa
@@ -441,8 +446,8 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
       // Sagoma: la Penna inserisce solo nodi sulla curva (Ctrl o ⌘ non servono: non c'è altro da fare)
       if (closedOnly) {
         const candidate = insertCandidate(sx, sy);
-        const inserted = candidate && (insertOverride ?? insertNode)(paths, candidate.seg, candidate.t);
-        if (inserted) onCommit(inserted.paths, [inserted.node]);
+        const inserted = candidate && insertOnCurve(candidate.seg, candidate.t);
+        if (inserted) onCommit(inserted.paths, [inserted.node], inserted.constraints);
         else onClosedOnly?.();
         return;
       }
@@ -482,9 +487,9 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
       // Su una curva, senza contorno in corso e senza Ctrl o ⌘: un nodo sulla curva (la forma non cambia)
       if (!activePen && !e.ctrlKey && !e.metaKey) {
         const candidate = insertCandidate(sx, sy);
-        const inserted = candidate && (insertOverride ?? insertNode)(paths, candidate.seg, candidate.t);
+        const inserted = candidate && insertOnCurve(candidate.seg, candidate.t);
         if (inserted) {
-          onCommit(inserted.paths, [inserted.node]);
+          onCommit(inserted.paths, [inserted.node], inserted.constraints);
           return;
         }
       }

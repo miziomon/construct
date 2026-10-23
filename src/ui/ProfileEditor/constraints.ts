@@ -32,10 +32,10 @@ export interface Constraint {
   t: ConstraintType;
   p: string[];
   v?: number;
-  s?: number;
+  s?: 1 | -1;
   x?: number;
   y?: number;
-  ref?: boolean;
+  ref?: true;
 }
 
 /**
@@ -95,7 +95,7 @@ const NUDGE = 1e-3;
 /** Numero di residui di ogni tipo. */
 const NRES: Record<ConstraintType, number> = { fixed: 2, horizontal: 1, vertical: 1, coincident: 2, dist: 1, distX: 1, distY: 1, angle: 1, parallel: 1, perpendicular: 1, equal: 1, midpoint: 2, collinear: 2, symmetric: 2 };
 /** Quanti punti richiede ogni tipo (angle ne accetta 2 oppure 4). */
-const NPTS: Record<ConstraintType, number> = { fixed: 1, horizontal: 2, vertical: 2, coincident: 2, dist: 2, distX: 2, distY: 2, angle: 2, parallel: 4, perpendicular: 4, equal: 4, midpoint: 3, collinear: 4, symmetric: 4 };
+export const NPTS: Record<ConstraintType, number> = { fixed: 1, horizontal: 2, vertical: 2, coincident: 2, dist: 2, distX: 2, distY: 2, angle: 2, parallel: 4, perpendicular: 4, equal: 4, midpoint: 3, collinear: 4, symmetric: 4 };
 
 /** Lunghezza con un minimo, per dividere senza esplodere sui segmenti degeneri. */
 const safe = (l: number): number => (l < 1e-9 ? 1e-9 : l);
