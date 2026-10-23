@@ -168,23 +168,33 @@ export function deleteNodes(paths: PathContour[], refs: NodeRef[]): PathContour[
 export type ProfileGeometry = Pick<Draft, 'paths' | 'constraints'>;
 
 /**
+ * Toglie i vincoli che citano nodi che non esistono più (solo il filtro sugli id presenti, senza assegnarne di nuovi):
+ * lo si applica a ogni passo di cronologia, così nessun vincolo resta appeso a un nodo tolto da una funzione che non li
+ * conosce (Backspace della Penna, contorno di un nodo solo...). Una lista vuota equivale a nessun vincolo: il campo non
+ * c'è. Restituisce lo stesso oggetto se non c'è nulla da fare.
+ */
+export function pruneConstraints<T extends ProfileGeometry>(d: T): T {
+  if (!d.constraints) return d;
+  const ids = nodeIds(d.paths);
+  const kept = d.constraints.filter((c) => c.p.every((id) => ids.has(id)));
+  if (kept.length === d.constraints.length && kept.length > 0) return d;
+  const result: T = { ...d };
+  if (kept.length) result.constraints = kept;
+  else delete result.constraints;
+  return result;
+}
+
+/**
  * Normalizza un profilo dopo una modifica ai nodi, in un solo punto: toglie i vincoli che citano nodi che non esistono
  * più e dà un id ai nodi che non l'hanno (contatore del profilo). L'ORDINE conta: si filtra sugli id esistenti PRIMA di
  * assegnare i nuovi, perché il contatore può riusare l'id di un nodo cancellato e un vincolo rimasto appeso finirebbe
  * sul nodo sbagliato. Restituisce lo stesso oggetto se non c'è nulla da fare.
  */
 export function normalizeProfile<T extends ProfileGeometry>(d: T): T {
-  // Prima i vincoli, sugli id che i contorni hanno ora
-  const ids = nodeIds(d.paths);
-  const kept = d.constraints?.filter((c) => c.p.every((id) => ids.has(id)));
-  // Poi gli id mancanti
-  const paths = assignNodeIds(d.paths);
-  if (paths === d.paths && kept?.length === d.constraints?.length) return d;
-  // Senza più vincoli il campo non c'è (non una lista vuota)
-  const result: T = { ...d, paths };
-  if (kept?.length) result.constraints = kept;
-  else delete result.constraints;
-  return result;
+  // Prima i vincoli, sugli id che i contorni hanno ora; poi gli id mancanti
+  const pruned = pruneConstraints(d);
+  const paths = assignNodeIds(pruned.paths);
+  return paths === pruned.paths ? pruned : { ...pruned, paths };
 }
 
 /** Vincoli di direzione: valgono per tutto un segmento retto, quindi passano a entrambe le sue metà. Gli altri restano sugli estremi. */

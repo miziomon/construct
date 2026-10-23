@@ -93,6 +93,7 @@ export type Shape2DKind = 'circle' | 'square' | 'ring' | 'heart' | 'star' | 'egg
 
 /** Punto del piano XY in mm (Y verso l'alto). */
 import type { PlanDraft } from './planShape';
+// Dipendenza di tipo da ui/ProfileEditor: `constraints.ts` è il risolutore puro, senza import; andrà spostato in scene/ (rimandato)
 import type { Constraint } from '../ui/ProfileEditor/constraints';
 
 export type Vec2 = [number, number];

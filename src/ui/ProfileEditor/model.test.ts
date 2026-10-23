@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { POLYGON_SIDES, appendPenNode, bakeScale, baseShapeContour, canCloseContour, closeContour, contourContains, contourHoles, cycleKind, deleteNodes, deleteNodesWithConstraints, draftContours, draftFromNode, dropLastNode, emptyDraft, gridStep, insertNode, insertNodeWithConstraints, isOpenEnd, joinContours, moveHandle, moveNodes, nearestSegment, normalizeProfile, pathCenter, pointInPolygon, resumeContour, setNodeKind, setNodesKind, snapPoint, trimDuplicateTail } from './model';
+import { POLYGON_SIDES, appendPenNode, bakeScale, baseShapeContour, canCloseContour, closeContour, contourContains, contourHoles, cycleKind, deleteNodes, deleteNodesWithConstraints, draftContours, draftFromNode, dropLastNode, emptyDraft, gridStep, insertNode, insertNodeWithConstraints, isOpenEnd, joinContours, moveHandle, moveNodes, nearestSegment, normalizeProfile, pathCenter, pruneConstraints, pointInPolygon, resumeContour, setNodeKind, setNodesKind, snapPoint, trimDuplicateTail } from './model';
 import { bboxOf, cubicPoint, segmentOf, signedArea, splitCubic } from '../../scene/bezier';
 import { pathContours, pathNaturalSize } from '../../scene/shapes2d';
 import { shape2dDefaults } from '../../scene/defaults';
@@ -726,6 +726,40 @@ describe('id dei nodi e vincoli nelle operazioni sui nodi', () => {
     // Senza vincoli e con id presenti non cambia nulla
     const plain = { paths: sq() };
     expect(normalizeProfile(plain)).toBe(plain);
+  });
+
+  it('pruneConstraints toglie solo i vincoli appesi, senza assegnare id, e non lascia liste vuote', () => {
+    const d = { paths: sq(), constraints: [con('k1', 'horizontal', ['n1', 'n2']), con('k2', 'vertical', ['n3', 'n9'])] };
+    const out = pruneConstraints(d);
+    expect(out.constraints!.map((c) => c.id)).toEqual(['k1']);
+    // Nessun id nuovo: un nodo senza id resta senza
+    const noId = { paths: [{ closed: true, nodes: [id(node([0, 0]), 'n1'), node([1, 0]), node([1, 1])] }], constraints: [con('k1', 'horizontal', ['n1', 'n2'])] };
+    const pruned = pruneConstraints(noId);
+    expect(pruned.paths).toBe(noId.paths);
+    expect(pruned.constraints).toBeUndefined();
+    expect('constraints' in pruned).toBe(false);
+    // Una lista vuota equivale a nessun vincolo; senza nulla da fare restituisce lo stesso oggetto
+    expect('constraints' in pruneConstraints({ paths: sq(), constraints: [] })).toBe(false);
+    const ok = { paths: sq(), constraints: [con('k1', 'horizontal', ['n1', 'n2'])] };
+    expect(pruneConstraints(ok)).toBe(ok);
+    const plain = { paths: sq() };
+    expect(pruneConstraints(plain)).toBe(plain);
+  });
+
+  it('scenario: Backspace della Penna toglie n5, poi un nodo nuovo e un inserimento sulla curva: il vecchio vincolo non finisce sul nodo nuovo', () => {
+    const open = (): PathContour[] => [{ closed: false, nodes: [id(node([0, 0], [4, 4]), 'n1'), id(node([10, 0]), 'n2'), id(node([20, 0]), 'n3'), id(node([30, 0]), 'n4'), id(node([40, 0]), 'n5')] }];
+    const profile = { paths: open(), constraints: [con('k1', 'horizontal', ['n4', 'n5']), con('k2', 'horizontal', ['n2', 'n3'])] };
+    // Backspace: dropLastNode non conosce i vincoli; il commit della modale li filtra (pruneConstraints)
+    const afterBackspace = pruneConstraints({ ...profile, paths: dropLastNode(profile.paths, 0) });
+    expect(afterBackspace.constraints!.map((c) => c.id)).toEqual(['k2']);
+    // Anche senza il filtro a ogni commit, l'inserimento sulla curva non attacca k1 al nodo che riprende il nome n5
+    const stale = { ...profile, paths: appendPenNode(dropLastNode(profile.paths, 0), 0, [50, 0])!.paths };
+    const out = insertNodeWithConstraints(stale, { path: 0, segment: 0 }, 0.5)!;
+    expect(out.paths[0].nodes.map((n) => n.id)).toEqual(['n1', 'n6', 'n2', 'n3', 'n4', 'n5']);
+    expect(out.constraints!.map((c) => c.id)).toEqual(['k2']);
+    // Con tutti i vincoli appesi il risultato non ha il campo: chi lo applica deve sostituire (lista vuota), non tenere i vecchi
+    const only = insertNodeWithConstraints({ paths: stale.paths, constraints: [con('k1', 'horizontal', ['n4', 'n9'])] }, { path: 0, segment: 0 }, 0.5)!;
+    expect(only.constraints).toBeUndefined();
   });
 
   it('un id cancellato non si riassegna a un nodo nuovo con il vecchio vincolo appeso: si filtra prima di assegnare', () => {

@@ -1,4 +1,5 @@
 import { PATH_MAX_TOLERANCE, PATH_MIN_TOLERANCE, metaVersion, sanitizeConstraints, sanitizeParams, sanitizePaths } from '../../scene/bezier';
+import { pruneConstraints } from './model';
 import type { Draft } from './model';
 
 /**
@@ -26,7 +27,8 @@ export function saveDraft(nodeId: string | null, draft: Draft, storage?: Pick<St
   const write = () => {
     pending.delete(key);
     try {
-      const clean: Draft = { ...draft, paths: draft.paths.filter((c) => c.nodes.length >= 2) };
+      // I contorni scartati portano via i loro vincoli: la bozza non diventa v:2 per soli vincoli appesi
+      const clean: Draft = pruneConstraints({ ...draft, paths: draft.paths.filter((c) => c.nodes.length >= 2) });
       (storage ?? localStorage).setItem(key, JSON.stringify({ v: metaVersion(clean), draft: clean }));
     } catch {
       // Spazio esaurito o storage non disponibile: senza bozza si lavora lo stesso

@@ -173,6 +173,22 @@ describe('bozza v:2 con id, vincoli e parametri', () => {
     expect(JSON.parse(s.data.get('construct:profile-draft:abc')!).v).toBe(1);
   });
 
+  it('i vincoli appesi (contorno scartato, nodo tolto) non finiscono nella bozza, che resta v:1', () => {
+    const s = fakeStorage();
+    const orphan = { id: 'k2', t: 'horizontal' as const, p: ['n1', 'n8'] };
+    // Contorno di un solo nodo (la Penna lo sta iniziando): non si salva, e porta via il vincolo che lo cita
+    const started: Draft = { ...withIds, params: undefined, constraints: [orphan, { id: 'k3', t: 'dist', p: ['n1', 'n7'], v: 3 }], paths: [...withIds.paths, { closed: false, nodes: [{ id: 'n7', p: [1, 1], kind: 'corner' }] }] };
+    saveDraft('abc', started, s);
+    vi.advanceTimersByTime(500);
+    const saved = JSON.parse(s.data.get('construct:profile-draft:abc')!);
+    expect(saved.v).toBe(1);
+    expect(saved.draft.constraints).toBeUndefined();
+    // I vincoli validi restano, anche con un orfano accanto
+    saveDraft('abc', { ...withIds, constraints: [...withIds.constraints!, orphan] }, s);
+    vi.advanceTimersByTime(500);
+    expect(JSON.parse(s.data.get('construct:profile-draft:abc')!)).toMatchObject({ v: 2, draft: { constraints: withIds.constraints } });
+  });
+
   it('una bozza v:1 si legge ancora (senza vincoli, anche se ne contiene); con vincoli il prossimo salvataggio è v:2', () => {
     const s = fakeStorage();
     const key = 'construct:profile-draft:abc';

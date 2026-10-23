@@ -60,7 +60,7 @@ interface Props {
   spaceDown: MutableRefObject<boolean>;
   /** Modifica in corso (trascinamento): non è un passo della cronologia. */
   onLive: (paths: PathContour[], selection?: NodeRef[]) => void;
-  /** Modifica conclusa: un passo della cronologia. */
+  /** Modifica conclusa: un passo della cronologia. Con `constraints` (anche vuoti) i vincoli del disegno si sostituiscono. */
   onCommit: (paths: PathContour[], selection: NodeRef[], constraints?: ProfileConstraint[]) => void;
   onSelect: (selection: NodeRef[]) => void;
   tool: Tool;
@@ -447,7 +447,7 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
       if (closedOnly) {
         const candidate = insertCandidate(sx, sy);
         const inserted = candidate && insertOnCurve(candidate.seg, candidate.t);
-        if (inserted) onCommit(inserted.paths, [inserted.node], inserted.constraints);
+        if (inserted) onCommit(inserted.paths, [inserted.node], inserted.constraints ?? []);
         else onClosedOnly?.();
         return;
       }
@@ -489,7 +489,7 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
         const candidate = insertCandidate(sx, sy);
         const inserted = candidate && insertOnCurve(candidate.seg, candidate.t);
         if (inserted) {
-          onCommit(inserted.paths, [inserted.node], inserted.constraints);
+          onCommit(inserted.paths, [inserted.node], inserted.constraints ?? []);
           return;
         }
       }

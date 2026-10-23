@@ -21,7 +21,7 @@ import type { GridSettings, Tool } from './DrawingCanvas';
 import { clearDraft, flushDrafts, loadDraft, saveDraft } from './draft';
 import { createHistory } from './history';
 import type { History } from './history';
-import { POLYGON_SIDES, canCloseContour, closeContour, contourHoles, deleteNodesWithConstraints, draftContours, draftFromNode, dropLastNode, emptyDraft, moveHandle, moveNodes, normalizeProfile, pathCenter, setNodesKind, trimDuplicateTail } from './model';
+import { POLYGON_SIDES, canCloseContour, closeContour, contourHoles, deleteNodesWithConstraints, draftContours, draftFromNode, dropLastNode, emptyDraft, moveHandle, moveNodes, normalizeProfile, pathCenter, pruneConstraints, setNodesKind, trimDuplicateTail } from './model';
 import type { Draft, NodeRef } from './model';
 import { insertPlanNode } from './planEdit';
 import { PlanSidebar } from './PlanSidebar';
@@ -367,13 +367,15 @@ function Editor({ target }: { target: ProfileTarget }) {
   }, [settle, settlePlan]);
 
   /** Modifica conclusa: un passo della cronologia locale. */
-  const commitDraft = (next: Draft, nextSelection?: NodeRef[]) => {
+  const commitDraft = (draftToCommit: Draft, nextSelection?: NodeRef[]) => {
     settle();
+    // A ogni passo i vincoli appesi a nodi che non esistono più spariscono (solo il filtro: gli id li assegna il modello)
+    const next = pruneConstraints(draftToCommit);
     history.current!.push(next);
     committed.current = next;
     dispatch({ type: 'replace', draft: next, selection: nextSelection });
   };
-  // `constraints` (se c'è) sostituisce quelli del disegno: serve all'inserimento di un nodo, che può dividere un vincolo
+  // `constraints` (se c'è, anche vuoto) sostituisce quelli del disegno: serve all'inserimento di un nodo, che può dividere un vincolo
   const commitPaths = (paths: PathContour[], nextSelection: NodeRef[] = stateRef.current.selection, constraints?: ProfileConstraint[]) =>
     commitDraft({ ...stateRef.current.draft, paths, ...(constraints ? { constraints } : {}) }, nextSelection);
   /** Modifica in corso di un parametro (slider): il disegno cambia subito, il passo si chiude al rilascio (`settle`). */
