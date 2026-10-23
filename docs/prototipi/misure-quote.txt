@@ -1,0 +1,62 @@
+Misure del risolutore di vincoli, 23 ottobre 2026 (Node v26.1.0, Windows 11).
+Generate con: node scripts/constraints-bench.mjs --runs=30 (estrae il blocco CORE-BEGIN / CORE-END di profilo-quote.html).
+
+### Criterio a: rettangolo quotato
+
+| Vincoli | Gradi di libertà | Stato | Atteso | Residuo max | Esito |
+|---|---|---|---|---|---|
+| 4 vincoli H/V + 2 quote + punto fisso | 0 | full | 0 / full | 2.3e-12 | sì |
+| 4 vincoli H/V + 2 quote (senza punto fisso) | 2 | under | 2 / under | 9.2e-14 | sì |
+| 4 vincoli H/V + punto fisso (senza quote) | 2 | under | 2 / under | 3.9e-13 | sì |
+| solo 4 vincoli H/V | 4 | under | 4 / under | 1.4e-14 | sì |
+
+### Criterio b: un vincolo in più, senza oscillazioni
+
+| Vincolo aggiunto | Segnalato come | Stato | Iterazioni | Costo mai in salita | Ripetibile | Esito |
+|---|---|---|---|---|---|---|
+| quota in più coerente (diagonale 47,17) | ridondante | over | 3 | sì | sì (scarto 0e+0) | sì |
+| stessa larghezza due volte (40 e 40) | ridondante | over | 3 | sì | sì (scarto 0e+0) | sì |
+| larghezza in conflitto (40 e 55) | in conflitto | over | 4 | sì | sì (scarto 0e+0) | sì |
+| diagonale incompatibile (60) | in conflitto | over | 11 | sì | sì (scarto 5e-8) | sì |
+
+### Criterio c: trascinando una geometria non del tutto vincolata la soluzione resta vicina
+
+| Prova | Spostamento dei nodi non trascinati | Distanza del nodo trascinato dal mouse (mm) | Esito |
+|---|---|---|---|
+| H/V + punto fisso, trascino c di 3,61 mm | a (fisso) 5e-13, b 3,00, d 2,00 | 0,00 | sì |
+| H/V + 2 quote, trascino c di 3,61 mm | spostamento massimo 3,59 mm | 0,01 | sì |
+| 60 fotogrammi da 0,56 mm (H/V + larghezza) | salto max 0,56 mm, altri nodi 0,56 mm | - | sì |
+
+### Criterio d: tempo di risoluzione (ms, 30 ripetizioni dopo 5 di riscaldamento, v26.1.0)
+
+| Quote | Segmenti | Variabili / equazioni | DOF | Trascinamento mediana | peggiore | A freddo mediana | peggiore | A freddo con diagnosi mediana | peggiore | Trascinamento < 16 ms |
+|---|---|---|---|---|---|---|---|---|---|---|
+| leggera | 10 | 22 / 16 | 6 | 0,14 | 0,61 | 0,11 | 0,71 | 0,33 | 1,27 | sì |
+| leggera | 25 | 52 / 38 | 14 | 0,28 | 0,86 | 0,27 | 0,76 | 0,91 | 2,56 | sì |
+| leggera | 50 | 102 / 76 | 26 | 0,43 | 1,19 | 0,37 | 0,76 | 3,42 | 5,74 | sì |
+| leggera | 100 | 202 / 150 | 52 | 1,00 | 1,87 | 0,92 | 1,76 | 20,40 | 27,98 | sì |
+| densa | 10 | 22 / 22 | 0 | 0,40 | 1,13 | 0,20 | 0,82 | 1,66 | 3,06 | sì |
+| densa | 25 | 52 / 52 | 0 | 0,75 | 1,61 | 0,43 | 1,06 | 1,72 | 3,16 | sì |
+| densa | 50 | 102 / 102 | 0 | 1,20 | 2,20 | 0,68 | 1,10 | 5,56 | 8,34 | sì |
+| densa | 100 | 202 / 202 | 0 | 3,48 | 5,54 | 2,16 | 5,48 | 35,80 | 69,93 | sì |
+
+### Criterio e: casi limite
+
+| Caso | Comportamento | Esito |
+|---|---|---|
+| quota a zero | La misura deve essere maggiore di zero | sì |
+| quota negativa | La misura deve essere maggiore di zero | sì |
+| quota non numerica | Il valore non è un numero | sì |
+| triangolo impossibile 3, 4, 10 | non converge, 3 vincoli in conflitto, 17 iterazioni, residuo 1.00 | sì |
+| H e V sullo stesso segmento con lunghezza 10 | non converge, in conflitto: 3 | sì |
+| segmento di lunghezza nulla con quota 12 e angolo 30 | separato: lunghezza 12.000000, angolo 30.0000 | sì |
+| dato non finito (NaN) nei punti | non converge, nessun calcolo | sì |
+| angolo da 10 a 170 gradi (ramo giusto) | b.x = -26.249 | sì |
+
+### Errore residuo dopo arrotondamento a 4 decimali dei punti (mm per le quote, radianti per gli angoli)
+
+| Segmenti | Prima | Dopo | Sotto 0,0002 |
+|---|---|---|---|
+| 10 | 2.2e-10 | 8.4e-5 | sì |
+| 50 | 6.1e-12 | 9.3e-5 | sì |
+| 100 | 9.5e-10 | 9.3e-5 | sì |
