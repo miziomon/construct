@@ -15,7 +15,7 @@ console.log('Generate con: node --no-warnings scripts/constraints-bench.mjs ' + 
 const fromTs = process.argv.includes('--from-ts');
 const runs = Number((process.argv.find((a) => a.startsWith('--runs=')) ?? '--runs=30').slice(7));
 const block = fromTs ? coreBlock() : htmlBlock(readFileSync(HTML_PATH, 'utf8'));
-const { solveSketch, measure, validateValue, maxResidual } = new Function(coreSource(block) + '; return { solveSketch, measure, validateValue, maxResidual };')();
+const { solveSketch, dragSketch, measure, validateValue, maxResidual } = new Function(coreSource(block) + '; return { solveSketch, dragSketch, measure, validateValue, maxResidual };')();
 
 // Generatore pseudo-casuale con seme (nessun Math.random: i numeri sono riproducibili)
 function rng(seed) {
@@ -86,7 +86,8 @@ const rect = (fixed, dims = true) => [
 
 // ---------------------------------------------------------------- criterio c: spostamento minimo
 {
-  const drag = (pts, cons, id, to) => solveSketch(pts.map((p) => (p.id === id ? { ...p, x: to[0], y: to[1] } : p)), cons, { weights: { [id]: 30 }, diagnose: false, tol: 1e-6 });
+  // Un fotogramma come nel prototipo: dragSketch (prima rigido, poi morbido con peso 30)
+  const drag = (pts, cons, id, to) => dragSketch(pts, cons, { [id]: to });
   const out = [];
   // 1) solo H/V: il nodo opposto non deve muoversi
   {
@@ -124,6 +125,28 @@ const rect = (fixed, dims = true) => [
     }
     out.push(['60 fotogrammi da 0,56 mm (H/V + larghezza)', 'salto max ' + ms(worstJump) + ' mm, altri nodi ' + ms(worstOther) + ' mm', '-', yes(worstJump <= 0.56 * 1.05)]);
   }
+  // 4) poligono non lineare tutto quotato SENZA nodo fisso (si muove solo in modo rigido): ritardo del nodo trascinato a regime
+  for (const n of [25, 50, 100]) {
+    const { pts, cons } = polygon(n, false);
+    const solved = solveSketch(pts, cons).points;
+    const run = (frame) => {
+      let cur = solved;
+      const s0 = at(cur, 'p3');
+      let mouse = [s0.x, s0.y];
+      let soft = false;
+      for (let f = 0; f < 60; f++) {
+        mouse = [mouse[0] + 0.5, mouse[1] + 0.25];
+        const r = frame(cur, mouse, soft);
+        if (!r.pinned) soft = true;
+        if (r.residual < 1e-4) cur = r.points;
+      }
+      const q = at(cur, 'p3');
+      return Math.hypot(q.x - mouse[0], q.y - mouse[1]);
+    };
+    const old = run((cur, mouse) => ({ ...solveSketch(cur.map((p) => (p.id === 'p3' ? { ...p, x: mouse[0], y: mouse[1] } : p)), cons, { weights: { p3: 30 }, diagnose: false, tol: 1e-6 }), pinned: false }));
+    const now = run((cur, mouse, soft) => dragSketch(cur, cons, { p3: mouse }, soft));
+    out.push([`poligono non lineare di ${n} lati, tutto quotato, senza nodo fisso, 60 fotogrammi da 0,56 mm`, `ritardo a regime: ${ms(old)} mm con il solo peso 30, ${ms(now)} mm con dragSketch`, ms(now), yes(now < 1e-3)]);
+  }
   table('Criterio c: trascinando una geometria non del tutto vincolata la soluzione resta vicina', ['Prova', 'Spostamento dei nodi non trascinati', 'Distanza del nodo trascinato dal mouse (mm)', 'Esito'], out);
 }
 
@@ -152,11 +175,11 @@ const time = (fn) => {
   return performance.now() - t;
 };
 // Poligono chiuso di n lati, NON lineare: lunghezza sui lati pari, uguaglianza sui dispari, angolo tra lati consecutivi,
-// un nodo fisso e l'angolo del primo lato (n punti, circa 2n equazioni)
-function polygon(n) {
+// un nodo fisso e l'angolo del primo lato se `anchored` (n punti, circa 2n equazioni); senza ancoraggio restano 3 gradi di libertà (moto rigido)
+function polygon(n, anchored = true) {
   const R = 10 * n / (2 * Math.PI);
   const pts = Array.from({ length: n }, (_, i) => P('p' + i, R * Math.cos(2 * Math.PI * i / n) + 0.7 * Math.sin(i * 1.7), R * Math.sin(2 * Math.PI * i / n) + 0.5 * Math.cos(i * 2.3)));
-  const cons = [C('fixed', ['p0'], { x: pts[0].x, y: pts[0].y }), C('angle', ['p0', 'p1'], { v: 90 + 180 / n })];
+  const cons = anchored ? [C('fixed', ['p0'], { x: pts[0].x, y: pts[0].y }), C('angle', ['p0', 'p1'], { v: 90 + 180 / n })] : [];
   for (let i = 0; i < n; i++) {
     const j = (i + 1) % n;
     cons.push(i % 2 === 0 ? C('dist', ['p' + i, 'p' + j], { v: 10 }) : C('equal', ['p' + i, 'p' + j, 'p' + ((i + n - 1) % n), 'p' + i]));
@@ -167,11 +190,11 @@ function polygon(n) {
 const rows_ = (cons) => cons.reduce((sum, c) => sum + ({ fixed: 2, coincident: 2, midpoint: 2, collinear: 2, symmetric: 2 }[c.t] ?? 1), 0);
 {
   const out = [];
-  // Il trascinamento usa i parametri del prototipo: peso 30 sul nodo mosso, tolleranza 1e-6, un passo di mouse di 0,5 x 0,3 mm
-  const DRAG = { diagnose: false, tol: 1e-6 };
-  for (const kind of ['leggera', 'densa', 'non lineare']) {
+  // Il trascinamento è dragSketch come nel prototipo (rigido, poi morbido con peso 30), un passo di mouse di 0,5 x 0,3 mm; si misura il
+  // secondo fotogramma di un trascinamento, dopo che il primo ha deciso se il tentativo rigido riesce (se no, i successivi vanno subito al morbido)
+  for (const kind of ['leggera', 'densa', 'non lineare', 'non lineare non ancorato']) {
     for (const n of [10, 25, 50, 100]) {
-      const { pts, cons } = kind === 'non lineare' ? polygon(n) : staircase(n, kind === 'densa');
+      const { pts, cons } = kind.startsWith('non lineare') ? polygon(n, kind === 'non lineare') : staircase(n, kind === 'densa');
       const solved = solveSketch(pts, cons).points;
       const noise = rng(n * 7 + kind.length);
       const drag = [];
@@ -182,9 +205,12 @@ const rows_ = (cons) => cons.reduce((sum, c) => sum + ({ fixed: 2, coincident: 2
       for (let k = -5; k < runs; k++) {
         // Fotogramma di trascinamento: dalla soluzione, un nodo spostato di 0,5 x 0,3 mm
         const id = 'p' + (1 + Math.floor(noise() * (n - 1)));
-        const start = solved.map((p) => (p.id === id ? { ...p, x: p.x + 0.5, y: p.y + 0.3 } : p));
+        const s0 = solved.find((p) => p.id === id);
+        const first = dragSketch(solved, cons, { [id]: [s0.x + 0.5, s0.y + 0.25] });
+        const cur = first.residual < 1e-4 ? first.points : solved;
+        const s1 = cur.find((p) => p.id === id);
         let frame;
-        const t1 = time(() => { frame = solveSketch(start, cons, { ...DRAG, weights: { [id]: 30 } }); });
+        const t1 = time(() => { frame = dragSketch(cur, cons, { [id]: [s1.x + 0.5, s1.y + 0.25] }, !first.pinned); });
         // Partenza a freddo: tutti i punti sporcati di circa 1,5 mm; senza diagnosi (tetto 300 iterazioni) e con diagnosi (tetto 500)
         const messy = pts.map((p) => ({ ...p, x: p.x + (noise() - 0.5) * 3, y: p.y + (noise() - 0.5) * 3 }));
         let c0;
@@ -198,7 +224,7 @@ const rows_ = (cons) => cons.reduce((sum, c) => sum + ({ fixed: 2, coincident: 2
         }
       }
       const r = solveSketch(pts, cons);
-      out.push([kind, n, 2 * n + (kind === 'non lineare' ? 0 : 2) + ' / ' + rows_(cons), r.dof, ms(median(drag)), ms(Math.max(...drag)), skipped + ' / ' + runs, ms(median(cold)), ms(median(full)), ms(Math.max(...full)), unsolvedCold + ' / ' + runs, yes(median(drag) < 16 && skipped === 0)]);
+      out.push([kind, n, 2 * n + (kind.startsWith('non lineare') ? 0 : 2) + ' / ' + rows_(cons), r.dof, ms(median(drag)), ms(Math.max(...drag)), skipped + ' / ' + runs, ms(median(cold)), ms(median(full)), ms(Math.max(...full)), unsolvedCold + ' / ' + runs, yes(median(drag) < 16 && skipped === 0)]);
     }
   }
   table(`Criterio d: tempo di risoluzione (ms, ${runs} ripetizioni dopo 5 di riscaldamento, ${process.version}; il massimo di una sola esecuzione oscilla molto tra un'esecuzione e l'altra, contano le mediane)`, ['Vincoli', 'Segmenti', 'Variabili / equazioni', 'DOF', 'Trascinamento mediana', 'massimo', 'Fotogrammi scartati', 'A freddo mediana', 'A freddo con diagnosi mediana', 'massimo', 'Non convergenti a freddo', 'Trascinamento < 16 ms, nessuno scartato'], out);

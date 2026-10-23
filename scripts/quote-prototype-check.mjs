@@ -321,11 +321,11 @@ ok('Tangente: il nodo diventa Liscio', await page.evaluate(() => window.__proto.
 }
 await shot('vincoli-barra');
 
-// 12. Tempi nel browser (thread principale di Chrome): un fotogramma di trascinamento (peso 30, tolleranza 1e-6 come il prototipo)
+// 12. Tempi nel browser (thread principale di Chrome): un fotogramma di trascinamento (dragSketch come il prototipo: rigido, poi morbido con peso 30)
 const timing = await page.evaluate(() => {
-  const solve = window.__proto.solveSketch, out = [];
+  const solve = window.__proto.solveSketch, drag = window.__proto.dragSketch, out = [];
   const med = (t) => t.sort((x, y) => x - y)[t.length >> 1];
-  for (const kind of ['lineare', 'non lineare']) for (const n of kind === 'lineare' ? [10, 25, 50, 100] : [10, 25, 50]) {
+  for (const kind of ['lineare', 'non lineare', 'non lineare non ancorato']) for (const n of kind === 'lineare' ? [10, 25, 50, 100] : [10, 25, 50]) {
     const pts = [], cons = [];
     if (kind === 'lineare') {
       let x = 0, y = 0;
@@ -337,7 +337,7 @@ const timing = await page.evaluate(() => {
     } else { // poligono chiuso: lunghezze, uguaglianze e angoli tra lati consecutivi (non lineare), un nodo fisso e un angolo assoluto
       const R = 10 * n / (2 * Math.PI);
       for (let i = 0; i < n; i++) { const an = 2 * Math.PI * i / n; pts.push({ id: 'p' + i, x: R * Math.cos(an) + 0.7 * Math.sin(i * 1.7), y: R * Math.sin(an) + 0.5 * Math.cos(i * 2.3) }); }
-      cons.push({ id: 'f', t: 'fixed', p: ['p0'], x: pts[0].x, y: pts[0].y }, { id: 'a0', t: 'angle', p: ['p0', 'p1'], v: 90 + 180 / n });
+      if (kind === 'non lineare') cons.push({ id: 'f', t: 'fixed', p: ['p0'], x: pts[0].x, y: pts[0].y }, { id: 'a0', t: 'angle', p: ['p0', 'p1'], v: 90 + 180 / n });
       for (let i = 0; i < n; i++) {
         const j = (i + 1) % n;
         cons.push(i % 2 === 0 ? { id: 'd' + i, t: 'dist', p: ['p' + i, 'p' + j], v: 10 } : { id: 'e' + i, t: 'equal', p: ['p' + i, 'p' + j, 'p' + ((i + n - 1) % n), 'p' + i] });
@@ -345,19 +345,23 @@ const timing = await page.evaluate(() => {
       }
     }
     const solved = solve(pts, cons).points, times = [];
-    let bad = 0;
+    let bad = 0, lag = 0;
     for (let k = -5; k < 30; k++) {
-      const id = 'p' + (1 + Math.floor(((k + 7) * 37) % (n - 1))), start = solved.map((p) => (p.id === id ? { ...p, x: p.x + 0.5, y: p.y + 0.3 } : p));
-      const t = performance.now(), r = solve(start, cons, { weights: { [id]: 30 }, diagnose: false, tol: 1e-6 });
-      if (k >= 0) { times.push(performance.now() - t); if (!(r.residual < 1e-4)) bad++; }
+      // secondo fotogramma di un trascinamento (il primo decide se il tentativo rigido riesce)
+      const id = 'p' + (1 + Math.floor(((k + 7) * 37) % (n - 1))), s0 = solved.find((p) => p.id === id);
+      const first = drag(solved, cons, { [id]: [s0.x + 0.5, s0.y + 0.25] });
+      const cur = first.residual < 1e-4 ? first.points : solved, s1 = cur.find((p) => p.id === id), to = [s1.x + 0.5, s1.y + 0.25];
+      const t = performance.now(), r = drag(cur, cons, { [id]: to }, !first.pinned);
+      if (k >= 0) { times.push(performance.now() - t); if (!(r.residual < 1e-4)) bad++; const q = r.points.find((p) => p.id === id); lag = Math.max(lag, Math.hypot(q.x - to[0], q.y - to[1])); }
     }
-    out.push({ kind, n, median: med(times), max: Math.max(...times), bad });
+    out.push({ kind, n, median: med(times), max: Math.max(...times), bad, lag });
   }
   return out;
 });
-console.log('Tempi nel browser (un fotogramma di trascinamento, mediana e massimo su 30 fotogrammi): ' + timing.map((t) => t.kind + ' ' + t.n + ' segmenti ' + t.median.toFixed(2) + ' ms (massimo ' + t.max.toFixed(2) + ', fotogrammi scartati ' + t.bad + ')').join('; '));
+console.log('Tempi nel browser (un fotogramma di trascinamento, mediana e massimo su 30 fotogrammi): ' + timing.map((t) => t.kind + ' ' + t.n + ' segmenti ' + t.median.toFixed(2) + ' ms (massimo ' + t.max.toFixed(2) + ', scartati ' + t.bad + ', ritardo del nodo dal mouse ' + t.lag.toFixed(3) + ' mm)').join('; '));
 ok('nel browser la mediana di un fotogramma lineare a 50 segmenti sta sotto 16 ms', timing.find((t) => t.kind === 'lineare' && t.n === 50).median < 16, JSON.stringify(timing.find((t) => t.kind === 'lineare' && t.n === 50)));
 ok('nel browser la mediana di un fotogramma non lineare a 50 segmenti sta sotto 16 ms e nessun fotogramma si scarta', timing.find((t) => t.kind === 'non lineare' && t.n === 50).median < 16 && timing.find((t) => t.kind === 'non lineare' && t.n === 50).bad === 0, JSON.stringify(timing.find((t) => t.kind === 'non lineare' && t.n === 50)));
+ok('nel browser un disegno solo rigido (non lineare, non ancorato) a 50 segmenti: il nodo segue il mouse senza ritardo e nessun fotogramma si scarta', timing.find((t) => t.kind === 'non lineare non ancorato' && t.n === 50).lag < 1e-3 && timing.find((t) => t.kind === 'non lineare non ancorato' && t.n === 50).bad === 0, JSON.stringify(timing.find((t) => t.kind === 'non lineare non ancorato' && t.n === 50)));
 
 ok('nessun errore in console', errors.length === 0, errors.join(' | '));
 await browser.close();

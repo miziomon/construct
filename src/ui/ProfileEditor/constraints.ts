@@ -516,3 +516,25 @@ export function solveSketch(points: Pt[], constraints: Constraint[], opts: Solve
   const over = redundant.length > 0 || conflicting.length > 0 || !converged;
   return { ...base, dof, state: over ? 'over' : dof === 0 ? 'full' : 'under', free, redundant, conflicting };
 }
+
+/**
+ * Un fotogramma di trascinamento: i punti in `moves` (id -> posizione del mouse) vanno sul bersaglio e gli altri si adattano il
+ * meno possibile. Due tentativi:
+ * 1. **rigido**: ogni punto trascinato è un vincolo «fisso» sul mouse (nessun peso). Se il disegno può seguire il mouse, il nodo
+ *    ci arriva esattamente, anche con un moto rigido di centinaia di nodi (un peso grande, invece, rallenta la convergenza dei
+ *    sistemi non lineari: a peso 1000 e 50 segmenti non convergevano entro 60 iterazioni);
+ * 2. **morbido**, se il primo non ha soluzione (nodo fisso, quota che lo impedisce): peso 30 sul nodo, che resta indietro
+ *    rispetto al mouse di quanto i vincoli non gli permettono di avanzare.
+ * Tolleranza 1e-6 mm; un fotogramma con residuo sotto 1e-4 mm si può accettare (`residual`). `pinned` dice quale tentativo è riuscito.
+ * `soft` = true salta il tentativo rigido (per i fotogrammi dopo un fallimento: evita di spendere 30 iterazioni a vuoto a ogni fotogramma).
+ */
+export function dragSketch(points: Pt[], constraints: Constraint[], moves: Record<string, [number, number]>, soft = false): Report & { pinned: boolean } {
+  const moved = points.map((p) => (moves[p.id] ? { id: p.id, x: moves[p.id][0], y: moves[p.id][1] } : p));
+  const pins: Constraint[] = Object.entries(moves).map(([id, q]) => ({ id: 'pin:' + id, t: 'fixed', p: [id], x: q[0], y: q[1] }));
+  // Con `soft` (il tentativo rigido è già fallito in un fotogramma precedente dello stesso trascinamento) si va subito al morbido
+  const hard = soft ? null : solveSketch(moved, [...constraints, ...pins], { diagnose: false, tol: 1e-6, maxIter: 30 });
+  if (hard && hard.residual < 1e-4) return { ...hard, pinned: true };
+  const weights: Record<string, number> = {};
+  for (const id of Object.keys(moves)) weights[id] = 30;
+  return { ...solveSketch(moved, constraints, { diagnose: false, tol: 1e-6, weights }), pinned: false };
+}

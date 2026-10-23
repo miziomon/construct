@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import * as nodeModule from 'node:module';
 import { describe, expect, it } from 'vitest';
-import { maxResidual, measure, solveSketch, validateValue, type Constraint, type Pt } from './constraints';
+import { dragSketch, maxResidual, measure, solveSketch, validateValue, type Constraint, type Pt } from './constraints';
 
 /** Scorciatoia: punto con id. */
 const P = (id: string, x: number, y: number): Pt => ({ id, x, y });
@@ -114,6 +114,59 @@ describe('criterio c: trascinamento a spostamento minimo', () => {
     const start = solveSketch(skewed(), rectangle(true)).points;
     const moved = drag(start, rectangle(true), 'a', [5, 5]);
     expect(Math.hypot(at(moved, 'a').x, at(moved, 'a').y)).toBeLessThan(0.01);
+  });
+});
+
+describe('trascinamento: dragSketch', () => {
+  /** Poligono chiuso non lineare (lunghezze, uguaglianze, angoli tra lati consecutivi), senza nodo fisso: si muove solo in modo rigido. */
+  const free = (n: number): { pts: Pt[]; cons: Constraint[] } => {
+    const R = (10 * n) / (2 * Math.PI);
+    const pts = Array.from({ length: n }, (_, i) => P(`p${i}`, R * Math.cos((2 * Math.PI * i) / n), R * Math.sin((2 * Math.PI * i) / n)));
+    const cons: Constraint[] = [];
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      cons.push(i % 2 === 0 ? C('dist', [`p${i}`, `p${j}`], { v: 10 }) : C('equal', [`p${i}`, `p${j}`, `p${(i + n - 1) % n}`, `p${i}`]));
+      if (i < n - 3) cons.push(C('angle', [`p${i}`, `p${j}`, `p${j}`, `p${(i + 2) % n}`], { v: 360 / n }));
+    }
+    return { pts, cons };
+  };
+
+  it('disegno solo rigido (tutto quotato, nessun nodo fisso): il nodo arriva esattamente sul mouse, senza ritardo, a ogni dimensione', () => {
+    for (const n of [6, 25, 50]) {
+      const { pts, cons } = free(n);
+      let cur = solveSketch(pts, cons).points;
+      const s0 = at(cur, 'p3');
+      let mouse: [number, number] = [s0.x, s0.y];
+      for (let f = 0; f < 20; f++) {
+        mouse = [mouse[0] + 0.5, mouse[1] + 0.25];
+        const r = dragSketch(cur, cons, { p3: mouse });
+        expect(r.pinned).toBe(true);
+        expect(r.residual).toBeLessThan(1e-4);
+        cur = r.points;
+      }
+      // Il ritardo era di 0,22 a 25 nodi e 0,31 a 50 con il solo peso 30
+      expect(Math.hypot(at(cur, 'p3').x - mouse[0], at(cur, 'p3').y - mouse[1])).toBeLessThan(1e-6);
+    }
+  });
+
+  it('un nodo fisso non segue il mouse: il tentativo rigido non riesce e il morbido lo lascia dov\'è', () => {
+    const pts = skewed();
+    const cons = rectangle(true);
+    const start = solveSketch(pts, cons).points;
+    const r = dragSketch(start, cons, { a: [5, 5] });
+    expect(r.pinned).toBe(false);
+    expect(Math.hypot(at(r.points, 'a').x, at(r.points, 'a').y)).toBeLessThan(1e-3);
+    // Con il rettangolo senza punto fisso il nodo opposto segue invece esattamente
+    const free2 = solveSketch(skewed(), rectangle(false)).points;
+    const t = dragSketch(free2, rectangle(false), { c: [at(free2, 'c').x + 3, at(free2, 'c').y + 2] });
+    expect(t.pinned).toBe(true);
+    expect(at(t.points, 'c').x).toBeCloseTo(at(free2, 'c').x + 3, 5);
+  });
+
+  it('con `soft` salta il tentativo rigido (fotogrammi dopo un fallimento)', () => {
+    const cons = rectangle(true);
+    const start = solveSketch(skewed(), cons).points;
+    expect(dragSketch(start, cons, { a: [5, 5] }, true).pinned).toBe(false);
   });
 });
 

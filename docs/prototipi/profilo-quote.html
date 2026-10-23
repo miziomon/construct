@@ -973,6 +973,28 @@ function solveSketch(points, constraints, opts = {}) {
   const over = redundant.length > 0 || conflicting.length > 0 || !converged;
   return { ...base, dof, state: over ? 'over' : dof === 0 ? 'full' : 'under', free, redundant, conflicting };
 }
+
+/**
+ * Un fotogramma di trascinamento: i punti in `moves` (id -> posizione del mouse) vanno sul bersaglio e gli altri si adattano il
+ * meno possibile. Due tentativi:
+ * 1. **rigido**: ogni punto trascinato è un vincolo «fisso» sul mouse (nessun peso). Se il disegno può seguire il mouse, il nodo
+ * ci arriva esattamente, anche con un moto rigido di centinaia di nodi (un peso grande, invece, rallenta la convergenza dei
+ * sistemi non lineari: a peso 1000 e 50 segmenti non convergevano entro 60 iterazioni);
+ * 2. **morbido**, se il primo non ha soluzione (nodo fisso, quota che lo impedisce): peso 30 sul nodo, che resta indietro
+ * rispetto al mouse di quanto i vincoli non gli permettono di avanzare.
+ * Tolleranza 1e-6 mm; un fotogramma con residuo sotto 1e-4 mm si può accettare (`residual`). `pinned` dice quale tentativo è riuscito.
+ * `soft` = true salta il tentativo rigido (per i fotogrammi dopo un fallimento: evita di spendere 30 iterazioni a vuoto a ogni fotogramma).
+ */
+function dragSketch(points, constraints, moves, soft = false) {
+  const moved = points.map((p) => (moves[p.id] ? { id: p.id, x: moves[p.id][0], y: moves[p.id][1] } : p));
+  const pins = Object.entries(moves).map(([id, q]) => ({ id: 'pin:' + id, t: 'fixed', p: [id], x: q[0], y: q[1] }));
+  // Con `soft` (il tentativo rigido è già fallito in un fotogramma precedente dello stesso trascinamento) si va subito al morbido
+  const hard = soft ? null : solveSketch(moved, [...constraints, ...pins], { diagnose: false, tol: 1e-6, maxIter: 30 });
+  if (hard && hard.residual < 1e-4) return { ...hard, pinned: true };
+  const weights = {};
+  for (const id of Object.keys(moves)) weights[id] = 30;
+  return { ...solveSketch(moved, constraints, { diagnose: false, tol: 1e-6, weights }), pinned: false };
+}
 /* CORE-END */
 
   /* ---------- 1. Utilità vettoriali ---------- */
@@ -1825,17 +1847,19 @@ function solveSketch(points, constraints, opts = {}) {
     S.rep = summarize(rep);
     return rep;
   }
-  // Trascinamento: i punti mossi vanno sul bersaglio con un peso moderato (30: con 1000 i vincoli non lineari, angoli e
-  // lunghezze insieme, a 50 segmenti non convergevano entro 60 iterazioni), gli altri si adattano il meno possibile (norma minima).
-  // Tolleranza larga durante il trascinamento (1e-6 mm): un fotogramma quasi risolto (sotto 1e-4 mm, invisibile) si accetta;
-  // al rilascio settle() porta il disegno alla precisione piena.
+  // Trascinamento (dragSketch del blocco CORE): prima i nodi mossi sono vincoli fissi sul mouse, così il disegno li segue esattamente
+  // anche con un moto rigido di molti nodi; se non si può (nodo fisso, quota che lo impedisce) si passa al tentativo morbido con peso 30
+  // e il nodo resta indietro di quanto i vincoli non gli lasciano avanzare. Dopo un fallimento il resto del trascinamento è morbido.
+  // Tolleranza 1e-6 mm; un fotogramma quasi risolto (sotto 1e-4 mm, invisibile) si accetta; al rilascio settle() porta la precisione piena.
+  let dragSoft = false;
   function dragSolve(moves) {
-    const { pts, cons } = bundle(), weights = {};
-    for (const q of pts) if (moves[q.id]) { q.x = moves[q.id][0]; q.y = moves[q.id][1]; weights[q.id] = 30; }
-    const rep = solveSketch(pts, cons, { weights, diagnose: false, tol: 1e-6 });
+    const { pts, cons } = bundle();
+    const rep = dragSketch(pts, cons, moves, dragSoft);
+    if (!rep.pinned) dragSoft = true;
     if (rep.residual < 1e-4) writeBack(rep.points); // altrimenti il fotogramma si salta e il disegno resta com'era
   }
   function settle() { // dopo il trascinamento: fuori dal ciclo si può spendere qualche iterazione in più
+    dragSoft = false;
     if (!usesSolver()) return;
     const { pts, cons } = bundle(), rep = solveSketch(pts, cons, { diagnose: false, maxIter: 300 });
     if (rep.converged) writeBack(rep.points);
@@ -2300,6 +2324,7 @@ function solveSketch(points, constraints, opts = {}) {
     const p = S.params[i], before = snapshot();
     p.v = v;
     if (!reeval()) { applySnap(before); return; }
+    S.cons.forEach((c) => { if (c.t === 'angle' && c.expr) preRotate(c, c.v); }); // gli angoli che cambiano con il parametro: prima si ruota il segmento
     const rep = solveApply();
     if (outcome(rep) === 'unsolved') { applySnap(before); toast(UNSOLVED); return; }
     if (outcome(rep) === 'conflict') {
@@ -2657,7 +2682,7 @@ function solveSketch(points, constraints, opts = {}) {
 
   /* ---------- 18. Avvio ---------- */
   loadExample('piastra');
-  window.__proto = { S, W: () => W, H: () => H, toS, toW, nid, solveSketch }; // gancio per le prove automatiche (scripts/quote-prototype-check.mjs)
+  window.__proto = { S, W: () => W, H: () => H, toS, toW, nid, solveSketch, dragSketch }; // gancio per le prove automatiche (scripts/quote-prototype-check.mjs)
   import('https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js').then((m) => { T = m; initThree(); }).catch(() => {
     $('pvMsg').textContent = 'Anteprima 3D non disponibile: servono la rete e WebGL. Il disegno funziona comunque.';
   });
