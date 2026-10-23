@@ -2,6 +2,8 @@ import type { CrossSection, Manifold, ManifoldToplevel } from 'manifold-3d';
 import { ABOVE, EMBED, FLOOR, clipToRegion, heightSolid, prism } from './relief';
 import { sampleGrid } from '../scene/relief';
 import { heightRange, makeDisplacement, makeTextureHeight, normalizeTexture } from '../scene/textureMap';
+import type { HeightGrid } from '../scene/relief';
+import type { HeightSide } from './relief';
 import type { GrayImage, Projection, TextureParams } from '../scene/textureMap';
 import type { Rect, Vec2 } from '../scene/voronoi';
 
@@ -45,10 +47,45 @@ function regionRect(region: CrossSection): Rect {
 }
 
 /**
+ * La superficie da costruire per una faccia piana: griglia di quote, piano di chiusura del solido e che cosa farne. Serve
+ * sia al kernel (`applyTextureFace`) sia al generatore OpenSCAD, così i due scrivono gli stessi numeri.
+ * - 'subtract' (incavo): solido sopra la superficie, da togliere dal pezzo;
+ * - 'add' (rilievo): solido sotto la superficie che entra di `EMBED` nel pezzo, da unire;
+ * - 'skin' (entrambi): come 'add' ma sotto l'incavo più profondo, dopo aver tolto dal pezzo la colonna `column` (da z a z).
+ */
+export interface FaceSurface {
+  op: 'subtract' | 'add' | 'skin';
+  grid: HeightGrid;
+  planeZ: number;
+  side: HeightSide;
+  /** Quota minima e massima del solido (per ritagliarlo sulla regione). */
+  zFrom: number;
+  zTo: number;
+  column: [number, number] | null;
+}
+
+/** Superficie della texture sul rettangolo; null se la quota è nulla ovunque (ampiezza 0, livello medio agli estremi). */
+export function faceSurface(img: GrayImage, params: Partial<TextureParams>, rect: Rect, step = 0.5): FaceSurface | null {
+  const tex = normalizeTexture(params);
+  const h = makeTextureHeight(img, tex);
+  const [lo, hi] = heightRange(tex);
+  if (lo === 0 && hi === 0) return null;
+  if (tex.mode === 'groove') {
+    // Dove l'incavo è sotto FLOOR la superficie resta sopra la faccia: niente facce complanari con il pezzo
+    return { op: 'subtract', grid: sampleGrid(rect, step, (x, y) => FLOOR + h(x, y)), planeZ: ABOVE + 1, side: 'above', zFrom: lo - 1, zTo: ABOVE + 1, column: null };
+  }
+  if (tex.mode === 'relief') {
+    // Dove il rilievo è sotto FLOOR la superficie resta un po' sotto la faccia
+    return { op: 'add', grid: sampleGrid(rect, step, (x, y) => (h(x, y) < FLOOR ? -FLOOR : h(x, y))), planeZ: -EMBED, side: 'below', zFrom: -EMBED, zTo: hi + 1, column: null };
+  }
+  // both: la quota cambia segno. Piano di base 0,4 mm sotto l'incavo più profondo; la pelle entra di EMBED sotto il piano
+  const base = lo - 0.4;
+  return { op: 'skin', grid: sampleGrid(rect, step, h), planeZ: base - EMBED, side: 'below', zFrom: base - EMBED, zTo: hi + 1, column: [base, hi + 1] };
+}
+
+/**
  * Applica la texture a una faccia piana (nel riferimento della faccia) e restituisce un nuovo solido (il pezzo resta del
- * chiamante). Per `groove` si toglie un solido sotto la superficie (come `depthMapCutter`), per `relief` si unisce un solido
- * che entra di `EMBED` mm nel pezzo (come le borchie), per `both` la quota cambia segno e servono due booleane: si toglie
- * la colonna della regione fino a un piano sotto la quota più bassa e si unisce la "pelle" con la superficie intera.
+ * chiamante): una booleana per rilievo e incavo, due per `both` (si toglie la colonna della regione e si unisce la pelle).
  */
 export function applyTextureFace(
   wasm: ManifoldToplevel,
@@ -58,46 +95,25 @@ export function applyTextureFace(
   params: Partial<TextureParams>,
   options: TextureFaceOptions = {},
 ): Manifold {
-  const tex = normalizeTexture(params);
   if (region.isEmpty()) return solid.translate([0, 0, 0]);
-  const rect = options.rect ?? regionRect(region);
-  const step = options.step ?? 0.5;
-  const h = makeTextureHeight(img, tex);
-  const [lo, hi] = heightRange(tex);
-  // Nessuna quota (ampiezza 0 o livello medio agli estremi): niente da fare
-  if (lo === 0 && hi === 0) return solid.translate([0, 0, 0]);
-
-  if (tex.mode === 'groove') {
-    // Dove l'incavo è sotto FLOOR la superficie resta sopra la faccia: niente facce complanari con il pezzo
-    const grid = sampleGrid(rect, step, (x, y) => FLOOR + h(x, y));
-    const cutter = clipToRegion(wasm, heightSolid(wasm, grid, ABOVE + 1, 'above'), region, lo - 1, ABOVE + 1);
-    if (!cutter) return solid.translate([0, 0, 0]);
-    const result = solid.subtract(cutter);
-    cutter.delete();
+  const surface = faceSurface(img, params, options.rect ?? regionRect(region), options.step);
+  if (!surface) return solid.translate([0, 0, 0]);
+  const tool = clipToRegion(wasm, heightSolid(wasm, surface.grid, surface.planeZ, surface.side), region, surface.zFrom, surface.zTo);
+  if (!tool) return solid.translate([0, 0, 0]);
+  if (surface.op === 'subtract') {
+    const result = solid.subtract(tool);
+    tool.delete();
     return result;
   }
-
-  if (tex.mode === 'relief') {
-    // Il solido sta sopra il piano a -EMBED; dove il rilievo è sotto FLOOR la superficie resta un po' sotto la faccia
-    const grid = sampleGrid(rect, step, (x, y) => (h(x, y) < FLOOR ? -FLOOR : h(x, y)));
-    const addition = clipToRegion(wasm, heightSolid(wasm, grid, -EMBED, 'below'), region, -EMBED, hi + 1);
-    if (!addition) return solid.translate([0, 0, 0]);
-    const result = solid.add(addition);
-    addition.delete();
-    return result;
+  let base = solid;
+  if (surface.column) {
+    const column = prism(wasm, region, surface.column[0], surface.column[1]);
+    base = solid.subtract(column);
+    column.delete();
   }
-
-  // both: la quota cambia segno. Piano di base 0,4 mm sotto l'incavo più profondo; la pelle entra di EMBED sotto il piano
-  const base = lo - 0.4;
-  const grid = sampleGrid(rect, step, h);
-  const skin = clipToRegion(wasm, heightSolid(wasm, grid, base - EMBED, 'below'), region, base - EMBED, hi + 1);
-  if (!skin) return solid.translate([0, 0, 0]);
-  const column = prism(wasm, region, base, hi + 1);
-  const hollowed = solid.subtract(column);
-  column.delete();
-  const result = hollowed.add(skin);
-  hollowed.delete();
-  skin.delete();
+  const result = base.add(tool);
+  if (base !== solid) base.delete();
+  tool.delete();
   return result;
 }
 
