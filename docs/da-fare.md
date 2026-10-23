@@ -185,6 +185,34 @@ Studio e prototipo: `docs/prototipi/profilo-sagoma.html` (geometria) e la modale
 - **Angolo continuo**: è una cubica con tangenti lunghe 1,5 volte, non l'algoritmo esatto di Figma.
 - **Icona di Specchia** nella barra della scena: usa ancora `FlipHorizontal2`, che in lucide 1.52 ha l'asse orizzontale.
 
+## Quote e vincoli del Profilo: studio (0.72.0)
+
+Studio, nucleo di prova e prototipo: `docs/studio-quote-profilo.md`, `src/ui/ProfileEditor/constraints.ts` (non collegato all'app) e `docs/prototipi/profilo-quote.html`. Niente di tutto questo è ancora nella modale. Da decidere o da fare (elenco completo, con una risposta provvisoria, nella sezione 7 dello studio):
+
+- **Archi**: raccordo per nodo subito, cerchio parametrico (centro più punto sul bordo) alla tappa 5, arco vero solo a richiesta?
+- **Tangente**: resta un'impostazione del nodo (tipo Liscio) o diventa un vincolo salvato?
+- **Id dei nodi**: contatore per profilo o `newId()`; serve prima di qualunque vincolo, perché `sanitizePaths` e `roundPaths` oggi cancellerebbero ogni campo nuovo del nodo.
+- **Sovravincolo**: rifiutare il vincolo come in Fusion, con proposta di quota di riferimento?
+- **Parametri**: locali al profilo (come nel prototipo) o globali dell'app? Nella modale `NumberField` non accetta parametri (manca `FormulaContext`).
+- **Ridimensionamento**: una quota «60» digitata nella modale non resta 60 mm dopo una Scala o dopo il gizmo, perché il nodo `path` scala il disegno a `width` e `depth`: avvisare, bloccare o scalare anche le quote.
+- **Tempi**: a 100 segmenti non lineari il trascinamento non sta sotto 16 ms; servono le componenti connesse o una fattorizzazione sparsa.
+- **Deriva**: in un disegno tutto quotato e ancorato, il trascinamento continuo può spingere il disegno su un'altra soluzione dei vincoli; da risolvere prima di portare il trascinamento nell'app.
+- **Snap con zoom lontano**: `gridStep` allarga il passo di 5 volte e lo snap non rispetta più i 0,1 mm, mentre le frecce usano il passo base.
+
+## Rilievi e texture da immagine: studi (0.73.0)
+
+Studi, codice di prova e prototipi: `docs/studio-pattern-rilievo.md` (mattoni, legno, ruggine, borchie, rame battuto, in CSG e mappa di altezze) e `docs/studio-texture-immagine.md` (immagine in scala di grigi come displacement, con il confronto tra i due approcci). Nessuno dei due è nell'app: il codice sta in `src/scene/relief.ts`, `src/kernel/relief.ts`, `src/codegen/reliefScad.ts` e `src/scene/textureMap.ts`, `src/kernel/textureMap.ts`, `src/codegen/textureScad.ts`. Gli STL di esempio non sono versionati (si rigenerano con i comandi in fondo agli studi). Da decidere (elenchi completi negli studi):
+
+- **Ordine di rilascio**: la raccomandazione è ibrida, con un'unica interfaccia «Rilievo»: mattoni e borchie in CSG per primi (3-4 giorni, il modo additivo in una PR a parte), poi rame e legno, poi il motore F da immagine (4-5 giorni); ruggine e motore M (mesh intera, 4-5 giorni) solo dopo una prova di stampa e una richiesta reale.
+- **Profondità e fughe dei rilievi**: parametro di ogni texture o `depth` e `sides` del Pattern? Fuga minima 0,8 mm con un avviso come per la parete del Voronoi?
+- **Rilievo su una faccia o su più facce**, come il Pattern attuale.
+- **Immagine nel progetto**: salvare il grigio decodificato (165-256 KB per 512 px) o un riferimento al file; lato massimo 512 px (1024 su richiesta); formula del grigio (Rec. 601 su sRGB) e trasparenza composta sul bianco.
+- **Modo predefinito** da immagine: «entrambi» con livello medio 0,5 (come Blender e BumpMesh, perde volume con una texture scura) oppure «rilievo».
+- **Export OpenSCAD**: `zmap` in un file solo come predefinito e `surface()` con PNG a fianco come opzione, o il contrario; per il motore M un `polyhedron` da megabyte con avviso, oppure solo STL e 3MF.
+- **SVG**: vettoriale (bordi esatti, codice piccolo) o raster (sfumature) come predefinito.
+- **Motore M**: ampiezza troppo alta (oltre circa mezzo lato dei triangoli compaiono sovrapposizioni): avviso o blocco; la regola è un'estrapolazione, il lato è stato provato solo a 0,8 mm.
+- **Non verificato**: Firefox e Safari, una stampa reale, immagini oltre 1024 px, margine reale e facce inclinate del motore F nel codice OpenSCAD, mesh importate e pareti sottili nel motore M.
+
 ## Font non presenti su Google Fonts
 
 Dalla cartella `C:\Users\maurizio.MAVIDA\Dropbox\openscad\fonts` (0.30.0) sono entrati nel catalogo i font che si trovano su Google Fonts (Bilbo Swash Caps, Boogaloo, Calistoga, Dancing Script Regular, Marck Script, Meow Script, Modak, Niconne, Playfair Display Regular, Roboto Black, Sriracha; Pacifico c'era già). Questi no, perché non risultano su Google Fonts:

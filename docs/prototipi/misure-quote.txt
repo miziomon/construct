@@ -1,0 +1,73 @@
+Misure del risolutore di vincoli, 2026-10-23 (Node v26.1.0, win32).
+Generate con: node --no-warnings scripts/constraints-bench.mjs --runs=30 --out=docs/prototipi/misure-quote.txt (estrae il blocco CORE-BEGIN / CORE-END di profilo-quote.html, oppure constraints.ts con --from-ts).
+
+### Criterio a: rettangolo quotato
+
+| Vincoli | Gradi di libertà | Stato | Atteso | Residuo max | Esito |
+|---|---|---|---|---|---|
+| 4 vincoli H/V + 2 quote + punto fisso | 0 | full | 0 / full | 6.7e-13 | sì |
+| 4 vincoli H/V + 2 quote (senza punto fisso) | 2 | under | 2 / under | 1.3e-10 | sì |
+| 4 vincoli H/V + punto fisso (senza quote) | 2 | under | 2 / under | 5.4e-10 | sì |
+| solo 4 vincoli H/V | 4 | under | 4 / under | 1.4e-11 | sì |
+
+### Criterio b: un vincolo in più, senza oscillazioni
+
+| Vincolo aggiunto | Segnalato come | Stato | Iterazioni | Costo mai in salita | Ripetibile | Esito |
+|---|---|---|---|---|---|---|
+| quota in più coerente (diagonale 47,17) | ridondante | over | 4 | sì | sì (scarto 0e+0) | sì |
+| stessa larghezza due volte (40 e 40) | ridondante | over | 4 | sì | sì (scarto 0e+0) | sì |
+| larghezza in conflitto (40 e 55) | in conflitto | over | 4 | sì | sì (scarto 0e+0) | sì |
+| diagonale incompatibile (60) | in conflitto | over | 10 | sì | sì (scarto 0e+0) | sì |
+
+### Criterio c: trascinando una geometria non del tutto vincolata la soluzione resta vicina
+
+| Prova | Spostamento dei nodi non trascinati | Distanza del nodo trascinato dal mouse (mm) | Esito |
+|---|---|---|---|
+| H/V + punto fisso, trascino c di 3,61 mm | a (fisso) 7e-10, b 3,00, d 2,00 | 0,00 | sì |
+| H/V + 2 quote, trascino c di 3,61 mm | spostamento massimo 3,61 mm | 0,00 | sì |
+| 60 fotogrammi da 0,56 mm (H/V + larghezza) | salto max 0,56 mm, altri nodi 0,56 mm | - | sì |
+| poligono non lineare di 25 lati, tutto quotato, senza nodo fisso, 60 fotogrammi da 0,56 mm | ritardo a regime: 0,44 mm con il solo peso 30, 0,00 mm con dragSketch | 0,00 | sì |
+| poligono non lineare di 50 lati, tutto quotato, senza nodo fisso, 60 fotogrammi da 0,56 mm | ritardo a regime: 0,91 mm con il solo peso 30, 0,00 mm con dragSketch | 0,00 | sì |
+| poligono non lineare di 100 lati, tutto quotato, senza nodo fisso, 60 fotogrammi da 0,56 mm | ritardo a regime: 1,80 mm con il solo peso 30, 0,00 mm con dragSketch | 0,00 | sì |
+
+### Criterio d: tempo di risoluzione (ms, 30 ripetizioni dopo 5 di riscaldamento, v26.1.0; il massimo di una sola esecuzione oscilla molto tra un'esecuzione e l'altra, contano le mediane)
+
+| Vincoli | Segmenti | Variabili / equazioni | DOF | Trascinamento mediana | massimo | Fotogrammi scartati | A freddo mediana | A freddo con diagnosi mediana | massimo | Non convergenti a freddo | Trascinamento < 16 ms, nessuno scartato |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| leggera | 10 | 22 / 16 | 6 | 0,30 | 0,48 | 0 / 30 | 0,25 | 0,63 | 1,27 | 0 / 30 | sì |
+| leggera | 25 | 52 / 38 | 14 | 0,51 | 0,73 | 0 / 30 | 0,46 | 2,15 | 4,07 | 0 / 30 | sì |
+| leggera | 50 | 102 / 76 | 26 | 0,77 | 1,20 | 0 / 30 | 0,68 | 6,61 | 9,78 | 0 / 30 | sì |
+| leggera | 100 | 202 / 150 | 52 | 1,44 | 2,96 | 0 / 30 | 1,45 | 40,65 | 58,53 | 0 / 30 | sì |
+| densa | 10 | 22 / 22 | 0 | 0,24 | 0,81 | 0 / 30 | 0,24 | 0,54 | 1,27 | 0 / 30 | sì |
+| densa | 25 | 52 / 52 | 0 | 0,82 | 2,57 | 0 / 30 | 0,98 | 2,67 | 5,90 | 0 / 30 | sì |
+| densa | 50 | 102 / 102 | 0 | 1,51 | 3,38 | 0 / 30 | 1,81 | 11,62 | 18,05 | 0 / 30 | sì |
+| densa | 100 | 202 / 202 | 0 | 4,02 | 8,81 | 0 / 30 | 4,56 | 73,60 | 91,50 | 0 / 30 | sì |
+| non lineare | 10 | 20 / 20 | 0 | 0,58 | 1,64 | 0 / 30 | 0,53 | 0,81 | 1,40 | 0 / 30 | sì |
+| non lineare | 25 | 50 / 50 | 0 | 3,16 | 7,11 | 0 / 30 | 3,56 | 5,26 | 10,12 | 0 / 30 | sì |
+| non lineare | 50 | 100 / 100 | 0 | 15,46 | 25,43 | 0 / 30 | 20,61 | 34,48 | 51,51 | 0 / 30 | sì |
+| non lineare | 100 | 200 / 200 | 0 | 59,43 | 121,34 | 0 / 30 | 61,73 | 152,26 | 232,12 | 0 / 30 | NO |
+| non lineare non ancorato | 10 | 20 / 17 | 3 | 0,46 | 1,08 | 0 / 30 | 0,54 | 0,73 | 1,50 | 0 / 30 | sì |
+| non lineare non ancorato | 25 | 50 / 47 | 3 | 3,50 | 8,54 | 0 / 30 | 4,44 | 5,61 | 11,89 | 0 / 30 | sì |
+| non lineare non ancorato | 50 | 100 / 97 | 3 | 10,39 | 16,75 | 0 / 30 | 17,92 | 28,03 | 43,06 | 0 / 30 | sì |
+| non lineare non ancorato | 100 | 200 / 197 | 3 | 25,99 | 35,25 | 0 / 30 | 66,55 | 133,47 | 193,42 | 0 / 30 | NO |
+
+### Criterio e: casi limite
+
+| Caso | Comportamento | Esito |
+|---|---|---|
+| quota a zero | La misura deve essere maggiore di zero | sì |
+| quota negativa | La misura deve essere maggiore di zero | sì |
+| quota non numerica | Il valore non è un numero | sì |
+| triangolo impossibile 3, 4, 10 | non converge, 3 vincoli in conflitto, 16 iterazioni, residuo 1.00 | sì |
+| H e V sullo stesso segmento con lunghezza 10 | non converge, in conflitto: 3 | sì |
+| segmento di lunghezza nulla con quota 12 e angolo 30 | separato: lunghezza 12.000000, angolo 30.0000 | sì |
+| dato non finito (NaN) nei punti | non converge, nessun calcolo | sì |
+| angolo da 10 a 170 gradi (ramo giusto) | b.x = -19.362 | sì |
+
+### Errore residuo dopo arrotondamento a 4 decimali dei punti (mm per le quote, radianti per gli angoli)
+
+| Segmenti | Prima | Dopo | Sotto 0,0002 |
+|---|---|---|---|
+| 10 | 3.6e-11 | 8.4e-5 | sì |
+| 50 | 3.1e-12 | 9.3e-5 | sì |
+| 100 | 5.4e-10 | 9.3e-5 | sì |
