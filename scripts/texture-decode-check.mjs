@@ -68,5 +68,16 @@ for (const [name, buf] of Object.entries(files)) {
     console.log(`${name.padEnd(11)} ${mode.padEnd(18)} differenza massima ${String(d.max).padStart(3)}/255, media ${d.mean.toFixed(3)}, pixel diversi ${(d.share * 100).toFixed(1)} %`);
   }
 }
+// Decodifica in un Web Worker: createImageBitmap e OffscreenCanvas per PNG e JPG, e per l'SVG (che in un worker non ha un elemento img)
+for (const name of ['png-rgb', 'jpg-q90', 'svg']) {
+  const type = mime[name.split('-')[0]] || 'image/png';
+  const result = await page.evaluate(async ({ b64, type, w }) => {
+    const code = `onmessage = async (e) => { try { const bmp = await createImageBitmap(e.data.blob, { colorSpaceConversion: 'none', premultiplyAlpha: 'none' }); const c = new OffscreenCanvas(bmp.width, bmp.height); const ctx = c.getContext('2d', { willReadFrequently: true }); ctx.drawImage(bmp, 0, 0); const d = ctx.getImageData(0, 0, bmp.width, bmp.height).data; postMessage({ ok: true, w: bmp.width, h: bmp.height, first: Array.from(d.slice(0, 4)) }); } catch (err) { postMessage({ ok: false, error: String(err) }); } };`;
+    const worker = new Worker(URL.createObjectURL(new Blob([code], { type: 'text/javascript' })));
+    const blob = new Blob([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))], { type });
+    return new Promise((resolve) => { worker.onmessage = (e) => resolve(e.data); worker.postMessage({ blob }); });
+  }, { b64: files[name].toString('base64'), type, w: W });
+  console.log(`worker ${name.padEnd(8)} ${result.ok ? `riuscito (${result.w} x ${result.h}, primo pixel ${result.first})` : `FALLITO: ${result.error}`}`);
+}
 await browser.close();
 server.close();
