@@ -1,5 +1,5 @@
-Misure del risolutore di vincoli, 23 ottobre 2026 (Node v26.1.0, Windows 11).
-Generate con: node scripts/constraints-bench.mjs --runs=30 (estrae il blocco CORE-BEGIN / CORE-END di profilo-quote.html).
+Misure del risolutore di vincoli, 2026-10-23 (Node v26.1.0, win32).
+Generate con: node --no-warnings scripts/constraints-bench.mjs --runs=30 --out=docs/prototipi/misure-quote.txt (estrae il blocco CORE-BEGIN / CORE-END di profilo-quote.html, oppure constraints.ts con --from-ts).
 
 ### Criterio a: rettangolo quotato
 
@@ -31,14 +31,14 @@ Generate con: node scripts/constraints-bench.mjs --runs=30 (estrae il blocco COR
 
 | Quote | Segmenti | Variabili / equazioni | DOF | Trascinamento mediana | peggiore | A freddo mediana | peggiore | A freddo con diagnosi mediana | peggiore | Trascinamento < 16 ms |
 |---|---|---|---|---|---|---|---|---|---|---|
-| leggera | 10 | 22 / 16 | 6 | 0,14 | 0,61 | 0,11 | 0,71 | 0,33 | 1,27 | sì |
-| leggera | 25 | 52 / 38 | 14 | 0,28 | 0,86 | 0,27 | 0,76 | 0,91 | 2,56 | sì |
-| leggera | 50 | 102 / 76 | 26 | 0,43 | 1,19 | 0,37 | 0,76 | 3,42 | 5,74 | sì |
-| leggera | 100 | 202 / 150 | 52 | 1,00 | 1,87 | 0,92 | 1,76 | 20,40 | 27,98 | sì |
-| densa | 10 | 22 / 22 | 0 | 0,40 | 1,13 | 0,20 | 0,82 | 1,66 | 3,06 | sì |
-| densa | 25 | 52 / 52 | 0 | 0,75 | 1,61 | 0,43 | 1,06 | 1,72 | 3,16 | sì |
-| densa | 50 | 102 / 102 | 0 | 1,20 | 2,20 | 0,68 | 1,10 | 5,56 | 8,34 | sì |
-| densa | 100 | 202 / 202 | 0 | 3,48 | 5,54 | 2,16 | 5,48 | 35,80 | 69,93 | sì |
+| leggera | 10 | 22 / 16 | 6 | 0,20 | 0,81 | 0,20 | 0,67 | 0,37 | 1,31 | sì |
+| leggera | 25 | 52 / 38 | 14 | 0,34 | 0,94 | 0,39 | 1,77 | 1,42 | 2,94 | sì |
+| leggera | 50 | 102 / 76 | 26 | 0,48 | 1,19 | 0,43 | 0,90 | 3,77 | 7,53 | sì |
+| leggera | 100 | 202 / 150 | 52 | 0,89 | 1,44 | 0,82 | 1,33 | 18,86 | 25,82 | sì |
+| densa | 10 | 22 / 22 | 0 | 0,23 | 0,60 | 0,13 | 0,41 | 0,30 | 2,23 | sì |
+| densa | 25 | 52 / 52 | 0 | 0,63 | 1,32 | 0,43 | 0,95 | 1,46 | 3,02 | sì |
+| densa | 50 | 102 / 102 | 0 | 1,44 | 2,23 | 0,76 | 1,59 | 6,26 | 9,52 | sì |
+| densa | 100 | 202 / 202 | 0 | 2,97 | 5,02 | 1,95 | 3,67 | 35,49 | 49,36 | sì |
 
 ### Criterio e: casi limite
 

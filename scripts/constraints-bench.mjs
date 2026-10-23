@@ -1,10 +1,17 @@
 // Misura i criteri a-e del risolutore di vincoli (docs/studio-quote-profilo.md, sezione «Risolutore») e li stampa in
 // tabelle Markdown. Il codice provato è quello del prototipo: si estrae il blocco CORE-BEGIN / CORE-END da
 // docs/prototipi/profilo-quote.html (con --from-ts lo si ricava invece da constraints.ts, come fa constraints-sync.mjs).
-// Uso: node scripts/constraints-bench.mjs [--from-ts] [--runs=30]
-import { readFileSync } from 'node:fs';
+// Uso: node scripts/constraints-bench.mjs [--from-ts] [--runs=30] [--out=docs/prototipi/misure-quote.txt]
+import { readFileSync, writeFileSync } from 'node:fs';
 import { HTML_PATH, coreBlock, coreSource, htmlBlock } from './constraints-core.mjs';
 
+// Tutto ciò che si stampa si raccoglie anche per --out (scrittura UTF-8 con a capo LF, senza dipendere dalla shell)
+const lines = [];
+const log = console.log;
+console.log = (...a) => { lines.push(a.join(' ')); log(...a); };
+const outPath = (process.argv.find((a) => a.startsWith('--out=')) ?? '').slice(6);
+console.log(`Misure del risolutore di vincoli, ${new Date().toISOString().slice(0, 10)} (Node ${process.version}, ${process.platform}).`);
+console.log('Generate con: node --no-warnings scripts/constraints-bench.mjs ' + process.argv.slice(2).join(' ') + ' (estrae il blocco CORE-BEGIN / CORE-END di profilo-quote.html, oppure constraints.ts con --from-ts).');
 const fromTs = process.argv.includes('--from-ts');
 const runs = Number((process.argv.find((a) => a.startsWith('--runs=')) ?? '--runs=30').slice(7));
 const block = fromTs ? coreBlock() : htmlBlock(readFileSync(HTML_PATH, 'utf8'));
@@ -224,3 +231,4 @@ const time = (fn) => {
   }
   table('Errore residuo dopo arrotondamento a 4 decimali dei punti (mm per le quote, radianti per gli angoli)', ['Segmenti', 'Prima', 'Dopo', 'Sotto 0,0002'], out);
 }
+if (outPath) writeFileSync(outPath, lines.join(String.fromCharCode(10)) + String.fromCharCode(10));

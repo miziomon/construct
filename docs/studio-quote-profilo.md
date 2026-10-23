@@ -11,9 +11,9 @@ gradi di libertà con i tre colori), **media** per il cerchio quotato (diametro 
 e rimandata** per l'arco vero, la curvatura continua e i vincoli sulle maniglie delle curve. Il risolutore proprio (Levenberg-Marquardt
 a norma minima, circa 450 righe di TypeScript con i commenti, senza dipendenze) soddisfa i cinque criteri misurati: rettangolo a 0 gradi di libertà, vincolo
 in più segnalato senza oscillazioni, trascinamento a spostamento minimo, tempi da editor interattivo (mediana sotto 4 ms per un
-fotogramma di trascinamento con 100 segmenti, nel browser sotto 1,5 ms nel caso peggiore con le quote ogni due lati) e casi limite
-gestiti. **Una riserva**: la diagnosi completa (rango dello Jacobiano) costa 36 ms di mediana a 100 segmenti completamente quotati
-(70 ms nel peggiore): va tenuta fuori dal ciclo di trascinamento (dopo il rilascio o in un momento di quiete).
+fotogramma di trascinamento con 100 segmenti, nel browser sotto 2,5 ms nel caso peggiore con le quote ogni due lati) e casi limite
+gestiti. **Una riserva**: la diagnosi completa (rango dello Jacobiano) costa 35 ms di mediana a 100 segmenti completamente quotati
+(49 ms nel peggiore): va tenuta fuori dal ciclo di trascinamento (dopo il rilascio o in un momento di quiete).
 
 Il lavoro vero non è il risolutore ma il **modello dati**: oggi i nodi non hanno identità, e un vincolo che cita un nodo per posizione
 nell'elenco si rompe al primo inserimento o cancellazione. Servono id stabili dei nodi, e da lì discendono il formato del commento
@@ -34,7 +34,7 @@ Il prototipo interattivo è in [`docs/prototipi/profilo-quote.html`](prototipi/p
 | `docs/prototipi/profilo-quote.html` | Il prototipo: blocco `CORE-BEGIN` / `CORE-END` generato dal modulo, strumenti Quota (D) e Vincoli (K), cerchio parametrico, raccordo per nodo, parametri ed espressioni, Penna con lunghezza e angolo digitati, tre esempi quotati |
 | `scripts/constraints-core.mjs`, `scripts/constraints-sync.mjs` | Tolgono i tipi da `constraints.ts` (con `stripTypeScriptTypes` di `node:module`, perché TypeScript 7 non ha più l'API JavaScript) e scrivono o verificano il blocco `CORE` del prototipo |
 | `scripts/constraints-bench.mjs` | Misura i criteri a-e **estraendo il blocco `CORE` dal prototipo** (il codice provato è quello della pagina) e stampa le tabelle di questo documento |
-| `scripts/quote-prototype-check.mjs` | Apre il prototipo in Chrome con Playwright (`file://`, nessun server): 38 controlli sui gesti, nessun errore in console, e le immagini `docs/images/profilo-quote-*.png` |
+| `scripts/quote-prototype-check.mjs` | Apre il prototipo in Chrome con Playwright (`file://`, nessun server): 44 controlli sui gesti, nessun errore in console, e le immagini `docs/images/profilo-quote-*.png` |
 | `docs/prototipi/misure-quote.txt` | L'uscita dello script di misura, con la versione di Node |
 
 Il prototipo parte da `profilo-bezier.html` e non lo riscrive: stesso stile e stessi token, gli stessi strumenti (Penna, Seleziona, forme
@@ -163,7 +163,7 @@ Se invece la tangente diventasse un **vincolo persistente** (come in Fusion), se
   `collinear(in, nodo, out)` e `symmetric` a `midpoint(nodo, in, out)` (entrambi già presenti nel nucleo);
 - il `kind` diventa un dato **derivato** dai vincoli, non più l'impostazione scelta dall'utente;
 - il numero di variabili cresce (da 2 a 6 per nodo) e il costo del risolutore con lui; il tempo di risoluzione a 100 segmenti
-  densamente vincolati è già 3,5 ms (tabella d), con le maniglie crescerebbero variabili ed equazioni e il tempo andrebbe rimisurato;
+  densamente vincolati è già circa 3 ms (tabella d), con le maniglie crescerebbero variabili ed equazioni e il tempo andrebbe rimisurato;
 - un file con vincoli di tangente andrebbe **ri-risolto in lettura** per essere coerente, oppure si salvano le soluzioni e i
   vincoli si ri-risolvono solo alla prima modifica (la scelta consigliata anche per le quote, sezione 3).
 
@@ -277,7 +277,7 @@ la tappa 6.
    non vincolato) si risolve nella **forma a norma minima** `d = -W⁻¹ J' (J W⁻¹ J' + λI)⁻¹ r`: è il passo più piccolo che soddisfa le
    equazioni, e per questo la soluzione resta vicina alla configurazione di partenza (criterio c). Con più equazioni che variabili
    si usa la forma normale. Fattorizzazione di Cholesky **a profilo** (si parte dalla prima colonna non nulla di ogni riga): le matrici
-   sono quasi a banda e il passo a 100 segmenti costa 3,5 ms invece di 15.
+   sono quasi a banda e il passo a 100 segmenti costa circa 3 ms invece di 15.
 5. **Nessuna oscillazione**: un passo si accetta solo se il costo scende, altrimenti `λ` cresce e si riprova (al più 30 volte per
    iterazione, 60 iterazioni, stop se per tre passi il costo non scende apprezzabilmente). Il costo registrato a ogni iterazione non
    cresce mai (è un controllo del test).
@@ -300,7 +300,7 @@ doppio passaggio, tolleranza relativa 1e-6): una riga che dipende da quelle prec
   scarta e si dice quale era il vincolo aggiunto per ultimo; l'elenco completo comprende **tutti** i vincoli con residuo, non un
   insieme minimo (nel triangolo 3, 4, 10 ne segnala tre su tre). L'ordine dei vincoli decide solo **chi** è «ridondante»: in
   genere il più recente.
-- Il blocco costa **O(m²·n)**: 36 ms mediani a 100 segmenti completamente quotati. Va **fuori dal ciclo di trascinamento**.
+- Il blocco costa **O(m²·n)**: 35 ms mediani a 100 segmenti completamente quotati. Va **fuori dal ciclo di trascinamento**.
 
 ### Misure (Node 26.1, Windows 11, 30 ripetizioni dopo 5 di riscaldamento)
 
@@ -338,19 +338,19 @@ blocco `CORE` del prototipo.
 
 | Quote | Segmenti | Variabili / equazioni | Trascinamento | A freddo | A freddo con diagnosi |
 |---|---|---|---|---|---|
-| ogni due lati | 10 | 22 / 16 | 0,14 (0,61) | 0,11 (0,71) | 0,33 (1,27) |
-| ogni due lati | 25 | 52 / 38 | 0,28 (0,86) | 0,27 (0,76) | 0,91 (2,56) |
-| ogni due lati | 50 | 102 / 76 | 0,43 (1,19) | 0,37 (0,76) | 3,42 (5,74) |
-| ogni due lati | 100 | 202 / 150 | 1,00 (1,87) | 0,92 (1,76) | **20,4 (28,0)** |
-| tutti i lati (0 DOF) | 10 | 22 / 22 | 0,40 (1,13) | 0,20 (0,82) | 1,66 (3,06) |
-| tutti i lati (0 DOF) | 25 | 52 / 52 | 0,75 (1,61) | 0,43 (1,06) | 1,72 (3,16) |
-| tutti i lati (0 DOF) | 50 | 102 / 102 | 1,20 (2,20) | 0,68 (1,10) | 5,56 (8,34) |
-| tutti i lati (0 DOF) | 100 | 202 / 202 | 3,48 (5,54) | 2,16 (5,48) | **35,8 (69,9)** |
+| ogni due lati | 10 | 22 / 16 | 0,20 (0,81) | 0,20 (0,67) | 0,37 (1,31) |
+| ogni due lati | 25 | 52 / 38 | 0,34 (0,94) | 0,39 (1,77) | 1,42 (2,94) |
+| ogni due lati | 50 | 102 / 76 | 0,48 (1,19) | 0,43 (0,90) | 3,77 (7,53) |
+| ogni due lati | 100 | 202 / 150 | 0,89 (1,44) | 0,82 (1,33) | **18,9 (25,8)** |
+| tutti i lati (0 DOF) | 10 | 22 / 22 | 0,23 (0,60) | 0,13 (0,41) | 0,30 (2,23) |
+| tutti i lati (0 DOF) | 25 | 52 / 52 | 0,63 (1,32) | 0,43 (0,95) | 1,46 (3,02) |
+| tutti i lati (0 DOF) | 50 | 102 / 102 | 1,44 (2,23) | 0,76 (1,59) | 6,26 (9,52) |
+| tutti i lati (0 DOF) | 100 | 202 / 202 | 2,97 (5,02) | 1,95 (3,67) | **35,5 (49,4)** |
 
-Il **trascinamento sta sotto 16 ms con grande margine a ogni dimensione** (peggiore 5,5 ms a 100 segmenti). A 50 entità anche la
-diagnosi sta sotto 10 ms. A 100 entità la diagnosi supera i 16 ms: si esegue dopo il rilascio o in un momento di quiete.
+Il **trascinamento sta sotto 16 ms con grande margine a ogni dimensione** (peggiore 5,0 ms a 100 segmenti). A 50 entità anche la
+diagnosi sta sotto 10 ms (peggiore 9,5). A 100 entità la diagnosi supera i 16 ms: si esegue dopo il rilascio o in un momento di quiete.
 **Nel browser** (thread principale di Chrome, stesso codice, `quote-prototype-check.mjs`): trascinamento con quote ogni due lati,
-10, 25, 50 e 100 segmenti: 0,10, 0,20, 0,40 e 0,60 ms di mediana, 1,3 ms il peggiore. Il kernel resta nel suo Web Worker; per il
+10, 25, 50 e 100 segmenti: 0,20, 0,40, 0,70 e 1,3 ms di mediana, 2,3 ms il peggiore (altra esecuzione: le misure oscillano di circa un terzo). Il kernel resta nel suo Web Worker; per il
 risolutore il thread principale basta, e un worker dedicato (con Comlink, già in uso) serve solo oltre qualche centinaio di entità.
 
 **e. Casi limite:**
@@ -375,6 +375,11 @@ risolutore il thread principale basta, e un worker dedicato (con Comlink, già i
 - L'insieme dei vincoli in conflitto non è minimo; il criterio «l'ultimo aggiunto» funziona perché la UI rifiuta sempre il conflitto
   prima che entri nel disegno.
 - `angle` accetta valori da -360 a 360 e ha un salto a ±180 gradi tra i due rami; il prototipo presenta sempre l'angolo positivo.
+- **Strumenti di prova**: `constraints.test.ts` esegue `scripts/constraints-sync.mjs`, che usa `stripTypeScriptTypes` di `node:module`:
+  il test di coincidenza del prototipo richiede quindi un Node recente (la funzione è sperimentale e, per quanto ricordo dalla
+  documentazione di Node, esiste dalle versioni 22.13 e 23.2: **non verificato**, provato solo su Node 26.1). Il nucleo
+  `constraints.ts` in sé non ha dipendenze: se la funzione sparisse basta togliere quel test o usare `esbuild-wasm`, già in
+  `node_modules`.
 - Tutto in millimetri: nessuna scala di normalizzazione per disegni molto grandi (oltre qualche metro) o molto piccoli (sotto 0,01 mm).
 
 ## 5. Interfaccia
@@ -390,6 +395,11 @@ sono liberi.** Il prototipo aggiunge:
 | **Vincoli** | `K` | Clic su nodi e segmenti per sceglierli (di nuovo clic: li toglie), poi un pulsante della sezione «Quote e vincoli» della barra laterale; i pulsanti si accendono solo se la scelta è valida (Parallelo vuole due segmenti, Simmetrico due nodi e un segmento...) |
 | Etichette e icone | clic | Un clic su un'etichetta apre il campo (con qualunque strumento); un clic su un'icona di vincolo la sceglie, Canc la elimina |
 | **Penna con misure** | numero o Tab | Dopo il primo punto, un numero (o Tab) apre **Lunghezza** e **Angolo**; Tab passa dall'uno all'altro, Invio conferma il punto, Esc chiude. I campi vuoti seguono il mouse. I valori digitati diventano quote (opzione) |
+
+Con lo strumento Vincoli ogni pulsante agisce su ciò che è scelto: Perpendicolare, Uguale, Fisso (un vincolo per nodo, un solo passo
+di Annulla) e Tangente (il tipo Liscio) sono provati in Chrome da `scripts/quote-prototype-check.mjs`.
+
+![Spezzata libera con Perpendicolare, Uguale e Fisso applicati dalla barra](images/profilo-quote-vincoli-barra.png)
 
 Mockup della modale con la sezione nuova (ASCII, dall'esempio della piastra):
 
@@ -454,6 +464,8 @@ niente se il fuoco è in un campo**: i campi Lunghezza e Angolo devono avere i p
 
 ### Etichette modificabili e `NumberField`
 
+![La quota 60 della piastra portata a 70: i fori e il resto restano nelle quote](images/profilo-quote-quota-70.png)
+
 Il precedente è il componente `Quote` di `src/viewport/DimensionOverlay.tsx:41`: un'etichetta che con un clic diventa un campo
 (Invio applica, Esc annulla, perdita del fuoco applica; un flag impedisce la doppia applicazione). Il prototipo fa lo stesso con
 un campo `input` posizionato sull'etichetta SVG. Per la modale vera l'etichetta dentro un `<svg>` richiede un `foreignObject` o un
@@ -487,7 +499,7 @@ passando dal risolutore. Costo: circa mezza giornata nella tappa 4.
 
 L'angolo si legge tra i due raggi uscenti dal vertice comune (sempre positivo); per due segmenti senza vertice comune si misura da
 uno all'altro in senso antiorario. Esagono regolare: lati uguali (4 vincoli «Uguale») e angolo di 60° tra lati consecutivi (4 quote),
-più una lunghezza, un orizzontale e un nodo fisso: **12 vincoli su 12 variabili**, 0 gradi di libertà, verificato numericamente.
+più una lunghezza, un orizzontale e un nodo fisso: **11 vincoli (12 equazioni, il nodo fisso ne vale 2) su 12 variabili**, 0 gradi di libertà, verificato numericamente.
 Un esagono con lati uguali e lati opposti paralleli **non è regolare**: gli angoli vanno quotati.
 
 ![Esagono regolare: lati uguali e angoli di 60 gradi](images/profilo-quote-esagono.png)
@@ -535,7 +547,7 @@ nulla di visibile.
   con id e `r`, `sanitizeConstraints` con dati rovinati, bozza `v:2`.
 - **e2e** (Playwright, `e2e/profile-editor.spec.ts`, che ha già `addPath`, `openEditor`, `drag`): quota digitata e risolta, vincolo
   rifiutato, quota di riferimento, Annulla di un vincolo in un solo passo, penna con misure. Lo script `quote-prototype-check.mjs`
-  è già una bozza di questi casi (38 controlli sul prototipo).
+  è già una bozza di questi casi (44 controlli sul prototipo).
 - **Scorciatoie e tooltip** (CLAUDE.md del repo): nella modale vera i tasti `d` e `k` vanno in `ProfileEditor.tsx` accanto a quelli
   esistenti (573-578), i pulsanti in `EditorToolbar.tsx` con `title`, e il testo del comando `profile` in
   `src/ui/Toolbar/toolbarHelp.ts` (elenco degli strumenti della modale) va aggiornato. `useShortcuts.ts` non cambia: con
@@ -604,10 +616,11 @@ npx vitest run src/ui/ProfileEditor/constraints.test.ts src/ui/ProfileEditor/mod
 # Il blocco CORE del prototipo coincide con constraints.ts (il test lo verifica; senza --check lo riscrive)
 node --no-warnings scripts/constraints-sync.mjs --check
 
-# Misure dei criteri a-e (stampa le tabelle di questo documento; --from-ts usa il modulo invece del prototipo)
-node --no-warnings scripts/constraints-bench.mjs --runs=30 | Out-File -Encoding utf8 docs/prototipi/misure-quote.txt
+# Misure dei criteri a-e: stampa le tabelle di questo documento e, con --out, le scrive in UTF-8
+# (--from-ts usa il modulo invece del prototipo)
+node --no-warnings scripts/constraints-bench.mjs --runs=30 --out=docs/prototipi/misure-quote.txt
 
-# Il prototipo in Chrome: 38 controlli, nessun errore in console, e le immagini
+# Il prototipo in Chrome: 44 controlli, nessun errore in console, e le immagini
 node --no-warnings scripts/quote-prototype-check.mjs --shots
 
 # Aprire il prototipo

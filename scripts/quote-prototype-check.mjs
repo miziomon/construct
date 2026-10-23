@@ -243,7 +243,60 @@ await page.locator('#qModeSeg [data-q="ang"]').click();
   ok('angolo tra due segmenti: 90 gradi', Math.abs(ang - 90) < 1e-6, ang.toFixed(4));
 }
 await shot('angolo');
-// Vincolo Perpendicolare dalla barra su due segmenti di un altro disegno non si prova: già coperto dall'angolo e dai test del nucleo
+
+// 11b. Vincoli applicati dalla barra (strumento K) su una spezzata libera di quattro nodi
+await page.locator('#ex').selectOption('vuoto');
+await page.waitForTimeout(300);
+await page.keyboard.press('p');
+for (const q of [[-10, -5], [10, -2], [25, 15], [18, 37]]) { const a = await scr(...q); await page.mouse.click(a[0], a[1]); await page.waitForTimeout(80); }
+await page.keyboard.press('Enter');
+await page.waitForTimeout(200);
+const pts4 = () => page.evaluate(() => window.__proto.S.paths[0].nodes.map((n) => n.p));
+const mid = async (i) => { const p = await pts4(); return [(p[i][0] + p[i + 1][0]) / 2, (p[i][1] + p[i + 1][1]) / 2]; };
+const angleBetween = (p, i, j) => { const u = [p[i][0] - p[i + 1][0], p[i][1] - p[i + 1][1]], v = [p[j + 1][0] - p[j][0], p[j + 1][1] - p[j][1]]; return Math.abs(Math.atan2(u[0] * v[1] - u[1] * v[0], u[0] * v[0] + u[1] * v[1]) * 180 / Math.PI); };
+await page.keyboard.press('k');
+// Perpendicolare: primo e terzo segmento
+await click(...(await mid(0))); await click(...(await mid(2)));
+await page.locator('#cbtns [data-c="perpendicular"]').click();
+await page.waitForTimeout(250);
+{
+  const p = await pts4(), n = (await st()).n, dir = (i) => Math.atan2(p[i + 1][1] - p[i][1], p[i + 1][0] - p[i][0]) * 180 / Math.PI, d = Math.abs(Math.abs(dir(0) - dir(2)) - 90);
+  ok('vincolo Perpendicolare aggiunto dalla barra: i segmenti 1 e 3 a 90 gradi', n === 1 && (d < 1e-6 || Math.abs(d - 180) < 1e-6 || Math.abs(Math.abs(dir(0) - dir(2)) - 270) < 1e-6), 'n = ' + n + ', differenza di direzione ' + Math.abs(dir(0) - dir(2)).toFixed(4));
+}
+// Uguale: primo e secondo segmento
+await click(...(await mid(0))); await click(...(await mid(1)));
+await page.locator('#cbtns [data-c="equal"]').click();
+await page.waitForTimeout(250);
+{
+  const p = await pts4(), L = (i) => Math.hypot(p[i + 1][0] - p[i][0], p[i + 1][1] - p[i][1]);
+  ok('vincolo Uguale: i segmenti 1 e 2 hanno la stessa lunghezza', (await st()).n === 2 && Math.abs(L(0) - L(1)) < 1e-6, 'L = ' + L(0).toFixed(4) + ' e ' + L(1).toFixed(4));
+}
+// Fisso: il primo nodo, poi lo si prova a trascinare
+{
+  const [x0, y0] = (await pts4())[0];
+  await click(x0, y0);
+  await page.locator('#cbtns [data-c="fixed"]').click();
+  await page.waitForTimeout(250);
+  ok('vincolo Fisso aggiunto (un vincolo per nodo scelto)', (await st()).n === 3);
+  await page.keyboard.press('v');
+  await drag([x0, y0], [x0 + 6, y0 + 6]);
+  const q = (await pts4())[0];
+  ok('un nodo fisso non segue il mouse', Math.hypot(q[0] - x0, q[1] - y0) < 1e-6, q.map((v) => v.toFixed(3)).join(', '));
+}
+// Tangente: il secondo nodo diventa Liscio
+await page.keyboard.press('k');
+{ const [x1, y1] = (await pts4())[1]; await click(x1, y1); }
+await page.locator('#cbtns [data-c="tangent"]').click();
+await page.waitForTimeout(250);
+ok('Tangente: il nodo diventa Liscio', await page.evaluate(() => window.__proto.S.paths[0].nodes[1].kind === 'smooth'));
+// Annulla toglie l'ultimo vincolo (o l'ultima azione): un solo passo
+{
+  const before = (await st()).n;
+  await page.locator('#btnUndo').click();
+  await page.waitForTimeout(200);
+  ok('Annulla dopo la tangente: nessun vincolo perso, il nodo torna uno spigolo', (await st()).n === before && await page.evaluate(() => window.__proto.S.paths[0].nodes[1].kind === 'corner'));
+}
+await shot('vincoli-barra');
 
 // 12. Tempi nel browser (thread principale di Chrome): un fotogramma di trascinamento, mediana su 30 ripetizioni
 const timing = await page.evaluate(() => {

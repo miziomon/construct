@@ -1861,7 +1861,7 @@ function solveSketch(points, constraints, opts = {}) {
 
   // Trovare gli elementi sotto il puntatore
   function hitPoint(sx, sy) {
-    const o = toS([0, 0]); if (Math.hypot(o[0] - sx, o[1] - sy) <= 9) return { id: 'O' };
+    const o = toS([0, 0]), onOrigin = Math.hypot(o[0] - sx, o[1] - sy) <= 9;
     for (let pi = S.paths.length - 1; pi >= 0; pi--) {
       const p = S.paths[pi];
       if (p.circ) {
@@ -1869,7 +1869,7 @@ function solveSketch(points, constraints, opts = {}) {
         for (let k = 0; k < 4; k++) { const q = toS(p.nodes[k].p); if (Math.hypot(q[0] - sx, q[1] - sy) <= 10) return k === 0 ? { id: p.nodes[0].id, circle: pi } : { circle: pi }; }
       } else for (let ni = p.nodes.length - 1; ni >= 0; ni--) { const q = toS(p.nodes[ni].p); if (Math.hypot(q[0] - sx, q[1] - sy) <= 10) return { id: p.nodes[ni].id, pi, ni }; }
     }
-    return null;
+    return onOrigin ? { id: 'O' } : null;
   }
   function hitSegment(sx, sy) {
     let best = null;
@@ -2045,9 +2045,12 @@ function solveSketch(points, constraints, opts = {}) {
       commit(); return;
     }
     if (t === 'fixed') {
-      const pm = ptMap();
-      for (const it of S.csel) if (!S.cons.some((c) => c.t === 'fixed' && c.p[0] === it.id)) addPlain({ t: 'fixed', p: [it.id], x: pm[it.id][0], y: pm[it.id][1] });
-      commit(); return;
+      const pm = ptMap(), snap = snapshot(), before = S.cons.length;
+      for (const it of S.csel) if (it.id !== 'O' && !S.cons.some((c) => c.t === 'fixed' && c.p[0] === it.id)) addPlain({ t: 'fixed', p: [it.id], x: pm[it.id][0], y: pm[it.id][1] });
+      if (S.cons.length === before) { toast('I nodi scelti sono già fissi (l’origine lo è sempre).'); return; }
+      const rep = solveApply();
+      if ((rep.redundant.length || rep.conflicting.length || !rep.converged) && !S.allowOver) { applySnap(snap); toast('Fissare questi nodi renderebbe il disegno sovravincolato.'); return; }
+      S.csel = []; commit(); return;
     }
     if (addConstraint({ t, p: a })) S.csel = [];
   }
