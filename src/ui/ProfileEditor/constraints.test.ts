@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import { maxResidual, measure, solveSketch, validateValue, type Constraint, type Pt } from './constraints';
 
@@ -261,5 +262,12 @@ describe('scala e arrotondamento', () => {
     const r = solveSketch(pts, cons);
     const rounded = r.points.map((p) => ({ ...p, x: Math.round(p.x * 1e4) / 1e4, y: Math.round(p.y * 1e4) / 1e4 }));
     expect(maxResidual(rounded, cons)).toBeLessThan(2e-4);
+  });
+});
+
+describe('prototipo', () => {
+  it('il blocco CORE di docs/prototipi/profilo-quote.html è lo stesso testo di constraints.ts (tolti i tipi)', () => {
+    // Lo script rigenera il blocco dal modulo e lo confronta con quello del prototipo: esce con 1 se differiscono
+    expect(() => execFileSync(process.execPath, ['--no-warnings', 'scripts/constraints-sync.mjs', '--check'], { stdio: 'pipe' })).not.toThrow();
   });
 });

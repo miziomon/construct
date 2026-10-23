@@ -13,7 +13,8 @@ export const END = '/* CORE-END */';
 
 /** Toglie i tipi (node:module, modalità strip: li sostituisce con spazi) e ripulisce gli spazi lasciati al loro posto. */
 export function toPlain(ts) {
-  let js = stripTypeScriptTypes(ts, { mode: 'strip' });
+  // Fine riga uniformi: un file scritto da Windows può avere CRLF
+  let js = stripTypeScriptTypes(ts.replaceAll('\r\n', '\n'), { mode: 'strip' });
   // Un commento di documentazione seguito da righe di soli spazi apparteneva a un tipo cancellato: va via con lui
   js = js.replace(/\/\*\*(?:(?!\*\/)[\s\S])*\*\/\n[ ]+\n/g, '\n');
   // Spazi finali, buchi lasciati dai tipi dentro la riga, spazi prima di virgole e parentesi, righe vuote multiple
@@ -32,6 +33,7 @@ export function coreBlock() {
 
 /** Il blocco CORE del prototipo, marcatori compresi (null se manca). */
 export function htmlBlock(html) {
+  html = html.replaceAll('\r\n', '\n');
   const a = html.indexOf('/* CORE-BEGIN');
   const b = html.indexOf(END);
   return a < 0 || b < 0 ? null : html.slice(a, b + END.length);

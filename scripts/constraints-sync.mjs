@@ -4,7 +4,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { HTML_PATH, coreBlock, htmlBlock } from './constraints-core.mjs';
 
-const html = readFileSync(HTML_PATH, 'utf8');
+const html = readFileSync(HTML_PATH, 'utf8').replaceAll('\r\n', '\n');
 const current = htmlBlock(html);
 const wanted = coreBlock();
 if (current === null) {
