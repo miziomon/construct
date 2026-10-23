@@ -1563,7 +1563,7 @@ Promise.all([
   T3 = three; M = mod; init3d(); $('viewMsg').hidden = true; rebuild();
 }).catch((err) => { $('viewMsg').textContent = 'Anteprima non disponibile: servono la rete (manifold-3d e three.js da jsDelivr) e WebGL.'; console.error(err); });
 // Per i test automatici: stato e ultimo risultato
-window.__texture = { S, get last() { return last; }, get runs() { return runs; }, loadFile, rebuild };
+window.__texture = { S, get last() { return last; }, get runs() { return runs; }, loadFile, rebuild, rgbaToGray };
 </script>
 </body>
 </html>
