@@ -21,7 +21,7 @@ import {
   woodMaxDepth,
 } from './relief';
 import type { HammeredDesign, HammeredParams, WoodDesign, WoodParams } from './relief';
-import { defaultPatternParams, faceFromBounds, frameRect, normalizePattern, patternRelief, reliefToStore, reliefWarnings } from './pattern';
+import { defaultPatternParams, faceFromBounds, frameRect, normalizePattern, patternRelief, reliefToStore, reliefWarnings, woodGrainLimit } from './pattern';
 import type { PatternParams, Vec3 } from './types';
 
 /** Faccia 80 × 60 mm centrata nell'origine e una meno comoda. */
@@ -287,16 +287,24 @@ describe('Rame battuto e Legno nel Pattern: normalizzazione e avvisi', () => {
   it('la profondità non supera lo spessore (con facce opposte la metà) e il valore salvato non si riduce', () => {
     const deep = normalizePattern(params({ kind: 'hammered', relief: { ...hammered, depth: 50 } }));
     expect(deep.relief).toMatchObject({ depth: 50 });
-    expect((patternRelief(deep).relief as HammeredParams).depth).toBeCloseTo(4.8, 6);
-    expect(reliefWarnings(deep).some((w) => w.startsWith('Profondità ridotta a 4,8') && w.includes("sull'ingombro del pezzo"))).toBe(true);
+    // Ogni cella scende fino a depth · (1 + variazione): il limite 4,8 mm si divide per 1,25
+    expect((patternRelief(deep).relief as HammeredParams).depth).toBeCloseTo(3.84, 6);
+    expect(reliefWarnings(deep).some((w) => w.startsWith('Profondità ridotta a 3,8') && w.includes("sull'ingombro del pezzo"))).toBe(true);
     const both = normalizePattern(params({ kind: 'hammered', relief: { ...hammered, depth: 50 }, faces: [faceFromBounds(bounds, 'z+'), faceFromBounds(bounds, 'z-')] }));
-    expect((patternRelief(both).relief as HammeredParams).depth).toBeCloseTo(2.3, 6);
+    expect((patternRelief(both).relief as HammeredParams).depth).toBeCloseTo(1.84, 6);
     // Legno: fughe e venatura
     const w = normalizePattern(params({ kind: 'wood', relief: { ...wood, gapDepth: 50, grainDepth: 40 } }));
     expect(w.relief).toMatchObject({ gapDepth: 50, grainDepth: 40 });
     expect(patternRelief(w).relief).toMatchObject({ gapDepth: expect.closeTo(4.8, 6), grainDepth: expect.closeTo(4.8, 6) });
     expect(reliefWarnings(w).some((x) => x.startsWith('Profondità ridotta a 4,8'))).toBe(true);
     expect(reliefWarnings(normalizePattern(params({ kind: 'wood' }))).some((x) => x.startsWith('Profondità ridotta'))).toBe(false);
+    // Tavola unica: i nodi scendono fino a 2 volte la venatura, quindi la venatura arriva alla metà del limite (le fughe non esistono)
+    const single = normalizePattern(params({ kind: 'wood', design: 'single', relief: { ...wood, gapDepth: 50, grainDepth: 40 } }));
+    expect((patternRelief(single).relief as WoodParams).grainDepth).toBeCloseTo(2.4, 6);
+    expect(woodGrainLimit(single, 'single')).toBeCloseTo(2.4, 6);
+    expect(reliefWarnings(single).some((x) => x.startsWith('Profondità ridotta a'))).toBe(true);
+    // Con le fughe sole fuori limite ma la venatura a posto, la tavola unica non avvisa
+    expect(reliefWarnings(normalizePattern(params({ kind: 'wood', design: 'single', relief: { ...wood, gapDepth: 50 } }))).some((x) => x.startsWith('Profondità ridotta'))).toBe(false);
   });
 
   it('avvisi del legno: fuga sotto 0,8 mm (non per la tavola unica) e lunghezza del listello arrotondata', () => {

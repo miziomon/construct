@@ -1,6 +1,6 @@
 import { useId } from 'react';
 import { useResultStore } from '../../kernel/useKernel';
-import { PATTERN_MAX_CELLS, faceName, isAxisFace, isReliefKind, patternRelief, reliefDepthLimit, reliefToStore, reliefWarnings } from '../../scene/pattern';
+import { PATTERN_MAX_CELLS, faceName, hammeredDepthLimit, isAxisFace, isReliefKind, patternRelief, reliefDepthLimit, reliefToStore, reliefWarnings, woodGrainLimit } from '../../scene/pattern';
 import type { BrickDesign, ReliefDesign, ReliefParams, StudLayout, StudShape } from '../../scene/relief';
 import type { PatternParams } from '../../scene/types';
 import { NumberField } from '../NumberField/NumberField';
@@ -72,6 +72,9 @@ export function PatternFields({ params: p, onChange, disabled, history = true, o
   const designId = useId();
   // Le fughe non possono attraversare il pezzo (con due facce opposte lo spessore si divide)
   const depthLimit = reliefDepthLimit(p);
+  // Rame: ogni cella scende fino a profondità · (1 + variazione); Legno, tavola unica: i nodi fino a 2 volte la venatura
+  const hammeredLimit = hammeredDepthLimit(p, effective.relief.kind === 'hammered' ? effective.relief.jitter : 0);
+  const grainLimit = woodGrainLimit(p, effective.design);
   /** Salva una misura del rilievo: parte dai parametri salvati (non da quelli con il limite di spessore) e non ripete il disegno. */
   const setRelief = (patch: Record<string, number | string>) => onChange({ relief: { ...reliefToStore(p), ...patch } as ReliefParams });
   /** Slider di una misura del rilievo: modifica `relief` e non un campo del Pattern. */
@@ -149,7 +152,7 @@ export function PatternFields({ params: p, onChange, disabled, history = true, o
           {effective.relief.kind === 'hammered' && (
             <>
               {reliefSlider('Diametro', 'Diametro medio di una martellata, di una faccetta o di una scaglia, in mm (al massimo 500 celle: oltre si allargano).', 'size', { min: 3, max: 30, step: 0.5, hardMin: 2, unit: 'mm' })}
-              {reliefSlider('Profondità', "Quanto si scava il rame sotto la faccia, in mm (al massimo lo spessore dell'ingombro del pezzo, meno 0,2 mm).", 'depth', { min: Math.min(0.1, depthLimit), max: Math.min(2, depthLimit), step: 0.05, hardMin: 0.05, hardMax: depthLimit, unit: 'mm' })}
+              {reliefSlider('Profondità', "Quanto si scava il rame sotto la faccia, in mm; con la variazione le celle più profonde arrivano a profondità × (1 + variazione), e il tutto non supera lo spessore dell'ingombro del pezzo meno 0,2 mm.", 'depth', { min: Math.min(0.1, hammeredLimit), max: Math.min(2, hammeredLimit), step: 0.05, hardMin: 0.05, hardMax: hammeredLimit, unit: 'mm' })}
               {reliefSlider('Variazione', 'Quanto variano a caso profondità e raggio di ogni cella (0 = tutte uguali, 0,9 = molto diverse).', 'jitter', { min: 0, max: 0.9, step: 0.05, hardMin: 0, hardMax: 0.9 })}
               {effective.design !== 'scales' && reliefSlider('Regolarità', '0 = celle del tutto casuali, 100 = celle quasi uniformi.', 'regularity', { min: 0, max: 100, step: 1, hardMin: 0, hardMax: 100, unit: '%' })}
             </>
@@ -160,7 +163,7 @@ export function PatternFields({ params: p, onChange, disabled, history = true, o
               {effective.design !== 'single' && reliefSlider(effective.design === 'parquet' ? 'Lunghezza listello' : 'Lunghezza doga', 'Lunghezza media di una doga o di un listello, in mm.', 'plankL', { min: 20, max: 120, step: 1, hardMin: 5, unit: 'mm' })}
               {effective.design !== 'single' && reliefSlider('Fuga', 'Spessore della fuga tra due doghe o listelli, in mm.', 'gap', { min: 0.4, max: 3, step: 0.1, hardMin: 0.2, unit: 'mm' })}
               {effective.design !== 'single' && reliefSlider('Profondità fuga', "Quanto si scava la fuga sotto la faccia, in mm (al massimo lo spessore dell'ingombro del pezzo, meno 0,2 mm).", 'gapDepth', { min: Math.min(0.2, depthLimit), max: Math.min(3, depthLimit), step: 0.1, hardMin: 0.05, hardMax: depthLimit, unit: 'mm' })}
-              {reliefSlider('Venatura', 'Profondità massima della venatura, in mm (0 = nessuna); sotto 0,3 mm si vede appena in stampa.', 'grainDepth', { min: 0, max: Math.min(1.5, depthLimit), step: 0.05, hardMin: 0, hardMax: depthLimit, unit: 'mm' })}
+              {reliefSlider('Venatura', 'Profondità massima della venatura, in mm (0 = nessuna); sotto 0,3 mm si vede appena in stampa.', 'grainDepth', { min: 0, max: Math.min(1.5, grainLimit), step: 0.05, hardMin: 0, hardMax: grainLimit, unit: 'mm' })}
               {reliefSlider('Anelli', 'Distanza media tra gli anelli della venatura, in mm.', 'ringSpacing', { min: 1, max: 10, step: 0.5, hardMin: 0.5, unit: 'mm' })}
             </>
           )}

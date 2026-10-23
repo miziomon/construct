@@ -103,19 +103,31 @@ export function studRelief(p: PatternParams): { design: ReliefDesign; relief: St
   return { design, relief: relief as StudParams };
 }
 
-/** Rilievo Rame battuto: parametri normalizzati e profondità delle calotte limitata allo spessore (`reliefDepthLimit`). */
+/**
+ * Profondità massima (mm) del parametro `depth` del Rame battuto: ogni cella scende fino a `depth` · (1 + `jitter`), quindi il
+ * limite dello spessore (`reliefDepthLimit`) si divide per 1 + `jitter`, altrimenti le calotte più profonde lo supererebbero.
+ */
+export const hammeredDepthLimit = (p: PatternParams, jitter: number): number => reliefDepthLimit(p) / (1 + jitter);
+
+/**
+ * Profondità massima (mm) della venatura del Legno: doghe e listelli arrivano a `grainDepth`, la tavola unica ha i nodi che
+ * scendono fino a 2 volte la venatura (`woodMaxDepth`), quindi il limite dello spessore si dimezza.
+ */
+export const woodGrainLimit = (p: PatternParams, design: ReliefDesign): number => reliefDepthLimit(p) / (design === 'single' ? 2 : 1);
+
+/** Rilievo Rame battuto: parametri normalizzati e profondità delle calotte limitata (`hammeredDepthLimit`: vale anche con la variazione massima). */
 export function hammeredRelief(p: PatternParams): { design: ReliefDesign; relief: HammeredParams & { kind: 'hammered' } } {
   const { design, relief } = reliefBase({ ...p, kind: 'hammered' });
   const r = relief as HammeredParams;
-  return { design, relief: { ...r, kind: 'hammered', depth: Math.max(0.05, Math.min(r.depth, reliefDepthLimit(p))) } };
+  return { design, relief: { ...r, kind: 'hammered', depth: Math.max(0.05, Math.min(r.depth, hammeredDepthLimit(p, r.jitter))) } };
 }
 
-/** Rilievo Legno: parametri normalizzati e profondità di fughe e venatura limitate allo spessore (`reliefDepthLimit`). */
+/** Rilievo Legno: parametri normalizzati, fughe limitate allo spessore (`reliefDepthLimit`) e venatura limitata come `woodGrainLimit`. */
 export function woodRelief(p: PatternParams): { design: ReliefDesign; relief: WoodParams & { kind: 'wood' } } {
   const { design, relief } = reliefBase({ ...p, kind: 'wood' });
   const r = relief as WoodParams;
   const limit = reliefDepthLimit(p);
-  return { design, relief: { ...r, kind: 'wood', gapDepth: Math.max(0.05, Math.min(r.gapDepth, limit)), grainDepth: Math.min(r.grainDepth, limit) } };
+  return { design, relief: { ...r, kind: 'wood', gapDepth: Math.max(0.05, Math.min(r.gapDepth, limit)), grainDepth: Math.min(r.grainDepth, woodGrainLimit(p, design)) } };
 }
 
 /**
@@ -183,7 +195,7 @@ export function reliefWarnings(p: PatternParams): string[] {
     const { design, relief } = woodRelief(q);
     const stored = q.relief as WoodParams;
     if (design !== 'single' && relief.gap < MIN_PRINTABLE_MORTAR) out.push(`Fuga sotto ${mm(MIN_PRINTABLE_MORTAR)} mm: tende a chiudersi in stampa.`);
-    if (stored.gapDepth > relief.gapDepth + 1e-9 || stored.grainDepth > relief.grainDepth + 1e-9) out.push(`Profondità ridotta a ${mm(Math.max(relief.gapDepth, relief.grainDepth))} mm (sull'ingombro del pezzo): fughe e venatura non devono attraversare il pezzo.`);
+    if ((design !== 'single' && stored.gapDepth > relief.gapDepth + 1e-9) || stored.grainDepth > relief.grainDepth + 1e-9) out.push(`Profondità ridotta a ${mm(Math.max(relief.gapDepth, relief.grainDepth))} mm (sull'ingombro del pezzo): fughe e venatura non devono attraversare il pezzo.`);
     if (design === 'parquet') {
       // Come per la spina di pesce dei mattoni: la lunghezza è un multiplo del passo corto (larghezza più fuga)
       const u = relief.plankW + relief.gap;

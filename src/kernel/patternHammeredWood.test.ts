@@ -197,6 +197,49 @@ describe('Pattern Legno nel kernel', () => {
   }, 60_000);
 });
 
+describe('Rame battuto e Legno: la profondità vera non attraversa il pezzo', () => {
+  /** Pannello sottile 80 × 60 × 2 con il rilievo dato: area del taglio a metà spessore e vicino alla faccia opposta (se nessuna cavità arriva lì, valgono 4800 mm²). */
+  function slices(patch: Partial<PatternParams>, bothFaces: boolean): { middle: number; nearBottom: number } {
+    const thin: Vec3 = [80, 60, 2];
+    const tb = { min: thin.map((v) => -v / 2) as Vec3, max: thin.map((v) => v / 2) as Vec3 };
+    const piece = wasm.Manifold.cube(thin, true);
+    const faces = bothFaces ? [faceFromBounds(tb, 'z+'), faceFromBounds(tb, 'z-')] : [faceFromBounds(tb, 'z+')];
+    const params = normalizePattern({ ...defaultPatternParams(tb, 7), margin: 0, faces, ...patch });
+    const result = buildPattern(wasm, piece, params);
+    const area = (z: number) => {
+      const section = result.slice(z);
+      const value = section.area();
+      section.delete();
+      return value;
+    };
+    const out = { middle: area(0), nearBottom: area(-0.95) };
+    [piece, result].forEach((m) => m.delete());
+    return out;
+  }
+
+  it.each(HAMMERED_DESIGNS)('rame %s: con variazione massima le calotte più profonde restano dentro il limite (nessun foro a metà spessore)', (design) => {
+    const relief = { ...hammered, depth: 50, jitter: 0.9, size: 3 };
+    // Due facce opposte: ognuna scava al più 0,9 mm su 2 (profondità effettiva = limite, mai oltre)
+    expect(slices({ kind: 'hammered', design, relief }, true).middle).toBeCloseTo(4800, 3);
+    // Una faccia sola: resta almeno 0,2 mm di materiale sotto, sull'intera faccia
+    expect(slices({ kind: 'hammered', design, relief }, false).nearBottom).toBeCloseTo(4800, 3);
+  }, 60_000);
+
+  it('legno tavola unica: i nodi (fino a 2 volte la venatura) restano dentro il limite', () => {
+    const relief = { ...wood, grainDepth: 50, ringSpacing: 3 };
+    expect(slices({ kind: 'wood', design: 'single', relief }, true).middle).toBeCloseTo(4800, 3);
+    expect(slices({ kind: 'wood', design: 'single', relief }, false).nearBottom).toBeCloseTo(4800, 3);
+  });
+
+  it('legno a doghe e parquet: fughe e venatura restano dentro il limite', () => {
+    for (const design of ['planks', 'parquet'] as WoodDesign[]) {
+      const relief = { ...wood, gapDepth: 50, grainDepth: 50 };
+      expect(slices({ kind: 'wood', design, relief }, true).middle).toBeCloseTo(4800, 3);
+      expect(slices({ kind: 'wood', design, relief }, false).nearBottom).toBeCloseTo(4800, 3);
+    }
+  });
+});
+
 describe('Rame battuto e Legno su una faccia inclinata', () => {
   // Piramide a base quadrata (cono a 4 segmenti): la faccia verso (1, 1) ha normale (1, 1, 1) / radice di 3
   const pyramid = (patch: Partial<PatternParams>): Scene => {
