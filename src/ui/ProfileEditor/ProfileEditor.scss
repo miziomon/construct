@@ -235,6 +235,15 @@
     stroke-linejoin: round;
   }
 
+  // Stato di vincolo: completamente vincolato = colore del testo, in conflitto = rosso (il significato è anche nel piede e nell'elenco)
+  &__curve--def {
+    stroke: color('text');
+  }
+
+  &__curve--err {
+    stroke: color('danger');
+  }
+
   // Un contorno dentro un altro è un foro: tratteggiato e con il colore del foro (il significato non è affidato solo al colore)
   &__curve--hole {
     stroke: color('hole');
@@ -267,6 +276,22 @@
       stroke-width: 1.5;
     }
 
+    &--def {
+      rect,
+      circle,
+      polygon {
+        stroke: color('text');
+      }
+    }
+
+    &--err {
+      rect,
+      circle,
+      polygon {
+        stroke: color('danger');
+      }
+    }
+
     &--selected {
       rect,
       circle,
@@ -289,6 +314,7 @@
   }
 
   &__canvas[data-tool='pen'] &__svg,
+  &__canvas[data-tool='dim'] &__svg,
   &__canvas[data-tool='rect'] &__svg,
   &__canvas[data-tool='ellipse'] &__svg,
   &__canvas[data-tool='polygon'] &__svg {
@@ -301,6 +327,114 @@
 
   &__canvas[data-panning] &__svg {
     cursor: grabbing;
+  }
+
+  // Quote e vincoli sul disegno: le linee non prendono il puntatore, le etichette e le icone sì (aprono il campo o scelgono il vincolo)
+  &__quotes {
+    pointer-events: none;
+  }
+
+  &__dim path {
+    fill: none;
+    stroke: color('text-muted');
+    stroke-width: 1;
+  }
+
+  &__dim--ref path {
+    stroke-dasharray: 3 3;
+  }
+
+  &__dim--sel path,
+  &__dim--draft path {
+    stroke: color('accent');
+  }
+
+  &__dim--draft path {
+    stroke-dasharray: 5 3;
+  }
+
+  &__dim--err path {
+    stroke: color('danger');
+  }
+
+  &__qlabel,
+  &__qglyph {
+    cursor: pointer;
+    pointer-events: auto;
+
+    rect,
+    circle {
+      fill: color('panel-raised');
+      stroke: color('text-muted');
+      stroke-width: 1;
+    }
+
+    text {
+      fill: color('text');
+      font-family: $font-mono;
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
+      pointer-events: none;
+    }
+
+    &:hover rect,
+    &:hover circle {
+      stroke: color('accent');
+    }
+  }
+
+  &__qlabel--ref text {
+    fill: color('text-muted');
+  }
+
+  &__qlabel--sel,
+  &__qglyph--sel {
+    rect,
+    circle {
+      stroke: color('accent');
+      stroke-width: 2;
+    }
+  }
+
+  &__qlabel--draft rect {
+    stroke: color('accent');
+    stroke-dasharray: 3 2;
+  }
+
+  &__qlabel--err,
+  &__qglyph--err {
+    rect,
+    circle {
+      stroke: color('danger');
+      stroke-width: 2;
+    }
+
+    text {
+      fill: color('danger');
+    }
+  }
+
+  &__qring {
+    fill: none;
+    stroke: color('accent');
+    stroke-dasharray: 3 3;
+    stroke-width: 2.5;
+  }
+
+  // Campo che scrive il valore di una quota, sopra l'etichetta
+  &__qedit {
+    position: absolute;
+    z-index: 3;
+    width: 86px;
+    padding: 2px $space-2;
+    border: 2px solid color('accent');
+    border-radius: $radius-sm;
+    background: color('panel-raised');
+    color: color('text');
+    font-family: $font-mono;
+    font-size: 12px;
+    text-align: center;
+    outline: none;
   }
 
   // Pulsante per specchiare la vista, sotto la scritta della parte non ruotata
@@ -402,6 +536,11 @@
         font-weight: 600;
       }
     }
+  }
+
+  // Modo della quota (allineata, orizzontale, verticale) accanto agli strumenti, solo con la Quota attiva
+  &__dimmode {
+    flex: none;
   }
 
   // Campo Lati accanto agli strumenti, solo con il Poligono attivo
@@ -774,6 +913,80 @@
     }
   }
 
+  // Sezione «Quote e vincoli»: pulsanti dei vincoli ed elenco con il valore delle quote
+  &__constraint-buttons {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: $space-1;
+
+    button {
+      padding: 5px $space-2;
+      border: 1px solid color('border');
+      border-radius: $radius-sm;
+      background: color('panel-raised');
+      color: color('text');
+      font-size: 12px;
+      @include focus-ring;
+
+      &:hover:not(:disabled) {
+        border-color: color('accent');
+      }
+
+      &:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+    }
+  }
+
+  &__constraints {
+    display: flex;
+    flex-direction: column;
+    gap: $space-1;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  &__constraint {
+    display: flex;
+    flex-direction: column;
+    gap: $space-1;
+    padding: 2px $space-1;
+    border: 1px solid transparent;
+    border-radius: $radius-sm;
+
+    &--selected {
+      border-color: color('accent');
+      background: color('accent-soft');
+    }
+
+    &--bad {
+      border-color: color('danger');
+    }
+  }
+
+  &__constraint-head {
+    display: flex;
+    align-items: center;
+    gap: $space-1;
+  }
+
+  &__constraint-name {
+    flex: 1;
+    min-width: 0;
+    padding: 3px $space-1;
+    overflow: hidden;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font-size: 12px;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    @include focus-ring;
+  }
+
   &__check {
     display: flex;
     align-items: center;
@@ -855,6 +1068,11 @@
     &--ok {
       border-color: color('ok');
       color: color('ok');
+    }
+
+    &--info {
+      border-color: color('accent');
+      color: color('accent');
     }
 
     &--warn {

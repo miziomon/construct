@@ -201,7 +201,7 @@ export function normalizeProfile<T extends ProfileGeometry>(d: T): T {
 const DIRECTION_TYPES = new Set<ProfileConstraint['t']>(['horizontal', 'vertical', 'angle', 'parallel', 'perpendicular', 'collinear']);
 
 /** Generatore di id di vincolo liberi (`k1`, `k2`...), che riparte dopo il numero più alto già usato. */
-function constraintIdMaker(list: ProfileConstraint[]): () => string {
+export function constraintIdMaker(list: ProfileConstraint[]): () => string {
   const used = new Set(list.map((c) => c.id));
   let counter = list.reduce((max, c) => Math.max(max, Number(/^k(\d+)$/.exec(c.id)?.[1] ?? 0)), 0);
   return () => {

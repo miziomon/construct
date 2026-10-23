@@ -4,6 +4,8 @@ import { NumberField } from '../NumberField/NumberField';
 import { SliderField } from '../SliderField/SliderField';
 import { TIPS } from '../PropertiesPanel/tooltips';
 import type { GridSettings } from './DrawingCanvas';
+import { ConstraintsPanel } from './ConstraintsPanel';
+import type { ConstraintsPanelProps } from './ConstraintsPanel';
 import type { Draft, NodeRef } from './model';
 
 interface Props {
@@ -33,6 +35,8 @@ interface Props {
   onDeletePath: (index: number) => void;
   /** Quota di sezione della sagoma (solo con la funzione sperimentale e in rotazione). */
   section?: SectionProps;
+  /** Quote e vincoli (sezione «Quote e vincoli»). */
+  quote: Omit<ConstraintsPanelProps, 'paths' | 'constraints'>;
 }
 
 /** Tipi di nodo: il simbolo ripete la forma che il nodo ha nel disegno. */
@@ -166,7 +170,7 @@ export function SectionControl({ z, min, max, show, onZ, onShow }: SectionProps)
 }
 
 /** Colonna di destra della modale: estrusione, punto selezionato, percorsi, griglia e snap, qualità. */
-export function Sidebar({ draft, selection, holes, grid, sampling, boundFields, onExtrusion, onLive, onPatch, onKind, onCoordinate, onHandle, onGrid, onSelectPath, onClosePath, onDeletePath, section }: Props) {
+export function Sidebar({ draft, selection, holes, grid, sampling, boundFields, onExtrusion, onLive, onPatch, onKind, onCoordinate, onHandle, onGrid, onSelectPath, onClosePath, onDeletePath, section, quote }: Props) {
   const rotate = draft.extrusion === 'rotate';
   // Uno slider legato a un parametro non si muove da qui: la formula decide il valore (si cambia dalle Proprietà)
   const bound = (field: string) => boundFields.includes(field);
@@ -202,6 +206,8 @@ export function Sidebar({ draft, selection, holes, grid, sampling, boundFields, 
       </section>
 
       <NodeSection paths={draft.paths} selection={selection} onKind={onKind} onCoordinate={onCoordinate} onHandle={onHandle} />
+
+      <ConstraintsPanel paths={draft.paths} constraints={draft.constraints ?? []} {...quote} />
 
       <section className="profile-editor__section">
         <h3 className="profile-editor__section-title">Percorsi</h3>

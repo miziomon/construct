@@ -17,7 +17,10 @@ import { confirmDialog, notify } from '../notify/notifyStore';
 import { DrawingCanvas } from './DrawingCanvas';
 import { EditorToolbar } from './EditorToolbar';
 import type { ViewMode } from './EditorToolbar';
-import type { GridSettings, Tool } from './DrawingCanvas';
+import type { DimHit, GridSettings, QuoteProps, Tool } from './DrawingCanvas';
+import { addConstraint, addSelectionConstraint, createDimension, diagnose, idsOf, isDimension, moveNodesConstrained, removeConstraint, setConstraintValue, stateText } from './dimensions';
+import type { Applied, DimMode, SelectionConstraint } from './dimensions';
+import { validateValue } from './constraints';
 import { clearDraft, flushDrafts, loadDraft, saveDraft } from './draft';
 import { createHistory } from './history';
 import type { History } from './history';
@@ -80,7 +83,7 @@ const isTyping = (t: EventTarget | null) => {
 
 /** Chip di stato nel piede; `action` è un pulsante che risolve l'avviso. */
 interface Chip {
-  kind: 'ok' | 'warn' | 'err';
+  kind: 'ok' | 'warn' | 'err' | 'info';
   text: string;
   action?: { label: string; run: () => void };
 }
@@ -90,6 +93,26 @@ const noop = () => {};
 
 /** Numero con al più due decimali, per i messaggi. */
 const fmt = (n: number) => String(Math.round(n * 100) / 100);
+
+/** Valore proposto nel campo di una quota: fino a quattro decimali, con la virgola italiana. */
+const fmtField = (n: number) => String(Number(n.toFixed(4))).replace('.', ',');
+
+/** Quota in corso di scrittura (campo sopra l'etichetta): `base` è il disegno com'era alla scelta dei nodi (con gli id), `con.id` è «draft» se la quota è nuova. */
+interface QuoteEdit {
+  base: Draft;
+  con: ProfileConstraint;
+  isNew: boolean;
+  text: string;
+}
+
+/** Numero scritto in un campo di quota: solo numeri (le espressioni e i parametri arrivano più avanti), virgola o punto; null se non lo è. */
+const parseQuoteValue = (text: string): number | null => {
+  const t = text.trim().replace(',', '.');
+  return /^[-+]?(\d+\.?\d*|\.\d+)$/.test(t) ? Number(t) : null;
+};
+
+/** Insieme vuoto condiviso (nessun vincolo da evidenziare). */
+const NONE: Set<string> = new Set();
 
 /**
  * Modale di disegno del Profilo (si apre da `useProfileEditor`). Il disegno vive nello stato locale con una cronologia
@@ -345,8 +368,10 @@ function Editor({ target }: { target: ProfileTarget }) {
   const settle = useCallback(() => {
     if (!pendingLive.current) return;
     pendingLive.current = false;
-    committed.current = stateRef.current.draft;
-    history.current!.push(stateRef.current.draft);
+    // Come ogni passo di cronologia: i vincoli appesi a nodi che non ci sono più spariscono
+    const settled = pruneConstraints(stateRef.current.draft);
+    committed.current = settled;
+    history.current!.push(settled);
     // Passo concluso: l'anteprima si aggiorna subito (vedi `immediate` più sotto)
     setSettled((n) => n + 1);
     // Lo slider lascia il focus alla pagina al rilascio: senza un elemento attivo le scorciatoie della modale (Ctrl+Z, P) non arrivano
@@ -426,7 +451,7 @@ function Editor({ target }: { target: ProfileTarget }) {
   /** Nodo della Penna aggiunto (al rilascio): un passo della cronologia, la Penna resta sul contorno. */
   const penStep = (paths: PathContour[]) => {
     settle();
-    const next = { ...stateRef.current.draft, paths };
+    const next = pruneConstraints({ ...stateRef.current.draft, paths });
     history.current!.push(next);
     committed.current = next;
     resumedPaths.current = null;
@@ -468,7 +493,7 @@ function Editor({ target }: { target: ProfileTarget }) {
     const paths = dropLastNode(current.paths, index);
     // Un passo della cronologia, come ogni nodo della Penna; se il contorno sparisce la Penna non ha più nulla da continuare
     const gone = paths.length < current.paths.length;
-    const next = { ...current, paths };
+    const next = pruneConstraints({ ...current, paths });
     settle();
     history.current!.push(next);
     committed.current = next;
@@ -476,7 +501,126 @@ function Editor({ target }: { target: ProfileTarget }) {
   };
   const changeTool = (next: Tool) => {
     finishPen();
+    setDimPick([]);
     dispatch({ type: 'tool', tool: next });
+  };
+
+  // --- Quote e vincoli ------------------------------------------------------------------------------------------------
+  // Modo e nodi scelti dello strumento Quota; il campo in scrittura (anche in un ref, per i gestori che arrivano dopo la sua chiusura); vincolo scelto e vincoli in evidenza
+  const [dimMode, setDimMode] = useState<DimMode>('len');
+  const [dimPick, setDimPick] = useState<NodeRef[]>([]);
+  const [quoteEdit, setQuoteEditState] = useState<QuoteEdit | null>(null);
+  const quoteEditRef = useRef<QuoteEdit | null>(null);
+  const setQuoteEdit = (next: QuoteEdit | null) => {
+    quoteEditRef.current = next;
+    setQuoteEditState(next);
+  };
+  const [selCon, setSelCon] = useState<string | null>(null);
+  const [flash, setFlash] = useState<Set<string>>(NONE);
+  const flashTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(flashTimer.current), []);
+
+  /** Chiuso il campo di una quota il fuoco tornerebbe alla pagina: lo si rimette alla modale, altrimenti le scorciatoie (D, Ctrl+Z) non arrivano. */
+  const refocusRoot = () =>
+    setTimeout(() => {
+      if (document.activeElement === document.body) root.current?.focus();
+    }, 0);
+
+  /** Rifiuto: avviso breve e, per qualche secondo, i vincoli con cui andrebbe in conflitto in rosso. */
+  const reject = (message: string, ids: string[]) => {
+    notify.error(message);
+    clearTimeout(flashTimer.current);
+    setFlash(ids.length ? new Set(ids) : NONE);
+    if (ids.length) flashTimer.current = setTimeout(() => setFlash(NONE), 3000);
+  };
+  /** Esito di un'aggiunta o modifica: un passo di cronologia se è andata bene, altrimenti l'avviso e niente cambia. */
+  const applyResult = (result: Applied<Draft>): boolean => {
+    if (!result.ok) {
+      reject(result.message, result.ids);
+      return false;
+    }
+    commitDraft(result.draft);
+    return true;
+  };
+
+  /** Quota di lunghezza tra due nodi: si propone il valore attuale in un campo sopra l'etichetta, e Invio la applica. */
+  const startLinear = (a: NodeRef, b: NodeRef, pxPerMm: number) => {
+    // Gli id dei nodi si danno qui (i nodi disegnati dopo l'apertura non ce li hanno): il passo di cronologia lo fa la conferma
+    const base = normalizeProfile(stateRef.current.draft);
+    const [idA, idB] = idsOf(base.paths, [a, b]);
+    const dim = idA && idB ? createDimension(base.paths, dimMode, idA, idB, pxPerMm) : 'Scegli due nodi diversi';
+    if (typeof dim === 'string') {
+      notify.error(dim);
+      return;
+    }
+    setQuoteEdit({ base, con: { ...dim, id: 'draft' }, isNew: true, text: fmtField(dim.v ?? 0) });
+  };
+  /** Clic con lo strumento Quota: due nodi, oppure un segmento (la quota tra i suoi estremi). */
+  const onDimClick = (hit: DimHit, pxPerMm: number) => {
+    // Con un campo aperto il clic lo conferma (l'uscita dal campo) e non fa altro
+    if (quoteEditRef.current) return;
+    if (hit.kind === 'segment') {
+      setDimPick([]);
+      const contour = stateRef.current.draft.paths[hit.seg.path];
+      if (contour) startLinear({ path: hit.seg.path, node: hit.seg.segment }, { path: hit.seg.path, node: (hit.seg.segment + 1) % contour.nodes.length }, pxPerMm);
+      return;
+    }
+    if (dimPick.some((r) => r.path === hit.ref.path && r.node === hit.ref.node)) return;
+    const next = [...dimPick, hit.ref];
+    if (next.length < 2) {
+      setDimPick(next);
+      return;
+    }
+    setDimPick([]);
+    startLinear(next[0], next[1], pxPerMm);
+  };
+  /** Clic sull'etichetta di una quota (apre il campo del valore) o sull'icona di un vincolo (lo sceglie nell'elenco). */
+  const onLabelClick = (id: string) => {
+    if (quoteEditRef.current) return;
+    const current = stateRef.current.draft;
+    const con = current.constraints?.find((c) => c.id === id);
+    if (!con) return;
+    setSelCon(id);
+    if (isDimension(con) && !con.ref) setQuoteEdit({ base: current, con, isNew: false, text: fmtField(con.v ?? 0) });
+    else if (con.ref) notify.info('Quota di riferimento: mostra la misura, non la impone');
+  };
+  /** Il campo della quota si conferma (Invio o uscita dal campo). Un valore non valido o non raggiungibile lascia il disegno com'è. */
+  const commitQuote = (text: string) => {
+    const edit = quoteEditRef.current;
+    if (!edit) return;
+    setQuoteEdit(null);
+    refocusRoot();
+    const value = parseQuoteValue(text);
+    if (value === null) {
+      notify.error('Valore non valido: scrivi un numero');
+      return;
+    }
+    const invalid = validateValue(edit.con.t, value);
+    if (invalid) {
+      notify.error(invalid);
+      return;
+    }
+    if (edit.isNew) {
+      const { id: _draftId, ...dim } = edit.con;
+      const result = addConstraint(edit.base, { ...dim, v: value });
+      if (applyResult(result) && result.ok) setSelCon(result.draft.constraints?.at(-1)?.id ?? null);
+    } else if (Math.abs(value - (edit.con.v ?? Number.NaN)) > 1e-9) applyResult(setConstraintValue(stateRef.current.draft, edit.con.id, value));
+  };
+  const cancelQuote = () => {
+    setQuoteEdit(null);
+    refocusRoot();
+  };
+  /** Vincolo dai nodi scelti (pulsanti del pannello): si danno gli id ai nodi che ne sono privi, poi si risolve. */
+  const applyConstraintButton = (type: SelectionConstraint) => {
+    const base = normalizeProfile(stateRef.current.draft);
+    applyResult(addSelectionConstraint(base, type, idsOf(base.paths, stateRef.current.selection)));
+  };
+  const deleteConstraint = (id: string) => {
+    commitDraft(removeConstraint(stateRef.current.draft, id));
+    if (selCon === id) setSelCon(null);
+  };
+  const setConstraintValueFromPanel = (id: string, value: number) => {
+    applyResult(setConstraintValue(stateRef.current.draft, id, value));
   };
 
   // --- Importa SVG ----------------------------------------------------------------------------------------------------
@@ -519,6 +663,10 @@ function Editor({ target }: { target: ProfileTarget }) {
     const sampled = samplePaths(draft.paths, draft.tolerance);
     return { points: sampled.contours.reduce((n, c) => n + c.points.length, 0), tolerance: sampled.tolerance, capped: sampled.capped };
   }, [draft.paths, draft.tolerance]);
+  // Diagnosi dei vincoli (gradi di libertà, nodi e vincoli in conflitto): solo a disegno fermo, un trascinamento in corso mostra l'ultima
+  const diagDraft = useRef(draft);
+  if (draft === committed.current) diagDraft.current = draft;
+  const diag = useMemo(() => diagnose(diagDraft.current), [diagDraft.current]);
   const validContours = draft.paths.filter((c) => c.nodes.length >= 2);
   const nodeCount = draft.paths.reduce((n, c) => n + c.nodes.length, 0);
   // OK solo con almeno un contorno che il kernel riempie davvero
@@ -560,6 +708,7 @@ function Editor({ target }: { target: ProfileTarget }) {
       e.preventDefault();
       if (isTyping(e.target)) return;
       if (stateRef.current.pen !== null) finishPen();
+      else if (dimPick.length) setDimPick([]);
       else void askClose();
       return;
     }
@@ -584,6 +733,7 @@ function Editor({ target }: { target: ProfileTarget }) {
     else if (key === 'r') changeTool('rect');
     else if (key === 'c') changeTool('ellipse');
     else if (key === 'g') changeTool('polygon');
+    else if (key === 'd') changeTool('dim');
     else if (key === 'enter') {
       // Invio termina il contorno della Penna (sui pulsanti conserva il suo significato)
       if (penIndex !== null && !(e.target instanceof HTMLButtonElement)) {
@@ -607,7 +757,7 @@ function Editor({ target }: { target: ProfileTarget }) {
       const sx = !onPlan && draft.extrusion === 'rotate' && flipX ? -1 : 1;
       const delta: Vec2 = key === 'arrowleft' ? [-step * sx, 0] : key === 'arrowright' ? [step * sx, 0] : key === 'arrowup' ? [0, step] : [0, -step];
       if (onPlan) planState.editPaths(moveNodes(planShown.paths, chosen, delta), 'commit');
-      else commitPaths(moveNodes(stateRef.current.draft.paths, sel, delta));
+      else commitPaths(moveNodesConstrained(stateRef.current.draft.paths, stateRef.current.draft.constraints, sel, delta));
     } else if (e.key === ' ' && !(e.target instanceof HTMLButtonElement) && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLElement && e.target.tagName === 'SUMMARY')) {
       // Spazio: panoramica finché è premuto
       e.preventDefault();
@@ -627,6 +777,20 @@ function Editor({ target }: { target: ProfileTarget }) {
     commitPaths(moveHandle(draft.paths, { ...selected, side }, [p[0] + length * Math.cos(a), p[1] + length * Math.sin(a)], false));
   };
   const closeOpen = () => commitPaths(draft.paths.map((c) => (!c.closed && c.nodes.length >= 2 ? { ...c, closed: true } : c)));
+
+  /** Quote e vincoli per il disegno del profilo (la sagoma non li ha). */
+  const quoteProps: QuoteProps = {
+    bad: diag?.bad ?? NONE,
+    flash,
+    selected: selCon,
+    states: diag?.states ?? null,
+    pick: dimPick,
+    edit: quoteEdit && { con: quoteEdit.con, paths: quoteEdit.base.paths, isNew: quoteEdit.isNew, text: quoteEdit.text },
+    onDimClick,
+    onLabelClick,
+    onEditCommit: commitQuote,
+    onEditCancel: cancelQuote,
+  };
 
   // --- Piede ----------------------------------------------------------------------------------------------------------
   const chips: Chip[] = [];
@@ -651,6 +815,8 @@ function Editor({ target }: { target: ProfileTarget }) {
     if (planExtras?.ridge != null) chips.push({ kind: 'warn', text: `Cresta: il profilo scende sotto il raggio inscritto (${fmt(planExtras.ridge)} mm)` });
   }
   if (!chips.length && contours.length) chips.push({ kind: 'ok', text: 'Nessun avviso' });
+  // Stato dei vincoli (non è un avviso): sottovincolato, completamente vincolato, sovravincolato
+  if (diag) chips.push(stateText(diag.report));
 
   if (!init.valid) return null;
 
@@ -668,6 +834,11 @@ function Editor({ target }: { target: ProfileTarget }) {
               onRedo={redo}
               sides={sides}
               onSides={setSides}
+              dimMode={dimMode}
+              onDimMode={(mode) => {
+                setDimMode(mode);
+                setDimPick([]);
+              }}
               onImportSvg={(file) => void importSvg(file)}
               shapesOff={active === 'plan' ? 'Nella sagoma ci sono solo Seleziona, Penna e Sposta vista: la forma è un contorno solo, sempre chiuso' : undefined}
               target={showPlan && showProfile ? (active === 'plan' ? 'sagoma' : 'profilo') : undefined}
@@ -699,6 +870,7 @@ function Editor({ target }: { target: ProfileTarget }) {
                     onSection={profileGeo ? (y) => setSection(Math.min(1, Math.max(0, (y - profileGeo.zmin) / (profileGeo.zmax - profileGeo.zmin || 1)))) : undefined}
                     onLive={(paths, sel) => dispatch({ type: 'paths', paths, selection: sel })}
                     constraints={draft.constraints}
+                    quote={quoteProps}
                     onCommit={commitPaths}
                     onSelect={(sel) => dispatch({ type: 'select', selection: sel })}
                     onPenLive={(paths, current, sel) => dispatch({ type: 'paths', paths, selection: sel, pen: current })}
@@ -808,13 +980,14 @@ function Editor({ target }: { target: ProfileTarget }) {
               onKind={(kind: PathNode['kind']) => selection.length && commitPaths(setNodesKind(draft.paths, selection, kind), selection)}
               onCoordinate={(axis, value) => {
                 const p = selected && draft.paths[selected.path].nodes[selected.node].p;
-                if (selected && p) commitPaths(moveNodes(draft.paths, [selected], axis === 0 ? [value - p[0], 0] : [0, value - p[1]]), selection);
+                if (selected && p) commitPaths(moveNodesConstrained(draft.paths, draft.constraints, [selected], axis === 0 ? [value - p[0], 0] : [0, value - p[1]]), selection);
               }}
               onHandle={setHandle}
               onGrid={(patch) => setGrid((g) => ({ ...g, ...patch }))}
               onSelectPath={(i) => dispatch({ type: 'select', selection: draft.paths[i].nodes.map((_, node) => ({ path: i, node })) })}
               onClosePath={(i) => commitPaths(closeContour(draft.paths, i))}
               onDeletePath={(i) => commitDraft(normalizeProfile({ ...draft, paths: draft.paths.filter((_, k) => k !== i) }), [])}
+              quote={{ selectedNodes: selection.length, bad: diag?.bad ?? NONE, selected: selCon, onSelect: setSelCon, onApply: applyConstraintButton, onValue: setConstraintValueFromPanel, onDelete: deleteConstraint }}
             />
           )}
         </div>
