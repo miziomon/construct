@@ -199,6 +199,7 @@ details.sec[open] > summary { margin-bottom: 8px; }
 .chip--warn { border-color: var(--warn); color: var(--warn); }
 .chip--err { border-color: var(--danger); color: var(--danger); }
 .chip--ok { border-color: var(--ok); color: var(--ok); }
+.chip--def { border-color: var(--text); color: var(--text); }
 
 /* Importa SVG */
 .imp { position: absolute; inset: 0; z-index: 10; display: grid; place-items: center; background: rgba(10, 14, 20, 0.55); padding: 16px; }
@@ -235,15 +236,15 @@ details.sec[open] > summary { margin-bottom: 8px; }
 #svg[data-tool="dim"], #svg[data-tool="cons"] { cursor: crosshair; }
 .tools .seg button { min-height: 28px; font-size: 12px; }
 .tools .qmode { flex: none; }
-/* Stato dei vincoli: sottovincolato (blu, il colore normale), vincolato (verde), sovravincolato (rosso) */
-.pth.st-def { stroke: var(--ok); }
+/* Stato dei vincoli: sottovincolato (blu, il colore normale), completamente vincolato (colore del testo: nero nel tema chiaro, come Fusion; il verde lì è la geometria fissa), sovravincolato (rosso) */
+.pth.st-def { stroke: var(--text); }
 .pth.st-err { stroke: var(--danger); }
 .pth.hole.cn { stroke-dasharray: 7 4; }
-.nd.st-def { stroke: var(--ok); }
+.nd.st-def { stroke: var(--text); }
 .nd.st-err { stroke: var(--danger); }
 .nd.st-def.sel, .nd.st-err.sel { fill: var(--accent); }
 .cen { fill: var(--raised); stroke: var(--accent); stroke-width: 1.6; }
-.cen.st-def { stroke: var(--ok); }
+.cen.st-def { stroke: var(--text); }
 .cen.st-err { stroke: var(--danger); }
 .org { fill: var(--raised); stroke: var(--muted); stroke-width: 1.5; }
 .org.pick { stroke: var(--accent); stroke-width: 3; }
@@ -512,7 +513,7 @@ details.sec[open] > summary { margin-bottom: 8px; }
       <tr><td>Quota <kbd>D</kbd></td><td>Scegli il tipo nella barra (Lunghezza, Orizz., Vert., Angolo, Raggio, Diametro). Clic su due nodi (anche l'origine) o su un segmento, poi digita il valore e premi Invio (Esc annulla). Angolo: due segmenti, oppure un segmento e Invio per l'angolo rispetto all'asse X. Raggio su uno spigolo: raccordo; su un cerchio: raggio. Clic su un'etichetta: la cambia. Una quota che renderebbe il disegno sovravincolato diventa di riferimento.</td></tr>
       <tr><td>Vincoli <kbd>K</kbd></td><td>Clic su nodi e segmenti per sceglierli, poi un pulsante della sezione Quote e vincoli. Icone sul disegno: H orizzontale, V verticale, F fisso, ∥ parallelo, ⊥ perpendicolare, = uguale, M punto medio, S simmetrico, ≡ collineare, ● coincidente. Canc elimina il vincolo scelto.</td></tr>
       <tr><td>Penna con misure</td><td>Dopo il primo punto digita un numero (o premi Tab): compaiono Lunghezza e Angolo. Tab passa da un campo all'altro, Invio conferma il punto, Esc chiude. I numeri digitati diventano quote.</td></tr>
-      <tr><td>Colori</td><td>Blu: ancora liberi (sottovincolato). Verde: completamente vincolato. Rosso: sovravincolato, con il conflitto evidenziato.</td></tr>
+      <tr><td>Colori</td><td>Blu: ancora liberi (sottovincolato). Nero (chiaro nel tema scuro): completamente vincolato. Rosso: sovravincolato, con il conflitto evidenziato. Giallo nel piede: «non risolto», il risolutore si è fermato senza dimostrare un conflitto.</td></tr>
       <tr><td>Forme base <kbd>R</kbd> <kbd>C</kbd> <kbd>G</kbd></td><td>Si trascinano dal centro e diventano contorni di nodi modificabili. Un contorno dentro un altro è un foro.</td></tr>
       <tr><td>Vista</td><td>Rotella: zoom sul puntatore. Spazio o tasto centrale e trascina: panoramica. Anteprima: trascina per orbitare, rotella per lo zoom.</td></tr>
       <tr><td>Cronologia</td><td>Ctrl+Z e Ctrl+Maiusc+Z agiscono sul disegno. In Construct, premendo OK, il profilo vale un solo passo nella cronologia della scena.</td></tr>
@@ -1544,7 +1545,7 @@ function solveSketch(points, constraints, opts = {}) {
       } else schedule();
       return;
     }
-    if ((d.type === 'node' || d.type === 'handle' || d.type === 'center') && d.changed) commit();
+    if ((d.type === 'node' || d.type === 'handle' || d.type === 'center') && d.changed) { if (d.type !== 'handle') settle(); commit(); }
   }
   svg.addEventListener('pointerup', endDrag);
   svg.addEventListener('pointercancel', endDrag);
@@ -1640,7 +1641,7 @@ function solveSketch(points, constraints, opts = {}) {
     if (e.key.startsWith('Arrow') && S.sel && S.paths[S.sel.pi]) { // frecce: sposta il nodo di un passo
       e.preventDefault(); const st = gridStep() * (e.shiftKey ? 10 : 1), nd = S.paths[S.sel.pi].nodes[S.sel.ni];
       moveNode(S.sel, add(nd.p, [e.key === 'ArrowRight' ? st : e.key === 'ArrowLeft' ? -st : 0, e.key === 'ArrowUp' ? st : e.key === 'ArrowDown' ? -st : 0]));
-      commit();
+      settle(); commit();
     }
   });
 
@@ -1678,7 +1679,7 @@ function solveSketch(points, constraints, opts = {}) {
   function setXY(n, q) {
     const f = S.cons.find((c) => c.t === 'fixed' && c.p[0] === n.id);
     if (f) { f.x = q[0]; f.y = q[1]; }
-    moveNode(S.sel, q);
+    moveNode(S.sel, q); settle();
   }
   bindPt('ptX', (n, v) => setXY(n, [v, n.p[1]])); bindPt('ptY', (n, v) => setXY(n, [n.p[0], v]));
   bindPt('ptR', (n, v) => { if (v > 0) n.r = v; else delete n.r; });
@@ -1809,6 +1810,13 @@ function solveSketch(points, constraints, opts = {}) {
     const { pts, cons } = bundle();
     S.rep = summarize(solveSketch(pts, cons));
   }
+  // Esito di una risoluzione: 'ok', 'unsolved' (il risolutore si è fermato, nessun colpevole) o 'conflict' (minimo dei quadrati minimi con residuo)
+  function outcome(rep) {
+    if (S.allowOver) return 'ok';
+    if (rep.unsolved) return 'unsolved';
+    return !rep.converged || rep.conflicting.length ? 'conflict' : 'ok';
+  }
+  const UNSOLVED = 'Il risolutore non è arrivato a una soluzione (non è detto che ci sia un conflitto): prova un valore più vicino a quello attuale.';
   // Risolve dalla configurazione attuale e scrive i punti nel disegno
   function solveApply() {
     const { pts, cons } = bundle();
@@ -1817,12 +1825,20 @@ function solveSketch(points, constraints, opts = {}) {
     S.rep = summarize(rep);
     return rep;
   }
-  // Trascinamento: i punti mossi vanno sul bersaglio con un peso alto, gli altri si adattano il meno possibile (norma minima)
+  // Trascinamento: i punti mossi vanno sul bersaglio con un peso moderato (30: con 1000 i vincoli non lineari, angoli e
+  // lunghezze insieme, a 50 segmenti non convergevano entro 60 iterazioni), gli altri si adattano il meno possibile (norma minima).
+  // Tolleranza larga durante il trascinamento (1e-6 mm): un fotogramma quasi risolto (sotto 1e-4 mm, invisibile) si accetta;
+  // al rilascio settle() porta il disegno alla precisione piena.
   function dragSolve(moves) {
     const { pts, cons } = bundle(), weights = {};
-    for (const q of pts) if (moves[q.id]) { q.x = moves[q.id][0]; q.y = moves[q.id][1]; weights[q.id] = 1000; }
-    const rep = solveSketch(pts, cons, { weights, diagnose: false });
-    if (rep.converged) writeBack(rep.points); // senza soluzione (conflitto) il fotogramma si salta e il disegno resta com'era
+    for (const q of pts) if (moves[q.id]) { q.x = moves[q.id][0]; q.y = moves[q.id][1]; weights[q.id] = 30; }
+    const rep = solveSketch(pts, cons, { weights, diagnose: false, tol: 1e-6 });
+    if (rep.residual < 1e-4) writeBack(rep.points); // altrimenti il fotogramma si salta e il disegno resta com'era
+  }
+  function settle() { // dopo il trascinamento: fuori dal ciclo si può spendere qualche iterazione in più
+    if (!usesSolver()) return;
+    const { pts, cons } = bundle(), rep = solveSketch(pts, cons, { diagnose: false, maxIter: 300 });
+    if (rep.converged) writeBack(rep.points);
   }
   function moveNode(d, target) {
     const path = S.paths[d.pi], nd = path.nodes[d.ni];
@@ -1867,15 +1883,30 @@ function solveSketch(points, constraints, opts = {}) {
     toast(msg);
     S.flash = new Set(ids); setTimeout(() => { S.flash = null; schedule2d(); }, 3000); schedule2d();
   }
+  // Prima di risolvere una quota d'angolo si ruota il segmento al nuovo angolo: il risolutore parte vicino alla soluzione
+  // (da 10 a 170 gradi la strada a norma minima sposterebbe i nodi di decine di mm) e non incontra il salto a 180 gradi.
+  // Gira attorno all'estremo più vincolato (quello che non ha gradi di libertà, altrimenti il primo).
+  function preRotate(c, v) {
+    if (c.t !== 'angle' || c.ref) return;
+    const pm = ptMap(), delta = (v - measure(c, bundle().pts)) * Math.PI / 180;
+    if (!Number.isFinite(delta) || Math.abs(delta) < 1e-12) return;
+    let [pivot, mover] = c.p.length === 2 ? [c.p[0], c.p[1]] : [c.p[2], c.p[3]]; // il segmento che gira è il secondo (cd), o ab se i punti sono due
+    if (S.rep && S.rep.freeSet.has(pivot) && !S.rep.freeSet.has(mover)) [pivot, mover] = [mover, pivot];
+    const o = pm[pivot], q = pm[mover], d = [q[0] - o[0], q[1] - o[1]], cs = Math.cos(delta), sn = Math.sin(delta);
+    q[0] = o[0] + d[0] * cs - d[1] * sn; q[1] = o[1] + d[0] * sn + d[1] * cs;
+  }
   function addConstraint(con) {
     const snap = snapshot();
     if (!con.id) con.id = kid();
+    preRotate(con, con.v);
     S.cons.push(con);
     let rep = solveApply();
     if (rep.redundant.includes(con.id) && !S.allowOver) {
       if (isDim(con)) { con.ref = true; solveApply(); toast('Il disegno è già vincolato: la quota diventa di riferimento (tra parentesi).'); }
       else { applySnap(snap); toast('Vincolo ridondante: gli altri vincoli lo impongono già.'); return false; }
-    } else if ((!rep.converged || rep.conflicting.length) && !S.allowOver) {
+    } else if (outcome(rep) === 'unsolved') {
+      applySnap(snap); toast(UNSOLVED); return false;
+    } else if (outcome(rep) === 'conflict') {
       const others = rep.conflicting.filter((id) => id !== con.id), names = namesOf(others);
       applySnap(snap);
       if (isDim(con)) { S.qbar = { con, msg: 'Sovravincolo: la quota va in conflitto con ' + (names || 'gli altri vincoli') + '.' }; S.flash = new Set(others); setTimeout(() => { S.flash = null; schedule2d(); }, 3000); schedule(); }
@@ -1889,7 +1920,8 @@ function solveSketch(points, constraints, opts = {}) {
     const snap = snapshot();
     mutate();
     const rep = solveApply();
-    if ((!rep.converged || rep.conflicting.length) && !S.allowOver) {
+    if (outcome(rep) === 'unsolved') { applySnap(snap); toast(UNSOLVED); return false; }
+    if (outcome(rep) === 'conflict') {
       const bad = rep.conflicting.slice(), names = namesOf(bad);
       applySnap(snap);
       reject('Valore non raggiungibile: va in conflitto con ' + (names || 'i vincoli') + '.', bad);
@@ -1900,7 +1932,7 @@ function solveSketch(points, constraints, opts = {}) {
   function setDimValue(c, v, expr) {
     const msg = validateValue(c.t, v);
     if (msg) { toast(msg); schedule(); return false; }
-    return tryApply(() => { c.v = v; if (expr) c.expr = expr; else delete c.expr; });
+    return tryApply(() => { preRotate(c, v); c.v = v; if (expr) c.expr = expr; else delete c.expr; });
   }
   function toggleRef(id) {
     const c = S.cons.find((x) => x.id === id); if (!c) return;
@@ -1908,6 +1940,7 @@ function solveSketch(points, constraints, opts = {}) {
     const snap = snapshot(), pa = bundle().pts;
     c.ref = false; c.v = measure(c, pa); // da riferimento a pilotante: tiene la misura attuale
     const rep = solveApply();
+    if (rep.unsolved) { applySnap(snap); toast(UNSOLVED); return; }
     if (rep.redundant.includes(c.id) || rep.conflicting.length || !rep.converged) { applySnap(snap); toast('Il disegno è già vincolato: la quota resta di riferimento.'); return; }
     commit();
   }
@@ -2102,6 +2135,7 @@ function solveSketch(points, constraints, opts = {}) {
       for (const it of S.csel) if (it.id !== 'O' && !S.cons.some((c) => c.t === 'fixed' && c.p[0] === it.id)) addPlain({ t: 'fixed', p: [it.id], x: pm[it.id][0], y: pm[it.id][1] });
       if (S.cons.length === before) { toast('I nodi scelti sono già fissi (l’origine lo è sempre).'); return; }
       const rep = solveApply();
+      if (rep.unsolved && !S.allowOver) { applySnap(snap); toast(UNSOLVED); return; }
       if ((rep.redundant.length || rep.conflicting.length || !rep.converged) && !S.allowOver) { applySnap(snap); toast('Fissare questi nodi renderebbe il disegno sovravincolato.'); return; }
       S.csel = []; commit(); return;
     }
@@ -2222,7 +2256,8 @@ function solveSketch(points, constraints, opts = {}) {
     if (!S.cons.length || !S.rep) return '';
     const r = S.rep;
     if (r.state === 'over') return `<span class="chip chip--err">Sovravincolato: ${[r.conflicting.length ? r.conflicting.length + ' in conflitto' : '', r.redundant.length ? r.redundant.length + ' ridondanti' : '', r.converged ? '' : 'non risolvibile'].filter(Boolean).join(', ')}</span>`;
-    if (r.state === 'full') return '<span class="chip chip--ok">Completamente vincolato: 0 gradi di libertà</span>';
+    if (r.state === 'unsolved') return '<span class="chip chip--warn">Non risolto: il risolutore si è fermato, nessun conflitto dimostrato</span>';
+    if (r.state === 'full') return '<span class="chip chip--def">Completamente vincolato: 0 gradi di libertà</span>';
     return `<span class="chip chip--blue">Sottovincolato: ${r.dof} ${r.dof === 1 ? 'grado' : 'gradi'} di libertà</span>`;
   }
   function hintText() {
@@ -2266,7 +2301,8 @@ function solveSketch(points, constraints, opts = {}) {
     p.v = v;
     if (!reeval()) { applySnap(before); return; }
     const rep = solveApply();
-    if ((!rep.converged || rep.conflicting.length) && !S.allowOver) {
+    if (outcome(rep) === 'unsolved') { applySnap(before); toast(UNSOLVED); return; }
+    if (outcome(rep) === 'conflict') {
       const bad = rep.conflicting.slice(), names = namesOf(bad);
       applySnap(before); reject('Il valore ' + fmt(v) + ' di ' + p.name + ' va in conflitto con ' + (names || 'i vincoli') + '.', bad); return;
     }

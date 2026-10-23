@@ -86,7 +86,7 @@ const rect = (fixed, dims = true) => [
 
 // ---------------------------------------------------------------- criterio c: spostamento minimo
 {
-  const drag = (pts, cons, id, to) => solveSketch(pts.map((p) => (p.id === id ? { ...p, x: to[0], y: to[1] } : p)), cons, { weights: { [id]: 1000 }, diagnose: false });
+  const drag = (pts, cons, id, to) => solveSketch(pts.map((p) => (p.id === id ? { ...p, x: to[0], y: to[1] } : p)), cons, { weights: { [id]: 30 }, diagnose: false, tol: 1e-6 });
   const out = [];
   // 1) solo H/V: il nodo opposto non deve muoversi
   {
@@ -151,33 +151,57 @@ const time = (fn) => {
   fn();
   return performance.now() - t;
 };
+// Poligono chiuso di n lati, NON lineare: lunghezza sui lati pari, uguaglianza sui dispari, angolo tra lati consecutivi,
+// un nodo fisso e l'angolo del primo lato (n punti, circa 2n equazioni)
+function polygon(n) {
+  const R = 10 * n / (2 * Math.PI);
+  const pts = Array.from({ length: n }, (_, i) => P('p' + i, R * Math.cos(2 * Math.PI * i / n) + 0.7 * Math.sin(i * 1.7), R * Math.sin(2 * Math.PI * i / n) + 0.5 * Math.cos(i * 2.3)));
+  const cons = [C('fixed', ['p0'], { x: pts[0].x, y: pts[0].y }), C('angle', ['p0', 'p1'], { v: 90 + 180 / n })];
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    cons.push(i % 2 === 0 ? C('dist', ['p' + i, 'p' + j], { v: 10 }) : C('equal', ['p' + i, 'p' + j, 'p' + ((i + n - 1) % n), 'p' + i]));
+    if (i < n - 3) cons.push(C('angle', ['p' + i, 'p' + j, 'p' + j, 'p' + ((i + 2) % n)], { v: 360 / n }));
+  }
+  return { pts, cons };
+}
+const rows_ = (cons) => cons.reduce((sum, c) => sum + ({ fixed: 2, coincident: 2, midpoint: 2, collinear: 2, symmetric: 2 }[c.t] ?? 1), 0);
 {
   const out = [];
-  for (const dense of [false, true]) {
+  // Il trascinamento usa i parametri del prototipo: peso 30 sul nodo mosso, tolleranza 1e-6, un passo di mouse di 0,5 x 0,3 mm
+  const DRAG = { diagnose: false, tol: 1e-6 };
+  for (const kind of ['leggera', 'densa', 'non lineare']) {
     for (const n of [10, 25, 50, 100]) {
-      const { pts, cons } = staircase(n, dense);
+      const { pts, cons } = kind === 'non lineare' ? polygon(n) : staircase(n, kind === 'densa');
       const solved = solveSketch(pts, cons).points;
-      const noise = rng(n * 7 + (dense ? 1 : 0));
+      const noise = rng(n * 7 + kind.length);
       const drag = [];
       const cold = [];
       const full = [];
+      let skipped = 0;
+      let unsolvedCold = 0;
       for (let k = -5; k < runs; k++) {
-        // Fotogramma di trascinamento: dalla soluzione, un nodo spostato di 2 mm, senza diagnosi
-        const id = 'p' + Math.floor(noise() * n);
-        const start = solved.map((p) => (p.id === id ? { ...p, x: p.x + 2, y: p.y + 1 } : p));
-        const t1 = time(() => solveSketch(start, cons, { weights: { [id]: 1000 }, diagnose: false }));
-        // Partenza a freddo: tutti i punti sporcati di circa 1,5 mm
+        // Fotogramma di trascinamento: dalla soluzione, un nodo spostato di 0,5 x 0,3 mm
+        const id = 'p' + (1 + Math.floor(noise() * (n - 1)));
+        const start = solved.map((p) => (p.id === id ? { ...p, x: p.x + 0.5, y: p.y + 0.3 } : p));
+        let frame;
+        const t1 = time(() => { frame = solveSketch(start, cons, { ...DRAG, weights: { [id]: 30 } }); });
+        // Partenza a freddo: tutti i punti sporcati di circa 1,5 mm; senza diagnosi (tetto 300 iterazioni) e con diagnosi (tetto 500)
         const messy = pts.map((p) => ({ ...p, x: p.x + (noise() - 0.5) * 3, y: p.y + (noise() - 0.5) * 3 }));
-        const t2 = time(() => solveSketch(messy, cons, { diagnose: false }));
-        const t3 = time(() => solveSketch(messy, cons));
-        if (k >= 0) (drag.push(t1), cold.push(t2), full.push(t3));
+        let c0;
+        const t2 = time(() => { c0 = solveSketch(messy, cons, { diagnose: false, maxIter: 300 }); });
+        let c1;
+        const t3 = time(() => { c1 = solveSketch(messy, cons); });
+        if (k >= 0) {
+          drag.push(t1); cold.push(t2); full.push(t3);
+          if (!(frame.residual < 1e-4)) skipped++;
+          if (!c1.converged) unsolvedCold++;
+        }
       }
       const r = solveSketch(pts, cons);
-      const m = cons.reduce((s, c) => s + ({ fixed: 2, horizontal: 1, vertical: 1, distX: 1, distY: 1 }[c.t] ?? 1), 0);
-      out.push([dense ? 'densa' : 'leggera', n, 2 * (n + 1) + ' / ' + m, r.dof, ms(median(drag)), ms(Math.max(...drag)), ms(median(cold)), ms(Math.max(...cold)), ms(median(full)), ms(Math.max(...full)), yes(median(drag) < 16)]);
+      out.push([kind, n, 2 * n + (kind === 'non lineare' ? 0 : 2) + ' / ' + rows_(cons), r.dof, ms(median(drag)), ms(Math.max(...drag)), skipped + ' / ' + runs, ms(median(cold)), ms(median(full)), ms(Math.max(...full)), unsolvedCold + ' / ' + runs, yes(median(drag) < 16 && skipped === 0)]);
     }
   }
-  table(`Criterio d: tempo di risoluzione (ms, ${runs} ripetizioni dopo 5 di riscaldamento, ${process.version})`, ['Quote', 'Segmenti', 'Variabili / equazioni', 'DOF', 'Trascinamento mediana', 'peggiore', 'A freddo mediana', 'peggiore', 'A freddo con diagnosi mediana', 'peggiore', 'Trascinamento < 16 ms'], out);
+  table(`Criterio d: tempo di risoluzione (ms, ${runs} ripetizioni dopo 5 di riscaldamento, ${process.version}; il massimo di una sola esecuzione oscilla molto tra un'esecuzione e l'altra, contano le mediane)`, ['Vincoli', 'Segmenti', 'Variabili / equazioni', 'DOF', 'Trascinamento mediana', 'massimo', 'Fotogrammi scartati', 'A freddo mediana', 'A freddo con diagnosi mediana', 'massimo', 'Non convergenti a freddo', 'Trascinamento < 16 ms, nessuno scartato'], out);
 }
 
 // ---------------------------------------------------------------- criterio e: casi limite

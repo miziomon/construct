@@ -127,6 +127,7 @@ ok('annullato il conflitto: di nuovo 7 vincoli', (await st()).n === 7, 'n = ' + 
 await page.keyboard.press('k');
 { const [x0, y0] = await node(0, 1), [x1, y1] = await node(0, 2); await click((x0 + x1) / 2, (y0 + y1) / 2); }
 { const [x0, y0] = await node(0, 3), [x1, y1] = await node(0, 0); await click((x0 + x1) / 2, (y0 + y1) / 2); }
+await page.waitForFunction(() => !document.querySelector('#cbtns [data-c="parallel"]').disabled, null, { timeout: 3000 }).catch(() => {}); // il pannello si aggiorna al fotogramma successivo
 ok('due segmenti scelti: Parallelo abilitato', await page.locator('#cbtns [data-c="parallel"]').isEnabled());
 await page.locator('#cbtns [data-c="parallel"]').click();
 await page.waitForTimeout(250);
@@ -244,6 +245,28 @@ await page.locator('#qModeSeg [data-q="ang"]').click();
 }
 await shot('angolo');
 
+// 11a. Angolo da circa 11 a 170 gradi: il segmento gira attorno a un estremo, l'altro nodo non salta (niente scarti di decine di mm)
+await page.locator('#ex').selectOption('vuoto');
+await page.waitForTimeout(300);
+await page.keyboard.press('p');
+for (const q of [[-10, 5], [10, 9]]) { const a = await scr(...q); await page.mouse.click(a[0], a[1]); await page.waitForTimeout(80); }
+await page.keyboard.press('Enter');
+await page.waitForTimeout(200);
+{
+  const before = await page.evaluate(() => window.__proto.S.paths[0].nodes.map((n) => n.p.slice()));
+  await page.keyboard.press('d');
+  await page.locator('#qModeSeg [data-q="ang"]').click();
+  await click((before[0][0] + before[1][0]) / 2, (before[0][1] + before[1][1]) / 2);
+  await page.keyboard.press('Enter');
+  await edit('170');
+  const after = await page.evaluate(() => window.__proto.S.paths[0].nodes.map((n) => n.p.slice()));
+  const L0 = Math.hypot(before[1][0] - before[0][0], before[1][1] - before[0][1]), L1 = Math.hypot(after[1][0] - after[0][0], after[1][1] - after[0][1]);
+  const ang = Math.atan2(after[1][1] - after[0][1], after[1][0] - after[0][0]) * 180 / Math.PI;
+  ok('angolo portato a 170 gradi: raggiunto', Math.abs(ang - 170) < 1e-6, ang.toFixed(6));
+  ok('angolo a 170 gradi: il nodo di partenza non si muove e la lunghezza resta', Math.hypot(after[0][0] - before[0][0], after[0][1] - before[0][1]) < 1e-6 && Math.abs(L1 - L0) < 1e-6, 'lunghezza ' + L0.toFixed(4) + ' -> ' + L1.toFixed(4));
+}
+
+
 // 11b. Vincoli applicati dalla barra (strumento K) su una spezzata libera di quattro nodi
 await page.locator('#ex').selectOption('vuoto');
 await page.waitForTimeout(300);
@@ -298,29 +321,43 @@ ok('Tangente: il nodo diventa Liscio', await page.evaluate(() => window.__proto.
 }
 await shot('vincoli-barra');
 
-// 12. Tempi nel browser (thread principale di Chrome): un fotogramma di trascinamento, mediana su 30 ripetizioni
+// 12. Tempi nel browser (thread principale di Chrome): un fotogramma di trascinamento (peso 30, tolleranza 1e-6 come il prototipo)
 const timing = await page.evaluate(() => {
   const solve = window.__proto.solveSketch, out = [];
-  for (const n of [10, 25, 50, 100]) {
+  const med = (t) => t.sort((x, y) => x - y)[t.length >> 1];
+  for (const kind of ['lineare', 'non lineare']) for (const n of kind === 'lineare' ? [10, 25, 50, 100] : [10, 25, 50]) {
     const pts = [], cons = [];
-    let x = 0, y = 0;
-    for (let i = 0; i <= n; i++) { pts.push({ id: 'p' + i, x, y }); if (i % 2 === 0) x += 10 + (i % 3); else y += 6 + (i % 4); }
-    for (let i = 0; i < n; i++) {
-      cons.push({ id: 'h' + i, t: i % 2 === 0 ? 'horizontal' : 'vertical', p: ['p' + i, 'p' + (i + 1)] });
-      if (i % 4 < 2) cons.push({ id: 'd' + i, t: i % 2 === 0 ? 'distX' : 'distY', p: ['p' + i, 'p' + (i + 1)], s: 1, v: i % 2 === 0 ? 10 + (i % 3) : 6 + (i % 4) });
+    if (kind === 'lineare') {
+      let x = 0, y = 0;
+      for (let i = 0; i <= n; i++) { pts.push({ id: 'p' + i, x, y }); if (i % 2 === 0) x += 10 + (i % 3); else y += 6 + (i % 4); }
+      for (let i = 0; i < n; i++) {
+        cons.push({ id: 'h' + i, t: i % 2 === 0 ? 'horizontal' : 'vertical', p: ['p' + i, 'p' + (i + 1)] });
+        if (i % 4 < 2) cons.push({ id: 'd' + i, t: i % 2 === 0 ? 'distX' : 'distY', p: ['p' + i, 'p' + (i + 1)], s: 1, v: i % 2 === 0 ? 10 + (i % 3) : 6 + (i % 4) });
+      }
+    } else { // poligono chiuso: lunghezze, uguaglianze e angoli tra lati consecutivi (non lineare), un nodo fisso e un angolo assoluto
+      const R = 10 * n / (2 * Math.PI);
+      for (let i = 0; i < n; i++) { const an = 2 * Math.PI * i / n; pts.push({ id: 'p' + i, x: R * Math.cos(an) + 0.7 * Math.sin(i * 1.7), y: R * Math.sin(an) + 0.5 * Math.cos(i * 2.3) }); }
+      cons.push({ id: 'f', t: 'fixed', p: ['p0'], x: pts[0].x, y: pts[0].y }, { id: 'a0', t: 'angle', p: ['p0', 'p1'], v: 90 + 180 / n });
+      for (let i = 0; i < n; i++) {
+        const j = (i + 1) % n;
+        cons.push(i % 2 === 0 ? { id: 'd' + i, t: 'dist', p: ['p' + i, 'p' + j], v: 10 } : { id: 'e' + i, t: 'equal', p: ['p' + i, 'p' + j, 'p' + ((i + n - 1) % n), 'p' + i] });
+        if (i < n - 3) cons.push({ id: 'g' + i, t: 'angle', p: ['p' + i, 'p' + j, 'p' + j, 'p' + ((i + 2) % n)], v: 360 / n });
+      }
     }
     const solved = solve(pts, cons).points, times = [];
+    let bad = 0;
     for (let k = -5; k < 30; k++) {
-      const id = 'p' + (Math.floor(((k + 7) * 37) % n)), start = solved.map((p) => (p.id === id ? { ...p, x: p.x + 2, y: p.y + 1 } : p));
-      const t = performance.now(); solve(start, cons, { weights: { [id]: 1000 }, diagnose: false }); if (k >= 0) times.push(performance.now() - t);
+      const id = 'p' + (1 + Math.floor(((k + 7) * 37) % (n - 1))), start = solved.map((p) => (p.id === id ? { ...p, x: p.x + 0.5, y: p.y + 0.3 } : p));
+      const t = performance.now(), r = solve(start, cons, { weights: { [id]: 30 }, diagnose: false, tol: 1e-6 });
+      if (k >= 0) { times.push(performance.now() - t); if (!(r.residual < 1e-4)) bad++; }
     }
-    times.sort((a, b) => a - b);
-    out.push({ n, median: times[15], worst: times[times.length - 1] });
+    out.push({ kind, n, median: med(times), max: Math.max(...times), bad });
   }
   return out;
 });
-console.log('Tempi nel browser (trascinamento, quote ogni due lati): ' + timing.map((t) => `${t.n} segmenti ${t.median.toFixed(2)} ms (peggiore ${t.worst.toFixed(2)})`).join('; '));
-ok('nel browser il trascinamento con 50 segmenti resta sotto 16 ms', timing.find((t) => t.n === 50).worst < 16, JSON.stringify(timing.find((t) => t.n === 50)));
+console.log('Tempi nel browser (un fotogramma di trascinamento, mediana e massimo su 30 fotogrammi): ' + timing.map((t) => t.kind + ' ' + t.n + ' segmenti ' + t.median.toFixed(2) + ' ms (massimo ' + t.max.toFixed(2) + ', fotogrammi scartati ' + t.bad + ')').join('; '));
+ok('nel browser la mediana di un fotogramma lineare a 50 segmenti sta sotto 16 ms', timing.find((t) => t.kind === 'lineare' && t.n === 50).median < 16, JSON.stringify(timing.find((t) => t.kind === 'lineare' && t.n === 50)));
+ok('nel browser la mediana di un fotogramma non lineare a 50 segmenti sta sotto 16 ms e nessun fotogramma si scarta', timing.find((t) => t.kind === 'non lineare' && t.n === 50).median < 16 && timing.find((t) => t.kind === 'non lineare' && t.n === 50).bad === 0, JSON.stringify(timing.find((t) => t.kind === 'non lineare' && t.n === 50)));
 
 ok('nessun errore in console', errors.length === 0, errors.join(' | '));
 await browser.close();
