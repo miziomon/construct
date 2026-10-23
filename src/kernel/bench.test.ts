@@ -15,6 +15,15 @@ import type { ReliefEngine } from './relief';
 import { reliefScad } from '../codegen/reliefScad';
 import { reliefDefaults } from '../scene/relief';
 import type { ReliefKind } from '../scene/relief';
+import sharp from 'sharp';
+import { Window } from 'happy-dom';
+import type { Manifold } from 'manifold-3d';
+import { applyTextureFace, displaceSolid, svgReliefSolid } from './textureMap';
+import { meshScad, svgReliefScad, textureFaceScad } from '../codegen/textureScad';
+import { rgbaToGray, textureDefaults } from '../scene/textureMap';
+import { SAMPLE_SVG, makeSample } from '../scene/textureSamples';
+import type { SampleKind } from '../scene/textureSamples';
+import { svgContours } from '../scene/shapes2d';
 
 let wasm: ManifoldToplevel;
 
@@ -234,6 +243,122 @@ describe.skipIf(!process.env.BENCH)('benchmark texture in rilievo', { timeout: 6
     const line = `BENCH ${label.padEnd(36)} ${ms.toFixed(1).padStart(8)} ms  ${String(triangles).padStart(7)} tri  STL ${((84 + 50 * triangles) / 1024).toFixed(0).padStart(6)} KB  OpenSCAD ${(scad / 1024).toFixed(1).padStart(8)} KB`;
     console.log(line);
     if (process.env.BENCH_OUT) appendFileSync(process.env.BENCH_OUT, `${line}\n`);
+    panel.delete();
+    region.delete();
+  });
+});
+
+// Studio delle texture da immagine (docs/studio-texture-immagine.md): stessa faccia 80 x 60 mm su pannello di 5 mm, stesse colonne
+// della tabella dei rilievi procedurali. Motore F: solo la faccia; motore M: l'intero pannello (tutte le facce, raffinate
+// alla stessa lunghezza), quindi i suoi triangoli non sono confrontabili 1 a 1 con quelli del motore F.
+describe.skipIf(!process.env.BENCH)('benchmark texture in rilievo da immagine', { timeout: 600_000 }, () => {
+  const steps = [0.8, 0.5, 0.3];
+  const tex = { ...textureDefaults(), tile: 20, amplitude: 0.6 };
+  const rect = { minX: -40, minY: -30, maxX: 40, maxY: 30 };
+  const out = (label: string, ms: number, triangles: number, scadChars: number, extra = '') => {
+    const line = `BENCH ${label.padEnd(36)} ${ms.toFixed(1).padStart(8)} ms  ${String(triangles).padStart(7)} tri  STL ${((84 + 50 * triangles) / 1024).toFixed(0).padStart(6)} KB  OpenSCAD ${(scadChars / 1024).toFixed(1).padStart(8)} KB${extra}`;
+    console.log(line);
+    if (process.env.BENCH_OUT) appendFileSync(process.env.BENCH_OUT, `${line}\n`);
+  };
+  const panelOf = () => {
+    const cube = wasm.Manifold.cube([80, 60, 5], true);
+    const moved = cube.translate([0, 0, -2.5]);
+    cube.delete();
+    return moved;
+  };
+
+  // Motore F: texture organica (pelle), regolare (zigrinatura) e rumore, nei tre modi e nei tre passi
+  const faceCases: { kind: SampleKind; mode: 'relief' | 'groove' | 'both'; step: number; size?: number }[] = [
+    ...steps.map((step) => ({ kind: 'leather' as const, mode: 'relief' as const, step })),
+    ...steps.map((step) => ({ kind: 'knurl' as const, mode: 'relief' as const, step })),
+    { kind: 'leather', mode: 'groove', step: 0.5 },
+    { kind: 'leather', mode: 'both', step: 0.5 },
+    { kind: 'noise', mode: 'relief', step: 0.5, size: 256 },
+  ];
+  it.each(faceCases)('F $kind $mode passo $step', ({ kind, mode, step, size = 256 }) => {
+    const img = makeSample(kind, size);
+    const region = wasm.CrossSection.square([80, 60], true);
+    const panel = panelOf();
+    let triangles = 0;
+    const run = () => {
+      const result = applyTextureFace(wasm, panel, region, img, { ...tex, mode }, { step });
+      triangles = result.getMesh().triVerts.length / 3;
+      result.delete();
+    };
+    const ms = median(run, 7, 2);
+    out(`immagine ${kind} F ${mode} ${step} mm`, ms, triangles, textureFaceScad(rect, img, { ...tex, mode }, step).length);
+    panel.delete();
+    region.delete();
+  });
+
+  // Motore M: pannello, cubo e cilindro interi, normali medie con spigoli fermi, ampiezza 0,6 mm
+  const meshCases: { solid: 'pannello' | 'cubo' | 'cilindro'; edge: number }[] = [
+    ...steps.map((edge) => ({ solid: 'pannello' as const, edge })),
+    { solid: 'cubo', edge: 0.8 },
+    { solid: 'cubo', edge: 0.5 },
+    { solid: 'cilindro', edge: 0.8 },
+    { solid: 'cilindro', edge: 0.5 },
+  ];
+  it.each(meshCases)('M $solid lato $edge', ({ solid, edge }) => {
+    const img = makeSample('leather', 256);
+    const make = () =>
+      solid === 'pannello' ? wasm.Manifold.cube([80, 60, 5], true) : solid === 'cubo' ? wasm.Manifold.cube([30, 30, 30], true) : wasm.Manifold.cylinder(40, 15, 15, 96, true);
+    const base = make();
+    const projection = solid === 'cilindro' ? ({ kind: 'cylindrical', axis: 2, radius: 15 } as const) : ({ kind: 'triplanar' } as const);
+    let triangles = 0;
+    let refineMs = 0;
+    let status = '';
+    let flipped = 0;
+    let mesh: ReturnType<Manifold['getMesh']> | null = null;
+    const run = () => {
+      const { solid: result, stats } = displaceSolid(wasm, base, img, { ...tex, mode: 'both' }, projection, { edge, fadeSharp: true });
+      mesh = result!.getMesh();
+      triangles = mesh.triVerts.length / 3;
+      refineMs = stats.msRefine;
+      status = stats.status;
+      flipped = stats.flipped;
+      result!.delete();
+    };
+    const ms = median(run, 7, 2);
+    out(`immagine leather M ${solid} ${edge} mm`, ms, triangles, meshScad(mesh!.vertProperties, mesh!.triVerts).length, `  (raffinamento ${refineMs.toFixed(0)} ms, ${status}, ${flipped} rovesciati)`);
+    base.delete();
+  });
+
+  // SVG: strada vettoriale (celle estruse) contro rasterizzazione a 256 e 512 pixel come immagine; stemma 16 x 16 mm, passo 20 mm, rilievo 0,6 mm
+  it('SVG vettoriale e raster', async () => {
+    (globalThis as unknown as { DOMParser: unknown }).DOMParser = new Window().DOMParser;
+    const { parseSvg } = await import('../import/svg');
+    const contours = svgContours({ contours: parseSvg(SAMPLE_SVG, 'stemma').contours, width: 16, depth: 16 });
+    const region = wasm.CrossSection.square([80, 60], true);
+    const panel = panelOf();
+    const opts = { contours, pitch: [20, 20] as [number, number], height: 0.6, repeat: true };
+    let triangles = 0;
+    const run = () => {
+      const tool = svgReliefSolid(wasm, region, opts, rect)!;
+      const result = panel.add(tool);
+      triangles = result.getMesh().triVerts.length / 3;
+      tool.delete();
+      result.delete();
+    };
+    out('SVG vettoriale (celle estruse)', median(run, 7, 2), triangles, svgReliefScad(rect, opts).length);
+    // Raster: sharp (librsvg) al posto del canvas del thread principale; il tempo di rasterizzazione e conversione a grigio si misura a parte
+    for (const px of [256, 512]) {
+      const t0 = performance.now();
+      // Lo stemma occupa l'80 % della piastrella (16 mm su 20), il resto è bianco: come il passo del caso vettoriale
+      const inner = 2 * Math.round(px * 0.4);
+      const margin = (px - inner) / 2;
+      const { data } = await sharp(Buffer.from(SAMPLE_SVG), { density: 300 }).resize(inner, inner).flatten({ background: '#ffffff' }).extend({ top: margin, bottom: margin, left: margin, right: margin, background: '#ffffff' }).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+      const gray = rgbaToGray(data, px, px);
+      const rasterMs = performance.now() - t0;
+      for (const step of steps) {
+        const rasterRun = () => {
+          const result = applyTextureFace(wasm, panel, region, gray, { ...tex, tile: 20, repeat: true, invert: true, midlevel: 0.5, mode: 'relief' }, { step });
+          triangles = result.getMesh().triVerts.length / 3;
+          result.delete();
+        };
+        out(`SVG raster ${px}px F relief ${step} mm`, median(rasterRun, 7, 2), triangles, textureFaceScad(rect, gray, { ...tex, tile: 20, invert: true, mode: 'relief' }, step).length, `  (rasterizzazione ${rasterMs.toFixed(0)} ms)`);
+      }
+    }
     panel.delete();
     region.delete();
   });
