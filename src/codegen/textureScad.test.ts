@@ -85,6 +85,17 @@ describe.skipIf(!process.env.TEXTURE_SCAD_DIR)('file per la verifica OpenSCAD', 
       await sharp(Buffer.from(s.png.data), { raw: { width: s.png.w, height: s.png.h, channels: 1 } }).png().toFile(`${dir}/F_surface_${mode}.png`);
     }
 
+    // Motore F su un cilindro (regione circolare, ritaglio con un cilindro): il kernel usa la sezione appena sotto la faccia
+    {
+      const cylinder = wasm.Manifold.cylinder(20, 15, 15, 96, false).translate([0, 0, -20]);
+      const circle = cylinder.slice(-0.01);
+      const params = { ...tex, mode: 'both' as const };
+      const bounds = circle.bounds();
+      const rect = { minX: bounds.min[0], minY: bounds.min[1], maxX: bounds.max[0], maxY: bounds.max[1] };
+      expected.F_cilindro_both = applyTextureFace(wasm, cylinder, circle, img, params, { step: 0.5 }).volume();
+      writeFileSync(`${dir}/F_cilindro_both.scad`, textureFaceScad(rect, img, params, 0.5, 'translate([0, 0, -20]) cylinder(h = 20, r = 15, $fn = 96);', 'translate([0, 0, -10]) cylinder(h = 20, r = 15, $fn = 96);') + '\n');
+    }
+
     // Motore M: cubo, pannello e cilindro, normali medie con spigoli fermi, ampiezza 0,6 mm, lato 0,8 mm
     const solids: Record<string, () => ReturnType<typeof panel>> = {
       cubo: () => wasm.Manifold.cube([30, 30, 30], true),

@@ -21,13 +21,15 @@ const n4 = (v: number) => String(Math.round(v * 10000) / 10000);
 
 /**
  * Motore F con `zmap`. Restituisce il modulo `relief()` (e `texture_column()` per il modo "entrambi") e, se `piece` è il
- * codice OpenSCAD del pezzo (una espressione 3D), anche l'operazione che lo combina.
+ * codice OpenSCAD del pezzo (una espressione 3D), anche l'operazione che lo combina; `clip` ritaglia il rilievo sulla regione.
  */
-export function textureFaceScad(rect: Rect, img: GrayImage, params: Partial<TextureParams>, step = 0.5, piece?: string): string {
+export function textureFaceScad(rect: Rect, img: GrayImage, params: Partial<TextureParams>, step = 0.5, piece?: string, clip?: string): string {
   const surface = faceSurface(img, params, rect, step);
   const out = [`// Texture da immagine, motore F, modo ${normalizeTexture(params).mode}, passo ${step} mm`];
   if (!surface) return [...out, 'module relief() {}'].join('\n');
-  out.push('module relief() {', ...polyhedronLines(surface.grid, surface.planeZ, surface.side).map((l) => `  ${l}`), '}');
+  // `clip` (facoltativo): solido 3D che copre la regione quando non è il rettangolo (per esempio un cilindro): come nel kernel, il rilievo si ritaglia
+  out.push(clip ? 'module relief_raw() {' : 'module relief() {', ...polyhedronLines(surface.grid, surface.planeZ, surface.side).map((l) => `  ${l}`), '}');
+  if (clip) out.push(`module relief() intersection() { relief_raw(); ${clip} }`);
   if (piece) out.push(...combine(surface.op, surface.column, rect, piece));
   return out.join('\n');
 }
