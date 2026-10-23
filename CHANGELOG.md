@@ -18,6 +18,13 @@ I messaggi di commit seguono i [Conventional Commits](https://www.conventionalco
 
 ## [Non rilasciato]
 
+## [0.72.0] - 2026-10-23
+
+### Aggiunto
+- **Studio delle quote e dei vincoli del Profilo (in stile Fusion 360)**, solo documentazione e prototipo, nessuna modifica all'app: `docs/studio-quote-profilo.md` confronta il modello di Fusion con quello di Construct (cubiche, nessun arco), decide la strada per gli archi (raccordo per nodo subito, cerchio parametrico poi), descrive il modello dati con id stabili dei nodi e le ripercussioni su `sanitizePaths`, `roundPaths`, `encodePathMeta` (da `v:1` a `v:2`), bozza e codice OpenSCAD, e propone l'integrazione a tappe con stime. Contiene le misure del risolutore, le undici decisioni aperte e le segnalazioni su codice e documenti esistenti.
+- **Nucleo del risolutore di vincoli 2D** (`src/ui/ProfileEditor/constraints.ts`, con 30 test): Levenberg-Marquardt a norma minima con Jacobiano analitico per distanza e angolo, diagnosi dei gradi di libertà, dei vincoli ridondanti, in conflitto e «non risolti», trascinamento a due tentativi (`dragSketch`). Non è collegato all'app. Il criterio dei 16 ms a 50 entità è soddisfatto sui casi misurati; a 100 segmenti non lineari non lo è.
+- **Prototipo `docs/prototipi/profilo-quote.html`**, copia estesa di quello dei profili di Bézier (che resta intatto): strumento Quota, vincoli, gradi di libertà residui con colori di stato, quote di riferimento, Penna con lunghezza e angolo digitati, parametri locali ed esempi (piastra con fori, staffa a L, esagono). Script di misura e di prova in Chrome in `scripts/constraints-*.mjs` e `scripts/quote-prototype-check.mjs`.
+
 ## [0.71.0] - 2026-10-17
 
 ### Modificato

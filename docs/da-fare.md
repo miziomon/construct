@@ -185,6 +185,20 @@ Studio e prototipo: `docs/prototipi/profilo-sagoma.html` (geometria) e la modale
 - **Angolo continuo**: è una cubica con tangenti lunghe 1,5 volte, non l'algoritmo esatto di Figma.
 - **Icona di Specchia** nella barra della scena: usa ancora `FlipHorizontal2`, che in lucide 1.52 ha l'asse orizzontale.
 
+## Quote e vincoli del Profilo: studio (0.72.0)
+
+Studio, nucleo di prova e prototipo: `docs/studio-quote-profilo.md`, `src/ui/ProfileEditor/constraints.ts` (non collegato all'app) e `docs/prototipi/profilo-quote.html`. Niente di tutto questo è ancora nella modale. Da decidere o da fare (elenco completo, con una risposta provvisoria, nella sezione 7 dello studio):
+
+- **Archi**: raccordo per nodo subito, cerchio parametrico (centro più punto sul bordo) alla tappa 5, arco vero solo a richiesta?
+- **Tangente**: resta un'impostazione del nodo (tipo Liscio) o diventa un vincolo salvato?
+- **Id dei nodi**: contatore per profilo o `newId()`; serve prima di qualunque vincolo, perché `sanitizePaths` e `roundPaths` oggi cancellerebbero ogni campo nuovo del nodo.
+- **Sovravincolo**: rifiutare il vincolo come in Fusion, con proposta di quota di riferimento?
+- **Parametri**: locali al profilo (come nel prototipo) o globali dell'app? Nella modale `NumberField` non accetta parametri (manca `FormulaContext`).
+- **Ridimensionamento**: una quota «60» digitata nella modale non resta 60 mm dopo una Scala o dopo il gizmo, perché il nodo `path` scala il disegno a `width` e `depth`: avvisare, bloccare o scalare anche le quote.
+- **Tempi**: a 100 segmenti non lineari il trascinamento non sta sotto 16 ms; servono le componenti connesse o una fattorizzazione sparsa.
+- **Deriva**: in un disegno tutto quotato e ancorato, il trascinamento continuo può spingere il disegno su un'altra soluzione dei vincoli; da risolvere prima di portare il trascinamento nell'app.
+- **Snap con zoom lontano**: `gridStep` allarga il passo di 5 volte e lo snap non rispetta più i 0,1 mm, mentre le frecce usano il passo base.
+
 ## Font non presenti su Google Fonts
 
 Dalla cartella `C:\Users\maurizio.MAVIDA\Dropbox\openscad\fonts` (0.30.0) sono entrati nel catalogo i font che si trovano su Google Fonts (Bilbo Swash Caps, Boogaloo, Calistoga, Dancing Script Regular, Marck Script, Meow Script, Modak, Niconne, Playfair Display Regular, Roboto Black, Sriracha; Pacifico c'era già). Questi no, perché non risultano su Google Fonts:

@@ -1,0 +1,2693 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Profilo con quote e vincoli</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+</head>
+<body>
+<style>
+/* Layout: una cornice che imita la modale di Construct (titolo, strumenti, disegno, anteprima, opzioni, piede).
+   Tre disposizioni (A, B, C) si scelgono con data-layout sulla cornice. Token ripresi da src/styles/abstracts/_tokens.scss. */
+:root {
+  --bg: #e9eff6; --panel: #f8f9fc; --raised: #ffffff; --border: #cdd5e3;
+  --text: #1e2433; --muted: #4f5b73;
+  --accent: #2f5fc7; --accent-strong: #3563d1; --accent-soft: rgba(79, 124, 230, 0.16);
+  --danger: #c23b3b; --hole: #d64545; --ok: #23794a; --warn: #9a5b00;
+  --grid: #dfe6f0; --grid-major: #c3cddd; --mesh: #9db8ea; --mesh-edge: #24376a;
+  --code-bg: #f1f4fa;
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14171c; --panel: #1b2027; --raised: #232a33; --border: #2d3540;
+    --text: #e6e9ee; --muted: #8b95a3;
+    --accent: #4da3ff; --accent-strong: #2a73d0; --accent-soft: rgba(77, 163, 255, 0.16);
+    --danger: #ff5d5d; --hole: #ff4d4d; --ok: #46c47a; --warn: #f0b429;
+    --grid: #232a33; --grid-major: #333c48; --mesh: #6c9ee0; --mesh-edge: #cfe0ff;
+    --code-bg: #10141a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14171c; --panel: #1b2027; --raised: #232a33; --border: #2d3540;
+  --text: #e6e9ee; --muted: #8b95a3;
+  --accent: #4da3ff; --accent-strong: #2a73d0; --accent-soft: rgba(77, 163, 255, 0.16);
+  --danger: #ff5d5d; --hole: #ff4d4d; --ok: #46c47a; --warn: #f0b429;
+  --grid: #232a33; --grid-major: #333c48; --mesh: #6c9ee0; --mesh-edge: #cfe0ff;
+  --code-bg: #10141a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; } /* gli elementi con display grid o flex devono comunque sparire con hidden */
+body {
+  background: var(--bg); color: var(--text); font-family: var(--font-sans); font-size: 13px; line-height: 1.45;
+  padding-block: 16px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.page { max-width: 1320px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+.top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; }
+.top__titles { min-width: 0; flex: 1 1 360px; }
+.top h1 { margin: 0 0 2px; font-size: 20px; font-weight: 650; letter-spacing: -0.01em; text-wrap: balance; }
+.top p { margin: 0; color: var(--muted); max-width: 70ch; }
+.top__ctrl { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+.lbl { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); }
+.lbl--sm { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
+
+/* Controlli base */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 28px; padding: 0 10px;
+  background: var(--raised); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; white-space: nowrap;
+}
+.btn:hover:not(:disabled) { border-color: var(--accent); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn--primary { background: var(--accent-strong); border-color: var(--accent-strong); color: #fff; font-weight: 600; }
+.btn--primary:hover:not(:disabled) { filter: brightness(1.1); border-color: var(--accent-strong); }
+.btn--icon { padding: 0; width: 28px; }
+.btn[aria-pressed="true"], .btn.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+select, input[type="number"], input[type="text"], textarea {
+  background: var(--raised); border: 1px solid var(--border); border-radius: 4px; min-height: 28px; padding: 0 8px;
+}
+select { padding-right: 4px; }
+input[type="number"] { width: 100%; font-variant-numeric: tabular-nums; }
+input[type="range"] { width: 100%; accent-color: var(--accent); min-width: 0; }
+textarea { width: 100%; padding: 8px; min-height: 120px; font-family: var(--font-mono); font-size: 12px; resize: vertical; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: var(--raised); }
+.seg button { background: transparent; border: 0; border-right: 1px solid var(--border); padding: 0 10px; min-height: 26px; cursor: pointer; }
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.seg--full { display: flex; width: 100%; }
+.seg--full button { flex: 1; }
+kbd { font-family: var(--font-mono); font-size: 10px; padding: 0 4px; border: 1px solid var(--border); border-radius: 3px; background: var(--code-bg); color: var(--muted); }
+
+/* Cornice della modale */
+.frame {
+  display: grid; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+  height: clamp(620px, calc(100dvh - 190px), 840px); position: relative;
+  --pv-h: 170px; --pvb-w: 340px; --pvb-h: 230px;
+}
+.frame:has(.prev[data-pv="big"]) { --pv-h: 340px; --pvb-w: 460px; --pvb-h: 340px; }
+.frame:has(.prev[data-pv="min"]) { --pv-h: 0px; --pvb-w: 340px; --pvb-h: 34px; }
+.head { grid-area: head; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+.head h2 { margin: 0; font-size: 14px; font-weight: 650; }
+.tools { grid-area: tools; display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--border); overflow-x: auto; min-width: 0; }
+.tools .sep { width: 1px; align-self: stretch; background: var(--border); margin: 2px 4px; flex: none; }
+.tools .btn { flex: none; }
+.tools .btn svg { width: 16px; height: 16px; }
+.tools .poly { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); flex: none; }
+.tools .poly input { width: 54px; }
+.draw { grid-area: draw; position: relative; min-width: 0; min-height: 0; background: var(--bg); overflow: hidden; }
+#svg { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; user-select: none; -webkit-user-select: none; }
+#svg[data-tool="pen"], #svg[data-tool="rect"], #svg[data-tool="circle"], #svg[data-tool="poly"] { cursor: crosshair; }
+#svg[data-tool="hand"] { cursor: grab; }
+.opts { grid-area: opts; overflow-y: auto; min-width: 0; min-height: 0; border-left: 1px solid var(--border); background: var(--panel); }
+.foot { grid-area: foot; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 8px 12px; border-top: 1px solid var(--border); }
+.foot__st { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; min-width: 0; flex: 1 1 280px; color: var(--muted); }
+.foot__btns { display: flex; gap: 8px; }
+
+/* Overlay del disegno */
+.ov { position: absolute; pointer-events: none; }
+.ov--hint { left: 10px; bottom: 10px; right: 120px; color: var(--muted); font-size: 12px; background: color-mix(in srgb, var(--panel) 88%, transparent); border: 1px solid var(--border); border-radius: 6px; padding: 5px 9px; width: fit-content; max-width: calc(100% - 140px); }
+.ov--empty { inset: 0; display: grid; place-items: center; text-align: center; color: var(--muted); padding: 24px; }
+.ov--empty div { max-width: 40ch; }
+.ov--empty strong { display: block; color: var(--text); font-size: 15px; margin-bottom: 4px; }
+.zoom { position: absolute; right: 10px; bottom: 10px; display: flex; gap: 4px; }
+.coords { position: absolute; right: 10px; top: 10px; font-family: var(--font-mono); font-size: 11px; color: var(--muted); background: color-mix(in srgb, var(--panel) 88%, transparent); border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; pointer-events: none; font-variant-numeric: tabular-nums; }
+
+/* Elementi SVG del disegno */
+.g-minor { stroke: var(--grid); stroke-width: 1; }
+.g-major { stroke: var(--grid-major); stroke-width: 1; }
+.tk { fill: var(--muted); font-size: 10px; font-family: var(--font-mono); }
+.axis-h { stroke: var(--muted); stroke-width: 1; opacity: 0.55; }
+.axis-v { stroke: var(--muted); stroke-width: 1; opacity: 0.55; }
+.axis-rot { stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 8 5; }
+.axis-lbl { fill: var(--accent); font-size: 11px; }
+.neg { fill: var(--danger); opacity: 0.08; }
+.fill { fill: var(--accent); fill-opacity: 0.14; fill-rule: evenodd; stroke: none; }
+.pth { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.pth.hole { stroke: var(--hole); }
+.pth.sel { stroke-width: 3; }
+.rubber { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 5 4; opacity: 0.8; }
+.draft { fill: var(--accent); fill-opacity: 0.08; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 5 4; }
+.hl { stroke: var(--muted); stroke-width: 1; }
+.hd { fill: var(--raised); stroke: var(--muted); stroke-width: 1.5; }
+.nd { fill: var(--raised); stroke: var(--accent); stroke-width: 1.8; }
+.nd.hole { stroke: var(--hole); }
+.nd.sel { fill: var(--accent); }
+.nd.first { stroke-width: 3; }
+.xmark { fill: none; stroke: var(--danger); stroke-width: 2; }
+.xdot { fill: var(--danger); fill-opacity: 0.25; stroke: var(--danger); stroke-width: 1.5; }
+
+/* Anteprima 3D */
+.prev { grid-area: prev; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--panel); border-left: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.prev__bar { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 4px 8px 4px 12px; min-height: 34px; }
+.prev__bar span { white-space: nowrap; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.prev__bar div { display: flex; gap: 4px; }
+.prev__bar .btn { min-height: 24px; padding: 0 8px; font-size: 12px; }
+.prev__cv { position: relative; flex: 1; min-height: 0; background: var(--bg); border-top: 1px solid var(--border); cursor: grab; }
+.prev__cv canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+.prev__msg { position: absolute; inset: 0; display: grid; place-items: center; padding: 16px; text-align: center; color: var(--muted); pointer-events: none; }
+.prev[data-pv="min"] .prev__cv { display: none; }
+
+/* Disposizione A: anteprima in alto nella sidebar, opzioni sotto */
+.frame[data-layout="a"] { grid-template-columns: minmax(0, 1fr) 330px; grid-template-rows: auto auto var(--pv-h) minmax(0, 1fr) auto;
+  grid-template-areas: "head head" "tools prev" "draw prev" "draw opts" "foot foot"; }
+/* Disposizione B: anteprima flottante nell'angolo del disegno, sidebar solo con le opzioni */
+.frame[data-layout="b"] { grid-template-columns: minmax(0, 1fr) 310px; grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-areas: "head head" "tools opts" "draw opts" "foot foot"; }
+.frame[data-layout="b"] .prev { grid-area: draw; align-self: start; justify-self: end; width: var(--pvb-w); height: var(--pvb-h); margin: 10px 10px 0 0;
+  border: 1px solid var(--border); border-radius: 8px; overflow: hidden; z-index: 3; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18); }
+.frame[data-layout="b"] .coords { right: auto; left: 10px; }
+/* Disposizione C: disegno e 3D affiancati a metà, opzioni in una fascia sotto */
+.frame[data-layout="c"] { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  grid-template-areas: "head head" "tools tools" "draw prev" "opts opts" "foot foot"; }
+.frame[data-layout="c"] .opts { border-left: 0; border-top: 1px solid var(--border); max-height: 210px; display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); align-items: start; }
+.frame[data-layout="c"] .prev { border-bottom: 0; }
+.frame[data-layout="c"] .prev__bar .only-ab { display: none; }
+.frame[data-layout="c"] .opts .sec { border-bottom: 0; border-right: 1px solid var(--border); }
+
+/* Sezioni della sidebar */
+.sec { padding: 10px 12px 12px; border-bottom: 1px solid var(--border); }
+.sec h3 { margin: 0 0 8px; font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); }
+.row { display: grid; grid-template-columns: 92px minmax(0, 1fr) 64px; align-items: center; gap: 8px; margin-top: 6px; }
+.row--2 { grid-template-columns: 92px minmax(0, 1fr); }
+.row label { color: var(--text); }
+.pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 6px; }
+.pair label { display: flex; flex-direction: column; gap: 2px; color: var(--muted); font-size: 11px; }
+.chk { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.chk input { accent-color: var(--accent); }
+.note { color: var(--muted); font-size: 12px; margin: 6px 0 0; }
+.sec[data-off="1"] .pair, .sec[data-off="1"] .seg { opacity: 0.45; pointer-events: none; }
+.plist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.plist li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; align-items: center; gap: 6px; padding: 3px 4px 3px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--raised); cursor: pointer; }
+.plist li.on { border-color: var(--accent); background: var(--accent-soft); }
+.plist .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.badge { font-size: 11px; padding: 0 6px; border-radius: 10px; border: 1px solid var(--border); color: var(--muted); }
+.badge--hole { color: var(--hole); border-color: var(--hole); }
+.plist .btn { min-height: 22px; padding: 0 6px; font-size: 12px; }
+details.sec > summary { cursor: pointer; font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); }
+details.sec[open] > summary { margin-bottom: 8px; }
+
+/* Piede: stato e avvisi */
+.chip { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--border); background: var(--raised); color: var(--text); }
+.chip--warn { border-color: var(--warn); color: var(--warn); }
+.chip--err { border-color: var(--danger); color: var(--danger); }
+.chip--ok { border-color: var(--ok); color: var(--ok); }
+.chip--def { border-color: var(--text); color: var(--text); }
+
+/* Importa SVG */
+.imp { position: absolute; inset: 0; z-index: 10; display: grid; place-items: center; background: rgba(10, 14, 20, 0.55); padding: 16px; }
+.imp__box { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; width: min(560px, 100%); display: flex; flex-direction: column; gap: 10px; max-height: 100%; overflow: auto; }
+.imp__box h3 { margin: 0; font-size: 14px; }
+.imp__btns { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.imp__err { color: var(--danger); min-height: 1.4em; margin: 0; }
+
+.toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 8px 14px; border-radius: 8px; z-index: 50; max-width: min(520px, 92vw); text-align: center; }
+
+.help { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; }
+.help summary { cursor: pointer; font-weight: 600; }
+.help table { border-collapse: collapse; margin-top: 8px; width: 100%; }
+.help th, .help td { text-align: left; padding: 4px 10px 4px 0; vertical-align: top; border-bottom: 1px solid var(--border); }
+.help th { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
+.tw { overflow-x: auto; }
+
+/* Schermi stretti: una colonna, la pagina scorre */
+@media (max-width: 900px) {
+  .frame[data-layout] { height: auto; grid-template-columns: minmax(0, 1fr); grid-template-rows: none;
+    grid-template-areas: "head" "tools" "draw" "prev" "opts" "foot"; }
+  .frame[data-layout] .draw { height: 58vh; min-height: 340px; }
+  .frame[data-layout] .prev { grid-area: prev; align-self: stretch; justify-self: stretch; width: auto; height: 260px; margin: 0; border: 0; border-top: 1px solid var(--border); border-radius: 0; box-shadow: none; }
+  .frame[data-layout] .prev[data-pv="min"] { height: 36px; }
+  .frame[data-layout] .opts { border-left: 0; border-top: 1px solid var(--border); max-height: none; display: block; }
+  .frame[data-layout] .opts .sec { border-right: 0; border-bottom: 1px solid var(--border); }
+  .ov--hint { right: 10px; max-width: calc(100% - 20px); bottom: 48px; }
+  .frame[data-layout="b"] .coords { left: auto; right: 10px; }
+  .only-ab { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+
+/* ---- Quote e vincoli (aggiunte rispetto a profilo-bezier.html) ---- */
+#svg[data-tool="dim"], #svg[data-tool="cons"] { cursor: crosshair; }
+.tools .seg button { min-height: 28px; font-size: 12px; }
+.tools .qmode { flex: none; }
+/* Stato dei vincoli: sottovincolato (blu, il colore normale), completamente vincolato (colore del testo: nero nel tema chiaro, come Fusion; il verde lì è la geometria fissa), sovravincolato (rosso) */
+.pth.st-def { stroke: var(--text); }
+.pth.st-err { stroke: var(--danger); }
+.pth.hole.cn { stroke-dasharray: 7 4; }
+.nd.st-def { stroke: var(--text); }
+.nd.st-err { stroke: var(--danger); }
+.nd.st-def.sel, .nd.st-err.sel { fill: var(--accent); }
+.cen { fill: var(--raised); stroke: var(--accent); stroke-width: 1.6; }
+.cen.st-def { stroke: var(--text); }
+.cen.st-err { stroke: var(--danger); }
+.org { fill: var(--raised); stroke: var(--muted); stroke-width: 1.5; }
+.org.pick { stroke: var(--accent); stroke-width: 3; }
+.ring { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-dasharray: 3 3; }
+.hlseg { stroke: var(--accent); stroke-width: 5; opacity: 0.35; stroke-linecap: round; fill: none; }
+/* Linee di quota: sottili, grigie; la quota selezionata è blu, in errore rossa, di riferimento tratteggiata */
+.dl { stroke: var(--muted); stroke-width: 1; fill: none; }
+.dim.ref .dl { stroke-dasharray: 3 3; }
+.dim.sel .dl { stroke: var(--accent); }
+.dim.err .dl { stroke: var(--danger); }
+.dim.draft .dl { stroke: var(--accent); stroke-dasharray: 5 3; }
+.ql rect, .gl circle { fill: var(--raised); stroke: var(--muted); stroke-width: 1; }
+.ql text, .gl text { fill: var(--text); font-size: 11px; font-family: var(--font-mono); pointer-events: none; font-variant-numeric: tabular-nums; }
+.ql, .gl { cursor: pointer; }
+.ql:hover rect, .gl:hover circle { stroke: var(--accent); }
+.ql.ref text { fill: var(--muted); }
+.ql.sel rect, .gl.sel circle { stroke: var(--accent); stroke-width: 2; }
+.ql.err rect, .gl.err circle { stroke: var(--danger); stroke-width: 2; }
+.ql.err text, .gl.err text { fill: var(--danger); }
+.ql.draft rect { stroke: var(--accent); stroke-dasharray: 3 2; }
+.qedit { position: absolute; z-index: 6; width: 86px; min-height: 26px; border: 2px solid var(--accent); border-radius: 13px; text-align: center; font-family: var(--font-mono); font-size: 12px; }
+.qbar { position: absolute; z-index: 7; left: 50%; top: 10px; transform: translateX(-50%); display: flex; flex-wrap: wrap; align-items: center; gap: 8px; max-width: calc(100% - 24px); padding: 6px 10px; background: var(--panel); border: 1px solid var(--danger); border-radius: 8px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18); }
+.qbar span { color: var(--danger); }
+.penin { position: absolute; z-index: 6; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 6px 8px; background: var(--panel); border: 1px solid var(--accent); border-radius: 8px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18); width: 224px; }
+.penin label { display: inline-flex; align-items: center; gap: 4px; }
+.penin input { width: 64px; min-height: 26px; text-align: right; }
+.penin small { flex-basis: 100%; color: var(--muted); font-size: 11px; }
+.cgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-top: 6px; }
+.cgrid .btn { min-height: 26px; padding: 0 6px; font-size: 12px; justify-content: flex-start; }
+.cgrid .btn b { display: inline-block; min-width: 14px; text-align: center; font-family: var(--font-mono); color: var(--accent); }
+.clist { margin-top: 8px; }
+.clist li { grid-template-columns: minmax(0, 1fr) 70px auto auto; }
+.clist li input { width: 100%; min-height: 24px; padding: 0 4px; text-align: right; }
+.clist li.bad { border-color: var(--danger); }
+.clist .badge--ref { color: var(--muted); }
+.chip--blue { border-color: var(--accent); color: var(--accent); }
+.dofline { margin: 6px 0 0; }
+</style>
+
+<div class="page">
+  <header class="top">
+    <div class="top__titles">
+      <h1>Profilo con quote e vincoli</h1>
+      <p>Prototipo dello studio sulle quote: la modale del Profilo con un risolutore di vincoli proprio (Levenberg-Marquardt, il blocco CORE del codice). Premi <kbd>D</kbd> per quotare lunghezze, angoli e raggi (clic su due nodi o su un segmento, poi digita il valore), <kbd>K</kbd> per applicare i vincoli, trascina un nodo e la forma resta nelle quote. Nella Penna digita la lunghezza e l'angolo e premi Tab e Invio.</p>
+    </div>
+    <div class="top__ctrl">
+      <label class="lbl lbl--sm" for="ex">Esempio
+        <select id="ex">
+          <option value="piastra">Piastra con fori quotati</option>
+          <option value="staffa">Staffa a L con raccordi</option>
+          <option value="esagono">Esagono regolare (uguali e angoli)</option>
+          <option value="pomello">Pomello (profilo aperto, rotazione)</option>
+          <option value="cuore">Cuore (da SVG)</option>
+          <option value="vuoto">Disegno vuoto</option>
+        </select>
+      </label>
+      <div class="lbl lbl--sm">Disposizione
+        <div class="seg" id="layoutSeg" role="group" aria-label="Disposizione della modale">
+          <button type="button" data-l="a" aria-pressed="true" title="Anteprima in cima alla sidebar">A</button>
+          <button type="button" data-l="b" aria-pressed="false" title="Anteprima flottante nell'angolo">B</button>
+          <button type="button" data-l="c" aria-pressed="false" title="Disegno e 3D affiancati">C</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="frame" id="frame" data-layout="a">
+    <div class="head">
+      <h2>Profilo</h2>
+      <button type="button" class="btn" id="btnImport">Importa SVG</button>
+    </div>
+
+    <div class="tools" id="tools" role="toolbar" aria-label="Strumenti di disegno">
+      <button type="button" class="btn btn--icon" data-tool="select" aria-pressed="true" title="Seleziona (V)" aria-label="Seleziona">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M5 3l14 7-6 2-2 6z"/></svg></button>
+      <button type="button" class="btn btn--icon" data-tool="pen" aria-pressed="false" title="Penna (P)" aria-label="Penna">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M12 19l7-7 3 3-7 7zM18 13l-1.5-7.5L2 2l3.5 14.5L13 18zM2 2l7.6 7.6"/><circle cx="11" cy="11" r="2"/></svg></button>
+      <span class="sep"></span>
+      <button type="button" class="btn btn--icon" data-tool="rect" aria-pressed="false" title="Rettangolo dal centro (R)" aria-label="Rettangolo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="6" width="16" height="12" rx="1"/></svg></button>
+      <button type="button" class="btn btn--icon" data-tool="circle" aria-pressed="false" title="Cerchio dal centro (C)" aria-label="Cerchio">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/></svg></button>
+      <button type="button" class="btn btn--icon" data-tool="poly" aria-pressed="false" title="Poligono regolare dal centro (G)" aria-label="Poligono">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3l8 6-3 10H7L4 9z"/></svg></button>
+      <label class="poly" for="polySides">Lati <input type="number" id="polySides" min="3" max="24" step="1" value="6"></label>
+      <span class="sep"></span>
+      <button type="button" class="btn btn--icon" data-tool="cons" aria-pressed="false" title="Vincoli (K): scegli nodi e segmenti, poi applica un vincolo" aria-label="Vincoli">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="1.5"/><path d="M8 11V8a4 4 0 018 0v3"/></svg></button>
+      <button type="button" class="btn btn--icon" data-tool="dim" aria-pressed="false" title="Quota (D): lunghezza, angolo, raggio" aria-label="Quota">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v10M21 7v10M3 12h18M7 9l-4 3 4 3M17 9l4 3-4 3"/></svg></button>
+      <div class="seg qmode" id="qModeSeg" role="group" aria-label="Tipo di quota" hidden>
+        <button type="button" data-q="len" aria-pressed="true" title="Distanza tra due nodi o lunghezza di un segmento">Lunghezza</button>
+        <button type="button" data-q="h" aria-pressed="false" title="Distanza orizzontale">Orizz.</button>
+        <button type="button" data-q="v" aria-pressed="false" title="Distanza verticale">Vert.</button>
+        <button type="button" data-q="ang" aria-pressed="false" title="Angolo tra due segmenti (un segmento e Invio: rispetto all'asse X)">Angolo</button>
+        <button type="button" data-q="rad" aria-pressed="false" title="Raggio di un cerchio o raccordo di uno spigolo">Raggio</button>
+        <button type="button" data-q="dia" aria-pressed="false" title="Diametro di un cerchio">Diametro</button>
+      </div>
+      <span class="sep"></span>
+      <button type="button" class="btn btn--icon" data-tool="hand" aria-pressed="false" title="Mano: panoramica (Spazio)" aria-label="Mano">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V5a1.5 1.5 0 013 0v6m0-2V4a1.5 1.5 0 013 0v7m0-5a1.5 1.5 0 013 0v8a7 7 0 01-7 7h-1a6 6 0 01-5-3l-2-4a1.5 1.5 0 012.5-1.6L8 14"/></svg></button>
+      <span class="sep"></span>
+      <button type="button" class="btn" id="btnUndo" title="Annulla (Ctrl+Z)">Annulla</button>
+      <button type="button" class="btn" id="btnRedo" title="Ripeti (Ctrl+Maiusc+Z)">Ripeti</button>
+    </div>
+
+    <div class="draw" id="draw">
+      <svg id="svg" data-tool="select" role="img" aria-label="Area di disegno del profilo"></svg>
+      <div class="ov ov--empty" id="empty"><div><strong>Il disegno è vuoto</strong>Scegli la Penna e fai clic per iniziare, parti da una forma base oppure importa un SVG.</div></div>
+      <div class="ov ov--hint" id="hint"></div>
+      <input type="text" class="qedit" id="qEdit" inputmode="decimal" aria-label="Valore della quota" hidden>
+      <div class="qbar" id="qbar" role="alert" hidden><span id="qbarMsg"></span>
+        <button type="button" class="btn" id="qbarRef">Aggiungi come quota di riferimento</button>
+        <button type="button" class="btn" id="qbarNo">Annulla</button></div>
+      <div class="penin" id="penIn" hidden>
+        <label for="penL">Lunghezza <input type="text" id="penL" inputmode="decimal" aria-label="Lunghezza in mm"> mm</label>
+        <label for="penA">Angolo <input type="text" id="penA" inputmode="decimal" aria-label="Angolo in gradi"> °</label>
+        <small>Tab cambia campo, Invio conferma il punto, Esc chiude. I campi vuoti seguono il mouse.</small>
+      </div>
+      <div class="coords" id="coords">x 0,00  y 0,00 mm</div>
+      <div class="zoom">
+        <button type="button" class="btn btn--icon" id="zOut" aria-label="Riduci" title="Riduci">−</button>
+        <button type="button" class="btn btn--icon" id="zIn" aria-label="Ingrandisci" title="Ingrandisci">+</button>
+        <button type="button" class="btn" id="zFit" title="Adatta il disegno alla vista">Adatta</button>
+      </div>
+    </div>
+
+    <div class="prev" id="prev" data-pv="normal">
+      <div class="prev__bar">
+        <span>Anteprima 3D</span>
+        <div>
+          <button type="button" class="btn" id="pvFit" title="Inquadra il solido">Adatta</button>
+          <button type="button" class="btn only-ab" id="pvBig" title="Ingrandisci l'anteprima">Ingrandisci</button>
+          <button type="button" class="btn only-ab" id="pvMin" title="Comprimi o riapri l'anteprima">Comprimi</button>
+        </div>
+      </div>
+      <div class="prev__cv" id="pvCv"><div class="prev__msg" id="pvMsg">Caricamento dell'anteprima…</div></div>
+    </div>
+
+    <aside class="opts" id="opts" aria-label="Opzioni">
+      <section class="sec" id="secExtr">
+        <h3>Estrusione</h3>
+        <div class="seg seg--full" id="extrSeg" role="group" aria-label="Tipo di estrusione">
+          <button type="button" data-e="linear" aria-pressed="true">Lineare</button>
+          <button type="button" data-e="rotate" aria-pressed="false">Rotazionale</button>
+        </div>
+        <div id="extrLin">
+          <div class="row"><label for="rHeight">Altezza</label><input type="range" id="rHeight" min="1" max="100" step="1"><input type="number" id="nHeight" min="0.1" step="0.5"></div>
+          <div class="row"><label for="rTwist">Torsione °</label><input type="range" id="rTwist" min="-360" max="360" step="5"><input type="number" id="nTwist" step="5"></div>
+          <div class="row"><label for="rScale">Scala in cima</label><input type="range" id="rScale" min="0" max="2" step="0.05"><input type="number" id="nScale" min="0" step="0.05"></div>
+        </div>
+        <div id="extrRot" hidden>
+          <div class="row"><label for="rAngle">Angolo °</label><input type="range" id="rAngle" min="1" max="360" step="1"><input type="number" id="nAngle" min="1" max="360" step="1"></div>
+          <div class="row"><label for="rSegs">Segmenti</label><input type="range" id="rSegs" min="3" max="128" step="1"><input type="number" id="nSegs" min="3" max="128" step="1"></div>
+          <label class="chk" for="cAxis"><input type="checkbox" id="cAxis" checked> Chiudi i profili aperti sull'asse</label>
+          <p class="note">L'asse di rotazione è la linea tratteggiata a x = 0. Ciò che sta a sinistra (zona rossa) non viene ruotato.</p>
+        </div>
+      </section>
+
+      <section class="sec" id="secPt" data-off="1">
+        <h3>Punto selezionato</h3>
+        <div class="seg seg--full" id="kindSeg" role="group" aria-label="Tipo di nodo">
+          <button type="button" data-k="corner" aria-pressed="false">Spigolo</button>
+          <button type="button" data-k="smooth" aria-pressed="false">Liscio</button>
+          <button type="button" data-k="symmetric" aria-pressed="false">Simmetrico</button>
+        </div>
+        <div class="pair">
+          <label for="ptX">X (mm)<input type="number" id="ptX" step="0.5"></label>
+          <label for="ptY">Y (mm)<input type="number" id="ptY" step="0.5"></label>
+          <label for="ptOL">Maniglia uscente (mm)<input type="number" id="ptOL" step="0.5" min="0"></label>
+          <label for="ptOA">Angolo uscente (°)<input type="number" id="ptOA" step="5"></label>
+          <label for="ptIL">Maniglia entrante (mm)<input type="number" id="ptIL" step="0.5" min="0"></label>
+          <label for="ptIA">Angolo entrante (°)<input type="number" id="ptIA" step="5"></label>
+          <label for="ptR">Raccordo R (mm)<input type="number" id="ptR" step="0.5" min="0"></label>
+        </div>
+        <p class="note" id="ptNote">Seleziona un nodo con lo strumento Seleziona. Doppio clic su un nodo per cambiarne il tipo.</p>
+      </section>
+
+      <section class="sec" id="secCons">
+        <h3>Quote e vincoli</h3>
+        <div class="cgrid" id="cbtns">
+          <button type="button" class="btn" data-c="horizontal" title="Un segmento, o due nodi, alla stessa altezza"><b>H</b> Orizzontale</button>
+          <button type="button" class="btn" data-c="vertical" title="Un segmento, o due nodi, sulla stessa verticale"><b>V</b> Verticale</button>
+          <button type="button" class="btn" data-c="fixed" title="Blocca i nodi scelti dove sono"><b>F</b> Fisso</button>
+          <button type="button" class="btn" data-c="coincident" title="Due nodi nello stesso punto"><b>●</b> Coincidente</button>
+          <button type="button" class="btn" data-c="parallel" title="Due segmenti"><b>∥</b> Parallelo</button>
+          <button type="button" class="btn" data-c="perpendicular" title="Due segmenti"><b>⊥</b> Perpendicolare</button>
+          <button type="button" class="btn" data-c="equal" title="Due segmenti con la stessa lunghezza"><b>=</b> Uguale</button>
+          <button type="button" class="btn" data-c="midpoint" title="Un nodo e un segmento: il nodo al centro del segmento"><b>M</b> Punto medio</button>
+          <button type="button" class="btn" data-c="symmetric" title="Due nodi e un segmento (l'asse)"><b>S</b> Simmetrico</button>
+          <button type="button" class="btn" data-c="collinear" title="Due segmenti sulla stessa retta"><b>≡</b> Collineare</button>
+          <button type="button" class="btn" data-c="tangent" title="Nodi scelti: tipo Liscio, maniglie allineate"><b>T</b> Tangente (liscio)</button>
+        </div>
+        <p class="note" id="cNote">Con lo strumento Vincoli (K) fai clic su nodi e segmenti per sceglierli (di nuovo clic: li toglie).</p>
+        <ul class="plist clist" id="clist"></ul>
+        <label class="chk" for="cInfer"><input type="checkbox" id="cInfer" checked> Deduci orizzontale, verticale e rettangoli mentre disegni</label>
+        <label class="chk" for="cPenDims"><input type="checkbox" id="cPenDims" checked> Lunghezza e angolo digitati nella Penna diventano quote</label>
+        <label class="chk" for="cOver"><input type="checkbox" id="cOver"> Prova: accetta anche i vincoli in conflitto</label>
+        <p class="note">Una quota di riferimento sta tra parentesi: mostra la misura ma non la impone.</p>
+      </section>
+
+      <section class="sec" id="secPar">
+        <h3>Parametri</h3>
+        <ul class="plist clist" id="parList"></ul>
+        <div class="pair">
+          <label for="parName">Nome<input type="text" id="parName" placeholder="larghezza" autocomplete="off"></label>
+          <label for="parVal">Valore (mm)<input type="text" id="parVal" inputmode="decimal" placeholder="60"></label>
+        </div>
+        <div class="row row--2"><span></span><button type="button" class="btn" id="parAdd">Aggiungi parametro</button></div>
+        <p class="note">Una quota accetta un'espressione con i parametri, per esempio <code>larghezza*0.6</code>. Cambiando il valore del parametro le quote seguono.</p>
+      </section>
+
+      <section class="sec">
+        <h3>Percorsi</h3>
+        <ul class="plist" id="plist"></ul>
+        <p class="note" id="plistNote">Un contorno dentro un altro diventa un foro.</p>
+      </section>
+
+      <section class="sec">
+        <h3>Griglia e snap</h3>
+        <div class="row row--2"><label for="selGrid">Passo</label>
+          <select id="selGrid"><option value="0.1">0,1 mm</option><option value="0.5">0,5 mm</option><option value="1" selected>1 mm</option><option value="5">5 mm</option><option value="10">10 mm</option></select></div>
+        <label class="chk" for="cSnapG"><input type="checkbox" id="cSnapG" checked> Snap alla griglia</label>
+        <label class="chk" for="cSnapN"><input type="checkbox" id="cSnapN" checked> Snap ai nodi esistenti</label>
+        <label class="chk" for="cSnapO"><input type="checkbox" id="cSnapO" checked> Allinea in orizzontale e verticale</label>
+        <p class="note">Maiusc vincola a 45°, Ctrl sospende lo snap.</p>
+      </section>
+
+      <details class="sec">
+        <summary>Qualità</summary>
+        <div class="row row--2"><label for="nTol">Tolleranza (mm)</label><input type="number" id="nTol" min="0.005" max="1" step="0.01"></div>
+        <p class="note" id="tolNote">Errore massimo tra la curva e i segmenti che la approssimano. Valori bassi danno più punti.</p>
+      </details>
+    </aside>
+
+    <div class="foot">
+      <div class="foot__st" id="status"></div>
+      <div class="foot__btns">
+        <button type="button" class="btn" id="btnCancel">Annulla modifiche</button>
+        <button type="button" class="btn btn--primary" id="btnOk">OK</button>
+      </div>
+    </div>
+
+    <div class="imp" id="imp" hidden>
+      <div class="imp__box" role="dialog" aria-modal="true" aria-labelledby="impT">
+        <h3 id="impT">Importa SVG mantenendo le curve</h3>
+        <p class="note" style="margin:0">Incolla il codice di un SVG oppure i dati di un path (attributo d). Si leggono M, L, H, V, C, S, Q, T, A, Z, assoluti e relativi. Le curve restano modificabili e il disegno viene portato a circa 40 mm.</p>
+        <textarea id="impText" placeholder="M50 90 C10 60 0 35 20 15 C32 3 46 8 50 22 C54 8 68 3 80 15 C100 35 90 60 50 90 Z" aria-label="Codice SVG o dati del path"></textarea>
+        <label class="lbl" for="impFile">Oppure scegli un file <input type="file" id="impFile" accept=".svg,image/svg+xml"></label>
+        <p class="imp__err" id="impErr" role="alert"></p>
+        <div class="imp__btns">
+          <button type="button" class="btn" id="impEx">Inserisci un esempio</button>
+          <button type="button" class="btn" id="impClose">Chiudi</button>
+          <button type="button" class="btn btn--primary" id="impGo">Importa</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <details class="help">
+    <summary>Gesti e scorciatoie</summary>
+    <div class="tw"><table>
+      <tr><th>Strumento</th><th>Come si usa</th></tr>
+      <tr><td>Penna <kbd>P</kbd></td><td>Clic: nodo con spigolo. Clic e trascina: nodo liscio con maniglie simmetriche. Clic sul primo nodo: chiude il contorno. Invio, doppio clic o Esc: termina un percorso aperto. Backspace toglie l'ultimo nodo.</td></tr>
+      <tr><td>Seleziona <kbd>V</kbd></td><td>Trascina nodi e maniglie. Clic su un segmento inserisce un nodo senza cambiare la forma. Doppio clic su un nodo: spigolo, liscio, simmetrico. Canc elimina il nodo. Alt mentre trascini una maniglia la rende indipendente. Frecce: spostano il nodo di un passo di griglia (Maiusc: dieci passi).</td></tr>
+      <tr><td>Quota <kbd>D</kbd></td><td>Scegli il tipo nella barra (Lunghezza, Orizz., Vert., Angolo, Raggio, Diametro). Clic su due nodi (anche l'origine) o su un segmento, poi digita il valore e premi Invio (Esc annulla). Angolo: due segmenti, oppure un segmento e Invio per l'angolo rispetto all'asse X. Raggio su uno spigolo: raccordo; su un cerchio: raggio. Clic su un'etichetta: la cambia. Una quota che renderebbe il disegno sovravincolato diventa di riferimento.</td></tr>
+      <tr><td>Vincoli <kbd>K</kbd></td><td>Clic su nodi e segmenti per sceglierli, poi un pulsante della sezione Quote e vincoli. Icone sul disegno: H orizzontale, V verticale, F fisso, ∥ parallelo, ⊥ perpendicolare, = uguale, M punto medio, S simmetrico, ≡ collineare, ● coincidente. Canc elimina il vincolo scelto.</td></tr>
+      <tr><td>Penna con misure</td><td>Dopo il primo punto digita un numero (o premi Tab): compaiono Lunghezza e Angolo. Tab passa da un campo all'altro, Invio conferma il punto, Esc chiude. I numeri digitati diventano quote.</td></tr>
+      <tr><td>Colori</td><td>Blu: ancora liberi (sottovincolato). Nero (chiaro nel tema scuro): completamente vincolato. Rosso: sovravincolato, con il conflitto evidenziato. Giallo nel piede: «non risolto», il risolutore si è fermato senza dimostrare un conflitto.</td></tr>
+      <tr><td>Forme base <kbd>R</kbd> <kbd>C</kbd> <kbd>G</kbd></td><td>Si trascinano dal centro e diventano contorni di nodi modificabili. Un contorno dentro un altro è un foro.</td></tr>
+      <tr><td>Vista</td><td>Rotella: zoom sul puntatore. Spazio o tasto centrale e trascina: panoramica. Anteprima: trascina per orbitare, rotella per lo zoom.</td></tr>
+      <tr><td>Cronologia</td><td>Ctrl+Z e Ctrl+Maiusc+Z agiscono sul disegno. In Construct, premendo OK, il profilo vale un solo passo nella cronologia della scena.</td></tr>
+    </table></div>
+  </details>
+</div>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script>
+/* Prototipo della modale "Profilo": editor 2D (SVG) con curve di Bézier cubiche + anteprima 3D (three.js).
+   Nel prodotto l'anteprima userebbe il kernel (manifold); qui è un'approssimazione con geometria propria.
+   Le unità sono millimetri, Y verso l'alto, in rotazione la Y del disegno diventa la Z del solido. */
+(function () {
+  'use strict';
+
+/* CORE-BEGIN: risolutore di vincoli. Generato da scripts/constraints-sync.mjs a partire da src/ui/ProfileEditor/constraints.ts: non modificare qui. */
+/**
+ * Nucleo del risolutore di vincoli 2D dello studio «quote e vincoli» (docs/studio-quote-profilo.md).
+ * NON è collegato all'app: sono funzioni pure, senza import, in TypeScript con sola sintassi cancellabile, perché lo
+ * stesso testo (tolti i tipi) sta nel prototipo docs/prototipi/profilo-quote.html tra CORE-BEGIN e CORE-END
+ * (scripts/constraints-sync.mjs lo genera, constraints.test.ts verifica che coincida).
+ *
+ * Modello: un disegno è un elenco di PUNTI (id, x, y in mm); i vincoli e le quote si riferiscono ai punti per id e un
+ * segmento è la coppia di punti (a, b). Le maniglie delle curve non sono variabili: restano relative al nodo.
+ * Metodo: Gauss-Newton smorzato (Levenberg-Marquardt) nella forma a norma minima, che parte sempre dalla configurazione
+ * data. Così, dove il disegno non è del tutto vincolato, la soluzione è la più vicina possibile a quella di partenza.
+ */
+
+/** Scarto (mm) sotto cui un vincolo con lo stesso residuo è considerato soddisfatto nella diagnosi. */
+const DIAG_TOL = 1e-7;
+/** Passo delle differenze finite centrali per lo Jacobiano (mm). */
+const FD_STEP = 1e-6;
+/** Distanza (mm) con cui si separano i punti di un segmento di lunghezza nulla prima di risolvere. */
+const NUDGE = 1e-3;
+
+/** Numero di residui di ogni tipo. */
+const NRES = { fixed: 2, horizontal: 1, vertical: 1, coincident: 2, dist: 1, distX: 1, distY: 1, angle: 1, parallel: 1, perpendicular: 1, equal: 1, midpoint: 2, collinear: 2, symmetric: 2 };
+/** Quanti punti richiede ogni tipo (angle ne accetta 2 oppure 4). */
+const NPTS = { fixed: 1, horizontal: 2, vertical: 2, coincident: 2, dist: 2, distX: 2, distY: 2, angle: 2, parallel: 4, perpendicular: 4, equal: 4, midpoint: 3, collinear: 4, symmetric: 4 };
+
+/** Lunghezza con un minimo, per dividere senza esplodere sui segmenti degeneri. */
+const safe = (l) => (l < 1e-9 ? 1e-9 : l);
+/** Porta un angolo in radianti nell'intervallo (-pi, pi]. */
+const wrap = (a) => a - 2 * Math.PI * Math.round(a / (2 * Math.PI));
+
+/**
+ * Residui di un vincolo. `q` contiene le coordinate dei suoi punti in ordine: [x0, y0, x1, y1, ...].
+ * Le lunghezze danno residui in mm, gli angoli in radianti, parallelo e perpendicolare un seno e un coseno normalizzati.
+ */
+function evalCon(c, q) {
+  const ux = q[2] - q[0];
+  const uy = q[3] - q[1];
+  switch (c.t) {
+    case 'fixed':
+      return [q[0] - (c.x ?? 0), q[1] - (c.y ?? 0)];
+    case 'horizontal':
+      return [q[1] - q[3]];
+    case 'vertical':
+      return [q[0] - q[2]];
+    case 'coincident':
+      return [q[0] - q[2], q[1] - q[3]];
+    case 'dist':
+      return [Math.hypot(ux, uy) - (c.v ?? 0)];
+    case 'distX':
+      return [(c.s ?? 1) * ux - (c.v ?? 0)];
+    case 'distY':
+      return [(c.s ?? 1) * uy - (c.v ?? 0)];
+    case 'angle': {
+      // Il primo segmento è ab (o l'asse X se i punti sono due), il secondo cd: angolo dal primo al secondo, con atan2 e
+      // non con il seno, così passare da 10 a 170 gradi non scivola verso la radice sbagliata (-10)
+      const two = c.p.length === 2;
+      const [fx, fy, sx, sy] = two ? [1, 0, ux, uy] : [ux, uy, q[6] - q[4], q[7] - q[5]];
+      return [wrap(Math.atan2(fx * sy - fy * sx, fx * sx + fy * sy) - ((c.v ?? 0) * Math.PI) / 180)];
+    }
+    case 'parallel':
+    case 'perpendicular': {
+      const vx = q[6] - q[4];
+      const vy = q[7] - q[5];
+      const n = safe(Math.hypot(ux, uy)) * safe(Math.hypot(vx, vy));
+      return [c.t === 'parallel' ? (ux * vy - uy * vx) / n : (ux * vx + uy * vy) / n];
+    }
+    case 'equal':
+      return [Math.hypot(ux, uy) - Math.hypot(q[6] - q[4], q[7] - q[5])];
+    case 'midpoint':
+      // p = [m, a, b]: m al centro di ab
+      return [q[0] - (q[2] + q[4]) / 2, q[1] - (q[3] + q[5]) / 2];
+    case 'collinear': {
+      // I punti c e d stanno sulla retta ab
+      const l = safe(Math.hypot(ux, uy));
+      return [(ux * (q[5] - q[1]) - uy * (q[4] - q[0])) / l, (ux * (q[7] - q[1]) - uy * (q[6] - q[0])) / l];
+    }
+    case 'symmetric': {
+      // a e b simmetrici rispetto alla retta cd: ab perpendicolare a cd e punto medio di ab sulla retta
+      const wx = q[6] - q[4];
+      const wy = q[7] - q[5];
+      const l = safe(Math.hypot(wx, wy));
+      const mx = (q[0] + q[2]) / 2 - q[4];
+      const my = (q[1] + q[3]) / 2 - q[5];
+      return [((q[2] - q[0]) * wx + (q[3] - q[1]) * wy) / l, (wx * my - wy * mx) / l];
+    }
+  }
+}
+
+/** Coordinate dei punti di una riga nel vettore delle variabili. */
+function gather(ix, x) {
+  const q = [];
+  for (const k of ix) q.push(x[2 * k], x[2 * k + 1]);
+  return q;
+}
+
+/** Vettore dei residui di tutte le righe. */
+function residuals(rows, x) {
+  const r = [];
+  for (const row of rows) r.push(...evalCon(row.c, gather(row.ix, x)));
+  return r;
+}
+
+/**
+ * Derivate analitiche (una riga per residuo, una colonna per coordinata locale) di `dist` e `angle`; null per gli altri tipi,
+ * che usano le differenze finite. Per `angle` serve: con la differenza finita il salto di `wrap` a 180 gradi la falsa.
+ * La derivata dell'angolo di un vettore (x, y) è (-y, x) / |v|^2.
+ */
+function analytic(c, q) {
+  const ux = q[2] - q[0];
+  const uy = q[3] - q[1];
+  if (c.t === 'dist') {
+    const l = safe(Math.hypot(ux, uy));
+    return [[-ux / l, -uy / l, ux / l, uy / l]];
+  }
+  if (c.t !== 'angle') return null;
+  const lu = safe(ux * ux + uy * uy);
+  // Due punti: angolo di ab rispetto all'asse X
+  if (c.p.length === 2) return [[uy / lu, -ux / lu, -uy / lu, ux / lu]];
+  // Quattro punti: angolo di cd meno angolo di ab
+  const sx = q[6] - q[4];
+  const sy = q[7] - q[5];
+  const ls = safe(sx * sx + sy * sy);
+  return [[-uy / lu, ux / lu, uy / lu, -ux / lu, sy / ls, -sx / ls, -sy / ls, sx / ls]];
+}
+
+/** Jacobiano sparso: per ogni residuo le colonne (variabili) non nulle e i valori (analitici dove ci sono, altrimenti differenze finite centrali). */
+function jacobian(rows, x) {
+  const cols = [];
+  const vals = [];
+  for (const row of rows) {
+    const q = gather(row.ix, x);
+    const base = cols.length;
+    for (let k = 0; k < row.nres; k++) {
+      cols.push([]);
+      vals.push([]);
+    }
+    const exact = analytic(row.c, q);
+    for (let j = 0; j < q.length; j++) {
+      // Derivata rispetto alla coordinata j del vincolo; se lo stesso punto compare due volte, le derivate si sommano
+      let hi = [];
+      let lo = [];
+      if (!exact) {
+        const keep = q[j];
+        q[j] = keep + FD_STEP;
+        hi = evalCon(row.c, q);
+        q[j] = keep - FD_STEP;
+        lo = evalCon(row.c, q);
+        q[j] = keep;
+      }
+      const col = 2 * row.ix[j >> 1] + (j & 1);
+      for (let k = 0; k < row.nres; k++) {
+        const d = exact ? exact[k][j] : (hi[k] - lo[k]) / (2 * FD_STEP);
+        const at = cols[base + k].indexOf(col);
+        if (at >= 0) vals[base + k][at] += d;
+        else {
+          cols[base + k].push(col);
+          vals[base + k].push(d);
+        }
+      }
+    }
+  }
+  return { cols, vals };
+}
+
+/**
+ * Fattorizza A (n x n, simmetrica definita positiva) in LLt sul posto; false se un pivot non è positivo.
+ * La matrice è quasi a banda (un vincolo tocca pochi punti vicini): per ogni riga si parte dalla prima colonna non nulla,
+ * e il fattore non riempie mai fuori da quel profilo.
+ */
+function cholesky(a, n) {
+  const first = new Int32Array(n);
+  for (let i = 0; i < n; i++) {
+    let f = 0;
+    while (f < i && a[i * n + f] === 0) f++;
+    first[i] = f;
+  }
+  for (let j = 0; j < n; j++) {
+    let d = a[j * n + j];
+    for (let k = first[j]; k < j; k++) d -= a[j * n + k] * a[j * n + k];
+    if (!(d > 1e-300)) return false;
+    d = Math.sqrt(d);
+    a[j * n + j] = d;
+    for (let i = j + 1; i < n; i++) {
+      if (first[i] > j) continue;
+      let s = a[i * n + j];
+      for (let k = Math.max(first[i], first[j]); k < j; k++) s -= a[i * n + k] * a[j * n + k];
+      a[i * n + j] = s / d;
+    }
+  }
+  return true;
+}
+
+/** Risolve LLt y = b con il fattore di `cholesky`; il risultato sostituisce b. */
+function choleskySolve(a, n, b) {
+  for (let i = 0; i < n; i++) {
+    let s = b[i];
+    for (let k = 0; k < i; k++) s -= a[i * n + k] * b[k];
+    b[i] = s / a[i * n + i];
+  }
+  for (let i = n - 1; i >= 0; i--) {
+    let s = b[i];
+    for (let k = i + 1; k < n; k++) s -= a[k * n + i] * b[k];
+    b[i] = s / a[i * n + i];
+  }
+}
+
+/**
+ * Passo smorzato: minimizza |r + J d|^2 + lambda d'Wd. Con meno equazioni che variabili si usa la forma a norma minima
+ * d = -W^-1 J' (J W^-1 J' + lambda I)^-1 r (matrice m x m), altrimenti (J'J + lambda W) d = -J'r (matrice n x n).
+ * Restituisce null se la fattorizzazione fallisce (lambda va alzato).
+ */
+function lmStep(jac, r, w, nvar, lambda) {
+  const m = r.length;
+  const d = new Float64Array(nvar);
+  if (m <= nvar) {
+    // Forma duale: A = J W^-1 J' + lambda I, costruita per colonne (ogni variabile compare in poche righe)
+    const byCol = new Map ();
+    for (let i = 0; i < m; i++) jac.cols[i].forEach((c, k) => (byCol.get(c) ?? byCol.set(c, []).get(c)).push([i, jac.vals[i][k]]));
+    const a = new Float64Array(m * m);
+    for (const [c, list] of byCol) for (const [i, vi] of list) for (const [j, vj] of list) a[i * m + j] += (vi * vj) / w[c];
+    for (let i = 0; i < m; i++) a[i * m + i] += lambda;
+    const y = Float64Array.from(r, (v) => -v);
+    if (!cholesky(a, m)) return null;
+    choleskySolve(a, m, y);
+    for (let i = 0; i < m; i++) jac.cols[i].forEach((c, k) => (d[c] += (jac.vals[i][k] * y[i]) / w[c]));
+    return d;
+  }
+  // Forma primale
+  const a = new Float64Array(nvar * nvar);
+  const g = new Float64Array(nvar);
+  for (let i = 0; i < m; i++) {
+    const cs = jac.cols[i];
+    const vs = jac.vals[i];
+    for (let p = 0; p < cs.length; p++) {
+      g[cs[p]] -= vs[p] * r[i];
+      for (let q = 0; q < cs.length; q++) a[cs[p] * nvar + cs[q]] += vs[p] * vs[q];
+    }
+  }
+  for (let i = 0; i < nvar; i++) a[i * nvar + i] += lambda * w[i];
+  if (!cholesky(a, nvar)) return null;
+  choleskySolve(a, nvar, g);
+  return g;
+}
+
+const maxAbs = (v) => {
+  let m = 0;
+  for (let i = 0; i < v.length; i++) m = Math.max(m, Math.abs(v[i]));
+  return m;
+};
+
+/** Separa i punti dei segmenti di lunghezza nulla (tranne se un vincolo li fa coincidere apposta), senza numeri casuali. */
+function nudge(rows, x) {
+  const joined = new Set ();
+  for (const row of rows) if (row.c.t === 'coincident') joined.add(row.ix[0] + '|' + row.ix[1]), joined.add(row.ix[1] + '|' + row.ix[0]);
+  const pairs = [];
+  for (const row of rows) {
+    const t = row.c.t;
+    if (t === 'dist' || t === 'angle' || t === 'collinear') pairs.push([row.ix[0], row.ix[1]]);
+    if (t === 'equal' || t === 'parallel' || t === 'perpendicular' || (t === 'angle' && row.ix.length === 4)) pairs.push([row.ix[0], row.ix[1]], [row.ix[2], row.ix[3]]);
+    if (t === 'symmetric') pairs.push([row.ix[2], row.ix[3]]);
+  }
+  for (const [a, b] of pairs) {
+    if (a === b || joined.has(a + '|' + b)) continue;
+    if (Math.hypot(x[2 * a] - x[2 * b], x[2 * a + 1] - x[2 * b + 1]) < 1e-9) x[2 * b] += NUDGE;
+  }
+}
+
+/** Misura corrente di una quota nei punti dati: mm per dist, distX, distY; gradi per angle. */
+function measure(c, points) {
+  const at = (id) => points.find((p) => p.id === id);
+  const q = [];
+  for (const id of c.p) q.push(at(id).x, at(id).y);
+  const ux = q[2] - q[0];
+  const uy = q[3] - q[1];
+  if (c.t === 'dist') return Math.hypot(ux, uy);
+  if (c.t === 'distX') return (c.s ?? 1) * ux;
+  if (c.t === 'distY') return (c.s ?? 1) * uy;
+  // Angolo: il residuo con v = 0 è già l'angolo in radianti, portato in (-180, 180]
+  return (evalCon({ ...c, v: 0 }, q)[0] * 180) / Math.PI;
+}
+
+/** Messaggio se un valore digitato non è ammesso per quel tipo di quota (zero, negativo, non finito), altrimenti null. */
+function validateValue(t, v) {
+  if (!Number.isFinite(v)) return 'Il valore non è un numero';
+  if ((t === 'dist' || t === 'distX' || t === 'distY') && v < 1e-6) return 'La misura deve essere maggiore di zero';
+  if ((t === 'dist' || t === 'distX' || t === 'distY') && v > 1e5) return 'La misura è troppo grande';
+  if (t === 'angle' && Math.abs(v) > 360) return 'L\'angolo deve stare tra -360 e 360 gradi';
+  return null;
+}
+
+/** Residuo massimo di tutti i vincoli pilotanti (non di riferimento) nei punti dati, per esempio dopo un arrotondamento. */
+function maxResidual(points, constraints) {
+  const index = new Map(points.map((p, i) => [p.id, i]));
+  const x = new Float64Array(points.length * 2);
+  points.forEach((p, i) => ((x[2 * i] = p.x), (x[2 * i + 1] = p.y)));
+  const rows = compile(constraints, index);
+  return maxAbs(residuals(rows, x));
+}
+
+/** Compila i vincoli: scarta quelli di riferimento, con punti mancanti o con il numero di punti sbagliato. */
+function compile(constraints, index) {
+  const rows = [];
+  for (const c of constraints) {
+    if (c.ref) continue;
+    const need = NPTS[c.t];
+    if (!(c.p.length === need || (c.t === 'angle' && c.p.length === 4))) continue;
+    const ix = c.p.map((id) => index.get(id));
+    if (ix.some((k) => k === undefined)) continue;
+    rows.push({ c, ix: ix, nres: NRES[c.t] });
+  }
+  return rows;
+}
+
+/**
+ * Risolve il disegno e lo diagnostica. I punti in ingresso sono la configurazione di partenza (anche con il punto
+ * trascinato già portato sul mouse: dategli un peso alto in `weights` e si muoverà il meno possibile).
+ * La diagnosi (gradi di libertà, punti liberi, vincoli ridondanti o in conflitto) usa il rango dello Jacobiano nella
+ * soluzione: le righe si ortogonalizzano nell'ordine dei vincoli, perciò una riga dipendente è sempre la più recente.
+ */
+function solveSketch(points, constraints, opts = {}) {
+  const tol = opts.tol ?? 1e-9;
+  // Fuori dal trascinamento si può aspettare: un poligono di 100 lati con angoli e lunghezze vuole oltre 130 iterazioni
+  const maxIter = opts.maxIter ?? (opts.diagnose === false ? 60 : 500);
+  const n = points.length;
+  const index = new Map(points.map((p, i) => [p.id, i]));
+  const x = new Float64Array(2 * n);
+  points.forEach((p, i) => ((x[2 * i] = p.x), (x[2 * i + 1] = p.y)));
+  const w = new Float64Array(2 * n).fill(1);
+  for (const [id, wt] of Object.entries(opts.weights ?? {})) {
+    const k = index.get(id);
+    if (k !== undefined && wt > 0) (w[2 * k] = wt), (w[2 * k + 1] = wt);
+  }
+  const rows = compile(constraints, index);
+  const finite = Array.from(x).every(Number.isFinite) && constraints.every((c) => [c.v, c.x, c.y, c.s].every((v) => v === undefined || Number.isFinite(v)));
+  const out = (xs) => points.map((p, i) => ({ id: p.id, x: xs[2 * i] + 0, y: xs[2 * i + 1] + 0 }));
+  if (!finite) return { points: out(Float64Array.from(points.flatMap((p) => [p.x, p.y]))), converged: false, iterations: 0, residual: Infinity, dof: 0, state: 'over', unsolved: false, free: [], redundant: [], conflicting: constraints.filter((c) => !c.ref).map((c) => c.id), costs: [] };
+
+  nudge(rows, x);
+  // Levenberg-Marquardt: un passo si accetta solo se il costo scende, altrimenti si smorza di più (nessuna oscillazione).
+  // Lo smorzamento segue il rapporto tra riduzione ottenuta e prevista (Nielsen): cala in fretta se il modello lineare regge.
+  let r = residuals(rows, x);
+  let cost = r.reduce((s, v) => s + v * v, 0) / 2;
+  const costs = [cost];
+  let lambda = 1e-3;
+  let nu = 2;
+  let iterations = 0;
+  let still = 0;
+  while (iterations < maxIter && maxAbs(r) >= tol) {
+    iterations++;
+    const jac = jacobian(rows, x);
+    // Gradiente J'r: serve a prevedere di quanto scende il costo con un passo
+    const g = new Float64Array(2 * n);
+    jac.cols.forEach((cs, i) => cs.forEach((c, k) => (g[c] += jac.vals[i][k] * r[i])));
+    let accepted = false;
+    for (let tries = 0; tries < 30 && !accepted; tries++) {
+      const d = lmStep(jac, r, w, 2 * n, lambda);
+      if (d) {
+        const trial = Float64Array.from(x, (v, i) => v + d[i]);
+        const rt = residuals(rows, trial);
+        const ct = rt.reduce((s, v) => s + v * v, 0) / 2;
+        if (Number.isFinite(ct) && ct < cost) {
+          let predicted = 0;
+          for (let i = 0; i < d.length; i++) predicted += lambda * w[i] * d[i] * d[i] - g[i] * d[i];
+          predicted /= 2;
+          const rho = predicted > 0 ? (cost - ct) / predicted : 1;
+          // Poco progresso per tre passi di fila: ci si ferma (sistema incompatibile, minimo locale)
+          still = cost - ct < 1e-14 * cost ? still + 1 : 0;
+          x.set(trial);
+          r = rt;
+          cost = ct;
+          accepted = true;
+          lambda = Math.min(1e12, Math.max(1e-12, lambda * Math.max(1 / 3, 1 - (2 * rho - 1) ** 3)));
+          nu = 2;
+        }
+      }
+      if (!accepted) {
+        lambda = Math.min(1e12, lambda * nu);
+        nu *= 2;
+      }
+    }
+    costs.push(cost);
+    if (!accepted || still >= 3) break;
+  }
+  const residual = maxAbs(r);
+  const converged = residual < Math.max(tol, 1e-9);
+  // Non convergente: è un conflitto vero solo se si è in un minimo dei quadrati minimi (gradiente quasi nullo).
+  // Altrimenti il risolutore si è fermato presto (iterazioni finite, passo troppo piccolo): «non risolto», nessun colpevole.
+  let unsolved = false;
+  if (!converged) {
+    const j0 = jacobian(rows, x);
+    const g0 = new Float64Array(2 * n);
+    j0.cols.forEach((cs, i) => cs.forEach((c, k) => (g0[c] += j0.vals[i][k] * r[i])));
+    unsolved = maxAbs(g0) > 1e-5 * Math.max(1, residual);
+  }
+  const base = { points: out(x), converged, iterations, residual, costs, unsolved };
+  if (opts.diagnose === false) return { ...base, dof: 0, state: converged ? 'under' : unsolved ? 'unsolved' : 'over', free: [], redundant: [], conflicting: [] };
+
+  // Diagnosi: righe dello Jacobiano ortogonalizzate una alla volta (Gram-Schmidt con doppio passaggio), in ordine
+  const jac = jacobian(rows, x);
+  const basis = [];
+  const dependent = [];
+  for (let i = 0; i < r.length; i++) {
+    const v = new Float64Array(2 * n);
+    jac.cols[i].forEach((c, k) => (v[c] = jac.vals[i][k]));
+    const norm0 = Math.hypot(...v);
+    let independent = false;
+    if (norm0 > 1e-9) {
+      for (let pass = 0; pass < 2; pass++) {
+        for (const q of basis) {
+          let dot = 0;
+          for (let c = 0; c < v.length; c++) dot += v[c] * q[c];
+          for (let c = 0; c < v.length; c++) v[c] -= dot * q[c];
+        }
+      }
+      const norm1 = Math.hypot(...v);
+      independent = norm1 > 1e-6 * norm0;
+      if (independent) basis.push(v.map((c) => c / norm1));
+    }
+    dependent.push(!independent);
+  }
+  // Un punto è libero se una sua coordinata ha componente non nulla nello spazio nullo: 1 - somma dei q^2 sulla base
+  const free = [];
+  points.forEach((p, i) => {
+    const px = basis.reduce((s, q) => s + q[2 * i] * q[2 * i], 0);
+    const py = basis.reduce((s, q) => s + q[2 * i + 1] * q[2 * i + 1], 0);
+    if (1 - px > 1e-6 || 1 - py > 1e-6) free.push(p.id);
+  });
+  // Classificazione per vincolo: ridondante se tutte le sue righe sono dipendenti e soddisfatte, in conflitto se un suo residuo non è nullo
+  const redundant = [];
+  const conflicting = [];
+  let at = 0;
+  for (const row of rows) {
+    const mine = Array.from({ length: row.nres }, (_, k) => at + k);
+    at += row.nres;
+    const bad = mine.some((k) => Math.abs(r[k]) > DIAG_TOL);
+    if (bad) conflicting.push(row.c.id);
+    else if (mine.every((k) => dependent[k])) redundant.push(row.c.id);
+  }
+  const dof = 2 * n - basis.length;
+  // Non risolto: nessun colpevole, perché il sistema potrebbe essere risolubile con più iterazioni
+  if (unsolved) return { ...base, dof, state: 'unsolved', free, redundant: [], conflicting: [] };
+  const over = redundant.length > 0 || conflicting.length > 0 || !converged;
+  return { ...base, dof, state: over ? 'over' : dof === 0 ? 'full' : 'under', free, redundant, conflicting };
+}
+
+/**
+ * Un fotogramma di trascinamento: i punti in `moves` (id -> posizione del mouse) vanno sul bersaglio e gli altri si adattano il
+ * meno possibile. Due tentativi:
+ * 1. **rigido**: ogni punto trascinato è un vincolo «fisso» sul mouse (nessun peso). Se il disegno può seguire il mouse, il nodo
+ * ci arriva esattamente, anche con un moto rigido di centinaia di nodi (un peso grande, invece, rallenta la convergenza dei
+ * sistemi non lineari: a peso 1000 e 50 segmenti non convergevano entro 60 iterazioni);
+ * 2. **morbido**, se il primo non ha soluzione (nodo fisso, quota che lo impedisce): peso 30 sul nodo, che resta indietro
+ * rispetto al mouse di quanto i vincoli non gli permettono di avanzare.
+ * Tolleranza 1e-6 mm; un fotogramma con residuo sotto 1e-4 mm si può accettare (`residual`). `pinned` dice quale tentativo è riuscito.
+ * `soft` = true salta il tentativo rigido (per i fotogrammi dopo un fallimento: evita di spendere 30 iterazioni a vuoto a ogni fotogramma).
+ */
+function dragSketch(points, constraints, moves, soft = false) {
+  const moved = points.map((p) => (moves[p.id] ? { id: p.id, x: moves[p.id][0], y: moves[p.id][1] } : p));
+  const pins = Object.entries(moves).map(([id, q]) => ({ id: 'pin:' + id, t: 'fixed', p: [id], x: q[0], y: q[1] }));
+  // Con `soft` (il tentativo rigido è già fallito in un fotogramma precedente dello stesso trascinamento) si va subito al morbido
+  const hard = soft ? null : solveSketch(moved, [...constraints, ...pins], { diagnose: false, tol: 1e-6, maxIter: 30 });
+  if (hard && hard.residual < 1e-4) return { ...hard, pinned: true };
+  const weights = {};
+  for (const id of Object.keys(moves)) weights[id] = 30;
+  return { ...solveSketch(moved, constraints, { diagnose: false, tol: 1e-6, weights }), pinned: false };
+}
+/* CORE-END */
+
+  /* ---------- 1. Utilità vettoriali ---------- */
+  const add = (a, b) => [a[0] + b[0], a[1] + b[1]];
+  const sub = (a, b) => [a[0] - b[0], a[1] - b[1]];
+  const mul = (a, k) => [a[0] * k, a[1] * k];
+  const len = (a) => Math.hypot(a[0], a[1]);
+  const lerp = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+  const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+  const nz = (v) => (len(v) < 1e-6 ? null : v); // un vettore nullo vale "nessuna maniglia"
+  const $ = (id) => document.getElementById(id);
+  const fmt = (n, d = 2) => String(parseFloat(n.toFixed(d))).replace('.', ',');
+  const KAPPA = 0.5522847498; // costante delle cubiche che approssimano un quarto di cerchio
+
+  /* ---------- 2. Stato ---------- */
+  const S = {
+    paths: [],            // contorni: { closed, nodes: [{ id, p, in, out, kind, r }], circ? }, maniglie relative al nodo; r = raccordo; circ = cerchio (centro + nodo sul bordo)
+    params: [],           // parametri locali del disegno: { name, v }, usabili nelle quote con un'espressione (campo expr del vincolo)
+    cons: [],             // quote e vincoli: { id, t, p: [id dei punti], v, s, x, y, ref, rad, dia, hid }, vedi il blocco CORE
+    csel: [], selCon: null, qMode: 'len', qPick: [], ed: null, rep: null, flash: null, qbar: null,
+    inferH: true, penDims: true, allowOver: false,
+    tool: 'select', sel: null, active: null, hover: null, draft: null,
+    view: { cx: 0, cy: 20, s: 6 },
+    extr: 'linear', height: 20, twist: 0, scaleTop: 1, angle: 360, segs: 48, closeAxis: true,
+    grid: 1, snapG: true, snapN: true, snapO: true, tol: 0.05, sides: 6
+  };
+  let W = 600, H = 400;           // dimensioni del disegno in pixel
+  let C = { raw: [], depth: [], warn: [], hits: [] }; // risultato del calcolo (contorni campionati, avvisi)
+  let applied = '';               // ultimo stato confermato con OK (per "Annulla modifiche"): contorni e vincoli
+
+  /* ---------- 3. Cronologia locale della modale ---------- */
+  const hist = []; let hi = -1;
+  // Id stabili: i vincoli si riferiscono ai nodi per id, non per posizione nell'elenco (inserimenti e cancellazioni la cambiano)
+  let idc = 0;
+  const nid = () => 'n' + (++idc);
+  function ensureIds() {
+    for (const p of S.paths) { for (const n of p.nodes) if (!n.id) n.id = nid(); if (p.circ && !p.circ.c.id) p.circ.c.id = nid(); }
+  }
+  // Un nodo cancellato porta via i vincoli che lo citano, nello stesso passo di cronologia
+  function pruneCons() {
+    const ids = new Set(['O']);
+    for (const p of S.paths) { if (p.circ) ids.add(p.circ.c.id); for (const n of p.nodes) ids.add(n.id); }
+    S.cons = S.cons.filter((c) => c.p.every((id) => ids.has(id)));
+  }
+  // Un solo istantanea per contorni e vincoli: così annullare una quota o un vincolo è un passo solo
+  const snapshot = () => JSON.stringify({ paths: S.paths, cons: S.cons, params: S.params });
+  function applySnap(json) {
+    const o = JSON.parse(json);
+    S.paths = o.paths; S.cons = o.cons; S.params = o.params || []; S.active = null; S.sel = null; S.draft = null; S.csel = []; S.selCon = null; S.qPick = []; S.ed = null; S.qbar = null;
+    schedule();
+  }
+  function commit() {
+    ensureIds(); pruneCons();
+    hist.length = hi + 1;
+    hist.push(snapshot());
+    if (hist.length > 200) hist.shift();
+    hi = hist.length - 1;
+    schedule();
+  }
+  function restore(json) { applySnap(json); }
+  function undo() { finishPen(false); if (hi > 0) { hi--; restore(hist[hi]); } }
+  function redo() { if (hi < hist.length - 1) { hi++; restore(hist[hi]); } }
+  function resetHistory() { hist.length = 0; hi = -1; commit(); }
+
+  /* ---------- 4. Geometria delle curve ---------- */
+  // Il segmento i va dal nodo i al successivo; è una cubica con le maniglie relative dei due nodi.
+  function segOf(path, i) {
+    const n = path.nodes, j = (i + 1) % n.length;
+    if (!path.closed && i >= n.length - 1) return null;
+    const a = n[i], b = n[j];
+    return [a.p, a.out ? add(a.p, a.out) : a.p, b.in ? add(b.p, b.in) : b.p, b.p];
+  }
+  const isCurve = (path, i) => { const n = path.nodes; return !!(n[i].out || n[(i + 1) % n.length].in); };
+  const segCount = (path) => (path.closed ? path.nodes.length : path.nodes.length - 1);
+
+  // Raccordo per nodo: lo spigolo con r > 0 (senza maniglie) diventa i due punti di tangenza e una cubica che approssima l'arco.
+  // Il risolutore e le quote vedono sempre lo spigolo "vivo" (l'intersezione dei due segmenti); solo disegno e solido sono smussati.
+  function filletGeom(path, i) {
+    const k = path.nodes.length, n = path.nodes[i];
+    const prev = i > 0 ? path.nodes[i - 1] : (path.closed ? path.nodes[k - 1] : null);
+    const next = i < k - 1 ? path.nodes[i + 1] : (path.closed ? path.nodes[0] : null);
+    if (!(n.r > 0) || !prev || !next || n.in || n.out) return null;
+    const a = sub(prev.p, n.p), b = sub(next.p, n.p), la = len(a), lb = len(b);
+    if (la < 1e-9 || lb < 1e-9) return null;
+    const u = mul(a, 1 / la), v = mul(b, 1 / lb), th = Math.acos(Math.max(-1, Math.min(1, u[0] * v[0] + u[1] * v[1])));
+    if (th < 1e-3 || th > Math.PI - 1e-3) return null; // segmenti allineati: niente raccordo
+    const tan = Math.tan(th / 2), tmax = Math.min(la, lb) / 2; // al più metà del segmento più corto: i raccordi vicini non si sovrappongono
+    const t = Math.min(n.r / tan, tmax), r = t * tan, kh = 4 / 3 * Math.tan((Math.PI - th) / 4) * r;
+    return { u, v, t, r, rmax: tmax * tan, kh };
+  }
+  function eff(path) {
+    if (!path.nodes.some((n) => n.r > 0)) return path;
+    const out = [];
+    path.nodes.forEach((n, i) => {
+      const g = filletGeom(path, i);
+      if (!g) { out.push(n); return; }
+      out.push({ p: add(n.p, mul(g.u, g.t)), out: mul(g.u, -g.kh), kind: 'smooth' }, { p: add(n.p, mul(g.v, g.t)), in: mul(g.v, -g.kh), kind: 'smooth' });
+    });
+    return { closed: path.closed, nodes: out };
+  }
+
+  // Distanza di un punto dalla corda p0-p3 (misura di "piattezza" per il campionamento adattivo)
+  function chordDist(q, p0, p3) {
+    const d = sub(p3, p0), L = len(d);
+    if (L < 1e-9) return dist(q, p0);
+    return Math.abs((q[0] - p0[0]) * d[1] - (q[1] - p0[1]) * d[0]) / L;
+  }
+  // Suddivisione adattiva (de Casteljau): si ferma quando i punti di controllo stanno entro la tolleranza dalla corda
+  function flatten(s, tol, out, depth) {
+    const [p0, c1, c2, p3] = s;
+    if ((Math.max(chordDist(c1, p0, p3), chordDist(c2, p0, p3)) <= tol) || depth >= 12) { out.push(p3); return; }
+    const q0 = lerp(p0, c1, .5), q1 = lerp(c1, c2, .5), q2 = lerp(c2, p3, .5);
+    const r0 = lerp(q0, q1, .5), r1 = lerp(q1, q2, .5), m = lerp(r0, r1, .5);
+    flatten([p0, q0, r0, m], tol, out, depth + 1);
+    flatten([m, r1, q2, p3], tol, out, depth + 1);
+  }
+  // Polilinea di un contorno (senza ripetere il punto di chiusura)
+  function sample(path, tol) {
+    path = eff(path);
+    const pts = [path.nodes[0].p];
+    for (let i = 0; i < segCount(path); i++) {
+      const s = segOf(path, i);
+      if (isCurve(path, i)) flatten(s, tol, pts, 0); else pts.push(s[3]);
+    }
+    if (path.closed) pts.pop();
+    return clean(pts);
+  }
+  function clean(pts) {
+    const o = [];
+    for (const p of pts) if (!o.length || dist(p, o[o.length - 1]) > 1e-7) o.push(p);
+    while (o.length > 1 && dist(o[0], o[o.length - 1]) < 1e-7) o.pop();
+    return o;
+  }
+  // Punto più vicino sulla curva (in pixel) e relativo parametro t: serve per inserire un nodo
+  function nearestOnSeg(s, sx, sy) {
+    let best = { d: 1e9, t: 0 };
+    const test = (t) => {
+      const q0 = lerp(s[0], s[1], t), q1 = lerp(s[1], s[2], t), q2 = lerp(s[2], s[3], t);
+      const pt = lerp(lerp(q0, q1, t), lerp(q1, q2, t), t), sp = toS(pt);
+      const d = Math.hypot(sp[0] - sx, sp[1] - sy);
+      if (d < best.d) best = { d, t };
+    };
+    for (let k = 0; k <= 40; k++) test(k / 40);
+    const c = best.t;
+    for (let k = -10; k <= 10; k++) test(Math.min(1, Math.max(0, c + k / 400)));
+    return best;
+  }
+  // Inserimento di un nodo a parametro t con de Casteljau: la forma non cambia
+  function splitSeg(path, i, t) {
+    const s = segOf(path, i), curve = isCurve(path, i);
+    const q0 = lerp(s[0], s[1], t), q1 = lerp(s[1], s[2], t), q2 = lerp(s[2], s[3], t);
+    const r0 = lerp(q0, q1, t), r1 = lerp(q1, q2, t), m = lerp(r0, r1, t);
+    const j = (i + 1) % path.nodes.length;
+    const node = { p: m, kind: curve ? 'smooth' : 'corner' };
+    if (curve) {
+      node.in = nz(sub(r0, m)) || undefined; node.out = nz(sub(r1, m)) || undefined;
+      const a = path.nodes[i], b = path.nodes[j];
+      a.out = nz(sub(q0, a.p)) || undefined; b.in = nz(sub(q2, b.p)) || undefined;
+      if (!a.out) delete a.out; if (!b.in) delete b.in; if (!node.in) delete node.in; if (!node.out) delete node.out;
+    }
+    path.nodes.splice(i + 1, 0, node);
+    return i + 1;
+  }
+
+  /* ---------- 5. Contorni, annidamento, fori, avvisi ---------- */
+  function inside(poly, pt) { // punto dentro poligono (raggio orizzontale)
+    let c = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const a = poly[i], b = poly[j];
+      if ((a[1] > pt[1]) !== (b[1] > pt[1]) && pt[0] < (b[0] - a[0]) * (pt[1] - a[1]) / (b[1] - a[1]) + a[0]) c = !c;
+    }
+    return c;
+  }
+  function depthsOf(polys) { return polys.map((p, i) => polys.reduce((n, q, j) => n + (j !== i && inside(q, p[0]) ? 1 : 0), 0)); }
+  function area(poly) { let a = 0; for (let i = 0; i < poly.length; i++) { const p = poly[i], q = poly[(i + 1) % poly.length]; a += p[0] * q[1] - q[0] * p[1]; } return a / 2; }
+  function segHit(a, b, c, d) { // intersezione propria tra due segmenti
+    const o = (p, q, r) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+    const d1 = o(c, d, a), d2 = o(c, d, b), d3 = o(a, b, c), d4 = o(a, b, d);
+    if (((d1 > 1e-9 && d2 < -1e-9) || (d1 < -1e-9 && d2 > 1e-9)) && ((d3 > 1e-9 && d4 < -1e-9) || (d3 < -1e-9 && d4 > 1e-9))) {
+      const t = d3 / (d3 - d4); return lerp(c, d, t);
+    }
+    return null;
+  }
+  // Calcola i contorni campionati e gli avvisi a ogni modifica
+  function compute() {
+    const raw = [];
+    S.paths.forEach((p, pi) => {
+      if (p.nodes.length < 2) return;
+      let pts = sample(p, S.tol);
+      if (!p.closed && S.extr === 'rotate' && S.closeAxis) { // profilo aperto: si chiude sull'asse di rotazione
+        const f = pts[0], l = pts[pts.length - 1];
+        pts = clean(pts.concat([[0, l[1]], [0, f[1]]]));
+      }
+      if (pts.length >= 3) raw.push({ pts, pi, open: !p.closed });
+    });
+    const depth = depthsOf(raw.map((r) => r.pts));
+    const warn = [];
+    const hits = [];
+    const nOpen = raw.filter((r) => r.open && !(S.extr === 'rotate' && S.closeAxis)).length;
+    if (nOpen) warn.push({ k: 'warn', t: nOpen === 1 ? 'Contorno aperto: si chiude con un segmento retto' : nOpen + ' contorni aperti: si chiudono con un segmento retto' });
+    if (S.extr === 'rotate' && raw.some((r) => r.pts.some((p) => p[0] < -1e-6))) warn.push({ k: 'warn', t: 'Una parte sta a sinistra dell\'asse e non viene ruotata' });
+    const total = raw.reduce((n, r) => n + r.pts.length, 0);
+    if (total <= 700) { // test di autointersezione, limitato per tenere l'editor fluido
+      const segs = [];
+      raw.forEach((r, k) => r.pts.forEach((p, i) => segs.push({ a: p, b: r.pts[(i + 1) % r.pts.length], k, i, n: r.pts.length })));
+      for (let x = 0; x < segs.length && hits.length < 30; x++) for (let y = x + 1; y < segs.length; y++) {
+        const A = segs[x], B = segs[y];
+        if (A.k === B.k && (B.i === A.i + 1 || (A.i === 0 && B.i === A.n - 1))) continue;
+        const h = segHit(A.a, A.b, B.a, B.b); if (h) hits.push(h);
+      }
+      if (hits.length) warn.push({ k: 'err', t: hits.length + (hits.length === 1 ? ' autointersezione' : ' autointersezioni') });
+    }
+    if (total > 4000) warn.push({ k: 'warn', t: 'Molti punti: alza la tolleranza per alleggerire il codice' });
+    C = { raw, depth, warn, hits, empty: raw.length === 0 };
+    diagnose();
+  }
+
+  /* ---------- 6. Coordinate dello schermo ---------- */
+  const toS = (p) => [W / 2 + (p[0] - S.view.cx) * S.view.s, H / 2 - (p[1] - S.view.cy) * S.view.s];
+  const toW = (sx, sy) => [(sx - W / 2) / S.view.s + S.view.cx, -(sy - H / 2) / S.view.s + S.view.cy];
+  // Passo di griglia visibile: si allarga con lo zoom indietro, così non si aggancia a righe invisibili
+  function gridStep() { let st = S.grid; while (st * S.view.s < 10) st *= 5; return st; }
+  const snapFlag = { h: false, v: false }; // l'ultimo snapPoint ha allineato in orizzontale (h) o in verticale (v)
+  function snapPoint(w, e, prev, exclude) {
+    snapFlag.h = snapFlag.v = false;
+    if (e && e.ctrlKey) return w;
+    let p = w;
+    if (e && e.shiftKey && prev) { // vincolo a multipli di 45 gradi dal punto precedente
+      const d = sub(w, prev), a = Math.round(Math.atan2(d[1], d[0]) / (Math.PI / 4)) * (Math.PI / 4), L = len(d);
+      return [prev[0] + Math.cos(a) * L, prev[1] + Math.sin(a) * L];
+    }
+    if (S.snapN) { // snap ai nodi esistenti
+      for (let pi = 0; pi < S.paths.length; pi++) S.paths[pi].nodes.forEach((n, ni) => {
+        if (exclude && exclude.pi === pi && exclude.ni === ni) return;
+        const sp = toS(n.p), sw = toS(w);
+        if (Math.hypot(sp[0] - sw[0], sp[1] - sw[1]) < 8) p = n.p;
+      });
+      if (p !== w) return p;
+    }
+    p = w.slice();
+    if (S.snapG) { const st = gridStep(); p = [Math.round(p[0] / st) * st, Math.round(p[1] / st) * st]; }
+    if (S.snapO && prev) { // allineamento orizzontale o verticale al punto precedente
+      if (Math.abs(toS([w[0], 0])[0] - toS([prev[0], 0])[0]) < 6) { p[0] = prev[0]; snapFlag.v = true; }
+      if (Math.abs(toS([0, w[1]])[1] - toS([0, prev[1]])[1]) < 6) { p[1] = prev[1]; snapFlag.h = true; }
+    }
+    return p;
+  }
+
+  /* ---------- 7. Rendering 2D ---------- */
+  const svg = $('svg');
+  const f1 = (n) => n.toFixed(1);
+  function pathD(path, closeIt) {
+    path = eff(path);
+    let d = 'M' + toS(path.nodes[0].p).map(f1).join(' ');
+    for (let i = 0; i < segCount(path); i++) {
+      const s = segOf(path, i);
+      if (isCurve(path, i)) d += ' C' + [s[1], s[2], s[3]].map((q) => toS(q).map(f1).join(' ')).join(' ');
+      else d += ' L' + toS(s[3]).map(f1).join(' ');
+    }
+    return d + (closeIt ? ' Z' : '');
+  }
+  function nodeShape(kind, x, y, cls) {
+    if (kind === 'corner') return `<rect class="${cls}" x="${f1(x - 4.5)}" y="${f1(y - 4.5)}" width="9" height="9"/>`;
+    if (kind === 'symmetric') return `<polygon class="${cls}" points="${f1(x)},${f1(y - 6)} ${f1(x + 6)},${f1(y)} ${f1(x)},${f1(y + 6)} ${f1(x - 6)},${f1(y)}"/>`;
+    return `<circle class="${cls}" cx="${f1(x)}" cy="${f1(y)}" r="5"/>`;
+  }
+  function render2d() {
+    const v = S.view, rot = S.extr === 'rotate';
+    let h = '';
+    // zona a sinistra dell'asse in rotazione (non viene ruotata)
+    if (rot) { const x0 = toS([0, 0])[0]; if (x0 > 0) h += `<rect class="neg" x="0" y="0" width="${f1(Math.min(W, x0))}" height="${H}"/>`; }
+    // griglia in millimetri
+    const st = gridStep(), w0 = toW(0, H), w1 = toW(W, 0);
+    let minor = '', major = '';
+    for (let i = Math.ceil(w0[0] / st); i <= Math.floor(w1[0] / st); i++) { const x = f1(toS([i * st, 0])[0]); const l = `M${x} 0V${H}`; if (i % 5 === 0) major += l; else minor += l; }
+    for (let i = Math.ceil(w0[1] / st); i <= Math.floor(w1[1] / st); i++) { const y = f1(toS([0, i * st])[1]); const l = `M0 ${y}H${W}`; if (i % 5 === 0) major += l; else minor += l; }
+    h += `<path class="g-minor" d="${minor}"/><path class="g-major" d="${major}"/>`;
+    // etichette delle righe principali
+    let every = 1; while (st * 5 * every * v.s < 46) every *= 2;
+    for (let i = Math.ceil(w0[0] / (st * 5 * every)); i <= Math.floor(w1[0] / (st * 5 * every)); i++) { const val = i * st * 5 * every; h += `<text class="tk" x="${f1(toS([val, 0])[0] + 3)}" y="${H - 5}">${fmt(val, 1)}</text>`; }
+    for (let i = Math.ceil(w0[1] / (st * 5 * every)); i <= Math.floor(w1[1] / (st * 5 * every)); i++) { const val = i * st * 5 * every; h += `<text class="tk" x="4" y="${f1(toS([0, val])[1] - 3)}">${fmt(val, 1)}</text>`; }
+    // assi: orizzontale a y = 0 e verticale a x = 0 (asse di rotazione in modo rotazionale)
+    const ax = toS([0, 0]);
+    h += `<line class="axis-h" x1="0" x2="${W}" y1="${f1(ax[1])}" y2="${f1(ax[1])}"/>`;
+    if (rot) h += `<line class="axis-rot" x1="${f1(ax[0])}" x2="${f1(ax[0])}" y1="0" y2="${H}"/><text class="axis-lbl" x="${f1(ax[0] + 6)}" y="16">asse di rotazione</text>`;
+    else h += `<line class="axis-v" x1="${f1(ax[0])}" x2="${f1(ax[0])}" y1="0" y2="${H}"/>`;
+    // riempimento pari-dispari dei contorni campionati (mostra subito i fori)
+    if (C.raw.length) h += `<path class="fill" d="${C.raw.map((r) => 'M' + r.pts.map((p) => toS(p).map(f1).join(' ')).join('L') + 'Z').join(' ')}"/>`;
+    // curve di Bézier: foro (rosso) o contorno esterno
+    const depthOfPath = {}; C.raw.forEach((r, k) => { depthOfPath[r.pi] = C.depth[k]; });
+    S.paths.forEach((p, pi) => {
+      if (p.nodes.length < 2) return;
+      const hole = (depthOfPath[pi] || 0) % 2 === 1;
+      h += `<path class="pth${hole ? ' hole' : ''}${S.cons.length ? ' cn' : ''}${S.sel && S.sel.pi === pi ? ' sel' : ''}${stateCls(contourState(p))}" d="${pathD(p, p.closed)}"/>`;
+    });
+    // linea elastica della Penna
+    if (S.tool === 'pen' && S.active !== null && S.hover) {
+      const a = S.paths[S.active], l = a.nodes[a.nodes.length - 1], p0 = toS(l.p), pe = toS(S.hover);
+      h += l.out ? `<path class="rubber" d="M${p0.map(f1).join(' ')} C${toS(add(l.p, l.out)).map(f1).join(' ')} ${pe.map(f1).join(' ')} ${pe.map(f1).join(' ')}"/>` : `<line class="rubber" x1="${f1(p0[0])}" y1="${f1(p0[1])}" x2="${f1(pe[0])}" y2="${f1(pe[1])}"/>`;
+    }
+    // forma base in corso di trascinamento
+    if (S.draft) h += `<path class="draft" d="${pathD(S.draft, true)}"/>`;
+    // maniglie del nodo selezionato
+    if (S.sel && S.paths[S.sel.pi] && S.paths[S.sel.pi].nodes[S.sel.ni] && !S.paths[S.sel.pi].circ) {
+      const nd = S.paths[S.sel.pi].nodes[S.sel.ni], np = toS(nd.p);
+      for (const k of ['in', 'out']) if (nd[k]) { const hp = toS(add(nd.p, nd[k])); h += `<line class="hl" x1="${f1(np[0])}" y1="${f1(np[1])}" x2="${f1(hp[0])}" y2="${f1(hp[1])}"/><circle class="hd" cx="${f1(hp[0])}" cy="${f1(hp[1])}" r="4.5"/>`; }
+    }
+    // nodi (forma diversa per tipo, non solo colore)
+    S.paths.forEach((p, pi) => {
+      const hole = (depthOfPath[pi] || 0) % 2 === 1;
+      p.nodes.forEach((n, ni) => {
+        const sp = toS(n.p), isSel = S.sel && S.sel.pi === pi && S.sel.ni === ni;
+        const first = S.active === pi && ni === 0 && p.nodes.length >= 3;
+        h += nodeShape(n.kind, sp[0], sp[1], 'nd' + (hole ? ' hole' : '') + (isSel ? ' sel' : '') + (first ? ' first' : '') + stateCls(p.circ ? contourState(p) : nodeState(n.id)));
+      });
+    });
+    // autointersezioni
+    for (const q of C.hits) { const sp = toS(q); h += `<circle class="xdot" cx="${f1(sp[0])}" cy="${f1(sp[1])}" r="7"/>`; }
+    h += overlays();
+    svg.innerHTML = h;
+    placeEditor();
+    $('empty').hidden = !(C.empty && !S.paths.some((p) => p.nodes.length) && !S.draft);
+  }
+
+  /* ---------- 8. Pannelli (sidebar, percorsi, piede) ---------- */
+  const setVal = (el, v) => { if (document.activeElement !== el) el.value = v; };
+  const HINTS = {
+    select: 'Trascina nodi e maniglie. Clic su un segmento: inserisce un nodo. Doppio clic su un nodo: cambia tipo. Canc: elimina.',
+    pen: 'Clic: spigolo. Clic e trascina: nodo liscio. Clic sul primo nodo: chiude. Invio: termina. Backspace: toglie l\'ultimo nodo.',
+    rect: 'Trascina dal centro per disegnare un rettangolo di nodi modificabili.',
+    circle: 'Trascina dal centro per disegnare un cerchio di quattro nodi lisci.',
+    poly: 'Trascina dal centro per disegnare un poligono regolare. Il numero di lati è nella barra.',
+    hand: 'Trascina per spostare la vista.',
+    cons: 'Clic su nodi e segmenti per sceglierli, poi un vincolo dalla sezione Quote e vincoli. Canc elimina il vincolo scelto.',
+    dim: 'Scegli il tipo di quota nella barra, poi fai clic sugli elementi e digita il valore.'
+  };
+  let listSig = '';
+  function updatePanels() {
+    // estrusione
+    for (const b of $('extrSeg').querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.e === S.extr));
+    $('extrLin').hidden = S.extr !== 'linear'; $('extrRot').hidden = S.extr !== 'rotate';
+    setVal($('rHeight'), S.height); setVal($('nHeight'), S.height); setVal($('rTwist'), S.twist); setVal($('nTwist'), S.twist);
+    setVal($('rScale'), S.scaleTop); setVal($('nScale'), S.scaleTop); setVal($('rAngle'), S.angle); setVal($('nAngle'), S.angle);
+    setVal($('rSegs'), S.segs); setVal($('nSegs'), S.segs); $('cAxis').checked = S.closeAxis; setVal($('nTol'), S.tol);
+    // punto selezionato
+    const sec = $('secPt'), nd = S.sel && S.paths[S.sel.pi] && S.paths[S.sel.pi].nodes[S.sel.ni];
+    sec.dataset.off = nd ? '0' : '1';
+    for (const b of $('kindSeg').querySelectorAll('button')) b.setAttribute('aria-pressed', String(!!nd && b.dataset.k === nd.kind));
+    if (nd) {
+      setVal($('ptX'), +nd.p[0].toFixed(3)); setVal($('ptY'), +nd.p[1].toFixed(3));
+      const o = nd.out || [0, 0], i = nd.in || [0, 0];
+      setVal($('ptOL'), +len(o).toFixed(3)); setVal($('ptOA'), nd.out ? +(Math.atan2(o[1], o[0]) * 180 / Math.PI).toFixed(1) : 0);
+      setVal($('ptIL'), +len(i).toFixed(3)); setVal($('ptIA'), nd.in ? +(Math.atan2(i[1], i[0]) * 180 / Math.PI).toFixed(1) : 0);
+      $('ptNote').textContent = 'Nodo ' + (S.sel.ni + 1) + ' di ' + S.paths[S.sel.pi].nodes.length + ' nel contorno ' + (S.sel.pi + 1) + '.';
+    } else $('ptNote').textContent = 'Seleziona un nodo con lo strumento Seleziona. Doppio clic su un nodo per cambiarne il tipo.';
+    updateCons(nd);
+    // elenco dei percorsi, ricostruito solo se cambia qualcosa
+    const dMap = {}; C.raw.forEach((r, k) => { dMap[r.pi] = C.depth[k]; });
+    const sig = JSON.stringify([S.paths.map((p, i) => [p.closed, p.nodes.length, dMap[i]]), S.sel && S.sel.pi]);
+    if (sig !== listSig) {
+      listSig = sig;
+      $('plist').innerHTML = S.paths.map((p, i) => {
+        const d = dMap[i], hole = d !== undefined && d % 2 === 1;
+        return `<li data-i="${i}" class="${S.sel && S.sel.pi === i ? 'on' : ''}"><span class="nm">Contorno ${i + 1} (${p.nodes.length} nodi)</span>` +
+          `<span class="badge${hole ? ' badge--hole' : ''}">${d === undefined ? 'incompleto' : hole ? 'Foro' : 'Esterno'}</span>` +
+          `<button type="button" class="btn" data-act="closed" title="Chiudi o apri il contorno">${p.closed ? 'Chiuso' : 'Aperto'}</button>` +
+          `<button type="button" class="btn" data-act="del" aria-label="Elimina il contorno ${i + 1}" title="Elimina il contorno">×</button></li>`;
+      }).join('');
+    }
+    // piede: conteggi e avvisi
+    const nNodes = S.paths.reduce((n, p) => n + p.nodes.length, 0);
+    let st = `<span class="chip">${S.paths.length} ${S.paths.length === 1 ? 'contorno' : 'contorni'}, ${nNodes} nodi</span>`;
+    if (C.empty) st += '<span class="chip chip--warn">Servono almeno 2 nodi per un contorno</span>';
+    else if (!C.warn.length) st += '<span class="chip chip--ok">Nessun avviso</span>';
+    st += C.warn.map((w) => `<span class="chip chip--${w.k}">${w.t}</span>`).join('');
+    st += dofChip();
+    $('status').innerHTML = st;
+    $('btnOk').disabled = C.empty;
+    $('hint').textContent = hintText();
+    $('btnUndo').disabled = hi <= 0; $('btnRedo').disabled = hi >= hist.length - 1;
+  }
+
+  /* ---------- 9. Pianificazione dei ridisegni ---------- */
+  let raf = 0, needData = false;
+  function schedule() { needData = true; if (!raf) raf = requestAnimationFrame(frame); }
+  function schedule2d() { if (!raf) raf = requestAnimationFrame(frame); }
+  function frame() {
+    raf = 0;
+    if (needData) { compute(); build3d(); updatePanels(); needData = false; }
+    render2d();
+  }
+
+  /* ---------- 10. Modifica: tipi di nodo, maniglie ---------- */
+  function neighbors(path, ni) {
+    const n = path.nodes, k = n.length;
+    const prev = ni > 0 ? n[ni - 1] : (path.closed ? n[k - 1] : null);
+    const next = ni < k - 1 ? n[ni + 1] : (path.closed ? n[0] : null);
+    return { prev, next };
+  }
+  function setKind(path, ni, kind) {
+    const nd = path.nodes[ni];
+    if (kind === 'corner') { nd.kind = 'corner'; return; }
+    if (!nd.in && !nd.out) { // nessuna maniglia: la tangente segue i nodi vicini
+      const { prev, next } = neighbors(path, ni);
+      const a = prev ? prev.p : nd.p, b = next ? next.p : nd.p;
+      let dir = sub(b, a); if (len(dir) < 1e-9) dir = [1, 0];
+      dir = mul(dir, 1 / len(dir));
+      const L = Math.min(prev ? dist(prev.p, nd.p) : 1e9, next ? dist(next.p, nd.p) : 1e9) / 3;
+      nd.out = mul(dir, L); nd.in = mul(dir, -L);
+    } else if (nd.out && !nd.in) nd.in = mul(nd.out, -1);
+    else if (nd.in && !nd.out) nd.out = mul(nd.in, -1);
+    else if (kind === 'smooth') { const o = nd.out; nd.in = mul(o, -len(nd.in) / len(o)); }
+    else nd.in = mul(nd.out, -1);
+    nd.kind = kind;
+  }
+  // Muove una maniglia e applica il vincolo del tipo di nodo all'altra
+  function moveHandle(nd, which, vec) {
+    nd[which] = nz(vec) || undefined;
+    if (!nd[which]) delete nd[which];
+    const other = which === 'in' ? 'out' : 'in';
+    if (nd.kind === 'symmetric') nd[other] = nd[which] ? mul(nd[which], -1) : undefined;
+    else if (nd.kind === 'smooth' && nd[which]) {
+      const L = nd[other] ? len(nd[other]) : len(nd[which]);
+      nd[other] = mul(nd[which], -L / len(nd[which]));
+    }
+    if (!nd[other]) delete nd[other];
+  }
+  const CYCLE = ['corner', 'smooth', 'symmetric'];
+
+  /* ---------- 11. Forme base ---------- */
+  function circleNodes(c, r) {
+    return [0, 90, 180, 270].map((deg) => {
+      const a = deg * Math.PI / 180, t = [-Math.sin(a), Math.cos(a)];
+      return { p: [c[0] + r * Math.cos(a), c[1] + r * Math.sin(a)], out: mul(t, KAPPA * r), in: mul(t, -KAPPA * r), kind: 'symmetric' };
+    });
+  }
+  // Cerchio parametrico: centro e un nodo sul bordo sono i punti del risolutore, gli altri tre nodi si ricalcolano (regenCircle).
+  // Il nodo sul bordo è tenuto orizzontale rispetto al centro da un vincolo nascosto, così restano tre gradi di libertà: x, y e raggio.
+  function makeCircle(c, r) {
+    const nodes = circleNodes(c, r); nodes.forEach((n) => { n.id = nid(); });
+    const circ = { c: { id: nid(), p: c.slice() } };
+    return { closed: true, circ, nodes, _cons: [{ t: 'horizontal', p: [circ.c.id, nodes[0].id], hid: true }] };
+  }
+  function shapePath(tool, c, cur) {
+    const d = sub(cur, c), r = len(d);
+    if (r < 1e-6) return null;
+    if (tool === 'rect') { const w = Math.abs(d[0]), h = Math.abs(d[1]); if (w < 1e-6 || h < 1e-6) return null;
+      const nodes = [[-w, -h], [w, -h], [w, h], [-w, h]].map((q) => ({ id: nid(), p: [c[0] + q[0], c[1] + q[1]], kind: 'corner' }));
+      const [a, b, cc, dd] = nodes.map((n) => n.id);
+      return { closed: true, nodes, _cons: [{ t: 'horizontal', p: [a, b] }, { t: 'vertical', p: [b, cc] }, { t: 'horizontal', p: [dd, cc] }, { t: 'vertical', p: [a, dd] }] }; }
+    if (tool === 'circle') return makeCircle(c, r);
+    const n = Math.max(3, Math.min(24, S.sides | 0)), a0 = Math.atan2(d[1], d[0]);
+    return { closed: true, nodes: Array.from({ length: n }, (_, i) => ({ p: [c[0] + r * Math.cos(a0 + i * 2 * Math.PI / n), c[1] + r * Math.sin(a0 + i * 2 * Math.PI / n)], kind: 'corner' })) };
+  }
+
+  /* ---------- 12. Penna ---------- */
+  function finishPen(doCommit) {
+    penClose();
+    if (S.active === null) return;
+    const p = S.paths[S.active];
+    if (p && p.nodes.length < 2) S.paths.splice(S.active, 1);
+    S.active = null; S.hover = null;
+    if (doCommit) commit(); else schedule();
+  }
+
+  /* ---------- 13. Interazione con il puntatore ---------- */
+  let drag = null, spaceDown = false;
+  function hitTest(sx, sy) {
+    if (S.sel && S.paths[S.sel.pi] && !S.paths[S.sel.pi].circ) { // prima le maniglie del nodo selezionato
+      const nd = S.paths[S.sel.pi].nodes[S.sel.ni];
+      if (nd) for (const k of ['out', 'in']) if (nd[k]) { const hp = toS(add(nd.p, nd[k])); if (Math.hypot(hp[0] - sx, hp[1] - sy) <= 9) return { type: 'handle', which: k }; }
+    }
+    for (let pi = S.paths.length - 1; pi >= 0; pi--) if (S.paths[pi].circ) { // il centro di un cerchio si trascina da solo
+      const cp = toS(S.paths[pi].circ.c.p); if (Math.hypot(cp[0] - sx, cp[1] - sy) <= 9) return { type: 'center', pi };
+    }
+    for (let pi = S.paths.length - 1; pi >= 0; pi--) for (let ni = S.paths[pi].nodes.length - 1; ni >= 0; ni--) {
+      const sp = toS(S.paths[pi].nodes[ni].p);
+      if (Math.hypot(sp[0] - sx, sp[1] - sy) <= 10) return { type: 'node', pi, ni };
+    }
+    let best = null;
+    S.paths.forEach((p, pi) => { if (p.circ) return; for (let i = 0; i < segCount(p); i++) { const r = nearestOnSeg(segOf(p, i), sx, sy); if (r.d <= 7 && (!best || r.d < best.d)) best = { type: 'seg', pi, i, t: r.t, d: r.d }; } });
+    return best || { type: 'none' };
+  }
+  const pos = (e) => { const r = svg.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+
+  svg.addEventListener('pointerdown', (e) => {
+    if (e.button === 2) return;
+    svg.setPointerCapture(e.pointerId);
+    const [sx, sy] = pos(e), w = toW(sx, sy);
+    const pan = () => { drag = { type: 'pan', sx, sy, cx: S.view.cx, cy: S.view.cy }; svg.style.cursor = 'grabbing'; };
+    if (e.button === 1 || spaceDown || S.tool === 'hand') { pan(); return; }
+    // Un clic su un'etichetta di quota o su un'icona di vincolo la apre o la sceglie, qualunque sia lo strumento (tranne la Penna)
+    const lab = e.target.closest && e.target.closest('[data-qid]');
+    if (lab && S.tool !== 'pen') { labelClick(lab.dataset.qid); return; }
+    if (S.tool === 'dim') { dimClick(sx, sy); return; }
+    if (S.tool === 'cons') { consClick(sx, sy); return; }
+    if (S.tool === 'pen') {
+      const act = S.active !== null ? S.paths[S.active] : null;
+      const p = snapPoint(w, e, act ? act.nodes[act.nodes.length - 1].p : null);
+      const fl = { h: snapFlag.h, v: snapFlag.v }; // allineamento scattato per questo clic
+      if (act && act.nodes.length >= 3) { // clic sul primo nodo: chiude il contorno
+        const fp = toS(act.nodes[0].p);
+        if (Math.hypot(fp[0] - sx, fp[1] - sy) <= 10 || dist(p, act.nodes[0].p) < 1e-9) { act.closed = true; S.sel = { pi: S.active, ni: 0 }; S.active = null; S.hover = null; commit(); return; }
+      }
+      if (!act) { S.paths.push({ closed: false, nodes: [] }); S.active = S.paths.length - 1; }
+      const path = S.paths[S.active];
+      const before = path.nodes.length ? path.nodes[path.nodes.length - 1] : null;
+      const added = { id: nid(), p, kind: 'corner' };
+      path.nodes.push(added);
+      // Vincolo dedotto: se il punto è scattato in orizzontale o in verticale rispetto al precedente, lo diventa davvero
+      if (S.inferH && before && fl.h !== fl.v) addPlain({ t: fl.h ? 'horizontal' : 'vertical', p: [before.id, added.id] });
+      S.sel = { pi: S.active, ni: path.nodes.length - 1 };
+      drag = { type: 'pen', pi: S.active, ni: path.nodes.length - 1, sx, sy, moved: false };
+      schedule(); return;
+    }
+    if (S.tool === 'rect' || S.tool === 'circle' || S.tool === 'poly') {
+      const c = snapPoint(w, e, null); drag = { type: 'shape', c }; S.draft = null; return;
+    }
+    // strumento Seleziona
+    const hit = hitTest(sx, sy);
+    if (hit.type === 'center') { S.sel = null; drag = { type: 'center', pi: hit.pi, changed: false }; }
+    else if (hit.type === 'handle') drag = { type: 'handle', which: hit.which, pi: S.sel.pi, ni: S.sel.ni, changed: false };
+    else if (hit.type === 'node') { S.sel = { pi: hit.pi, ni: hit.ni }; drag = { type: 'node', pi: hit.pi, ni: hit.ni, changed: false }; schedule(); }
+    else if (hit.type === 'seg') {
+      const ni = splitSeg(S.paths[hit.pi], hit.i, hit.t);
+      S.sel = { pi: hit.pi, ni }; drag = { type: 'node', pi: hit.pi, ni, changed: true }; schedule();
+    } else { S.sel = null; pan(); schedule(); }
+  });
+
+  svg.addEventListener('pointermove', (e) => {
+    const [sx, sy] = pos(e), w = toW(sx, sy);
+    $('coords').textContent = 'x ' + fmt(w[0]) + '  y ' + fmt(w[1]) + ' mm';
+    if (!drag) {
+      if (S.tool === 'pen' && S.active !== null && penIn.hidden) { const a = S.paths[S.active]; S.hover = snapPoint(w, e, a.nodes[a.nodes.length - 1].p); schedule2d(); }
+      return;
+    }
+    if (drag.type === 'pan') { S.view.cx = drag.cx - (sx - drag.sx) / S.view.s; S.view.cy = drag.cy + (sy - drag.sy) / S.view.s; schedule2d(); return; }
+    if (drag.type === 'pen') {
+      if (!drag.moved && Math.hypot(sx - drag.sx, sy - drag.sy) < 4) return;
+      drag.moved = true;
+      const nd = S.paths[drag.pi].nodes[drag.ni], vec = sub(snapPoint(w, e, nd.p), nd.p);
+      if (len(vec) > 1e-6) { nd.out = vec; nd.in = mul(vec, -1); nd.kind = 'smooth'; }
+      schedule(); return;
+    }
+    if (drag.type === 'shape') { S.draft = shapePath(S.tool, drag.c, snapPoint(w, e, drag.c)); schedule(); return; }
+    if (drag.type === 'center') { // il cerchio intero: il centro e il nodo sul bordo si muovono insieme
+      const path = S.paths[drag.pi], c = path.circ.c, t = snapPoint(w, e, null, null), dl = sub(t, c.p);
+      dragSolve({ [c.id]: t, [path.nodes[0].id]: add(path.nodes[0].p, dl) }); drag.changed = true; schedule(); return;
+    }
+    const nd = S.paths[drag.pi] && S.paths[drag.pi].nodes[drag.ni];
+    if (!nd) return;
+    if (drag.type === 'node') { moveNode(drag, snapPoint(w, e, null, drag)); drag.changed = true; schedule(); return; }
+    if (drag.type === 'handle') {
+      if (e.altKey && nd.kind !== 'corner') nd.kind = 'corner'; // Alt: la maniglia diventa indipendente
+      const q = S.snapG && !e.ctrlKey ? snapPoint(w, e, null) : w;
+      moveHandle(nd, drag.which, sub(q, nd.p)); drag.changed = true; schedule();
+    }
+  });
+
+  function endDrag(e) {
+    if (!drag) return;
+    const d = drag; drag = null; svg.style.cursor = '';
+    if (d.type === 'pen') { commit(); return; }
+    if (d.type === 'shape') {
+      if (S.draft) {
+        const dr = S.draft, cs = dr._cons || []; delete dr._cons;
+        S.paths.push(dr); ensureIds();
+        for (const c of cs) if (c.hid || S.inferH) addPlain({ t: c.t, p: c.p, ...(c.hid ? { hid: true } : {}) }); // rettangolo: orizzontali e verticali; cerchio: punto sul bordo orizzontale (nascosto)
+        S.sel = null; S.draft = null; commit();
+      } else schedule();
+      return;
+    }
+    if ((d.type === 'node' || d.type === 'handle' || d.type === 'center') && d.changed) { if (d.type !== 'handle') settle(); commit(); }
+  }
+  svg.addEventListener('pointerup', endDrag);
+  svg.addEventListener('pointercancel', endDrag);
+
+  svg.addEventListener('dblclick', (e) => {
+    const [sx, sy] = pos(e);
+    if (S.tool === 'pen' && S.active !== null) { // il doppio clic ha aggiunto un nodo doppio: si toglie e si termina
+      const p = S.paths[S.active], n = p.nodes;
+      if (n.length >= 2 && dist(n[n.length - 1].p, n[n.length - 2].p) < 1e-6) n.pop();
+      finishPen(true); return;
+    }
+    if (S.tool !== 'select') return;
+    const hit = hitTest(sx, sy);
+    if (hit.type === 'node' && !S.paths[hit.pi].circ) {
+      const path = S.paths[hit.pi], nd = path.nodes[hit.ni];
+      setKind(path, hit.ni, CYCLE[(CYCLE.indexOf(nd.kind) + 1) % CYCLE.length]);
+      S.sel = { pi: hit.pi, ni: hit.ni }; commit();
+    }
+  });
+
+  // Zoom con la rotella, centrato sul puntatore
+  svg.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const [sx, sy] = pos(e), before = toW(sx, sy);
+    S.view.s = Math.min(200, Math.max(0.5, S.view.s * Math.exp(-e.deltaY * 0.0015)));
+    const after = toW(sx, sy);
+    S.view.cx += before[0] - after[0]; S.view.cy += before[1] - after[1];
+    schedule();
+  }, { passive: false });
+  function zoomBy(k) { S.view.s = Math.min(200, Math.max(0.5, S.view.s * k)); schedule(); }
+  $('zIn').onclick = () => zoomBy(1.4); $('zOut').onclick = () => zoomBy(1 / 1.4);
+  function fit2d() {
+    const pts = []; S.paths.forEach((p) => p.nodes.forEach((n) => { pts.push(n.p); if (n.out) pts.push(add(n.p, n.out)); if (n.in) pts.push(add(n.p, n.in)); }));
+    if (S.extr === 'rotate') pts.push([0, 0]);
+    if (!pts.length) { S.view = { cx: 0, cy: 20, s: Math.max(2, Math.min(W, H) / 70) }; schedule(); return; }
+    const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+    S.view = { cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, s: Math.min(200, Math.max(0.5, Math.min(W / Math.max(x1 - x0, 1) / 1.35, H / Math.max(y1 - y0, 1) / 1.35))) };
+    schedule();
+  }
+  $('zFit').onclick = fit2d;
+  new ResizeObserver(() => { const r = svg.getBoundingClientRect(); if (r.width < 10) return; const first = W === 600 && H === 400; W = r.width; H = r.height; if (first) fit2d(); schedule2d(); }).observe(svg);
+
+  /* ---------- 14. Strumenti, tastiera, pulsanti ---------- */
+  function setTool(t) {
+    if (t !== 'pen') finishPen(true);
+    cancelEdit(); S.qPick = [];
+    S.tool = t; svg.dataset.tool = t;
+    for (const b of $('tools').querySelectorAll('[data-tool]')) b.setAttribute('aria-pressed', String(b.dataset.tool === t));
+    schedule();
+  }
+  $('tools').addEventListener('click', (e) => { const b = e.target.closest('[data-tool]'); if (b) setTool(b.dataset.tool); });
+  $('btnUndo').onclick = undo; $('btnRedo').onclick = redo;
+  const KEYS = { v: 'select', p: 'pen', r: 'rect', c: 'circle', g: 'poly', d: 'dim', k: 'cons' };
+  window.addEventListener('keyup', (e) => { if (e.code === 'Space') { spaceDown = false; svg.style.cursor = ''; } });
+  window.addEventListener('keydown', (e) => {
+    const tag = (e.target.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+    if (!$('imp').hidden) { if (e.key === 'Escape') $('imp').hidden = true; return; }
+    const k = e.key.toLowerCase();
+    if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+    if ((e.ctrlKey || e.metaKey) && k === 'y') { e.preventDefault(); redo(); return; }
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.code === 'Space') { if (!spaceDown) { spaceDown = true; svg.style.cursor = 'grab'; } e.preventDefault(); return; }
+    // Penna con misure: un numero o Tab, dopo il primo punto, apre i campi Lunghezza e Angolo
+    if (S.tool === 'pen' && S.active !== null && penIn.hidden) {
+      if (/^[0-9.,-]$/.test(e.key)) { e.preventDefault(); penOpen(e.key); return; }
+      if (e.key === 'Tab') { e.preventDefault(); penOpen(''); return; }
+    }
+    if (KEYS[k]) { setTool(KEYS[k]); return; }
+    if (e.key === 'Enter') {
+      if (S.tool === 'dim' && S.qMode === 'ang' && S.qPick.length === 1) { angleVsX(S.qPick[0]); return; } // un segmento e Invio: angolo rispetto all'asse X
+      finishPen(true); return;
+    }
+    if (e.key === 'Escape') {
+      if (S.qbar) { S.qbar = null; schedule(); return; }
+      if (S.qPick.length || S.csel.length) { S.qPick = []; S.csel = []; schedule(); return; }
+      if (S.active !== null) finishPen(true); else if (S.draft) { S.draft = null; drag = null; schedule(); } else { S.sel = null; S.selCon = null; schedule(); } return;
+    }
+    if ((e.key === 'Delete' || e.key === 'Backspace') && S.selCon && !S.sel) { // elimina il vincolo o la quota scelti
+      e.preventDefault(); S.cons = S.cons.filter((c) => c.id !== S.selCon); S.selCon = null; commit(); return;
+    }
+    if (e.key === 'Backspace' && S.tool === 'pen' && S.active !== null) { // toglie l'ultimo nodo del percorso in corso
+      e.preventDefault(); const p = S.paths[S.active]; p.nodes.pop(); S.sel = p.nodes.length ? { pi: S.active, ni: p.nodes.length - 1 } : null;
+      if (!p.nodes.length) { S.paths.splice(S.active, 1); S.active = null; } commit(); return;
+    }
+    if ((e.key === 'Delete' || e.key === 'Backspace') && S.sel) { // elimina il nodo selezionato
+      e.preventDefault(); if (S.paths[S.sel.pi].circ) { S.paths.splice(S.sel.pi, 1); S.sel = null; commit(); return; } // un cerchio si elimina intero
+      const p = S.paths[S.sel.pi]; p.nodes.splice(S.sel.ni, 1);
+      if (p.nodes.length < 2) { S.paths.splice(S.sel.pi, 1); S.sel = null; if (S.active !== null) S.active = null; } else S.sel.ni = Math.max(0, S.sel.ni - 1);
+      commit(); return;
+    }
+    if (e.key.startsWith('Arrow') && S.sel && S.paths[S.sel.pi]) { // frecce: sposta il nodo di un passo
+      e.preventDefault(); const st = gridStep() * (e.shiftKey ? 10 : 1), nd = S.paths[S.sel.pi].nodes[S.sel.ni];
+      moveNode(S.sel, add(nd.p, [e.key === 'ArrowRight' ? st : e.key === 'ArrowLeft' ? -st : 0, e.key === 'ArrowUp' ? st : e.key === 'ArrowDown' ? -st : 0]));
+      settle(); commit();
+    }
+  });
+
+  // Estrusione e parametri
+  $('extrSeg').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-e]'); if (!b || b.dataset.e === S.extr) return;
+    S.extr = b.dataset.e; requestFit3d();
+    if (S.extr === 'rotate') fit2d();
+  });
+  function pair(range, num, key, parse) {
+    const on = (v) => { v = parse ? parse(v) : +v; if (Number.isFinite(v)) { S[key] = v; schedule(); } };
+    $(range).addEventListener('input', (e) => on(e.target.value));
+    $(num).addEventListener('input', (e) => { if (e.target.value !== '') on(e.target.value); });
+  }
+  pair('rHeight', 'nHeight', 'height'); pair('rTwist', 'nTwist', 'twist'); pair('rScale', 'nScale', 'scaleTop');
+  pair('rAngle', 'nAngle', 'angle', (v) => Math.min(360, Math.max(1, +v))); pair('rSegs', 'nSegs', 'segs', (v) => Math.min(128, Math.max(3, Math.round(+v))));
+  $('cAxis').onchange = (e) => { S.closeAxis = e.target.checked; schedule(); };
+  $('nTol').oninput = (e) => { const v = +e.target.value; if (v >= 0.005 && v <= 1) { S.tol = v; schedule(); } };
+  $('selGrid').onchange = (e) => { S.grid = +e.target.value; schedule(); };
+  $('cSnapG').onchange = (e) => { S.snapG = e.target.checked; };
+  $('cSnapN').onchange = (e) => { S.snapN = e.target.checked; };
+  $('cSnapO').onchange = (e) => { S.snapO = e.target.checked; };
+  $('polySides').oninput = (e) => { S.sides = +e.target.value || 6; };
+
+  // Punto selezionato: tipo, coordinate, maniglie
+  function selNode() { return S.sel && S.paths[S.sel.pi] ? S.paths[S.sel.pi].nodes[S.sel.ni] : null; }
+  $('kindSeg').addEventListener('click', (e) => { const b = e.target.closest('[data-k]'); if (!b || !selNode()) return; setKind(S.paths[S.sel.pi], S.sel.ni, b.dataset.k); commit(); });
+  function bindPt(id, apply) {
+    $(id).addEventListener('input', (e) => { const nd = selNode(); const v = parseFloat(String(e.target.value).replace(',', '.')); if (!nd || !Number.isFinite(v)) return; apply(nd, v); schedule(); });
+    $(id).addEventListener('change', () => { if (selNode()) commit(); });
+  }
+  const polar = (L, a) => [L * Math.cos(a * Math.PI / 180), L * Math.sin(a * Math.PI / 180)];
+  const angOf = (v) => (v ? Math.atan2(v[1], v[0]) * 180 / Math.PI : 0);
+  // Un nodo fisso si sposta cambiando il punto in cui è fissato; gli altri passano dal risolutore (e dalle quote)
+  function setXY(n, q) {
+    const f = S.cons.find((c) => c.t === 'fixed' && c.p[0] === n.id);
+    if (f) { f.x = q[0]; f.y = q[1]; }
+    moveNode(S.sel, q); settle();
+  }
+  bindPt('ptX', (n, v) => setXY(n, [v, n.p[1]])); bindPt('ptY', (n, v) => setXY(n, [n.p[0], v]));
+  bindPt('ptR', (n, v) => { if (v > 0) n.r = v; else delete n.r; });
+  bindPt('ptOL', (n, v) => moveHandle(n, 'out', polar(Math.max(0, v), n.out ? angOf(n.out) : (n.in ? angOf(n.in) + 180 : 0))));
+  bindPt('ptOA', (n, v) => moveHandle(n, 'out', polar(n.out ? len(n.out) : 5, v)));
+  bindPt('ptIL', (n, v) => moveHandle(n, 'in', polar(Math.max(0, v), n.in ? angOf(n.in) : (n.out ? angOf(n.out) + 180 : 180))));
+  bindPt('ptIA', (n, v) => moveHandle(n, 'in', polar(n.in ? len(n.in) : 5, v)));
+
+  // Elenco dei percorsi: selezione, apri o chiudi, elimina
+  $('plist').addEventListener('click', (e) => {
+    const li = e.target.closest('li'); if (!li) return; const i = +li.dataset.i, act = e.target.closest('[data-act]');
+    if (act && act.dataset.act === 'del') { S.paths.splice(i, 1); S.sel = null; S.active = null; commit(); return; }
+    if (act && act.dataset.act === 'closed') { S.paths[i].closed = !S.paths[i].closed; commit(); return; }
+    S.sel = { pi: i, ni: 0 }; schedule();
+  });
+
+  // Disposizione, dimensioni dell'anteprima
+  function setLayout(l) {
+    $('frame').dataset.layout = l;
+    for (const b of $('layoutSeg').querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.l === l));
+    try { localStorage.setItem('pbz-layout', l); } catch (_) { /* senza memoria locale la scelta non si ricorda */ }
+    setTimeout(() => { const r = svg.getBoundingClientRect(); W = r.width; H = r.height; schedule(); resize3d(); }, 30);
+  }
+  $('layoutSeg').addEventListener('click', (e) => { const b = e.target.closest('[data-l]'); if (b) setLayout(b.dataset.l); });
+  try { const l = localStorage.getItem('pbz-layout'); if (l === 'a' || l === 'b' || l === 'c') setLayout(l); } catch (_) { /* ignora */ }
+  const pv = $('prev');
+  $('pvBig').onclick = () => { pv.dataset.pv = pv.dataset.pv === 'big' ? 'normal' : 'big'; $('pvBig').textContent = pv.dataset.pv === 'big' ? 'Riduci' : 'Ingrandisci'; setTimeout(() => { resize3d(); const r = svg.getBoundingClientRect(); W = r.width; H = r.height; schedule(); }, 30); };
+  $('pvMin').onclick = () => { pv.dataset.pv = pv.dataset.pv === 'min' ? 'normal' : 'min'; $('pvMin').textContent = pv.dataset.pv === 'min' ? 'Riapri' : 'Comprimi'; setTimeout(() => { resize3d(); const r = svg.getBoundingClientRect(); W = r.width; H = r.height; schedule(); }, 30); };
+
+  // OK e Annulla: nel prodotto OK produce un solo passo di Annulla nella scena
+  let toastT = 0;
+  function toast(t) { const el = $('toast'); el.textContent = t; el.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { el.hidden = true; }, 3200); }
+  $('btnOk').onclick = () => { applied = snapshot(); toast('Profilo applicato. In Construct vale un solo passo nella cronologia della scena.'); };
+  $('btnCancel').onclick = () => { finishPen(false); applySnap(applied); commit(); toast('Modifiche annullate: tornato all\'ultimo profilo applicato.'); };
+
+  /* ---------- 14b. Quote, vincoli e Penna con misure ---------- */
+  const DIMS = new Set(['dist', 'distX', 'distY', 'angle']); // le quote: hanno un valore; gli altri sono vincoli geometrici
+  const GLYPH = { horizontal: 'H', vertical: 'V', coincident: '●', parallel: '∥', perpendicular: '⊥', equal: '=', fixed: 'F', midpoint: 'M', collinear: '≡', symmetric: 'S' };
+  const CNAME = { horizontal: 'Orizzontale', vertical: 'Verticale', coincident: 'Coincidente', parallel: 'Parallelo', perpendicular: 'Perpendicolare', equal: 'Uguale', fixed: 'Fisso', midpoint: 'Punto medio', collinear: 'Collineare', symmetric: 'Simmetrico', dist: 'Lunghezza', distX: 'Orizzontale', distY: 'Verticale', angle: 'Angolo' };
+  const isDim = (c) => DIMS.has(c.t);
+  let kc = 0;
+  const kid = () => 'k' + (++kc);
+  const addPlain = (c) => { S.cons.push({ id: kid(), ...c }); };
+  const parseNum = (t) => Number(String(t).trim().replace(',', '.'));
+  // Espressioni nelle quote: numeri, parametri, + - * / e parentesi (nel prodotto vero: evalFormula di src/scene/params)
+  function evalExpr(text, vars) {
+    const t = String(text).replace(/,/g, '.').replace(/\s+/g, ''); let i = 0;
+    const bad = (m) => { throw new Error(m || 'espressione non valida'); };
+    const atom = () => {
+      if (t[i] === '(') { i++; const v = sum(); if (t[i++] !== ')') bad('manca una parentesi'); return v; }
+      if (t[i] === '-') { i++; return -atom(); }
+      if (t[i] === '+') { i++; return atom(); }
+      const m = /^(?:\d+\.?\d*|\.\d+)/.exec(t.slice(i));
+      if (m) { i += m[0].length; return parseFloat(m[0]); }
+      const id = /^[A-Za-z_]\w*/.exec(t.slice(i));
+      if (id) { i += id[0].length; if (!Object.prototype.hasOwnProperty.call(vars, id[0])) bad('parametro sconosciuto: ' + id[0]); return vars[id[0]]; }
+      return bad();
+    };
+    const prod = () => { let v = atom(); while (t[i] === '*' || t[i] === '/') { const op = t[i++], r = atom(); v = op === '*' ? v * r : v / r; } return v; };
+    const sum = () => { let v = prod(); while (t[i] === '+' || t[i] === '-') { const op = t[i++], r = prod(); v = op === '+' ? v + r : v - r; } return v; };
+    const v = sum();
+    if (i !== t.length || !Number.isFinite(v)) bad();
+    return v;
+  }
+  const paramMap = () => Object.fromEntries(S.params.map((p) => [p.name, p.v]));
+  // Testo di un campo: numero semplice oppure espressione. Restituisce { v, expr } (expr solo se non è un numero semplice)
+  function parseVal(text) {
+    const tx = String(text).trim();
+    if (/^[-+]?(\d+[.,]?\d*|[.,]\d+)$/.test(tx)) return { v: parseNum(tx) };
+    try { return { v: evalExpr(tx, paramMap()), expr: tx }; } catch (e) { return { v: NaN, msg: e.message }; }
+  }
+  // Rilegge le espressioni dopo un cambio di parametro: restituisce false se un valore non è ammesso
+  function reeval() {
+    const vars = paramMap();
+    for (const c of S.cons) if (c.expr) {
+      let v; try { v = evalExpr(c.expr, vars); } catch (e) { toast('Quota ' + describe(c) + ': ' + e.message); return false; }
+      v = c.dia ? v / 2 : v;
+      const msg = validateValue(c.t, v);
+      if (msg) { toast('Quota ' + describe(c) + ' con ' + c.expr + ': ' + msg.toLowerCase()); return false; }
+      c.v = v;
+    }
+    return true;
+  }
+  const usesSolver = () => S.cons.length > 0 || S.paths.some((p) => p.circ);
+
+  // Punti del risolutore: origine, centro e nodo sul bordo dei cerchi, tutti gli altri nodi
+  function ptMap() {
+    const m = { O: [0, 0] };
+    for (const p of S.paths) { if (p.circ) m[p.circ.c.id] = p.circ.c.p; for (const n of p.nodes) m[n.id] = n.p; }
+    return m;
+  }
+  function bundle() {
+    ensureIds();
+    const pts = [{ id: 'O', x: 0, y: 0 }];
+    for (const p of S.paths) {
+      if (p.circ) { pts.push({ id: p.circ.c.id, x: p.circ.c.p[0], y: p.circ.c.p[1] }, { id: p.nodes[0].id, x: p.nodes[0].p[0], y: p.nodes[0].p[1] }); }
+      else for (const n of p.nodes) pts.push({ id: n.id, x: n.p[0], y: n.p[1] });
+    }
+    const ids = new Set(pts.map((q) => q.id));
+    // L'origine è sempre ferma: un vincolo implicito, come l'origine di Fusion
+    const cons = [{ id: 'kO', t: 'fixed', p: ['O'], x: 0, y: 0 }, ...S.cons.filter((c) => c.p.every((id) => ids.has(id)))];
+    return { pts, cons };
+  }
+  // Ricalcola i tre nodi derivati e le maniglie di un cerchio dal centro e dal nodo sul bordo
+  function regenCircle(p) {
+    const c = p.circ.c.p, d = sub(p.nodes[0].p, c), r = len(d), a0 = Math.atan2(d[1], d[0]);
+    for (let k = 0; k < 4; k++) {
+      const a = a0 + k * Math.PI / 2, t = [-Math.sin(a), Math.cos(a)], n = p.nodes[k];
+      if (k) n.p = [c[0] + r * Math.cos(a), c[1] + r * Math.sin(a)];
+      n.out = mul(t, KAPPA * r); n.in = mul(t, -KAPPA * r); n.kind = 'symmetric';
+    }
+  }
+  function writeBack(points) {
+    const m = new Map(points.map((q) => [q.id, q]));
+    for (const p of S.paths) {
+      if (p.circ) { const c = m.get(p.circ.c.id), r = m.get(p.nodes[0].id); p.circ.c.p = [c.x, c.y]; p.nodes[0].p = [r.x, r.y]; regenCircle(p); }
+      else for (const n of p.nodes) { const q = m.get(n.id); n.p = [q.x, q.y]; }
+    }
+  }
+  // Riassunto della diagnosi per disegno e piede: punti liberi, punti coinvolti in conflitti o ridondanze
+  function summarize(rep) {
+    const bad = new Set([...rep.conflicting, ...rep.redundant]), err = new Set();
+    S.cons.forEach((c) => { if (bad.has(c.id)) c.p.forEach((id) => err.add(id)); });
+    return { state: rep.state, dof: rep.dof, freeSet: new Set(rep.free), errNodes: err, bad, converged: rep.converged, redundant: rep.redundant, conflicting: rep.conflicting };
+  }
+  function diagnose() {
+    if (!S.cons.length) { S.rep = null; return; }
+    const { pts, cons } = bundle();
+    S.rep = summarize(solveSketch(pts, cons));
+  }
+  // Esito di una risoluzione: 'ok', 'unsolved' (il risolutore si è fermato, nessun colpevole) o 'conflict' (minimo dei quadrati minimi con residuo)
+  function outcome(rep) {
+    if (S.allowOver) return 'ok';
+    if (rep.unsolved) return 'unsolved';
+    return !rep.converged || rep.conflicting.length ? 'conflict' : 'ok';
+  }
+  const UNSOLVED = 'Il risolutore non è arrivato a una soluzione (non è detto che ci sia un conflitto): prova un valore più vicino a quello attuale.';
+  // Risolve dalla configurazione attuale e scrive i punti nel disegno
+  function solveApply() {
+    const { pts, cons } = bundle();
+    const rep = solveSketch(pts, cons);
+    if (rep.converged || S.allowOver) writeBack(rep.points);
+    S.rep = summarize(rep);
+    return rep;
+  }
+  // Trascinamento (dragSketch del blocco CORE): prima i nodi mossi sono vincoli fissi sul mouse, così il disegno li segue esattamente
+  // anche con un moto rigido di molti nodi; se non si può (nodo fisso, quota che lo impedisce) si passa al tentativo morbido con peso 30
+  // e il nodo resta indietro di quanto i vincoli non gli lasciano avanzare. Dopo un fallimento il resto del trascinamento è morbido.
+  // Tolleranza 1e-6 mm; un fotogramma quasi risolto (sotto 1e-4 mm, invisibile) si accetta; al rilascio settle() porta la precisione piena.
+  let dragSoft = false;
+  function dragSolve(moves) {
+    const { pts, cons } = bundle();
+    const rep = dragSketch(pts, cons, moves, dragSoft);
+    if (!rep.pinned) dragSoft = true;
+    if (rep.residual < 1e-4) writeBack(rep.points); // altrimenti il fotogramma si salta e il disegno resta com'era
+  }
+  function settle() { // dopo il trascinamento: fuori dal ciclo si può spendere qualche iterazione in più
+    dragSoft = false;
+    if (!usesSolver()) return;
+    const { pts, cons } = bundle(), rep = solveSketch(pts, cons, { diagnose: false, maxIter: 300 });
+    if (rep.converged) writeBack(rep.points);
+  }
+  function moveNode(d, target) {
+    const path = S.paths[d.pi], nd = path.nodes[d.ni];
+    if (path.circ) { // il nodo k segue il mouse: il nodo sul bordo è lo stesso ruotato all'indietro di k quarti di giro
+      const c = path.circ.c.p, v = sub(target, c), a = -d.ni * Math.PI / 2, ca = Math.cos(a), sa = Math.sin(a);
+      dragSolve({ [path.nodes[0].id]: add(c, [v[0] * ca - v[1] * sa, v[0] * sa + v[1] * ca]) }); return;
+    }
+    if (!usesSolver()) { nd.p = target; return; }
+    dragSolve({ [nd.id]: target });
+  }
+
+  // Nomi leggibili dei punti e dei vincoli
+  function pname(id) {
+    if (id === 'O') return 'Origine';
+    for (let pi = 0; pi < S.paths.length; pi++) {
+      const p = S.paths[pi];
+      if (p.circ && p.circ.c.id === id) return 'Centro ' + (pi + 1);
+      const ni = p.nodes.findIndex((n) => n.id === id);
+      if (ni >= 0) return 'P' + (pi + 1) + '.' + (ni + 1);
+    }
+    return '?';
+  }
+  const describe = (c) => (c.rad ? 'Raggio ' : c.dia ? 'Diametro ' : (CNAME[c.t] + ' ')) + c.p.map(pname).join('-');
+  const namesOf = (ids) => ids.map((id) => { const c = S.cons.find((x) => x.id === id); return c ? describe(c) : ''; }).filter(Boolean).slice(0, 3).join(', ');
+
+  // Stato di vincolo: '' (nessun vincolo nel disegno), 'free' (blu), 'def' (verde), 'err' (rosso)
+  function nodeState(id) {
+    if (!S.rep || !S.cons.length) return '';
+    if (S.rep.errNodes.has(id)) return 'err';
+    return S.rep.freeSet.has(id) ? 'free' : 'def';
+  }
+  function contourState(p) {
+    const ids = p.circ ? [p.circ.c.id, p.nodes[0].id] : p.nodes.map((n) => n.id), st = ids.map(nodeState);
+    if (st.includes('err')) return 'err';
+    if (st.includes('free')) return 'free';
+    return st.length && st.every((x) => x === 'def') ? 'def' : '';
+  }
+  const stateCls = (st) => (st === 'def' ? ' st-def' : st === 'err' ? ' st-err' : '');
+
+  // Aggiunta di un vincolo o di una quota: si risolve, e se il disegno diventa sovravincolato si rifiuta o si propone la quota di riferimento
+  function reject(msg, ids) {
+    toast(msg);
+    S.flash = new Set(ids); setTimeout(() => { S.flash = null; schedule2d(); }, 3000); schedule2d();
+  }
+  // Prima di risolvere una quota d'angolo si ruota il segmento al nuovo angolo: il risolutore parte vicino alla soluzione
+  // (da 10 a 170 gradi la strada a norma minima sposterebbe i nodi di decine di mm) e non incontra il salto a 180 gradi.
+  // Gira attorno all'estremo più vincolato (quello che non ha gradi di libertà, altrimenti il primo).
+  function preRotate(c, v) {
+    if (c.t !== 'angle' || c.ref) return;
+    const pm = ptMap(), delta = (v - measure(c, bundle().pts)) * Math.PI / 180;
+    if (!Number.isFinite(delta) || Math.abs(delta) < 1e-12) return;
+    let [pivot, mover] = c.p.length === 2 ? [c.p[0], c.p[1]] : [c.p[2], c.p[3]]; // il segmento che gira è il secondo (cd), o ab se i punti sono due
+    if (S.rep && S.rep.freeSet.has(pivot) && !S.rep.freeSet.has(mover)) [pivot, mover] = [mover, pivot];
+    const o = pm[pivot], q = pm[mover], d = [q[0] - o[0], q[1] - o[1]], cs = Math.cos(delta), sn = Math.sin(delta);
+    q[0] = o[0] + d[0] * cs - d[1] * sn; q[1] = o[1] + d[0] * sn + d[1] * cs;
+  }
+  function addConstraint(con) {
+    const snap = snapshot();
+    if (!con.id) con.id = kid();
+    preRotate(con, con.v);
+    S.cons.push(con);
+    let rep = solveApply();
+    if (rep.redundant.includes(con.id) && !S.allowOver) {
+      if (isDim(con)) { con.ref = true; solveApply(); toast('Il disegno è già vincolato: la quota diventa di riferimento (tra parentesi).'); }
+      else { applySnap(snap); toast('Vincolo ridondante: gli altri vincoli lo impongono già.'); return false; }
+    } else if (outcome(rep) === 'unsolved') {
+      applySnap(snap); toast(UNSOLVED); return false;
+    } else if (outcome(rep) === 'conflict') {
+      const others = rep.conflicting.filter((id) => id !== con.id), names = namesOf(others);
+      applySnap(snap);
+      if (isDim(con)) { S.qbar = { con, msg: 'Sovravincolo: la quota va in conflitto con ' + (names || 'gli altri vincoli') + '.' }; S.flash = new Set(others); setTimeout(() => { S.flash = null; schedule2d(); }, 3000); schedule(); }
+      else reject('Vincolo in conflitto con: ' + (names || 'gli altri vincoli'), others);
+      return false;
+    }
+    commit(); return true;
+  }
+  // Modifica di una quota esistente: se non è raggiungibile si torna com'era
+  function tryApply(mutate) {
+    const snap = snapshot();
+    mutate();
+    const rep = solveApply();
+    if (outcome(rep) === 'unsolved') { applySnap(snap); toast(UNSOLVED); return false; }
+    if (outcome(rep) === 'conflict') {
+      const bad = rep.conflicting.slice(), names = namesOf(bad);
+      applySnap(snap);
+      reject('Valore non raggiungibile: va in conflitto con ' + (names || 'i vincoli') + '.', bad);
+      return false;
+    }
+    commit(); return true;
+  }
+  function setDimValue(c, v, expr) {
+    const msg = validateValue(c.t, v);
+    if (msg) { toast(msg); schedule(); return false; }
+    return tryApply(() => { preRotate(c, v); c.v = v; if (expr) c.expr = expr; else delete c.expr; });
+  }
+  function toggleRef(id) {
+    const c = S.cons.find((x) => x.id === id); if (!c) return;
+    if (!c.ref) { c.ref = true; commit(); return; } // da pilotante a riferimento: la quota non impone più nulla
+    const snap = snapshot(), pa = bundle().pts;
+    c.ref = false; c.v = measure(c, pa); // da riferimento a pilotante: tiene la misura attuale
+    const rep = solveApply();
+    if (rep.unsolved) { applySnap(snap); toast(UNSOLVED); return; }
+    if (rep.redundant.includes(c.id) || rep.conflicting.length || !rep.converged) { applySnap(snap); toast('Il disegno è già vincolato: la quota resta di riferimento.'); return; }
+    commit();
+  }
+
+  // Trovare gli elementi sotto il puntatore
+  function hitPoint(sx, sy) {
+    const o = toS([0, 0]), onOrigin = Math.hypot(o[0] - sx, o[1] - sy) <= 9;
+    for (let pi = S.paths.length - 1; pi >= 0; pi--) {
+      const p = S.paths[pi];
+      if (p.circ) {
+        const cs = toS(p.circ.c.p); if (Math.hypot(cs[0] - sx, cs[1] - sy) <= 10) return { id: p.circ.c.id };
+        for (let k = 0; k < 4; k++) { const q = toS(p.nodes[k].p); if (Math.hypot(q[0] - sx, q[1] - sy) <= 10) return k === 0 ? { id: p.nodes[0].id, circle: pi } : { circle: pi }; }
+      } else for (let ni = p.nodes.length - 1; ni >= 0; ni--) { const q = toS(p.nodes[ni].p); if (Math.hypot(q[0] - sx, q[1] - sy) <= 10) return { id: p.nodes[ni].id, pi, ni }; }
+    }
+    return onOrigin ? { id: 'O' } : null;
+  }
+  function hitSegment(sx, sy) {
+    let best = null;
+    S.paths.forEach((p, pi) => {
+      if (p.circ) return;
+      for (let i = 0; i < segCount(p); i++) { const r = nearestOnSeg(segOf(p, i), sx, sy); if (r.d <= 8 && (!best || r.d < best.d)) best = { pi, i, d: r.d, a: p.nodes[i].id, b: p.nodes[(i + 1) % p.nodes.length].id }; }
+    });
+    return best;
+  }
+  function hitCircle(sx, sy) {
+    for (let pi = S.paths.length - 1; pi >= 0; pi--) {
+      const p = S.paths[pi]; if (!p.circ) continue;
+      const cs = toS(p.circ.c.p);
+      if (Math.abs(Math.hypot(sx - cs[0], sy - cs[1]) - len(sub(p.nodes[0].p, p.circ.c.p)) * S.view.s) <= 8) return pi;
+    }
+    return null;
+  }
+
+  // Strumento Quota (D): sceglie gli elementi e apre l'etichetta modificabile
+  function openEditor(ed) { S.ed = { fresh: true, ...ed }; S.qPick = []; schedule(); }
+  function startLinear(mode, A, B) {
+    if (A === B) return;
+    const pm = ptMap(), a = pm[A], b = pm[B], t = mode === 'len' ? 'dist' : mode === 'h' ? 'distX' : 'distY';
+    const con = { t, p: [A, B] };
+    if (t === 'dist') con.v = dist(a, b); else if (t === 'distX') { con.s = b[0] >= a[0] ? 1 : -1; con.v = Math.abs(b[0] - a[0]); } else { con.s = b[1] >= a[1] ? 1 : -1; con.v = Math.abs(b[1] - a[1]); }
+    if (con.v < 1e-6) { toast('I due punti hanno la stessa ' + (t === 'distX' ? 'x' : t === 'distY' ? 'y' : 'posizione') + ': prima separali.'); return; }
+    openEditor({ con, isNew: true, text: fmt(con.v, 4) });
+  }
+  function startAngle(s1, s2) {
+    const shared = [s1.a, s1.b].find((id) => id === s2.a || id === s2.b);
+    let l1 = [s1.a, s1.b], l2 = [s2.a, s2.b];
+    if (shared) { l1 = [shared, s1.a === shared ? s1.b : s1.a]; l2 = [shared, s2.a === shared ? s2.b : s2.a]; } // si misura tra i due raggi uscenti dal vertice
+    const pa = bundle().pts;
+    let con = { t: 'angle', p: [...l1, ...l2] };
+    if (measure(con, pa) < 0) con = { t: 'angle', p: [...l2, ...l1] }; // l'angolo si presenta sempre positivo
+    con.v = measure(con, pa);
+    if (Math.abs(con.v) < 1e-6 || Math.abs(Math.abs(con.v) - 180) < 1e-6) { toast('I due segmenti sono paralleli: usa il vincolo Parallelo.'); return; }
+    openEditor({ con, isNew: true, text: fmt(con.v, 4) });
+  }
+  function angleVsX(seg) {
+    const con = { t: 'angle', p: [seg.a, seg.b] };
+    con.v = measure(con, bundle().pts); S.qPick = [];
+    openEditor({ con, isNew: true, text: fmt(con.v, 4) });
+  }
+  function startCircle(pi, mode) {
+    const p = S.paths[pi], cid = p.circ.c.id, rid = p.nodes[0].id;
+    const c = S.cons.find((x) => x.t === 'dist' && x.p[0] === cid && x.p[1] === rid && (x.rad || x.dia)); // se la quota del cerchio c'è già, cambia solo come si legge
+    const con = c || { t: 'dist', p: [cid, rid], v: len(sub(p.nodes[0].p, p.circ.c.p)), [mode]: 1 };
+    openEditor({ con, isNew: !c, mode, text: fmt(mode === 'dia' ? 2 * con.v : con.v, 4) });
+  }
+  function startFillet(id) {
+    for (const p of S.paths) {
+      const i = p.nodes.findIndex((n) => n.id === id); if (i < 0) continue;
+      const n = p.nodes[i];
+      if (p.circ || n.kind !== 'corner' || n.in || n.out || (!p.closed && (i === 0 || i === p.nodes.length - 1))) { toast('Il raccordo si assegna a uno spigolo senza maniglie, con un segmento prima e uno dopo.'); return; }
+      openEditor({ kind: 'fillet', id, text: fmt(n.r || 5, 3) }); return;
+    }
+  }
+  function dimClick(sx, sy) {
+    const m = S.qMode;
+    if (m === 'rad' || m === 'dia') {
+      const pc = hitCircle(sx, sy), hp = hitPoint(sx, sy);
+      if (hp && hp.circle !== undefined) return startCircle(hp.circle, m);
+      if (pc !== null) return startCircle(pc, m);
+      if (m === 'dia') { toast('Il diametro si assegna a un cerchio.'); return; }
+      if (hp && hp.id && hp.pi !== undefined) startFillet(hp.id);
+      return;
+    }
+    if (m === 'ang') {
+      const sg = hitSegment(sx, sy); if (!sg) return;
+      const first = S.qPick[0];
+      if (first && first.a === sg.a && first.b === sg.b) return;
+      S.qPick.push({ a: sg.a, b: sg.b });
+      if (S.qPick.length === 2) { const [s1, s2] = S.qPick; S.qPick = []; startAngle(s1, s2); } else schedule();
+      return;
+    }
+    const hp = hitPoint(sx, sy);
+    if (hp && hp.id) {
+      if (S.qPick.includes(hp.id)) return;
+      S.qPick.push(hp.id);
+      if (S.qPick.length === 2) { const [A, B] = S.qPick; S.qPick = []; startLinear(m, A, B); } else schedule();
+      return;
+    }
+    const sg = hitSegment(sx, sy);
+    if (sg) { S.qPick = []; startLinear(m, sg.a, sg.b); }
+  }
+  function labelClick(qid) {
+    if (qid === 'draft') return;
+    if (qid.startsWith('f:')) { startFillet(qid.slice(2)); return; }
+    const c = S.cons.find((x) => x.id === qid); if (!c) return;
+    S.selCon = c.id; S.sel = null;
+    if (isDim(c) && !c.ref) openEditor({ con: c, isNew: false, text: c.expr || fmt(c.dia ? 2 * c.v : c.v, 4) });
+    else { if (c.ref) toast('Quota di riferimento: mostra la misura, non la impone.'); schedule(); }
+  }
+
+  // Editor dell'etichetta: un campo sul disegno (Invio applica, Esc annulla)
+  const qEdit = $('qEdit'), labelPos = {};
+  function placeEditor() {
+    if (!S.ed) { qEdit.hidden = true; return; }
+    const key = S.ed.kind === 'fillet' ? 'f:' + S.ed.id : S.ed.isNew ? 'draft' : S.ed.con.id, pos = labelPos[key];
+    if (!pos) { qEdit.hidden = true; return; }
+    qEdit.hidden = false; qEdit.style.left = f1(Math.max(2, pos[0] - 43)) + 'px'; qEdit.style.top = f1(Math.max(2, pos[1] - 13)) + 'px';
+    if (S.ed.fresh) { S.ed.fresh = false; qEdit.value = S.ed.text; qEdit.focus(); qEdit.select(); }
+  }
+  let editing = false;
+  function commitEdit() {
+    if (!S.ed || editing) return;
+    editing = true;
+    const ed = S.ed, text = qEdit.value;
+    S.ed = null; qEdit.hidden = true;
+    try {
+      if (ed.mode) { delete ed.con.rad; delete ed.con.dia; ed.con[ed.mode] = 1; } // raggio o diametro: lo stesso vincolo, letto in due modi
+      const r = parseVal(text), v = r.v;
+      if (ed.kind === 'fillet') setFillet(ed.id, v);
+      else if (!Number.isFinite(v)) toast(r.msg ? 'Espressione non valida: ' + r.msg : 'Valore non valido');
+      else {
+        const val = ed.con.dia ? v / 2 : v, msg = validateValue(ed.con.t, val);
+        if (msg) toast(msg);
+        else if (ed.isNew) { ed.con.v = val; if (r.expr) ed.con.expr = r.expr; addConstraint(ed.con); }
+        else setDimValue(ed.con, val, r.expr);
+      }
+    } finally { editing = false; schedule(); }
+  }
+  function cancelEdit() { if (!S.ed) return; S.ed = null; qEdit.hidden = true; schedule2d(); }
+  qEdit.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commitEdit(); } else if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); } });
+  qEdit.addEventListener('blur', commitEdit);
+  function setFillet(id, v) {
+    if (!(v >= 0) || !Number.isFinite(v)) { toast('Valore non valido'); return; }
+    for (const p of S.paths) {
+      const i = p.nodes.findIndex((n) => n.id === id); if (i < 0) continue;
+      const n = p.nodes[i], saved = n.r; n.r = 1e6; // raggio enorme: filletGeom restituisce il massimo possibile
+      const g = filletGeom(p, i), rmax = g ? g.rmax : 0; n.r = saved;
+      let r = v;
+      if (r > rmax) { r = Math.floor(rmax * 100) / 100; toast('Raggio ridotto a ' + fmt(r) + ' mm: lo spazio dei segmenti vicini non basta.'); }
+      if (r > 0) n.r = r; else delete n.r;
+      commit(); return;
+    }
+  }
+
+  // Strumento Vincoli (K): scelta di nodi e segmenti, poi un vincolo
+  const sameItem = (x, y) => x.k === y.k && (x.k === 'n' ? x.id === y.id : x.a === y.a && x.b === y.b);
+  function consClick(sx, sy) {
+    const hp = hitPoint(sx, sy);
+    let it = null;
+    if (hp && hp.id) it = { k: 'n', id: hp.id };
+    else { const sg = hitSegment(sx, sy); if (sg) it = { k: 's', a: sg.a, b: sg.b }; }
+    if (!it) { S.csel = []; schedule(); return; }
+    const at = S.csel.findIndex((x) => sameItem(x, it));
+    if (at >= 0) S.csel.splice(at, 1); else S.csel.push(it);
+    schedule();
+  }
+  const itemName = (x) => (x.k === 'n' ? pname(x.id) : 'segmento ' + pname(x.a) + '-' + pname(x.b));
+  // Punti richiesti da ogni vincolo in base alla scelta; 'multi' = uno per ogni nodo scelto; null = non applicabile
+  function consArgs(t) {
+    const ns = S.csel.filter((x) => x.k === 'n'), ss = S.csel.filter((x) => x.k === 's');
+    switch (t) {
+      case 'horizontal': case 'vertical':
+        if (ss.length === 1 && !ns.length) return [ss[0].a, ss[0].b];
+        return ns.length === 2 && !ss.length ? [ns[0].id, ns[1].id] : null;
+      case 'fixed': case 'tangent': return ns.length >= 1 && !ss.length ? 'multi' : null;
+      case 'coincident': return ns.length === 2 && !ss.length ? [ns[0].id, ns[1].id] : null;
+      case 'parallel': case 'perpendicular': case 'equal': case 'collinear':
+        return ss.length === 2 && !ns.length ? [ss[0].a, ss[0].b, ss[1].a, ss[1].b] : null;
+      case 'midpoint': return ns.length === 1 && ss.length === 1 ? [ns[0].id, ss[0].a, ss[0].b] : null;
+      case 'symmetric': return ns.length === 2 && ss.length === 1 ? [ns[0].id, ns[1].id, ss[0].a, ss[0].b] : null;
+    }
+    return null;
+  }
+  function applyCons(t) {
+    const a = consArgs(t); if (!a) return;
+    if (t === 'tangent') { // la tangente è il tipo Liscio: maniglie allineate (resta un'impostazione del nodo, non un dato del risolutore)
+      for (const it of S.csel) for (const p of S.paths) { const i = p.nodes.findIndex((n) => n.id === it.id); if (i >= 0 && !p.circ) setKind(p, i, 'smooth'); }
+      commit(); return;
+    }
+    if (t === 'fixed') {
+      const pm = ptMap(), snap = snapshot(), before = S.cons.length;
+      for (const it of S.csel) if (it.id !== 'O' && !S.cons.some((c) => c.t === 'fixed' && c.p[0] === it.id)) addPlain({ t: 'fixed', p: [it.id], x: pm[it.id][0], y: pm[it.id][1] });
+      if (S.cons.length === before) { toast('I nodi scelti sono già fissi (l’origine lo è sempre).'); return; }
+      const rep = solveApply();
+      if (rep.unsolved && !S.allowOver) { applySnap(snap); toast(UNSOLVED); return; }
+      if ((rep.redundant.length || rep.conflicting.length || !rep.converged) && !S.allowOver) { applySnap(snap); toast('Fissare questi nodi renderebbe il disegno sovravincolato.'); return; }
+      S.csel = []; commit(); return;
+    }
+    if (addConstraint({ t, p: a })) S.csel = [];
+  }
+
+  // Overlay del disegno: origine, elementi scelti, quote, icone dei vincoli, raccordi, centri dei cerchi
+  const labelSvg = (key, x, y, text, cls) => {
+    const w = text.length * 6.6 + 14;
+    labelPos[key] = [x, y];
+    return `<g class="ql${cls}" data-qid="${key}"><rect x="${f1(x - w / 2)}" y="${f1(y - 9)}" width="${f1(w)}" height="18" rx="9"/><text x="${f1(x)}" y="${f1(y + 4)}" text-anchor="middle">${text}</text></g>`;
+  };
+  const arrow = (x, y, ux, uy) => `M${f1(x + ux * 7 - uy * 3)} ${f1(y + uy * 7 + ux * 3)}L${f1(x)} ${f1(y)}L${f1(x + ux * 7 + uy * 3)} ${f1(y + uy * 7 - ux * 3)}`;
+  function dimSvg(c, pm, pa, cls, key) {
+    if (!c.p.every((id) => pm[id])) return '';
+    const A = toS(pm[c.p[0]]), B = toS(pm[c.p[1]]), v = c.ref ? measure(c, pa) : c.v, off = 30;
+    let g = '', lx, ly, text;
+    if (c.t === 'angle') {
+      const two = c.p.length === 2, a = pm[c.p[0]], u = sub(pm[c.p[1]], a);
+      let V = a, th1 = 0;
+      if (!two) {
+        const cc = pm[c.p[2]], w = sub(pm[c.p[3]], cc), den = u[0] * w[1] - u[1] * w[0];
+        th1 = Math.atan2(u[1], u[0]);
+        if (Math.abs(den) > 1e-9) { const t = ((cc[0] - a[0]) * w[1] - (cc[1] - a[1]) * w[0]) / den; V = [a[0] + u[0] * t, a[1] + u[1] * t]; }
+      }
+      const deg = measure(c, pa), Vs = toS(V), R = 36; let d = '';
+      for (let i = 0; i <= 24; i++) { const an = th1 + deg * Math.PI / 180 * i / 24; d += (i ? 'L' : 'M') + f1(Vs[0] + R * Math.cos(an)) + ' ' + f1(Vs[1] - R * Math.sin(an)); }
+      g = `<path class="dl" d="${d}"/>` + (two ? `<line class="dl" x1="${f1(Vs[0])}" y1="${f1(Vs[1])}" x2="${f1(Vs[0] + R + 10)}" y2="${f1(Vs[1])}"/>` : '');
+      const mid = th1 + deg * Math.PI / 360;
+      lx = Vs[0] + (R + 22) * Math.cos(mid); ly = Vs[1] - (R + 22) * Math.sin(mid); text = fmt(v, 1) + '°';
+    } else if (c.rad || c.dia) { // cerchio: linea dal centro al bordo, l'etichetta a metà
+      g = `<line class="dl" x1="${f1(A[0])}" y1="${f1(A[1])}" x2="${f1(B[0])}" y2="${f1(B[1])}"/>`;
+      lx = (A[0] + B[0]) / 2; ly = (A[1] + B[1]) / 2 - 14; text = (c.rad ? 'R' : 'Ø') + fmt(c.rad ? v : 2 * v);
+    } else if (c.t === 'distX') {
+      const y = Math.max(A[1], B[1]) + off, ux = A[0] <= B[0] ? 1 : -1;
+      g = `<path class="dl" d="M${f1(A[0])} ${f1(A[1] + (A[1] < y ? 3 : -3))}V${f1(y + 4)}M${f1(B[0])} ${f1(B[1] + (B[1] < y ? 3 : -3))}V${f1(y + 4)}M${f1(A[0])} ${f1(y)}H${f1(B[0])}${arrow(A[0], y, ux, 0)}${arrow(B[0], y, -ux, 0)}"/>`;
+      lx = (A[0] + B[0]) / 2; ly = y; text = fmt(v);
+    } else if (c.t === 'distY') {
+      const x = Math.min(A[0], B[0]) - off, uy = A[1] <= B[1] ? 1 : -1;
+      g = `<path class="dl" d="M${f1(A[0] + (A[0] < x ? 3 : -3))} ${f1(A[1])}H${f1(x - 4)}M${f1(B[0] + (B[0] < x ? 3 : -3))} ${f1(B[1])}H${f1(x - 4)}M${f1(x)} ${f1(A[1])}V${f1(B[1])}${arrow(x, A[1], 0, uy)}${arrow(x, B[1], 0, -uy)}"/>`;
+      lx = x; ly = (A[1] + B[1]) / 2; text = fmt(v);
+    } else { // distanza allineata: linea parallela al segmento, spostata di 30 px
+      const dx = B[0] - A[0], dy = B[1] - A[1], L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L, nx = -uy, ny = ux;
+      const A2 = [A[0] + nx * off, A[1] + ny * off], B2 = [B[0] + nx * off, B[1] + ny * off];
+      g = `<path class="dl" d="M${f1(A[0] + nx * 3)} ${f1(A[1] + ny * 3)}L${f1(A2[0] + nx * 4)} ${f1(A2[1] + ny * 4)}M${f1(B[0] + nx * 3)} ${f1(B[1] + ny * 3)}L${f1(B2[0] + nx * 4)} ${f1(B2[1] + ny * 4)}M${f1(A2[0])} ${f1(A2[1])}L${f1(B2[0])} ${f1(B2[1])}${arrow(A2[0], A2[1], ux, uy)}${arrow(B2[0], B2[1], -ux, -uy)}"/>`;
+      lx = (A2[0] + B2[0]) / 2; ly = (A2[1] + B2[1]) / 2; text = fmt(v);
+    }
+    if (c.ref) text = '(' + text + ')'; else if (c.expr) text += ' ƒ';
+    return `<g class="dim${cls}">${g}</g>` + labelSvg(key, lx, ly, text, cls);
+  }
+  function glyphSvg(c, pm, cls, slots) {
+    if (!c.p.every((id) => pm[id])) return '';
+    let h = '';
+    const put = (key, x, y) => `<g class="gl${cls}" data-qid="${key}"><circle cx="${f1(x)}" cy="${f1(y)}" r="8"/><text x="${f1(x)}" y="${f1(y + 4)}" text-anchor="middle">${GLYPH[c.t]}</text><title>${describe(c)}</title></g>`;
+    const onSeg = (i, j) => { // l'icona sta accanto al segmento, e più icone sullo stesso segmento si impilano
+      const A = toS(pm[c.p[i]]), B = toS(pm[c.p[j]]), key = c.p[i] + '|' + c.p[j], k = slots[key] = (slots[key] || 0) + 1;
+      const dx = B[0] - A[0], dy = B[1] - A[1], L = Math.hypot(dx, dy) || 1;
+      return put(c.id, (A[0] + B[0]) / 2 - dy / L * 13 + dx / L * (k - 1) * 17, (A[1] + B[1]) / 2 + dx / L * 13 + dy / L * (k - 1) * 17);
+    };
+    const onPt = (i) => { const q = toS(pm[c.p[i]]), key = c.p[i], k = slots[key] = (slots[key] || 0) + 1; return put(c.id, q[0] + 12 + (k - 1) * 17, q[1] - 12); };
+    if (c.t === 'fixed' || c.t === 'coincident' || c.t === 'midpoint') h += onPt(0);
+    else if (c.t === 'horizontal' || c.t === 'vertical' || c.t === 'symmetric') h += onSeg(0, 1);
+    else h += onSeg(0, 1) + onSeg(2, 3);
+    return h;
+  }
+  function overlays() {
+    const pm = ptMap(), pa = Object.keys(pm).map((id) => ({ id, x: pm[id][0], y: pm[id][1] }));
+    const bad = S.rep ? S.rep.bad : new Set(), fl = S.flash || new Set(), slots = {};
+    Object.keys(labelPos).forEach((k) => delete labelPos[k]);
+    let h = '';
+    const ring = (id) => { const q = pm[id]; if (!q) return ''; const s = toS(q); return `<circle class="ring" cx="${f1(s[0])}" cy="${f1(s[1])}" r="11"/>`; };
+    const hl = (a, b) => { if (!pm[a] || !pm[b]) return ''; const A = toS(pm[a]), B = toS(pm[b]); return `<line class="hlseg" x1="${f1(A[0])}" y1="${f1(A[1])}" x2="${f1(B[0])}" y2="${f1(B[1])}"/>`; };
+    if (S.tool === 'dim' || S.tool === 'cons' || S.cons.some((c) => c.p.includes('O'))) { const o = toS([0, 0]); h += `<circle class="org${S.qPick.includes('O') || S.csel.some((x) => x.id === 'O') ? ' pick' : ''}" cx="${f1(o[0])}" cy="${f1(o[1])}" r="5"/>`; }
+    S.csel.forEach((x) => { h += x.k === 'n' ? ring(x.id) : hl(x.a, x.b); });
+    S.qPick.forEach((x) => { h += typeof x === 'string' ? ring(x) : hl(x.a, x.b); });
+    S.cons.forEach((c) => {
+      if (c.hid) return;
+      const cls = (c.ref ? ' ref' : '') + (S.selCon === c.id ? ' sel' : '') + (bad.has(c.id) || fl.has(c.id) ? ' err' : '');
+      h += isDim(c) ? dimSvg(c, pm, pa, cls, c.id) : glyphSvg(c, pm, cls, slots);
+    });
+    if (S.ed && S.ed.isNew) h += dimSvg(S.ed.con, pm, pa, ' draft', 'draft');
+    S.paths.forEach((p) => {
+      p.nodes.forEach((n, i) => { // etichetta del raccordo, sul lato esterno dello spigolo
+        const g = n.r > 0 && !p.circ ? filletGeom(p, i) : null; if (!g) return;
+        const q = toS(n.p), bis = [-(g.u[0] + g.v[0]), -(g.u[1] + g.v[1])], bl = Math.hypot(bis[0], bis[1]) || 1;
+        h += labelSvg('f:' + n.id, q[0] + bis[0] / bl * 26, q[1] - bis[1] / bl * 26, 'R' + fmt(g.r), S.ed && S.ed.kind === 'fillet' && S.ed.id === n.id ? ' sel' : '');
+      });
+      if (p.circ) { const c = toS(p.circ.c.p), st = stateCls(contourState(p)); h += `<g><circle class="cen${st}" cx="${f1(c[0])}" cy="${f1(c[1])}" r="4"/><path class="cen${st}" d="M${f1(c[0] - 8)} ${f1(c[1])}H${f1(c[0] + 8)}M${f1(c[0])} ${f1(c[1] - 8)}V${f1(c[1] + 8)}" fill="none"/></g>`; }
+    });
+    return h;
+  }
+
+  // Pannello: elenco di quote e vincoli, pulsanti, piede
+  let cSig = '';
+  function updateCons(nd) {
+    const circ = S.sel && S.paths[S.sel.pi] && S.paths[S.sel.pi].circ;
+    const rEl = $('ptR'); rEl.disabled = !(nd && nd.kind === 'corner' && !nd.in && !nd.out && !circ); setVal(rEl, nd && nd.r ? +nd.r.toFixed(3) : 0);
+    for (const b of $('cbtns').querySelectorAll('[data-c]')) b.disabled = !consArgs(b.dataset.c);
+    $('cNote').textContent = S.csel.length ? S.csel.length + ' elementi scelti: ' + S.csel.map(itemName).join(', ') + '.' : 'Con lo strumento Vincoli (K) fai clic su nodi e segmenti per sceglierli (di nuovo clic: li toglie).';
+    $('qModeSeg').hidden = S.tool !== 'dim';
+    for (const b of $('qModeSeg').querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.q === S.qMode));
+    $('qbar').hidden = !S.qbar; if (S.qbar) $('qbarMsg').textContent = S.qbar.msg;
+    $('cInfer').checked = S.inferH; $('cPenDims').checked = S.penDims; $('cOver').checked = S.allowOver;
+    const pa = bundle().pts, bad = S.rep ? S.rep.bad : new Set();
+    const sig = JSON.stringify([S.cons, S.params, S.selCon, [...bad], pa.map((q) => [q.x.toFixed(3), q.y.toFixed(3)])]);
+    if (sig === cSig) return;
+    cSig = sig;
+    $('parList').innerHTML = S.params.map((p, i) => `<li data-p="${i}" style="grid-template-columns:minmax(0,1fr) 80px auto"><span class="nm" title="Usato in ${S.cons.filter((c) => c.expr && new RegExp('\\b' + p.name + '\\b').test(c.expr)).length} quote">${p.name}</span><input type="text" class="pv" value="${fmt(p.v, 4)}" aria-label="Valore del parametro ${p.name}"><button type="button" class="btn" data-act="pdel" aria-label="Elimina il parametro ${p.name}" title="Elimina">×</button></li>`).join('') || '<li style="display:block;cursor:default;color:var(--muted)">Nessun parametro.</li>';
+    $('clist').innerHTML = S.cons.filter((c) => !c.hid).map((c) => {
+      const dim = isDim(c), val = dim ? (c.ref ? measure(c, pa) : c.v) : 0, shown = c.dia && !c.ref ? 2 * val : val;
+      return `<li data-k="${c.id}" class="${S.selCon === c.id ? 'on' : ''}${bad.has(c.id) ? ' bad' : ''}"><span class="nm" title="${describe(c)}">${GLYPH[c.t] || (c.t === 'angle' ? '∠' : '↔')} ${describe(c)}</span>` +
+        (dim ? `<input type="text" class="cv" value="${c.expr && !c.ref ? c.expr : fmt(shown, 4)}" ${c.ref ? 'disabled' : ''} title="${c.expr ? 'Espressione: ' + c.expr + ' = ' + fmt(shown, 4) : ''}" aria-label="Valore di ${describe(c)}">` : '<span></span>') +
+        (dim ? `<button type="button" class="btn" data-act="ref" title="${c.ref ? 'Quota di riferimento: clic per renderla pilotante' : 'Clic per renderla di riferimento (tra parentesi)'}">${c.ref ? '(rif.)' : 'rif.'}</button>` : '<span></span>') +
+        `<button type="button" class="btn" data-act="del" aria-label="Elimina ${describe(c)}" title="Elimina">×</button></li>`;
+    }).join('') || '<li style="display:block;cursor:default;color:var(--muted)">Nessuna quota né vincolo.</li>';
+  }
+  function dofChip() {
+    if (!S.cons.length || !S.rep) return '';
+    const r = S.rep;
+    if (r.state === 'over') return `<span class="chip chip--err">Sovravincolato: ${[r.conflicting.length ? r.conflicting.length + ' in conflitto' : '', r.redundant.length ? r.redundant.length + ' ridondanti' : '', r.converged ? '' : 'non risolvibile'].filter(Boolean).join(', ')}</span>`;
+    if (r.state === 'unsolved') return '<span class="chip chip--warn">Non risolto: il risolutore si è fermato, nessun conflitto dimostrato</span>';
+    if (r.state === 'full') return '<span class="chip chip--def">Completamente vincolato: 0 gradi di libertà</span>';
+    return `<span class="chip chip--blue">Sottovincolato: ${r.dof} ${r.dof === 1 ? 'grado' : 'gradi'} di libertà</span>`;
+  }
+  function hintText() {
+    if (S.tool !== 'dim') return HINTS[S.tool];
+    return {
+      len: 'Lunghezza: clic su due nodi (anche l\'origine) o su un segmento, poi digita il valore e premi Invio.',
+      h: 'Quota orizzontale: due nodi o un segmento, poi il valore.',
+      v: 'Quota verticale: due nodi o un segmento, poi il valore.',
+      ang: S.qPick.length ? 'Secondo segmento, oppure Invio per l\'angolo rispetto all\'asse X.' : 'Angolo: clic su due segmenti (o su uno e Invio).',
+      rad: 'Raggio: clic su un cerchio, oppure su uno spigolo per raccordarlo.',
+      dia: 'Diametro: clic su un cerchio.'
+    }[S.qMode];
+  }
+  // Comandi del pannello
+  $('qModeSeg').addEventListener('click', (e) => { const b = e.target.closest('[data-q]'); if (b) { S.qMode = b.dataset.q; S.qPick = []; cancelEdit(); schedule(); } });
+  $('cbtns').addEventListener('click', (e) => { const b = e.target.closest('[data-c]'); if (b && !b.disabled) applyCons(b.dataset.c); });
+  $('cInfer').onchange = (e) => { S.inferH = e.target.checked; };
+  $('cPenDims').onchange = (e) => { S.penDims = e.target.checked; };
+  $('cOver').onchange = (e) => { S.allowOver = e.target.checked; };
+  $('qbarNo').onclick = () => { S.qbar = null; schedule(); };
+  $('qbarRef').onclick = () => { const c = S.qbar && S.qbar.con; S.qbar = null; if (c) { c.ref = true; S.cons.push(c); commit(); } };
+  $('clist').addEventListener('click', (e) => {
+    const li = e.target.closest('li[data-k]'); if (!li || e.target.closest('input')) return;
+    const id = li.dataset.k, act = e.target.closest('[data-act]');
+    if (act && act.dataset.act === 'del') { S.cons = S.cons.filter((c) => c.id !== id); S.selCon = null; commit(); return; }
+    if (act && act.dataset.act === 'ref') { toggleRef(id); return; }
+    S.selCon = id; schedule();
+  });
+  $('clist').addEventListener('change', (e) => {
+    const li = e.target.closest('li[data-k]'); const c = li && S.cons.find((x) => x.id === li.dataset.k); if (!c || !e.target.classList.contains('cv')) return;
+    const r = parseVal(e.target.value);
+    if (!Number.isFinite(r.v)) { toast(r.msg ? 'Espressione non valida: ' + r.msg : 'Valore non valido'); cSig = ''; schedule(); return; }
+    setDimValue(c, c.dia ? r.v / 2 : r.v, r.expr);
+    cSig = ''; schedule();
+  });
+
+  // Parametri: un cambio rilegge le espressioni delle quote e risolve, in un solo passo di cronologia
+  function setParam(i, v) {
+    if (!Number.isFinite(v)) { toast('Valore non valido'); return; }
+    const p = S.params[i], before = snapshot();
+    p.v = v;
+    if (!reeval()) { applySnap(before); return; }
+    S.cons.forEach((c) => { if (c.t === 'angle' && c.expr) preRotate(c, c.v); }); // gli angoli che cambiano con il parametro: prima si ruota il segmento
+    const rep = solveApply();
+    if (outcome(rep) === 'unsolved') { applySnap(before); toast(UNSOLVED); return; }
+    if (outcome(rep) === 'conflict') {
+      const bad = rep.conflicting.slice(), names = namesOf(bad);
+      applySnap(before); reject('Il valore ' + fmt(v) + ' di ' + p.name + ' va in conflitto con ' + (names || 'i vincoli') + '.', bad); return;
+    }
+    commit();
+  }
+  $('parList').addEventListener('change', (e) => { const li = e.target.closest('li[data-p]'); if (li && e.target.classList.contains('pv')) { setParam(+li.dataset.p, parseNum(e.target.value)); cSig = ''; schedule(); } });
+  $('parList').addEventListener('click', (e) => {
+    const li = e.target.closest('li[data-p]'), act = e.target.closest('[data-act="pdel"]'); if (!li || !act) return;
+    const p = S.params[+li.dataset.p];
+    if (S.cons.some((c) => c.expr && new RegExp('\\b' + p.name + '\\b').test(c.expr))) { toast('Il parametro ' + p.name + ' è usato da una o più quote: modificale prima.'); return; }
+    S.params.splice(+li.dataset.p, 1); commit();
+  });
+  $('parAdd').onclick = () => {
+    const name = $('parName').value.trim(), v = parseNum($('parVal').value);
+    if (!/^[A-Za-z_]\w*$/.test(name)) { toast('Il nome deve essere una parola senza spazi, per esempio larghezza'); return; }
+    if (S.params.some((p) => p.name === name)) { toast('Esiste già un parametro con questo nome'); return; }
+    if (!Number.isFinite(v)) { toast('Il valore deve essere un numero'); return; }
+    S.params.push({ name, v }); $('parName').value = ''; $('parVal').value = ''; commit();
+  };
+
+  // Penna con misure: lunghezza e angolo digitati (Tab cambia campo, Invio conferma il punto, Esc chiude)
+  const penIn = $('penIn'), penL = $('penL'), penA = $('penA');
+  const normDeg = (a) => ((a + 180) % 360 + 360) % 360 - 180;
+  function penStart() { const a = S.paths[S.active]; return a ? a.nodes[a.nodes.length - 1] : null; }
+  function penTarget() { // punto risultante: un campo vuoto segue il mouse
+    const l = penStart(); if (!l) return null;
+    const d = sub(S.hover || add(l.p, [10, 0]), l.p), tl = penL.value.trim() !== '', ta = penA.value.trim() !== '';
+    const L = tl ? parseNum(penL.value) : len(d), A = ta ? parseNum(penA.value) : angOf(d);
+    if (!Number.isFinite(L) || !Number.isFinite(A) || L <= 0) return null;
+    return { p: add(l.p, polar(L, A)), L, A, typedL: tl, typedA: ta };
+  }
+  function penOpen(first) {
+    const l = penStart(); if (!l) return;
+    const sp = toS(l.p), d = sub(S.hover || add(l.p, [10, 0]), l.p);
+    penIn.hidden = false; penIn.style.left = Math.max(4, Math.min(W - 232, sp[0] + 16)) + 'px'; penIn.style.top = Math.max(4, Math.min(H - 96, sp[1] + 16)) + 'px';
+    penL.value = first || ''; penA.value = ''; penL.placeholder = fmt(len(d)); penA.placeholder = fmt(angOf(d), 1);
+    penL.focus(); penPreview();
+  }
+  function penPreview() { const t = penTarget(); if (t) { S.hover = t.p; schedule2d(); } }
+  function penClose() { if (penIn.hidden) return; penIn.hidden = true; if (document.activeElement === penL || document.activeElement === penA) document.activeElement.blur(); S.hover = null; schedule2d(); }
+  function penCommit() {
+    const a = S.paths[S.active]; if (!a) { penClose(); return; }
+    const t = penTarget();
+    if (!t) { toast('Serve una lunghezza maggiore di zero.'); return; }
+    const l = penStart(), nn = { id: nid(), p: t.p, kind: 'corner' };
+    a.nodes.push(nn); S.sel = { pi: S.active, ni: a.nodes.length - 1 };
+    if (S.penDims) { // i numeri digitati diventano quote, come in Fusion
+      if (t.typedL) addPlain({ t: 'dist', p: [l.id, nn.id], v: t.L });
+      if (t.typedA) addPlain({ t: 'angle', p: [l.id, nn.id], v: normDeg(t.A) });
+    }
+    penClose(); commit();
+  }
+  for (const inp of [penL, penA]) {
+    inp.addEventListener('input', penPreview);
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Tab') { e.preventDefault(); (inp === penL ? penA : penL).focus(); }
+      else if (e.key === 'Enter') { e.preventDefault(); penCommit(); }
+      else if (e.key === 'Escape') { e.preventDefault(); penClose(); }
+    });
+  }
+
+  /* ---------- 15. Import SVG con curve ---------- */
+  // Arco ellittico dell'SVG convertito in al più una cubica per quarto di giro
+  function arcToCubics(x1, y1, rx, ry, phiDeg, fa, fs, x2, y2) {
+    if (!rx || !ry || (x1 === x2 && y1 === y2)) return [[[x1, y1], [x2, y2], [x2, y2]]];
+    const phi = phiDeg * Math.PI / 180, cp = Math.cos(phi), sp = Math.sin(phi);
+    rx = Math.abs(rx); ry = Math.abs(ry);
+    const dx = (x1 - x2) / 2, dy = (y1 - y2) / 2, x1p = cp * dx + sp * dy, y1p = -sp * dx + cp * dy;
+    const lam = x1p * x1p / (rx * rx) + y1p * y1p / (ry * ry);
+    if (lam > 1) { const s = Math.sqrt(lam); rx *= s; ry *= s; }
+    const num = rx * rx * ry * ry - rx * rx * y1p * y1p - ry * ry * x1p * x1p, den = rx * rx * y1p * y1p + ry * ry * x1p * x1p;
+    const coef = (fa === fs ? -1 : 1) * Math.sqrt(Math.max(0, num / den));
+    const cxp = coef * rx * y1p / ry, cyp = -coef * ry * x1p / rx;
+    const cx = cp * cxp - sp * cyp + (x1 + x2) / 2, cy = sp * cxp + cp * cyp + (y1 + y2) / 2;
+    const ang = (ux, uy, vx, vy) => Math.atan2(ux * vy - uy * vx, ux * vx + uy * vy);
+    const th1 = ang(1, 0, (x1p - cxp) / rx, (y1p - cyp) / ry);
+    let dth = ang((x1p - cxp) / rx, (y1p - cyp) / ry, (-x1p - cxp) / rx, (-y1p - cyp) / ry);
+    if (!fs && dth > 0) dth -= 2 * Math.PI; else if (fs && dth < 0) dth += 2 * Math.PI;
+    const n = Math.ceil(Math.abs(dth) / (Math.PI / 2)), dl = dth / n, t = 4 / 3 * Math.tan(dl / 4), out = [];
+    const map = (X, Y) => [cx + cp * rx * X - sp * ry * Y, cy + sp * rx * X + cp * ry * Y];
+    for (let i = 0; i < n; i++) {
+      const a1 = th1 + i * dl, a2 = a1 + dl;
+      out.push([map(Math.cos(a1) - t * Math.sin(a1), Math.sin(a1) + t * Math.cos(a1)), map(Math.cos(a2) + t * Math.sin(a2), Math.sin(a2) - t * Math.cos(a2)), map(Math.cos(a2), Math.sin(a2))]);
+    }
+    return out;
+  }
+  // Legge i dati di un path e restituisce sotto-percorsi di cubiche: { start, segs: [[c1, c2, p]], closed }
+  function parseD(d) {
+    const tok = d.match(/[MmLlHhVvCcSsQqTtAaZz]|-?\d*\.?\d+(?:[eE][-+]?\d+)?/g) || [];
+    const N = { M: 2, L: 2, H: 1, V: 1, C: 6, S: 4, Q: 4, T: 2, A: 7, Z: 0 };
+    const subs = []; let i = 0, cmd = '', cur = [0, 0], start = [0, 0], sub_ = null, lastC = null, lastQ = null;
+    const num = () => parseFloat(tok[i++]);
+    while (i < tok.length) {
+      if (/[A-Za-z]/.test(tok[i])) cmd = tok[i++];
+      else if (cmd === 'M') cmd = 'L'; else if (cmd === 'm') cmd = 'l';
+      const up = cmd.toUpperCase(), rel = cmd !== up, o = rel ? cur : [0, 0];
+      if (!(up in N)) throw new Error('Dati del path non validi');
+      if (up === 'Z') { if (sub_) sub_.closed = true; cur = start; lastC = lastQ = null; continue; }
+      const a = []; for (let k = 0; k < N[up]; k++) a.push(num());
+      if (a.some((v) => Number.isNaN(v))) throw new Error('Dati del path incompleti o non validi');
+      let nc = null, nq = null;
+      const push = (c1, c2, p) => { sub_.segs.push([c1, c2, p]); cur = p; };
+      if (up === 'M') { cur = [o[0] + a[0], o[1] + a[1]]; start = cur; sub_ = { start, segs: [], closed: false }; subs.push(sub_); }
+      else {
+        if (!sub_) { sub_ = { start: cur, segs: [], closed: false }; subs.push(sub_); }
+        if (up === 'L') { const p = [o[0] + a[0], o[1] + a[1]]; push(cur, p, p); }
+        else if (up === 'H') { const p = [(rel ? cur[0] : 0) + a[0], cur[1]]; push(cur, p, p); }
+        else if (up === 'V') { const p = [cur[0], (rel ? cur[1] : 0) + a[0]]; push(cur, p, p); }
+        else if (up === 'C') { const c1 = [o[0] + a[0], o[1] + a[1]], c2 = [o[0] + a[2], o[1] + a[3]], p = [o[0] + a[4], o[1] + a[5]]; push(c1, c2, p); nc = c2; }
+        else if (up === 'S') { const c1 = lastC ? sub(mul(cur, 2), lastC) : cur, c2 = [o[0] + a[0], o[1] + a[1]], p = [o[0] + a[2], o[1] + a[3]]; push(c1, c2, p); nc = c2; }
+        else if (up === 'Q' || up === 'T') {
+          const q = up === 'Q' ? [o[0] + a[0], o[1] + a[1]] : (lastQ ? sub(mul(cur, 2), lastQ) : cur), p = up === 'Q' ? [o[0] + a[2], o[1] + a[3]] : [o[0] + a[0], o[1] + a[1]];
+          push(add(cur, mul(sub(q, cur), 2 / 3)), add(p, mul(sub(q, p), 2 / 3)), p); nq = q; // quadratica convertita in cubica
+        } else if (up === 'A') {
+          const p = [o[0] + a[5], o[1] + a[6]];
+          for (const s of arcToCubics(cur[0], cur[1], a[0], a[1], a[2], a[3] ? 1 : 0, a[4] ? 1 : 0, p[0], p[1])) push(s[0], s[1], s[2]);
+        }
+      }
+      lastC = nc; lastQ = nq;
+    }
+    return subs;
+  }
+  // Da sotto-percorso di cubiche a contorno di nodi (le maniglie diventano relative)
+  function toPath(sp, tr) {
+    const nodes = [{ p: tr(sp.start), kind: 'corner' }];
+    sp.segs.forEach(([c1, c2, p]) => {
+      const last = nodes[nodes.length - 1], P = tr(p), C1 = tr(c1), C2 = tr(c2);
+      const out = nz(sub(C1, last.p)); if (out) last.out = out;
+      const inn = nz(sub(C2, P)); nodes.push({ p: P, kind: 'corner', ...(inn ? { in: inn } : {}) });
+    });
+    if (sp.closed && nodes.length > 2 && dist(nodes[0].p, nodes[nodes.length - 1].p) < 1e-6) {
+      const l = nodes.pop(); if (l.in) nodes[0].in = l.in;
+    }
+    nodes.forEach((n) => { // il tipo si deduce dalle maniglie: opposte e di pari lunghezza = simmetrico, solo opposte = liscio
+      if (n.in && n.out) {
+        const cross = Math.abs(n.in[0] * n.out[1] - n.in[1] * n.out[0]) / (len(n.in) * len(n.out)), dot = n.in[0] * n.out[0] + n.in[1] * n.out[1];
+        if (cross < 0.02 && dot < 0) n.kind = Math.abs(len(n.in) - len(n.out)) < 0.01 * Math.max(len(n.in), len(n.out)) ? 'symmetric' : 'smooth';
+      }
+    });
+    return { closed: !!sp.closed, nodes };
+  }
+  function importSvg(text) {
+    const ds = [];
+    if (text.trim().startsWith('<')) {
+      const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
+      if (doc.querySelector('parsererror')) throw new Error('Il file non è un SVG valido');
+      doc.querySelectorAll('path').forEach((p) => { if ((p.getAttribute('fill') || '') !== 'none') ds.push(p.getAttribute('d') || ''); });
+    } else ds.push(text);
+    const subs = ds.flatMap(parseD).filter((s) => s.segs.length);
+    if (!subs.length) throw new Error('Nessun path da importare: si leggono solo gli elementi path');
+    const pts = subs.flatMap((s) => [s.start, ...s.segs.map((q) => q[2])]);
+    const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+    const k = 40 / Math.max(x1 - x0, y1 - y0, 1e-6);           // porta il disegno a circa 40 mm
+    const ox = S.extr === 'rotate' ? (x1 - x0) * k / 2 + 4 : 0; // in rotazione lo si mette a destra dell'asse
+    const tr = (p) => [((p[0] - (x0 + x1) / 2) * k) + ox, -(p[1] - (y0 + y1) / 2) * k + (S.extr === 'rotate' ? 20 : 0)]; // l'SVG ha la Y verso il basso
+    return subs.map((s) => toPath(s, tr)).filter((p) => p.nodes.length >= 2);
+  }
+  const HEART = 'M50 90 C10 60 0 35 20 15 C32 3 46 8 50 22 C54 8 68 3 80 15 C100 35 90 60 50 90 Z';
+  $('btnImport').onclick = () => { $('impErr').textContent = ''; $('imp').hidden = false; $('impText').focus(); };
+  $('impClose').onclick = () => { $('imp').hidden = true; };
+  $('impEx').onclick = () => { $('impText').value = HEART; };
+  $('impFile').onchange = (e) => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => { $('impText').value = String(r.result); }; r.readAsText(f); };
+  $('impGo').onclick = () => {
+    try {
+      const added = importSvg($('impText').value);
+      finishPen(false); S.paths.push(...added); S.sel = null; commit(); $('imp').hidden = true; fit2d(); requestFit3d();
+      toast('Importati ' + added.length + (added.length === 1 ? ' contorno' : ' contorni') + ' con le curve ancora modificabili.');
+    } catch (err) { $('impErr').textContent = err.message; }
+  };
+
+  /* ---------- 16. Esempi ---------- */
+  const NN = (x, y, kind = 'corner') => ({ id: nid(), p: [x, y], kind }); // nodo con id, per gli esempi con vincoli
+  const N = (x, y, kind, inV, outV) => { const n = { p: [x, y], kind }; if (inV) n.in = inV; if (outV) n.out = outV; return n; };
+  const EXAMPLES = {
+    piastra() { // piastra 60 x 40 con quattro raccordi e due fori da 5,5 mm quotati: completamente vincolata (0 gradi di libertà)
+      S.extr = 'linear'; S.height = 8; S.twist = 0; S.scaleTop = 1;
+      const n = [NN(0, 0), NN(60, 0), NN(60, 40), NN(0, 40)]; n.forEach((q) => { q.r = 4; });
+      const h1 = makeCircle([12, 12], 2.75), h2 = makeCircle([48, 28], 2.75);
+      S.paths = [{ closed: true, nodes: n }, h1, h2];
+      S.params = [{ name: 'larghezza', v: 60 }, { name: 'altezza', v: 40 }];
+      const [a, b, c, d] = n.map((q) => q.id), c1 = h1.circ.c.id, r1 = h1.nodes[0].id, c2 = h2.circ.c.id, r2 = h2.nodes[0].id;
+      [h1, h2].forEach((p) => { p._cons.forEach(addPlain); delete p._cons; });
+      addPlain({ t: 'horizontal', p: [a, b] }); addPlain({ t: 'vertical', p: [b, c] }); addPlain({ t: 'horizontal', p: [d, c] }); addPlain({ t: 'vertical', p: [a, d] });
+      addPlain({ t: 'coincident', p: ['O', a] });
+      addPlain({ t: 'distX', p: [a, b], s: 1, v: 60, expr: 'larghezza' }); addPlain({ t: 'distY', p: [a, d], s: 1, v: 40, expr: 'altezza' });
+      addPlain({ t: 'distX', p: ['O', c1], s: 1, v: 12 }); addPlain({ t: 'distY', p: ['O', c1], s: 1, v: 12 });
+      addPlain({ t: 'dist', p: [c1, r1], v: 2.75, dia: 1 });
+      addPlain({ t: 'distX', p: [c1, c2], s: 1, v: 36, expr: 'larghezza*0.6' }); addPlain({ t: 'distY', p: [c1, c2], s: 1, v: 16, expr: 'altezza*0.4' });
+      addPlain({ t: 'equal', p: [c1, r1, c2, r2] }); // il secondo foro ha lo stesso diametro del primo
+    },
+    staffa() { // staffa a L 60 x 50, bracci da 10 mm, raccordi diversi per ogni spigolo
+      S.extr = 'linear'; S.height = 6; S.twist = 0; S.scaleTop = 1;
+      const n = [NN(0, 0), NN(60, 0), NN(60, 10), NN(10, 10), NN(10, 50), NN(0, 50)];
+      [8, 2, 2, 4, 2, 2].forEach((r, i) => { n[i].r = r; });
+      S.paths = [{ closed: true, nodes: n }];
+      const [a, b, c, d, e, f] = n.map((q) => q.id);
+      addPlain({ t: 'horizontal', p: [a, b] }); addPlain({ t: 'vertical', p: [b, c] }); addPlain({ t: 'horizontal', p: [c, d] });
+      addPlain({ t: 'vertical', p: [d, e] }); addPlain({ t: 'horizontal', p: [e, f] }); addPlain({ t: 'vertical', p: [f, a] });
+      addPlain({ t: 'coincident', p: ['O', a] });
+      addPlain({ t: 'distX', p: [a, b], s: 1, v: 60 }); addPlain({ t: 'distY', p: [b, c], s: 1, v: 10 });
+      addPlain({ t: 'distX', p: [f, e], s: 1, v: 10 }); addPlain({ t: 'distY', p: [a, f], s: 1, v: 50 });
+    },
+    esagono() { // disegnato "a mano" e poi sistemato dal risolutore: lati uguali e angolo di 60 gradi tra lati consecutivi
+      S.extr = 'linear'; S.height = 8; S.twist = 0; S.scaleTop = 1;
+      const base = [[0, 0], [20, 0], [30, 17.32], [20, 34.64], [0, 34.64], [-10, 17.32]], off = [[0.8, -0.5], [1.5, 1.2], [-1.4, 0.9], [1, -1.8], [-0.7, 1.1], [1.2, 0.6]];
+      const n = base.map((q, i) => NN(q[0] + off[i][0], q[1] + off[i][1]));
+      S.paths = [{ closed: true, nodes: n }];
+      const id = n.map((q) => q.id);
+      addPlain({ t: 'fixed', p: [id[0]], x: 0, y: 0 }); addPlain({ t: 'horizontal', p: [id[0], id[1]] }); addPlain({ t: 'dist', p: [id[0], id[1]], v: 20 });
+      for (let i = 0; i < 4; i++) addPlain({ t: 'equal', p: [id[i], id[i + 1], id[i + 1], id[i + 2]] });
+      for (let i = 0; i < 4; i++) addPlain({ t: 'angle', p: [id[i], id[i + 1], id[i + 1], id[i + 2]], v: 60 });
+      solveApply();
+    },
+    pomello() { // profilo aperto da ruotare: si chiude da solo sull'asse
+      S.extr = 'rotate'; S.angle = 360; S.segs = 48; S.closeAxis = true;
+      S.paths = [{ closed: false, nodes: [N(0, 0, 'corner', null, [6, 0]), N(22, 4, 'smooth', [-6, -2], [4, 2]), N(26, 22, 'smooth', [0, -8], [0, 8]), N(12, 40, 'smooth', [6, -6], [-6, 6]), N(11, 60, 'smooth', [0, -6], [0, 6]), N(0, 66, 'corner', [4, 0])] }];
+    },
+    cuore() { S.paths = []; S.extr = 'linear'; S.height = 6; S.twist = 0; S.scaleTop = 1; S.paths = importSvg(HEART); },
+    vuoto() { S.paths = []; S.extr = 'linear'; S.height = 20; S.twist = 0; S.scaleTop = 1; }
+  };
+  function loadExample(name) {
+    finishPen(false); cancelEdit();
+    S.cons = []; S.params = []; S.csel = []; S.selCon = null; S.qPick = []; S.qbar = null;
+    EXAMPLES[name](); ensureIds(); S.sel = null; S.active = null; S.draft = null;
+    resetHistory(); applied = snapshot(); fit2d(); requestFit3d();
+  }
+  $('ex').onchange = (e) => loadExample(e.target.value);
+
+  /* ---------- 17. Anteprima 3D (three.js, caricato dalla rete) ---------- */
+  let T = null, renderer, scene, camera, mesh, edges, gridH, orbit = { th: -0.75, ph: 1.05, r: 120, tx: 0, ty: 0, tz: 0 }, pvDirty = false;
+  const cv = $('pvCv');
+  function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || '#888'; }
+  function applyTheme3d() {
+    if (!T) return;
+    if (mesh) mesh.material.color.set(css('--mesh'));
+    if (edges) { edges.material.color.set(css('--mesh-edge')); }
+    if (gridH) { gridH.material.color.set(css('--grid-major')); }
+    pvDirty = true; draw3d();
+  }
+  function initThree() {
+    renderer = new T.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    cv.insertBefore(renderer.domElement, cv.firstChild);
+    scene = new T.Scene();
+    camera = new T.PerspectiveCamera(35, 1, 0.5, 3000); camera.up.set(0, 0, 1);
+    scene.add(camera);
+    scene.add(new T.HemisphereLight(0xffffff, 0x556070, 1.1)); // luce di ambiente
+    const key = new T.DirectionalLight(0xffffff, 1.6); key.position.set(0.5, -0.8, 1); camera.add(key); // luce che segue la camera
+    gridH = new T.GridHelper(200, 20); gridH.rotation.x = Math.PI / 2; scene.add(gridH);
+    $('pvMsg').hidden = true;
+    new ResizeObserver(resize3d).observe(cv);
+    // orbita con il trascinamento, zoom con la rotella
+    const el = renderer.domElement; let od = null;
+    el.addEventListener('pointerdown', (e) => { el.setPointerCapture(e.pointerId); od = { x: e.clientX, y: e.clientY }; cv.style.cursor = 'grabbing'; });
+    el.addEventListener('pointermove', (e) => { if (!od) return; orbit.th -= (e.clientX - od.x) * 0.01; orbit.ph = Math.min(3.0, Math.max(0.15, orbit.ph - (e.clientY - od.y) * 0.01)); od = { x: e.clientX, y: e.clientY }; pvDirty = true; draw3d(); });
+    const up = () => { od = null; cv.style.cursor = ''; }; el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
+    el.addEventListener('wheel', (e) => { e.preventDefault(); orbit.r = Math.min(900, Math.max(15, orbit.r * Math.exp(e.deltaY * 0.0012))); pvDirty = true; draw3d(); }, { passive: false });
+    resize3d(); needData = true; schedule();
+    matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => setTimeout(applyTheme3d, 30));
+    new MutationObserver(() => setTimeout(applyTheme3d, 30)).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  }
+  function resize3d() {
+    if (!renderer) return; const w = cv.clientWidth, h = cv.clientHeight; if (w < 4 || h < 4) return;
+    renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); pvDirty = true; draw3d();
+  }
+  function draw3d() {
+    if (!renderer || !pvDirty) return; pvDirty = false;
+    const o = orbit;
+    camera.position.set(o.tx + o.r * Math.sin(o.ph) * Math.cos(o.th), o.ty + o.r * Math.sin(o.ph) * Math.sin(o.th), o.tz + o.r * Math.cos(o.ph));
+    camera.lookAt(o.tx, o.ty, o.tz); renderer.render(scene, camera);
+  }
+  let needFit = true; // l'inquadratura si rifà dopo il prossimo ricalcolo della geometria
+  function requestFit3d() { needFit = true; schedule(); }
+  function fit3d() {
+    if (!mesh) return; mesh.geometry.computeBoundingSphere();
+    const b = mesh.geometry.boundingSphere; orbit.tx = b.center.x; orbit.ty = b.center.y; orbit.tz = b.center.z; orbit.r = Math.max(20, b.radius * 3.1);
+    pvDirty = true; draw3d();
+  }
+  $('pvFit').onclick = fit3d;
+
+  // Geometria: contorni raggruppati in esterni con i loro fori (pari-dispari), triangolati con earcut di three
+  function groupContours(polys) {
+    const d = depthsOf(polys), groups = [];
+    polys.forEach((p, i) => { if (d[i] % 2 === 0) groups.push({ outer: p, holes: [], a: Math.abs(area(p)) }); });
+    polys.forEach((p, i) => {
+      if (d[i] % 2 !== 1) return;
+      let best = null; // il foro appartiene al più piccolo esterno che lo contiene
+      groups.forEach((g) => { if (inside(g.outer, p[0]) && (!best || g.a < best.a)) best = g; });
+      if (best) best.holes.push(p);
+    });
+    return groups;
+  }
+  function clipPositiveX(poly) { // taglia il poligono a x >= 0, come fa il kernel con la parte oltre l'asse
+    const out = [];
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i], b = poly[(i + 1) % poly.length], ain = a[0] >= 0, bin = b[0] >= 0;
+      if (ain) out.push(a);
+      if (ain !== bin) out.push([0, a[1] + (b[1] - a[1]) * (0 - a[0]) / (b[0] - a[0])]);
+    }
+    return clean(out);
+  }
+  function build3d() {
+    if (!T) return;
+    if (mesh) { scene.remove(mesh); mesh.geometry.dispose(); mesh.material.dispose(); mesh = null; }
+    if (edges) { scene.remove(edges); edges.geometry.dispose(); edges.material.dispose(); edges = null; }
+    let polys = C.raw.map((r) => r.pts);
+    if (S.extr === 'rotate') polys = polys.map(clipPositiveX).filter((p) => p.length >= 3);
+    if (!polys.length) { pvDirty = true; draw3d(); return; }
+    const posA = [], idx = [];
+    const push3 = (x, y, z) => { posA.push(x, y, z); return posA.length / 3 - 1; };
+    const groups = groupContours(polys);
+    const capTris = (g) => { // triangolazione di una sezione: restituisce punti 2D e triangoli
+      const all = g.outer.concat(...g.holes), v = (p) => new T.Vector2(p[0], p[1]);
+      return { all, tris: T.ShapeUtils.triangulateShape(g.outer.map(v), g.holes.map((h) => h.map(v))) };
+    };
+    if (S.extr === 'linear') {
+      const bb = polys.flat(), x0 = Math.min(...bb.map((p) => p[0])), x1 = Math.max(...bb.map((p) => p[0])), y0 = Math.min(...bb.map((p) => p[1])), y1 = Math.max(...bb.map((p) => p[1]));
+      const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2; // come in Construct: la forma sta centrata sull'origine
+      const L = Math.max(1, Math.min(120, Math.ceil(Math.abs(S.twist) / 6)));
+      const tf = (p, t) => { const a = S.twist * t * Math.PI / 180, s = 1 + (S.scaleTop - 1) * t, x = (p[0] - cx) * s, y = (p[1] - cy) * s; return [x * Math.cos(a) - y * Math.sin(a), x * Math.sin(a) + y * Math.cos(a), t * S.height]; };
+      for (const poly of polys) { // pareti: anelli collegati strato per strato
+        const M = poly.length, base = posA.length / 3;
+        for (let l = 0; l <= L; l++) for (let i = 0; i < M; i++) { const q = tf(poly[i], l / L); push3(q[0], q[1], q[2]); }
+        for (let l = 0; l < L; l++) for (let i = 0; i < M; i++) { const a = base + l * M + i, b = base + l * M + (i + 1) % M, c = base + (l + 1) * M + (i + 1) % M, d = base + (l + 1) * M + i; idx.push(a, b, c, a, c, d); }
+      }
+      for (const g of groups) { // tappi sotto e sopra
+        const { all, tris } = capTris(g);
+        for (const t of [0, 1]) { const base = posA.length / 3; all.forEach((p) => { const q = tf(p, t); push3(q[0], q[1], q[2]); }); tris.forEach((f) => (t ? idx.push(base + f[0], base + f[1], base + f[2]) : idx.push(base + f[2], base + f[1], base + f[0]))); }
+      }
+    } else {
+      const full = S.angle >= 359.999, steps = Math.max(3, Math.round(S.segs * S.angle / 360)), cols = full ? steps : steps + 1, A = S.angle * Math.PI / 180;
+      for (const poly of polys) { // superficie di rotazione: un anello di punti per ogni angolo
+        const M = poly.length, base = posA.length / 3;
+        for (let k = 0; k < cols; k++) { const th = A * k / steps; for (let i = 0; i < M; i++) push3(poly[i][0] * Math.cos(th), poly[i][0] * Math.sin(th), poly[i][1]); }
+        for (let k = 0; k < steps; k++) for (let i = 0; i < M; i++) { const k2 = (k + 1) % cols, a = base + k * M + i, b = base + k * M + (i + 1) % M, c = base + k2 * M + (i + 1) % M, d = base + k2 * M + i; idx.push(a, b, c, a, c, d); }
+      }
+      if (!full) for (const g of groups) { // pareti piane alle due estremità dell'arco
+        const { all, tris } = capTris(g);
+        for (const th of [0, A]) { const base = posA.length / 3; all.forEach((p) => push3(p[0] * Math.cos(th), p[0] * Math.sin(th), p[1])); tris.forEach((f) => (th ? idx.push(base + f[0], base + f[1], base + f[2]) : idx.push(base + f[2], base + f[1], base + f[0]))); }
+      }
+    }
+    const geo = new T.BufferGeometry();
+    geo.setAttribute('position', new T.Float32BufferAttribute(posA, 3)); geo.setIndex(idx); geo.computeVertexNormals();
+    mesh = new T.Mesh(geo, new T.MeshStandardMaterial({ color: css('--mesh'), flatShading: true, side: T.DoubleSide, roughness: 0.6, metalness: 0.05 }));
+    edges = new T.LineSegments(new T.EdgesGeometry(geo, 30), new T.LineBasicMaterial({ color: css('--mesh-edge'), transparent: true, opacity: 0.55 }));
+    scene.add(mesh); scene.add(edges);
+    geo.computeBoundingBox(); gridH.position.z = geo.boundingBox.min.z; // il piano di appoggio sta sotto il solido
+    if (needFit) { needFit = false; fit3d(); }
+    pvDirty = true; draw3d();
+  }
+
+  /* ---------- 18. Avvio ---------- */
+  loadExample('piastra');
+  window.__proto = { S, W: () => W, H: () => H, toS, toW, nid, solveSketch, dragSketch }; // gancio per le prove automatiche (scripts/quote-prototype-check.mjs)
+  import('https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js').then((m) => { T = m; initThree(); }).catch(() => {
+    $('pvMsg').textContent = 'Anteprima 3D non disponibile: servono la rete e WebGL. Il disegno funziona comunque.';
+  });
+})();
+</script>
+
+</body>
+</html>
