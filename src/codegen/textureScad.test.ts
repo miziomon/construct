@@ -37,6 +37,19 @@ describe('codice OpenSCAD delle texture da immagine', () => {
     expect(textureFaceScad(RECT, img, { amplitude: 0 }, 0.8)).toContain('module relief() {}');
   });
 
+  it('modo entrambi con clip: la colonna tolta dal pezzo è ritagliata sulla regione', () => {
+    const clip = 'translate([0, 0, -10]) cylinder(h = 20, r = 20, $fn = 96);';
+    const code = textureFaceScad({ minX: -20, minY: -20, maxX: 20, maxY: 20 }, img, { ...textureDefaults(), mode: 'both' }, 0.8, PIECE, clip);
+    expect(code).toContain('module relief() intersection() { relief_raw();');
+    // la colonna da togliere è l'intersezione del cubo con il clip, dentro la difference del pezzo
+    const after = code.slice(code.indexOf('difference() {'));
+    expect(after).toContain('intersection() {');
+    expect(after.indexOf('cube(')).toBeLessThan(after.indexOf('cylinder('));
+    // senza clip la colonna è il solo cubo
+    expect(textureFaceScad(RECT, img, { ...textureDefaults(), mode: 'both' }, 0.8, PIECE).split('intersection()').length).toBe(1);
+    expect(textureSurfaceScad(RECT, img, textureDefaults(), 0.8, 'x.png', PIECE, clip).code).toContain('cylinder(h = 20, r = 20');
+  });
+
   it('motore F con surface(): il PNG ha la griglia del kernel e la scala porta 0..100 in mm', () => {
     const { code, png, scaleZ } = textureSurfaceScad(RECT, img, { ...textureDefaults(), tile: 10, mode: 'relief' }, 0.5, 'tex.png', PIECE);
     expect(code).toContain('surface(file = "tex.png"');
@@ -94,6 +107,27 @@ describe.skipIf(!process.env.TEXTURE_SCAD_DIR)('file per la verifica OpenSCAD', 
       const rect = { minX: bounds.min[0], minY: bounds.min[1], maxX: bounds.max[0], maxY: bounds.max[1] };
       expected.F_cilindro_both = applyTextureFace(wasm, cylinder, circle, img, params, { step: 0.5 }).volume();
       writeFileSync(`${dir}/F_cilindro_both.scad`, textureFaceScad(rect, img, params, 0.5, 'translate([0, 0, -20]) cylinder(h = 20, r = 15, $fn = 96);', 'translate([0, 0, -10]) cylinder(h = 20, r = 15, $fn = 96);') + '\n');
+    }
+
+    // Regione circolare (r = 20) dentro il pannello 80 x 60, che resta più grande: il kernel ritaglia colonna e rilievo sulla regione, il codice OpenSCAD con `clip`
+    {
+      const circle = wasm.CrossSection.circle(20, 96);
+      const bounds = circle.bounds();
+      const rect = { minX: bounds.min[0], minY: bounds.min[1], maxX: bounds.max[0], maxY: bounds.max[1] };
+      const clip = 'translate([0, 0, -10]) cylinder(h = 20, r = 20, $fn = 96);';
+      for (const mode of ['both', 'relief', 'groove'] as const) {
+        const params = { ...tex, mode };
+        expected[`F_cerchio_${mode}`] = applyTextureFace(wasm, panel(), circle, img, params, { step: 0.5 }).volume();
+        writeFileSync(`${dir}/F_cerchio_${mode}.scad`, textureFaceScad(rect, img, params, 0.5, PIECE, clip) + '\n');
+      }
+      // surface() con la stessa regione: il kernel ha la pelle (stessa quota ovunque) sulla stessa griglia
+      const h = makeTextureHeight(img, normalizeTexture({ ...tex, mode: 'both' }));
+      const [lo, hi] = heightRange(normalizeTexture({ ...tex, mode: 'both' }));
+      const skin = clipToRegion(wasm, heightSolid(wasm, sampleGrid(rect, 0.5, h), lo - 0.6, 'below'), circle, lo - 0.6, hi + 1);
+      expected.F_cerchio_surface_both = panel().subtract(prism(wasm, circle, lo - 0.4, hi + 1)).add(skin!).volume();
+      const s = textureSurfaceScad(rect, img, { ...tex, mode: 'both' }, 0.5, 'F_cerchio_surface_both.png', PIECE, clip);
+      writeFileSync(`${dir}/F_cerchio_surface_both.scad`, s.code + '\n');
+      await sharp(Buffer.from(s.png.data), { raw: { width: s.png.w, height: s.png.h, channels: 1 } }).png().toFile(`${dir}/F_cerchio_surface_both.png`);
     }
 
     // Motore M: cubo, pannello e cilindro, normali medie con spigoli fermi, ampiezza 0,6 mm, lato 0,8 mm

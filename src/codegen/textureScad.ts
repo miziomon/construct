@@ -30,18 +30,21 @@ export function textureFaceScad(rect: Rect, img: GrayImage, params: Partial<Text
   // `clip` (facoltativo): solido 3D che copre la regione quando non è il rettangolo (per esempio un cilindro): come nel kernel, il rilievo si ritaglia
   out.push(clip ? 'module relief_raw() {' : 'module relief() {', ...polyhedronLines(surface.grid, surface.planeZ, surface.side).map((l) => `  ${l}`), '}');
   if (clip) out.push(`module relief() intersection() { relief_raw(); ${clip} }`);
-  if (piece) out.push(...combine(surface.op, surface.column, rect, piece));
+  if (piece) out.push(...combine(surface.op, surface.column, rect, piece, clip));
   return out.join('\n');
 }
 
 /** Come si combina il solido della texture con il pezzo, secondo l'operazione di `faceSurface`. */
-function combine(op: 'subtract' | 'add' | 'skin', column: [number, number] | null, rect: Rect, piece: string): string[] {
+function combine(op: 'subtract' | 'add' | 'skin', column: [number, number] | null, rect: Rect, piece: string, clip?: string): string[] {
   const w = rect.maxX - rect.minX;
   const h = rect.maxY - rect.minY;
   if (op === 'subtract') return ['difference() {', `  ${piece}`, '  relief();', '}'];
   if (op === 'add') return ['union() {', `  ${piece}`, '  relief();', '}'];
-  // Pelle: si toglie la colonna del rettangolo fino a un piano sotto l'incavo più profondo e si unisce la superficie intera
-  return ['union() {', '  difference() {', `    ${piece}`, `    translate([${n(rect.minX)}, ${n(rect.minY)}, ${n(column![0])}]) cube([${n(w)}, ${n(h)}, ${n(column![1] - column![0])}]);`, '  }', '  relief();', '}'];
+  // Pelle: si toglie la colonna della REGIONE (il rettangolo, ritagliato con `clip` se la regione è più piccola, come `prism(region)` del kernel) fino a un
+  // piano sotto l'incavo più profondo e si unisce la superficie, anch'essa ritagliata sulla regione
+  const cube = `translate([${n(rect.minX)}, ${n(rect.minY)}, ${n(column![0])}]) cube([${n(w)}, ${n(h)}, ${n(column![1] - column![0])}]);`;
+  const column3d = clip ? ['    intersection() {', `      ${cube}`, `      ${clip}`, '    }'] : [`    ${cube}`];
+  return ['union() {', '  difference() {', `    ${piece}`, ...column3d, '  }', '  relief();', '}'];
 }
 
 /**
@@ -57,6 +60,7 @@ export function textureSurfaceScad(
   step: number,
   pngName: string,
   piece?: string,
+  clip?: string,
 ): { code: string; png: GrayImage; scaleZ: number } {
   const tex = normalizeTexture(params);
   const h = makeTextureHeight(img, tex);
@@ -80,8 +84,10 @@ export function textureSurfaceScad(
     'module relief() intersection() {',
     `  translate([${n4(rect.minX - grid.dx)}, ${n4(rect.minY - grid.dy)}, ${n4(zBase)}]) scale([${n4(grid.dx)}, ${n4(grid.dy)}, ${n4(scaleZ)}]) surface(file = "${pngName}", center = false, convexity = 10);`,
     `  translate([${n4(rect.minX)}, ${n4(rect.minY)}, ${n4(zBase - 1)}]) cube([${n4(width)}, ${n4(height)}, ${n4(zTop - zBase + 2)}]);`,
+    // Regione non rettangolare: anche la superficie si ritaglia, come nel kernel
+    ...(clip ? [`  ${clip}`] : []),
     '}',
-    ...(piece ? combine('skin', [base, Math.max(...grid.z, 0) + 1], rect, piece) : []),
+    ...(piece ? combine('skin', [base, Math.max(...grid.z, 0) + 1], rect, piece, clip) : []),
   ].join('\n');
   return { code, png: { w, h: hh, data: png }, scaleZ };
 }
