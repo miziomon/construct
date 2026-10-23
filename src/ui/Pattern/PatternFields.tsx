@@ -1,6 +1,6 @@
 import { useId } from 'react';
 import { useResultStore } from '../../kernel/useKernel';
-import { PATTERN_MAX_CELLS, brickRelief, faceName, isAxisFace, isReliefKind, reliefWarnings } from '../../scene/pattern';
+import { PATTERN_MAX_CELLS, brickRelief, faceName, isAxisFace, isReliefKind, reliefDepthLimit, reliefWarnings } from '../../scene/pattern';
 import type { BrickDesign, BrickParams } from '../../scene/relief';
 import type { PatternParams } from '../../scene/types';
 import { NumberField } from '../NumberField/NumberField';
@@ -61,9 +61,13 @@ export function PatternFields({ params: p, onChange, disabled, history = true, o
   const relief = isReliefKind(p.kind);
   const brick = brickRelief(p);
   const designId = useId();
+  // Il disegno si salva solo in `design`: dentro `relief` non si riscrive
+  const { design: _design, ...storedRelief } = brick.relief;
+  // Le fughe non possono attraversare il pezzo (con due facce opposte lo spessore si divide)
+  const depthLimit = reliefDepthLimit(p);
   /** Slider di una misura del rilievo: modifica `relief` e non un campo del Pattern. */
-  const reliefSlider = (label: string, tip: string, key: 'brickW' | 'brickH' | 'mortar' | 'depth', range: { min: number; max: number; step: number; hardMin?: number; unit?: string }) => (
-    <SliderField label={label} tooltip={tip} value={brick.relief[key]} disabled={disabled} history={history} onCommit={(v) => onChange({ relief: { ...brick.relief, [key]: v } as BrickParams })} {...range} />
+  const reliefSlider = (label: string, tip: string, key: 'brickW' | 'brickH' | 'mortar' | 'depth', range: { min: number; max: number; step: number; hardMin?: number; hardMax?: number; unit?: string }) => (
+    <SliderField label={label} tooltip={tip} value={brick.relief[key]} disabled={disabled} history={history} onCommit={(v) => onChange({ relief: { ...storedRelief, [key]: v } as BrickParams })} {...range} />
   );
   const slider = (label: string, tip: string, key: 'cells' | 'regularity' | 'size' | 'angle' | 'wall' | 'rounding' | 'margin' | 'depth', range: { min: number; max: number; step: number; hardMin?: number; hardMax?: number; unit?: string }) => (
     <SliderField label={label} tooltip={tip} value={p[key]} disabled={disabled} history={history} onCommit={(v) => onChange({ [key]: v })} {...range} />
@@ -108,7 +112,7 @@ export function PatternFields({ params: p, onChange, disabled, history = true, o
           {reliefSlider('Larghezza mattone', 'Lunghezza del mattone, in mm (fuga esclusa).', 'brickW', { min: 8, max: 80, step: 0.5, hardMin: 2, unit: 'mm' })}
           {reliefSlider('Altezza mattone', 'Altezza del mattone, in mm (fuga esclusa).', 'brickH', { min: 4, max: 40, step: 0.5, hardMin: 2, unit: 'mm' })}
           {reliefSlider('Fuga', 'Spessore della fuga tra due mattoni, in mm.', 'mortar', { min: 0.4, max: 5, step: 0.1, hardMin: 0.2, unit: 'mm' })}
-          {reliefSlider('Profondità fuga', 'Quanto si scava la fuga sotto la faccia, in mm.', 'depth', { min: 0.2, max: 3, step: 0.1, hardMin: 0.05, unit: 'mm' })}
+          {reliefSlider('Profondità fuga', 'Quanto si scava la fuga sotto la faccia, in mm.', 'depth', { min: Math.min(0.2, depthLimit), max: Math.min(3, depthLimit), step: 0.1, hardMin: 0.05, hardMax: depthLimit, unit: 'mm' })}
         </>
       )}
 
@@ -126,7 +130,7 @@ export function PatternFields({ params: p, onChange, disabled, history = true, o
 
       {p.kind === 'voronoi' && slider('Celle', `Numero di celle per faccia (al massimo ${PATTERN_MAX_CELLS}).`, 'cells', { min: 3, max: 150, step: 1, hardMin: 3, hardMax: PATTERN_MAX_CELLS })}
       {p.kind === 'voronoi' && slider('Regolarità', '0 = celle del tutto casuali, 100 = celle quasi uniformi.', 'regularity', { min: 0, max: 100, step: 1, unit: '%' })}
-      {p.kind !== 'voronoi' && (
+      {p.kind !== 'voronoi' && !relief && (
         <>
           {slider('Passo', 'Distanza tra i centri di due celle, in mm.', 'size', { min: 4, max: 60, step: 0.5, hardMin: 2, unit: 'mm' })}
           {slider('Rotazione', 'Rotazione della griglia, in gradi.', 'angle', { min: 0, max: 90, step: 1, hardMin: -360, hardMax: 360, unit: '°' })}
@@ -162,7 +166,7 @@ export function PatternFields({ params: p, onChange, disabled, history = true, o
 
       {slow && (
         <p className="array-fields__total array-fields__warning" role="alert">
-          {ms > SLOW_PREVIEW_MS ? `Calcolo lento (${Math.round(ms)} ms).` : `Molte celle (circa ${estimatedCells(p)}): il calcolo può essere lento.`} Riduci celle o facce, oppure aumenta il passo.
+          {ms > SLOW_PREVIEW_MS ? `Calcolo lento (${Math.round(ms)} ms).` : `Molte celle (circa ${estimatedCells(p)}): il calcolo può essere lento.`} {relief ? 'Aumenta le misure del mattone o riduci le facce.' : 'Riduci celle o facce, oppure aumenta il passo.'}
         </p>
       )}
       {onSimplified && !relief && (

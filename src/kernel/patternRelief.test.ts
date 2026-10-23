@@ -4,7 +4,7 @@ import type { ManifoldToplevel } from 'manifold-3d';
 import { Evaluator } from './evaluate';
 import { sceneToOpenScad } from '../codegen/openscad';
 import { primitiveDefaults } from '../scene/defaults';
-import { defaultPatternParams, faceFromBounds, frameRect } from '../scene/pattern';
+import { defaultPatternParams, faceFromBounds, frameRect, thicknessAlong } from '../scene/pattern';
 import { BRICK_DESIGNS, brickLayout, reliefDefaults } from '../scene/relief';
 import type { BrickDesign, BrickParams } from '../scene/relief';
 import type { GroupNode, PatternParams, PrimitiveNode, Scene, Vec3 } from '../scene/types';
@@ -108,6 +108,57 @@ describe('Pattern Mattoni nel kernel', () => {
     const m = run(scene({ design: 'herringbone', relief: { ...brick, brickW: 0, brickH: 0, mortar: 0, depth: 0 } }));
     expect(m.status).toBe('NoError');
     expect(m.volume).toBeLessThan(FULL);
+  });
+});
+
+describe('Pattern Mattoni: profondità e faccia inclinata', () => {
+  it('una profondità enorme non attraversa il pezzo: resta un solo solido, anche con facce opposte', () => {
+    const faces = [faceFromBounds(bounds, 'z+'), faceFromBounds(bounds, 'z-')];
+    for (const patch of [{}, { faces }]) {
+      const m = run(scene({ ...patch, relief: { ...brick, depth: 50 } }));
+      expect(m.status).toBe('NoError');
+      expect(m.volume).toBeGreaterThan(0);
+      // Resta almeno l'anima di 0,4 mm tra le due incisioni: il pezzo non si divide
+      expect(m.volume).toBeGreaterThan(80 * 60 * 0.4);
+      expect(new Evaluator(wasm).evaluate(scene({ ...patch, relief: { ...brick, depth: 50 } })).meshes).toHaveLength(1);
+    }
+  });
+
+  // Piramide a base quadrata (cono a 4 segmenti): la faccia verso (1, 1) ha normale (1, 1, 1) / radice di 3
+  const pyramid = (patch: Partial<PatternParams>): Scene => {
+    const cone = { ...primitiveDefaults('cone'), id: 'c', name: 'Piramide', position: [0, 0, 0], radiusBottom: 20, radiusTop: 0, height: 20, segments: 4 } as PrimitiveNode;
+    const pb = { min: [-20, -20, -10] as Vec3, max: [20, 20, 10] as Vec3 };
+    const normal: Vec3 = [1, 1, 1].map((v) => v / Math.sqrt(3)) as Vec3;
+    const face = { origin: [10 / 3, 10 / 3, 10 / 3] as Vec3, normal, thickness: thicknessAlong(pb, normal) };
+    const g: GroupNode = {
+      id: 'g', name: 'Pattern', type: 'group', op: 'pattern', children: ['c'], position: [0, 0, 0], rotation: [0, 0, 0], mode: 'solid', color: '#4da3ff',
+      pattern: { ...defaultPatternParams(pb, 7), kind: 'brick', margin: 0, faces: [face], ...patch },
+    };
+    return { nodes: { c: cone, g }, rootIds: ['g'] };
+  };
+  const PYRAMID = (800 * 20) / 3;
+  /** Area della faccia inclinata: triangolo (20, 0, -10), (0, 20, -10), (0, 0, 10). */
+  const FACE_AREA = 0.5 * Math.hypot(400, 400, 400);
+
+  it.each(BRICK_DESIGNS)('%s su una faccia inclinata: le fughe stanno dentro la faccia e tolgono la quota attesa', (design: BrickDesign) => {
+    // Mattoni piccoli: la fuga copre circa il 36 % della faccia (mattone 6 × 3, passo 7 × 4)
+    const relief = { ...brick, brickW: 6, brickH: 3, mortar: 1, depth: 0.8 };
+    const m = run(pyramid({ design, relief }));
+    expect(m.status).toBe('NoError');
+    const removed = PYRAMID - m.volume;
+    // Mai più di un prisma sulla faccia, e una frazione ragionevole di esso
+    expect(removed).toBeGreaterThan(0.1 * 0.8 * FACE_AREA);
+    expect(removed).toBeLessThan(0.7 * 0.8 * FACE_AREA);
+    // La sagoma della piramide non cambia (nessuna fuga fuori dal contorno della faccia)
+    expect(m.bbox.min[0]).toBeCloseTo(-20, 2);
+    expect(m.bbox.max[2]).toBeCloseTo(10, 2);
+  });
+
+  it('il codice OpenSCAD della faccia inclinata ruota nel riferimento della faccia', () => {
+    const code = sceneToOpenScad(pyramid({ design: 'herringbone' }));
+    expect(code).toContain('projection(cut = true)');
+    // Rotazione di ritorno e di andata non nulle (la faccia non sta sugli assi)
+    expect(code).not.toContain('rotate([0, 0, 0]) intersection()');
   });
 });
 

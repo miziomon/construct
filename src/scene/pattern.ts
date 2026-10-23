@@ -1,8 +1,8 @@
 import { apply, eulerToMatrix, matrixToEuler, round, transpose } from './math';
 import type { Mat3, Transform } from './math';
 import { rotationToDown } from './layFlat';
-import { BRICK_DESIGNS, normalizeRelief, reliefDefaults } from './relief';
-import type { BrickDesign, ReliefParams } from './relief';
+import { BRICK_DESIGNS, brickModule, fitBrick, normalizeRelief, reliefDefaults } from './relief';
+import type { BrickDesign, BrickParams, ReliefParams } from './relief';
 import { PATTERN_ALGORITHM, randomVoronoi } from './voronoi';
 import type { Rect, Vec2 } from './voronoi';
 import type { PatternFace, PatternParams, Vec3 } from './types';
@@ -45,18 +45,58 @@ export const RELIEF_ALGORITHM = 1;
 /** Sotto questa fuga (circa due passate di un ugello da 0,4 mm) la fuga si chiude in stampa. */
 export const MIN_PRINTABLE_MORTAR = 0.8;
 
-/** Disegno e parametri del rilievo Mattoni, entro i limiti e con i valori di partenza per ciò che manca (progetti nuovi e vecchi). */
-export function brickRelief(p: PatternParams): { design: BrickDesign; relief: ReliefParams & { kind: 'brick' } } {
-  const design = BRICK_DESIGNS.includes(p.design as BrickDesign) ? (p.design as BrickDesign) : 'running';
-  const relief = normalizeRelief({ ...reliefDefaults('brick'), ...(p.relief?.kind === 'brick' ? p.relief : {}), kind: 'brick', design } as ReliefParams) as ReliefParams & { kind: 'brick' };
-  return { design, relief };
+/** Materiale che una fuga lascia comunque sotto di sé (mm): con la profondità uguale allo spessore i mattoni si staccherebbero. */
+const RELIEF_FLOOR = 0.2;
+
+/**
+ * Profondità massima delle fughe (mm): lo spessore del pezzo lungo la faccia, meno `RELIEF_FLOOR`. Se tra le facce ce n'è una
+ * opposta (z+ e z- insieme) lo spessore si divide a metà, così le due incisioni non si attraversano. Infinito senza facce.
+ */
+export function reliefDepthLimit(p: PatternParams): number {
+  const faces = (p.faces?.length ? p.faces : p.face ? [p.face] : []).map(normalizeFace);
+  const dot = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const limits = faces.map((f) => f.thickness / (faces.some((o) => o !== f && dot(o.normal, f.normal) < -0.999) ? 2 : 1));
+  return limits.length ? Math.max(0.05, Math.min(...limits) - RELIEF_FLOOR) : Infinity;
 }
 
-/** Avvisi di stampabilità del rilievo (testi per il pannello); vuoto per i Pattern a celle. */
+/**
+ * Parametri del rilievo Mattoni, entro i limiti, con i valori di partenza per ciò che manca (progetti nuovi e vecchi) e la
+ * profondità limitata allo spessore (`reliefDepthLimit`). Il disegno sta solo in `p.design`: qui viene copiato in `relief`
+ * perché kernel e codice OpenSCAD lo leggono da lì, ma non si salva (vedi `normalizePattern`).
+ */
+export function brickRelief(p: PatternParams): { design: BrickDesign; relief: BrickParams & { kind: 'brick' } } {
+  const design = BRICK_DESIGNS.includes(p.design as BrickDesign) ? (p.design as BrickDesign) : 'running';
+  const merged = normalizeRelief({ ...reliefDefaults('brick'), ...(p.relief?.kind === 'brick' ? p.relief : {}), kind: 'brick', design } as ReliefParams) as BrickParams & { kind: 'brick' };
+  return { design, relief: { ...merged, depth: Math.max(0.05, Math.min(merged.depth, reliefDepthLimit(p))) } };
+}
+
+/** Misura in mm per i testi (una cifra decimale, virgola). */
+const mm = (v: number) => String(round(v, 1)).replace('.', ',');
+
+/**
+ * Avvisi del rilievo (testi per il pannello); vuoto per i Pattern a celle: fuga troppo stretta, profondità ridotta allo
+ * spessore, mattone arrotondato dal disegno (spina di pesce e cesto) o ingrandito dal tetto di mattoni della faccia.
+ */
 export function reliefWarnings(p: PatternParams): string[] {
   if (p.kind !== 'brick') return [];
-  const { relief } = brickRelief(p);
-  return relief.mortar < MIN_PRINTABLE_MORTAR ? [`Fuga sotto ${MIN_PRINTABLE_MORTAR} mm: tende a chiudersi in stampa.`] : [];
+  const q = normalizePattern(p);
+  const { design, relief } = brickRelief(q);
+  const out: string[] = [];
+  if (relief.mortar < MIN_PRINTABLE_MORTAR) out.push(`Fuga sotto ${mm(MIN_PRINTABLE_MORTAR)} mm: tende a chiudersi in stampa.`);
+  // Profondità richiesta (prima del limite): oltre lo spessore la fuga attraverserebbe il pezzo
+  const requested = p.relief?.kind === 'brick' && Number.isFinite(p.relief.depth) ? p.relief.depth : relief.depth;
+  if (requested > relief.depth + 1e-9) out.push(`Profondità ridotta a ${mm(relief.depth)} mm: le fughe non devono attraversare il pezzo.`);
+  // Misure effettive sulla faccia più grande: il tetto di mattoni le ingrandisce, il disegno arrotonda la lunghezza
+  const fitted = q.faces.map((face) => fitBrick(frameRect(q, face), relief)).sort((a, b) => b.brickW * b.brickH - a.brickW * a.brickH)[0];
+  if (fitted && (fitted.brickW > relief.brickW + 1e-6 || fitted.brickH > relief.brickH + 1e-6)) {
+    out.push(`Troppi mattoni per la faccia: le misure salgono a ${mm(fitted.brickW)} × ${mm(fitted.brickH)} mm.`);
+  }
+  if (fitted && design !== 'running') {
+    const { u, n } = brickModule(fitted);
+    const length = n * u - fitted.mortar;
+    if (Math.abs(length - fitted.brickW) > 0.05) out.push(`Il mattone misura ${mm(length)} × ${mm(fitted.brickH)} mm: la lunghezza si arrotonda a un multiplo dell'altezza (fuga compresa).`);
+  }
+  return out;
 }
 
 /** Quanto una normale può scostarsi da un asse per contare come allineata (cos ≈ 1,8°, come per la faccia aperta del Guscio). */
@@ -173,7 +213,13 @@ export function normalizePattern(p: PatternParams): PatternParams {
   const faces = given.map(normalizeFace).filter((f, i, all) => all.findIndex((o) => sameFace(o, f)) === i);
   const kind = (['voronoi', 'hexagon', 'circle', 'diamond', 'triangle', 'brick'] as string[]).includes(p.kind) ? p.kind : 'voronoi';
   // Disegno e misure dei rilievi: solo per i Pattern in rilievo, così gli altri progetti restano identici a prima
-  const reliefFields = kind === 'brick' ? { ...brickRelief({ ...p, kind }), reliefAlgorithm: RELIEF_ALGORITHM as 1 } : {};
+  // Il disegno si salva solo in `design` (non dentro `relief`); la versione del rilievo già salvata non si sovrascrive
+  const reliefFields = (() => {
+    if (kind !== 'brick') return {};
+    const { design, relief } = brickRelief({ ...p, kind, faces });
+    const { design: _copy, ...stored } = relief;
+    return { design, relief: stored as BrickParams, reliefAlgorithm: p.reliefAlgorithm ?? (RELIEF_ALGORITHM as 1) };
+  })();
   return {
     ...rest,
     kind,

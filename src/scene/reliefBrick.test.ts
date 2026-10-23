@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { BRICK_DESIGNS, MAX_BRICKS, brickDepth, brickLayout, brickModule, normalizeRelief, reliefDefaults } from './relief';
 import type { BrickDesign, BrickParams } from './relief';
-import { defaultPatternParams, normalizePattern, patternCells, reliefWarnings } from './pattern';
+import { brickScad } from '../codegen/reliefScad';
+import { defaultPatternParams, faceFromBounds, normalizePattern, patternCells, reliefDepthLimit, reliefWarnings } from './pattern';
 import type { PatternParams, Vec3 } from './types';
 
 /** Faccia 80 × 60 mm centrata nell'origine e una meno comoda (origine e misure non intere). */
@@ -156,16 +157,26 @@ describe('Pattern Mattoni: normalizzazione', () => {
     const n = normalizePattern(params({ kind: 'brick' }));
     expect(n.kind).toBe('brick');
     expect(n.design).toBe('running');
-    expect(n.relief).toEqual(reliefDefaults('brick'));
+    // Il disegno sta solo in `design`: `relief` non lo ripete
+    const { design: _design, ...rest } = reliefDefaults('brick') as BrickParams;
+    expect(n.relief).toEqual(rest);
+    expect(n.relief).not.toHaveProperty('design');
     expect(n.reliefAlgorithm).toBe(1);
+  });
+
+  it('la versione del rilievo già salvata non si sovrascrive', () => {
+    expect(normalizePattern({ ...params({ kind: 'brick' }), reliefAlgorithm: 2 as unknown as 1 }).reliefAlgorithm).toBe(2);
   });
 
   it('disegno sconosciuto e misure fuori range tornano dentro i limiti', () => {
     const n = normalizePattern(params({ kind: 'brick', design: 'zigzag' as BrickDesign, relief: { ...brick, brickW: 0, brickH: -3, mortar: Number.NaN, depth: 0 } }));
     expect(n.design).toBe('running');
-    expect(n.relief).toMatchObject({ kind: 'brick', design: 'running', brickW: 2, brickH: 2, mortar: brick.mortar, depth: 0.05 });
-    // I disegni validi si conservano, anche dentro `relief`
-    expect(normalizePattern(params({ kind: 'brick', design: 'basket' })).relief).toMatchObject({ design: 'basket' });
+    expect(n.relief).toMatchObject({ kind: 'brick', brickW: 2, brickH: 2, mortar: brick.mortar, depth: 0.05 });
+    // I disegni validi si conservano, e un `design` rimasto dentro `relief` non si salva
+    expect(normalizePattern(params({ kind: 'brick', design: 'basket' })).design).toBe('basket');
+    const stale = normalizePattern(params({ kind: 'brick', design: 'basket', relief: { ...brick, design: 'herringbone' } }));
+    expect(stale.design).toBe('basket');
+    expect(stale.relief).not.toHaveProperty('design');
   });
 
   it('un kind sconosciuto torna Voronoi e i Pattern a celle non guadagnano campi di rilievo', () => {
@@ -187,5 +198,68 @@ describe('Pattern Mattoni: normalizzazione', () => {
     expect(reliefWarnings(params({ kind: 'voronoi', wall: 0.2 }))).toEqual([]);
     // La fuga a zero sale al minimo di 0,2 e avvisa
     expect(reliefWarnings(params({ kind: 'brick', relief: { ...brick, mortar: 0 } }))).toHaveLength(1);
+  });
+
+  it("avviso con la lunghezza effettiva del mattone dopo l'arrotondamento (anche con brickW < brickH)", () => {
+    // 24 × 8 con fuga 1,2: n = 3 passi da 9,2, quindi 26,4 mm
+    const rounded = reliefWarnings(params({ kind: 'brick', design: 'herringbone' }));
+    expect(rounded).toHaveLength(1);
+    expect(rounded[0]).toContain('26,4 × 8');
+    expect(reliefWarnings(params({ kind: 'brick', design: 'basket' }))[0]).toContain('26,4 × 8');
+    // Mattone più alto che largo: n = 2, lunghezza 2 × 21,2 - 1,2 = 41,2
+    expect(reliefWarnings(params({ kind: 'brick', design: 'basket', relief: { ...brick, brickW: 6, brickH: 20 } }))[0]).toContain('41,2 × 20');
+    // Lunghezza già multipla (16 + 1,2 = 2 × 8,6... con fuga 1,2 e altezza 7,4 il passo è 8,6): nessun avviso
+    expect(reliefWarnings(params({ kind: 'brick', design: 'herringbone', relief: { ...brick, brickW: 16, brickH: 7.4 } }))).toEqual([]);
+    // Mattoni sfalsati: le misure restano quelle date
+    expect(reliefWarnings(params({ kind: 'brick', design: 'running' }))).toEqual([]);
+  });
+
+  it('avviso quando il tetto di mattoni ingrandisce le misure', () => {
+    const big = defaultPatternParams({ min: [-200, -200, -2.5], max: [200, 200, 2.5] }, 1);
+    const warnings = reliefWarnings({ ...big, kind: 'brick', relief: { ...brick, brickW: 2, brickH: 2, mortar: 0.2 } });
+    expect(warnings.some((w) => w.startsWith('Troppi mattoni per la faccia'))).toBe(true);
+  });
+
+  it('la profondità delle fughe non supera lo spessore della faccia (con facce opposte, la metà)', () => {
+    const deep = { ...brick, depth: 50 };
+    // Pannello 5 mm: una faccia sola 5 - 0,2
+    expect(reliefDepthLimit(params({ kind: 'brick' }))).toBeCloseTo(4.8, 6);
+    expect(normalizePattern(params({ kind: 'brick', relief: deep })).relief).toMatchObject({ depth: 4.8 });
+    // z+ e z- insieme: le due incisioni non si attraversano (2,5 - 0,2 ciascuna)
+    const both = params({ kind: 'brick', relief: deep, faces: [faceFromBounds(bounds, 'z+'), faceFromBounds(bounds, 'z-')] });
+    expect(normalizePattern(both).relief).toMatchObject({ depth: 2.3 });
+    expect(reliefWarnings(both).some((w) => w.startsWith('Profondità ridotta a 2,3'))).toBe(true);
+    // Una faccia laterale e una cima non sono opposte: vale lo spessore più piccolo
+    expect(reliefDepthLimit(params({ kind: 'brick', faces: [faceFromBounds(bounds, 'z+'), faceFromBounds(bounds, 'x+')] }))).toBeCloseTo(4.8, 6);
+    // Un pannello sottilissimo: sempre almeno 0,05
+    expect(reliefDepthLimit(params({ kind: 'brick', faces: [{ ...faceFromBounds(bounds, 'z+'), thickness: 0.1 }] }))).toBe(0.05);
+  });
+
+  it('il mattone sfalsato del codice OpenSCAD è lo stesso del kernel (stessa enumerazione (r, c) del ciclo)', () => {
+    for (const rect of [RECT, ODD]) {
+      const { solid } = brickScad(rect, withDesign('running'));
+      const text = solid.join(' ');
+      const num = (s: string) => Number(s);
+      // Il ciclo del codice: r in [0 : R], c in [0 : C], mattone traslato di (c·px - (r%2)·px/2 + m/2, r·py + m/2)
+      const [, R, C] = /r = \[0 : (\d+)\], c = \[0 : (\d+)\]/.exec(text)!.map(num);
+      const t = /translate\(\[c \* ([\d.]+) - \(r % 2\) \* ([\d.]+) \+ ([\d.]+), r \* ([\d.]+) \+ ([\d.]+)\]\) square\(\[([\d.]+), ([\d.]+)\]\)/.exec(text)!.slice(1).map(num);
+      const origin = /translate\(\[(-?[\d.]+), (-?[\d.]+), /.exec(text)!.slice(1).map(num);
+      const [px, half, mx, py, my, w, h] = t;
+      const fromCode: Cell[] = [];
+      for (let r = 0; r <= R; r++) {
+        for (let c = 0; c <= C; c++) {
+          const x0 = origin[0] + c * px - (r % 2) * half + mx;
+          const y0 = origin[1] + r * py + my;
+          fromCode.push([x0, y0, x0 + w, y0 + h]);
+        }
+      }
+      // Solo i mattoni che entrano nel rettangolo (gli altri il ritaglio li scarta)
+      const inside = (b: Cell) => b[0] < rect.maxX && b[2] > rect.minX && b[1] < rect.maxY && b[3] > rect.minY;
+      const a = fromCode.filter(inside);
+      const b = (brickLayout(rect, brick) as Cell[]).filter(inside);
+      expect(a.length).toBe(b.length);
+      // Ogni mattone del kernel ha il suo gemello nel codice (il codice scrive due decimali)
+      for (const k of b) expect(a.some((o) => o.every((v, i) => Math.abs(v - k[i]) < 0.03))).toBe(true);
+    }
   });
 });
