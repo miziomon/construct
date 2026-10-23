@@ -1,11 +1,16 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it } from 'vitest';
+import sharp from 'sharp';
+import { Window } from 'happy-dom';
 import Module from 'manifold-3d';
 import type { Manifold, ManifoldToplevel } from 'manifold-3d';
 import { applyTextureFace, displaceSolid, selfOverlapVolume, svgReliefSolid, svgTileCenters, textureCacheKey } from './textureMap';
 import { FLOOR } from './relief';
 import { sampleGrid } from '../scene/relief';
 import type { HeightGrid } from '../scene/relief';
-import { makeDisplacement, makeTextureHeight, textureDefaults } from '../scene/textureMap';
+import { writeStl } from './export/stl';
+import { svgContours } from '../scene/shapes2d';
+import { makeDisplacement, makeTextureHeight, rgbaToGray, textureDefaults } from '../scene/textureMap';
 import { SAMPLE_SVG, makeSample } from '../scene/textureSamples';
 
 let wasm: ManifoldToplevel;
@@ -243,5 +248,61 @@ describe('SVG vettoriale', () => {
   it("l'SVG di prova contiene anello e stella", () => {
     expect(SAMPLE_SVG).toContain('<polygon');
     expect(SAMPLE_SVG).toContain('evenodd');
+  });
+});
+
+// STL e viste per le immagini dello studio (fuori dal repository): gli STL sono pesanti e si rigenerano con un comando.
+//   $env:TEXTURE_SAMPLES='C:\tmp\texture-img'; npx vitest run src/kernel/textureMap.test.ts -t esempi
+//   node scripts/texture-render.mjs C:\tmp\texture-img
+describe.skipIf(!process.env.TEXTURE_SAMPLES)('esempi per le immagini', { timeout: 300_000 }, () => {
+  it('scrive gli STL e views.json', async () => {
+    const dir = process.env.TEXTURE_SAMPLES!;
+    mkdirSync(dir, { recursive: true });
+    const views: Record<string, unknown> = {};
+    const save = (name: string, m: Manifold, view: unknown) => {
+      const mesh = m.getMesh();
+      writeFileSync(`${dir}/${name}.stl`, writeStl(Float32Array.from(mesh.vertProperties), new Uint32Array(mesh.triVerts)));
+      views[name] = view;
+    };
+    const knurl = makeSample('knurl', 256);
+    const tex = { ...textureDefaults(), tile: 10, amplitude: 1.2, mode: 'both' as const };
+
+    // Motore M su un cubo: normali medie, squadrate (miter) e spigoli fermi; vista obliqua sullo spigolo e sull'angolo in alto
+    const cubeView = { pos: [34, -18, 36], target: [12, 8, 12], fov: 28 };
+    for (const [name, normals, fadeSharp] of [['cubo-medie', 'smooth', false], ['cubo-miter', 'miter', false], ['cubo-fermi', 'smooth', true]] as const) {
+      const { solid } = displaceSolid(wasm, make('cubo'), knurl, tex, { kind: 'triplanar' }, { edge: 0.8, normals, fadeSharp });
+      save(name, solid!, cubeView);
+    }
+    // Profilo a L: lo spigolo concavo (tra la base e la parete), vista da sopra e da destra
+    const lView = { pos: [12, -34, 28], target: [-10, 0, 6], fov: 28 };
+    for (const [name, fadeSharp] of [['L-medie', false], ['L-fermi', true]] as const) {
+      const { solid } = displaceSolid(wasm, make('L'), knurl, { ...tex, amplitude: 1.6 }, { kind: 'triplanar' }, { edge: 0.8, fadeSharp });
+      save(name, solid!, lView);
+    }
+    // Motore F a tre passi sulla pelle, vista ravvicinata
+    const leather = makeSample('leather', 256);
+    const region = wasm.CrossSection.square([80, 60], true);
+    for (const step of [0.8, 0.5, 0.3]) {
+      const panelSolid = wasm.Manifold.cube([80, 60, 5], true).translate([0, 0, -2.5]);
+      save(`F-passo-${step}`, applyTextureFace(wasm, panelSolid, region, leather, { ...textureDefaults(), tile: 20, amplitude: 0.8, mode: 'relief' }, { step }), { pos: [4, -20, 14], target: [0, 0, 0], fov: 30 });
+    }
+    // SVG: strada vettoriale e raster a 256 pixel, passo 0,5 mm
+    (globalThis as unknown as { DOMParser: unknown }).DOMParser = new Window().DOMParser;
+    const { parseSvg } = await import('../import/svg');
+    const contours = svgContours({ contours: parseSvg(SAMPLE_SVG, 'stemma').contours, width: 16, depth: 16 });
+    const svgView = { pos: [0, -34, 28], target: [0, 0, 0], fov: 30, sun: [-45, -12, 7] };
+    const base = () => wasm.Manifold.cube([80, 60, 5], true).translate([0, 0, -2.5]);
+    const tool = svgReliefSolid(wasm, region, { contours, pitch: [20, 20], height: 0.6, repeat: true }, RECT)!;
+    save('svg-vettoriale', base().add(tool), svgView);
+    const px = 256;
+    const inner = 2 * Math.round(px * 0.4);
+    const margin = (px - inner) / 2;
+    const { data } = await sharp(Buffer.from(SAMPLE_SVG), { density: 300 }).resize(inner, inner).flatten({ background: '#ffffff' }).extend({ top: margin, bottom: margin, left: margin, right: margin, background: '#ffffff' }).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    save('svg-raster-256', applyTextureFace(wasm, base(), region, rgbaToGray(data, px, px), { ...textureDefaults(), tile: 20, amplitude: 0.6, invert: true, mode: 'relief' }, { step: 0.5 }), svgView);
+    writeFileSync(`${dir}/views.json`, JSON.stringify(views, null, 1));
+    // Le sei texture di esempio come immagini in scala di grigi (3 x 2, 160 pixel per lato)
+    const kinds = ['knurl', 'carbon', 'leather', 'bricks', 'waves', 'noise'] as const;
+    const tiles = kinds.map((kind, k) => ({ input: Buffer.from(makeSample(kind, 160).data), raw: { width: 160, height: 160, channels: 1 as const }, left: (k % 3) * 164, top: Math.floor(k / 3) * 164 }));
+    await sharp({ create: { width: 160 * 3 + 8, height: 160 * 2 + 4, channels: 3, background: '#ffffff' } }).composite(tiles).png().toFile(`${dir}/campioni.png`);
   });
 });
