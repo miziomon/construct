@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { getImage } from '../../import/assets';
 import { importImageFile } from '../../import/imageImport';
-import { reliefDepthLimit, textureOf } from '../../scene/pattern';
+import { textureAmplitudeLimit, textureOf } from '../../scene/pattern';
 import { normalizeTexture } from '../../scene/textureMap';
 import type { GrayImage, TextureMode, TextureParams } from '../../scene/textureMap';
 import { SAMPLE_KINDS } from '../../scene/textureSamples';
@@ -56,9 +56,8 @@ export function TextureFields({ params: p, onChange, disabled, history = true }:
   const stored = normalizeTexture({ mode: 'groove', ...p.texture });
   const tex = textureOf(p);
   const setTexture = (patch: Partial<TextureParams>) => onChange({ texture: { ...stored, ...patch } });
-  // Ampiezza massima: la parte sotto la faccia non supera il limite di profondità (incavo fino a `amplitude`, entrambi fino a `amplitude` · livello medio)
-  const down = tex.mode === 'groove' ? 1 : tex.mode === 'both' ? tex.midlevel : 0;
-  const ampMax = down > 0 ? reliefDepthLimit(p) / down : 20;
+  // Ampiezza massima: la parte sotto la faccia non supera il limite di profondità (vedi `textureAmplitudeLimit`)
+  const ampMax = textureAmplitudeLimit(p, tex);
 
   const slider = (label: string, tip: string, value: number, set: (v: number) => void, range: { min: number; max: number; step: number; hardMin?: number; hardMax?: number; unit?: string }) => (
     <SliderField label={label} tooltip={tip} value={value} disabled={disabled} history={history} onCommit={set} {...range} />

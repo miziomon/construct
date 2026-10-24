@@ -141,7 +141,8 @@ describe('Pattern Immagine: normalizzazione, limiti e avvisi', () => {
     const base = { tile: 20, repeat: true, rotation: 0, offset: [0, 0] as [number, number], invert: false, midlevel: 0.5, blur: 0 };
     // Pannello di 5 mm: limite 4,8 mm
     expect(textureOf(params({ texture: { ...base, amplitude: 20, mode: 'groove' } })).amplitude).toBeCloseTo(4.8, 6);
-    expect(textureOf(params({ texture: { ...base, amplitude: 20, mode: 'both' } })).amplitude).toBeCloseTo(9.6, 6);
+    // «Entrambi»: la colonna scende 0,4 mm sotto l'incavo più profondo, quindi (4,8 - 0,4) / livello medio 0,5
+    expect(textureOf(params({ texture: { ...base, amplitude: 20, mode: 'both' } })).amplitude).toBeCloseTo(8.8, 6);
     expect(textureOf(params({ texture: { ...base, amplitude: 20, mode: 'relief' } })).amplitude).toBe(20);
     // Il valore salvato non cambia e l'avviso lo dice
     const deep = normalizePattern(params({ texture: { ...base, amplitude: 20, mode: 'groove' } }));

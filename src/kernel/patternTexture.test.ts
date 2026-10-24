@@ -173,6 +173,26 @@ describe('Pattern Immagine nel kernel', () => {
   });
 });
 
+describe('Pattern Immagine: «entrambi» su una faccia sola', () => {
+  it("su un pannello di 2 mm la pelle non esce dalla faccia opposta (il piano di base sta 0,4 mm sotto l'incavo più profondo)", () => {
+    const thin: Vec3 = [80, 60, 2];
+    const tb = { min: thin.map((v) => -v / 2) as Vec3, max: thin.map((v) => v / 2) as Vec3 };
+    const piece = wasm.Manifold.cube(thin, true);
+    for (const midlevel of [0.5, 0.2, 0.9]) {
+      const params = normalizePattern({ ...defaultPatternParams(tb, 7), kind: 'texture', margin: 0, sample: 'noise', faces: [faceFromBounds(tb, 'z+')], texture: { ...base, mode: 'both', amplitude: 20, tile: 10, midlevel } });
+      const result = buildPattern(wasm, piece, params);
+      expect(result.status()).toBe('NoError');
+      // L'ingombro in basso resta quello del pannello e vicino al fondo il taglio ha l'area intera
+      expect(result.boundingBox().min[2]).toBeCloseTo(-1, 3);
+      const nearBottom = result.slice(-0.95);
+      expect(nearBottom.area()).toBeCloseTo(4800, 3);
+      nearBottom.delete();
+      result.delete();
+    }
+    piece.delete();
+  });
+});
+
 describe('Pattern Immagine su una faccia inclinata', () => {
   const pyramid = (patch: Partial<PatternParams>, texture: Partial<TextureParams> = {}): Scene => {
     const cone = { ...primitiveDefaults('cone'), id: 'c', name: 'Piramide', position: [0, 0, 0], radiusBottom: 20, radiusTop: 0, height: 20, segments: 4 } as PrimitiveNode;

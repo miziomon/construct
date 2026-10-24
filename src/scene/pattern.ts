@@ -199,14 +199,25 @@ function textureFields(p: PatternParams): Partial<PatternParams> {
 }
 
 /**
- * Parametri effettivi della texture di un Pattern «Immagine»: quelli salvati, con l'ampiezza limitata perché la parte sotto la
- * faccia non superi il limite di profondità (`reliefDepthLimit`: incavo fino a `amplitude`, «entrambi» fino a `amplitude` ·
- * livello medio; il rilievo non scende). Il valore salvato non si riduce.
+ * Ampiezza massima (mm) della texture di un Pattern «Immagine» perché la parte sotto la faccia non superi il limite di profondità
+ * (`reliefDepthLimit`): l'incavo scende fino a `amplitude`, «entrambi» fino a `amplitude` · livello medio e in più il kernel
+ * toglie la colonna fino a 0,4 mm sotto l'incavo più profondo e mette il piano della pelle un piede più in basso (`faceSurface`),
+ * quindi il limite per «entrambi» è 0,4 mm più stretto; il rilievo non scende (nessun limite, 20 mm come massimo di `normalizeTexture`).
+ */
+export function textureAmplitudeLimit(p: PatternParams, texture: Pick<TextureParams, 'mode' | 'midlevel'>): number {
+  const down = texture.mode === 'groove' ? 1 : texture.mode === 'both' ? texture.midlevel : 0;
+  if (!(down > 0)) return 20;
+  const limit = texture.mode === 'both' ? Math.max(0.05, reliefDepthLimit(p) - 0.4) : reliefDepthLimit(p);
+  return limit / down;
+}
+
+/**
+ * Parametri effettivi della texture di un Pattern «Immagine»: quelli salvati, con l'ampiezza limitata (`textureAmplitudeLimit`).
+ * Il valore salvato non si riduce.
  */
 export function textureOf(p: PatternParams): TextureParams {
   const t = normalizeTexture({ mode: 'groove', ...p.texture });
-  const down = t.mode === 'groove' ? 1 : t.mode === 'both' ? t.midlevel : 0;
-  return down > 0 ? { ...t, amplitude: Math.min(t.amplitude, reliefDepthLimit(p) / down) } : t;
+  return { ...t, amplitude: Math.min(t.amplitude, textureAmplitudeLimit(p, t)) };
 }
 
 /** Misura in mm per i testi (una cifra decimale, virgola). */
