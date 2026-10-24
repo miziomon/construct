@@ -429,7 +429,7 @@ export function groupInfo(constraints: ProfileConstraint[] | undefined, ids: str
  */
 export function setCommonValue<T extends ProfileGeometry>(d: T, ids: string[], value: number): Applied<T> {
   const info = groupInfo(d.constraints, ids);
-  if (info.count < 2 || !info.type) return { ok: false, message: 'Scegli due o più quote pilotanti dello stesso tipo', ids: [], reason: 'invalid' };
+  if (info.count < 2 || !info.type) return { ok: false, message: 'Scegli due o più quote di lunghezza pilotanti dello stesso tipo', ids: [], reason: 'invalid' };
   const invalid = validateValue(info.type, value);
   if (invalid) return { ok: false, message: invalid, ids: [], reason: 'invalid' };
   const chosen = new Set(ids);

@@ -894,6 +894,13 @@ describe('più quote scelte insieme', () => {
     expect(out.constraints!.filter((c) => c.t === 'dist' && !c.ref)).toHaveLength(1);
   });
 
+  it("equalizeLengths ripetuto: la seconda quota è già di riferimento e l'Uguale esiste, quindi il secondo tentativo è ridondante e non cambia nulla", () => {
+    const driven = sized();
+    const [w, h] = [dist(driven, 'n1', 'n2'), dist(driven, 'n2', 'n3')];
+    const once = must(equalizeLengths(driven, [w.id, h.id]));
+    expect(equalizeLengths(once, [w.id, h.id])).toMatchObject({ ok: false, reason: 'redundant' });
+  });
+
   it('equalizeLengths con quote pilotanti già uguali (40 e 40): non è ridondante, la seconda diventa di riferimento', () => {
     const driven = must(setConstraintValue(sized(), dist(sized(), 'n2', 'n3').id, 40));
     const [w, h] = [dist(driven, 'n1', 'n2'), dist(driven, 'n2', 'n3')];
