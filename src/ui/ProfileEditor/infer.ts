@@ -1,6 +1,6 @@
 import { addConstraint } from './dimensions';
 import type { NodeRef, ProfileGeometry } from './model';
-import type { PathContour, ProfileConstraint, Vec2 } from '../../scene/types';
+import type { PathContour, PathNode, ProfileConstraint, Vec2 } from '../../scene/types';
 
 /**
  * Vincoli dedotti durante il disegno (tappa 4 dello studio quote, come in Fusion): se il segmento appena disegnato è
@@ -29,6 +29,9 @@ export function directionKind(a: Vec2, b: Vec2, tolDeg: number = INFER_TOLERANCE
   return fromHorizontal >= 90 - tolDeg ? 'vertical' : null;
 }
 
+/** Un segmento è curvo se una delle sue due maniglie (uscita del nodo di partenza, entrata di quello d'arrivo) non è nulla: orizzontale o perpendicolare non hanno senso sulle sue corde. */
+const curved = (a: PathNode, b: PathNode): boolean => !!((a.out && (a.out[0] !== 0 || a.out[1] !== 0)) || (b.in && (b.in[0] !== 0 || b.in[1] !== 0)));
+
 /** Angolo (gradi, tra 0 e 180) tra due direzioni. */
 function between(u: Vec2, v: Vec2): number {
   const cos = (u[0] * v[0] + u[1] * v[1]) / (Math.hypot(u[0], u[1]) * Math.hypot(v[0], v[1]));
@@ -36,29 +39,38 @@ function between(u: Vec2, v: Vec2): number {
 }
 
 /**
+ * Il vincolo di direzione del segmento diritto `a`→`b`, con `before` il nodo che precede `a` (se c'è):
+ * - orizzontale o verticale entro la tolleranza: Orizzontale o Verticale;
+ * - altrimenti, se anche il segmento precedente è diritto e l'angolo tra i due è 90 gradi entro la tolleranza: Perpendicolare
+ *   (un segmento quasi parallelo al precedente è una prosecuzione: non si deduce nulla).
+ * Un segmento curvo (con maniglie) non dà nulla.
+ */
+function directionCandidate(before: PathNode | undefined, a: PathNode, b: PathNode, tolDeg: number): Candidate | null {
+  if (!a.id || !b.id || curved(a, b)) return null;
+  const kind = directionKind(a.p, b.p, tolDeg);
+  if (kind) return { t: kind, p: [a.id, b.id] };
+  if (!before?.id || curved(before, a)) return null;
+  const [u, v]: [Vec2, Vec2] = [[a.p[0] - before.p[0], a.p[1] - before.p[1]], [b.p[0] - a.p[0], b.p[1] - a.p[1]]];
+  if (Math.hypot(...u) > 1e-9 && Math.hypot(...v) > 1e-9 && Math.abs(between(u, v) - 90) <= tolDeg) return { t: 'perpendicular', p: [before.id, a.id, a.id, b.id] };
+  return null;
+}
+
+/**
  * I vincoli che il nodo appena aggiunto `ref` suggerisce, rispetto al nodo che lo precede nel contorno:
- * - segmento orizzontale o verticale entro la tolleranza: Orizzontale o Verticale;
- * - altrimenti, se c'è un segmento prima e l'angolo tra i due è 90 gradi entro la tolleranza: Perpendicolare (un segmento
- *   quasi parallelo al precedente è una prosecuzione: non si deduce nulla);
+ * - la direzione del segmento (Orizzontale, Verticale o Perpendicolare al precedente, solo per segmenti diritti: vedi
+ *   `directionCandidate`), se `directions` è vero. Con un angolo digitato non servono: la quota dell'angolo già lo decide;
  * - se cade su un altro nodo (di qualunque contorno, non quello che lo precede): Coincidente.
  * Senza nodo precedente (il primo punto di un contorno) restano solo i coincidenti.
  */
-export function inferNodeConstraints(paths: PathContour[], ref: NodeRef, tolDeg: number = INFER_TOLERANCE_DEG): Candidate[] {
+export function inferNodeConstraints(paths: PathContour[], ref: NodeRef, tolDeg: number = INFER_TOLERANCE_DEG, directions = true): Candidate[] {
   const contour = paths[ref.path];
   const node = contour?.nodes[ref.node];
   if (!contour || !node?.id) return [];
   const out: Candidate[] = [];
   const prev = ref.node > 0 ? contour.nodes[ref.node - 1] : undefined;
-  if (prev?.id) {
-    const kind = directionKind(prev.p, node.p, tolDeg);
-    if (kind) out.push({ t: kind, p: [prev.id, node.id] });
-    else {
-      const before = ref.node > 1 ? contour.nodes[ref.node - 2] : undefined;
-      if (before?.id) {
-        const [u, v]: [Vec2, Vec2] = [[prev.p[0] - before.p[0], prev.p[1] - before.p[1]], [node.p[0] - prev.p[0], node.p[1] - prev.p[1]]];
-        if (Math.hypot(...u) > 1e-9 && Math.hypot(...v) > 1e-9 && Math.abs(between(u, v) - 90) <= tolDeg) out.push({ t: 'perpendicular', p: [before.id, prev.id, prev.id, node.id] });
-      }
-    }
+  if (prev?.id && directions) {
+    const direction = directionCandidate(ref.node > 1 ? contour.nodes[ref.node - 2] : undefined, prev, node, tolDeg);
+    if (direction) out.push(direction);
   }
   // Un altro nodo nello stesso punto (il nodo precedente no: sarebbe un segmento lungo zero)
   for (const [pi, c] of paths.entries()) {
@@ -71,6 +83,19 @@ export function inferNodeConstraints(paths: PathContour[], ref: NodeRef, tolDeg:
     }
   }
   return out;
+}
+
+/**
+ * Il vincolo del lato di chiusura (dall'ultimo nodo al primo) di un contorno appena chiuso: Orizzontale, Verticale o
+ * Perpendicolare al lato che lo precede, come per un nodo nuovo ma senza i coincidenti (il primo nodo c'è già). Un lato curvo,
+ * un contorno aperto o con meno di tre nodi non dà nulla. Con `directions` falso (angolo digitato) non dà nulla.
+ */
+export function inferClosingConstraints(paths: PathContour[], contour: number, tolDeg: number = INFER_TOLERANCE_DEG, directions = true): Candidate[] {
+  const c = paths[contour];
+  if (!directions || !c?.closed || c.nodes.length < 3) return [];
+  const n = c.nodes.length;
+  const direction = directionCandidate(c.nodes[n - 2], c.nodes[n - 1], c.nodes[0], tolDeg);
+  return direction ? [direction] : [];
 }
 
 /**

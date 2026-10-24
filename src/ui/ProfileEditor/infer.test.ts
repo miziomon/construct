@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { INFER_TOLERANCE_DEG, applyInferred, directionKind, inferNodeConstraints, inferShapeConstraints } from './infer';
+import { INFER_TOLERANCE_DEG, applyInferred, directionKind, inferClosingConstraints, inferNodeConstraints, inferShapeConstraints } from './infer';
 import { addFixed, pointMap } from './dimensions';
 import type { PathContour, ProfileConstraint, Vec2 } from '../../scene/types';
 
@@ -128,5 +128,53 @@ describe('applyInferred: i candidati si aggiungono se non vanno in conflitto', (
     const coincident = applyInferred(twoPlaces, [{ t: 'coincident', p: ['n2', 'n3'] }]);
     expect(coincident.constraints).toHaveLength(1);
     expect(last(twoPlaces.paths[0])).toEqual({ path: 0, node: 2 });
+  });
+});
+
+describe('segmenti curvi e lato di chiusura', () => {
+  /** Un contorno con maniglie sul nodo indicato (uscita `out` e/o entrata `in`). */
+  const curve = (c: PathContour, at: number, handles: { in?: Vec2; out?: Vec2 }): PathContour => ({ ...c, nodes: c.nodes.map((n, i) => (i === at ? { ...n, ...handles } : n)) });
+
+  it('un segmento curvo (maniglia in uscita dal precedente o in entrata nel nuovo) non dà né orizzontale né verticale', () => {
+    const flat = path([[0, 0], [30, 0.5]]);
+    expect(inferNodeConstraints([flat], { path: 0, node: 1 })).toEqual([{ t: 'horizontal', p: ['n1', 'n2'] }]);
+    expect(inferNodeConstraints([curve(flat, 0, { out: [5, 5] })], { path: 0, node: 1 })).toEqual([]);
+    expect(inferNodeConstraints([curve(flat, 1, { in: [-5, 5] })], { path: 0, node: 1 })).toEqual([]);
+    // Una maniglia nulla non è una curva
+    expect(inferNodeConstraints([curve(flat, 0, { out: [0, 0] })], { path: 0, node: 1 })).toEqual([{ t: 'horizontal', p: ['n1', 'n2'] }]);
+  });
+
+  it('il perpendicolare non si deduce se il segmento precedente è curvo', () => {
+    const corner = path([[0, 0], [20, 0], [20, 15]]);
+    expect(inferNodeConstraints([corner], { path: 0, node: 2 })).toEqual([{ t: 'vertical', p: ['n2', 'n3'] }]);
+    const slanted = path([[0, 0], at(35, 20), [at(35, 20)[0] + at(125, 15)[0], at(35, 20)[1] + at(125, 15)[1]]]);
+    expect(inferNodeConstraints([slanted], { path: 0, node: 2 })).toEqual([{ t: 'perpendicular', p: ['n1', 'n2', 'n2', 'n3'] }]);
+    expect(inferNodeConstraints([curve(slanted, 0, { out: [4, 1] })], { path: 0, node: 2 })).toEqual([]);
+  });
+
+  it('senza direzioni (angolo digitato) restano solo i coincidenti', () => {
+    const flat = path([[0, 0], [30, 0.5]]);
+    expect(inferNodeConstraints([flat], { path: 0, node: 1 }, undefined, false)).toEqual([]);
+    const onOther = [path([[0, 0], [30, 0]]), path([[30, 0], [40, 10]], 'm')];
+    expect(inferNodeConstraints(onOther, { path: 0, node: 1 }, undefined, false)).toEqual([{ t: 'coincident', p: ['n2', 'm1'] }]);
+  });
+
+  it('il lato di chiusura (ultimo nodo, primo nodo) è orizzontale, verticale o perpendicolare al lato prima; curvo o aperto no', () => {
+    const closedPath = (pts: Vec2[]): PathContour => path(pts, 'n', true);
+    // Il lato n4 -> n1 va da (0,4 ; 20) a (0 ; 0): verticale
+    expect(inferClosingConstraints([closedPath([[0, 0], [30, 0], [30, 20], [0.4, 20]])], 0)).toEqual([{ t: 'vertical', p: ['n4', 'n1'] }]);
+    // Il lato n3 -> n1 va da (30 ; 0,5) a (0 ; 0): orizzontale
+    expect(inferClosingConstraints([closedPath([[0, 0], [15, 20], [30, 0.5]])], 0)).toEqual([{ t: 'horizontal', p: ['n3', 'n1'] }]);
+    // Un lato obliquo ma perpendicolare al precedente: Perpendicolare
+    expect(inferClosingConstraints([closedPath([[0, 0], [40, 0], [20, 20]])], 0)).toEqual([{ t: 'perpendicular', p: ['n2', 'n3', 'n3', 'n1'] }]);
+    // Un lato obliquo qualunque: niente
+    expect(inferClosingConstraints([closedPath([[0, 0], [40, 0], [30, 20]])], 0)).toEqual([]);
+    // Aperto o con meno di tre nodi: niente; con directions falso: niente
+    expect(inferClosingConstraints([path([[0, 0], [30, 0], [30, 20], [0.2, 10]])], 0)).toEqual([]);
+    expect(inferClosingConstraints([closedPath([[0, 0], [30, 0]])], 0)).toEqual([]);
+    expect(inferClosingConstraints([closedPath([[0, 0], [30, 0], [30, 20], [0.2, 10]])], 0, undefined, false)).toEqual([]);
+    // Il lato di chiusura curvo (maniglia in uscita dall'ultimo nodo) non deduce nulla
+    const withHandle = curve(closedPath([[0, 0], [30, 0], [30, 20], [0.2, 10]]), 3, { out: [-3, -3] });
+    expect(inferClosingConstraints([withHandle], 0)).toEqual([]);
   });
 });

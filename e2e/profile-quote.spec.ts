@@ -794,3 +794,138 @@ test('più quote scelte nell\'elenco: un valore comune per tutte, in un solo pas
   expect(saved.paths[0].nodes[2].p[0]).toBeCloseTo(30, 3);
   expect(saved.paths[0].nodes[2].p[1]).toBeCloseTo(30, 3);
 });
+
+// --- Correzioni della revisione B5 ----------------------------------------------------------------------------------------
+
+/** Quattro clic della Penna ai vertici di un rettangolo (distanze dal centro, in pixel) e un clic sul primo nodo per chiudere. */
+async function drawClosedRect(page: Page) {
+  const c = await canvasCenter(page);
+  for (const [dx, dy] of [[-100, 80], [100, 80], [100, -80], [-100, -80]]) await page.mouse.click(c.x + dx, c.y + dy);
+  await expect(editor(page).locator('[data-node]')).toHaveCount(4);
+  await page.mouse.click(c.x - 100, c.y + 80);
+  await expect(editor(page).locator('[data-path="0"]')).toContainText('Chiuso');
+}
+
+test('con i vincoli automatici accesi i flussi di disegno restano validi: Penna con chiusura, trascinamento di un nodo, OK e riapertura', async ({ page }) => {
+  await openNewProfile(page);
+  // Le prove partono con la casella spenta: qui si accende dalla casella, come farebbe l\'utente
+  const auto = editor(page).getByLabel('Vincoli automatici');
+  await auto.check();
+  await penTool(page).click();
+  await drawClosedRect(page);
+  // Due orizzontali e due verticali, compreso il lato di chiusura (dal quarto nodo al primo)
+  await expect(editor(page).locator('[data-constraint-type="horizontal"]')).toHaveCount(2);
+  await expect(editor(page).locator('[data-constraint-type="vertical"]')).toHaveCount(2);
+  // Trascinare un nodo con Seleziona: il rettangolo resta un rettangolo e il nodo segue il mouse
+  await editor(page).getByRole('button', { name: 'Seleziona', exact: true }).click();
+  const before = await center(node(page, '0:2'));
+  await dragBy(page, before, 60, -40);
+  const after = await center(node(page, '0:2'));
+  expect(after.x).toBeGreaterThan(before.x + 40);
+  await expect(editor(page).locator('[data-constraint]')).toHaveCount(4);
+  await ok(page).click();
+  await expect(editor(page)).toHaveCount(0);
+  await settled(page);
+  const [id] = Object.keys((await sceneState(page)).nodes);
+  const saved = await getNode(page, id);
+  const p = saved.paths[0].nodes.map((n) => n.p);
+  expect(saved.constraints).toHaveLength(4);
+  expect(p[0][1]).toBeCloseTo(p[1][1], 3);
+  expect(p[1][0]).toBeCloseTo(p[2][0], 3);
+  expect(p[2][1]).toBeCloseTo(p[3][1], 3);
+  expect(p[3][0]).toBeCloseTo(p[0][0], 3);
+  // Riaperto: stessi vincoli, nessun conflitto
+  await openEditor(page, id);
+  await expect(editor(page).locator('[data-constraint]')).toHaveCount(4);
+  await expect(editor(page).locator('[data-constraint-type="vertical"]')).toHaveCount(2);
+});
+
+test('il valore predefinito dei vincoli automatici è acceso: senza la chiave nelle preferenze la casella è spuntata e la Penna li deduce', async ({ page }) => {
+  // Preferenze salvate senza la chiave dei vincoli automatici (come prima di questa funzione): vale il predefinito, acceso
+  await page.evaluate(() => localStorage.setItem('construct:ui', JSON.stringify({ state: { welcomeAlways: false }, version: 0 })));
+  await page.reload();
+  await page.waitForFunction(() => !!window.__construct && !!window.__r3f);
+  expect(await page.evaluate(() => window.__construct!.ui.getState().profileAutoConstraints)).toBe(true);
+  await openNewProfile(page);
+  await expect(editor(page).getByLabel('Vincoli automatici')).toBeChecked();
+  await penTool(page).click();
+  await drawClosedRect(page);
+  await expect(editor(page).locator('[data-constraint-type="horizontal"]')).toHaveCount(2);
+  await expect(editor(page).locator('[data-constraint-type="vertical"]')).toHaveCount(2);
+});
+
+test('Rendi uguali con quote pilotanti diverse: la prima resta, la seconda diventa di riferimento e il quadrato è 40 x 40', async ({ page }) => {
+  const id = await addProfile(page, FULL);
+  await openEditor(page, id);
+  const name = (k: string) => editor(page).locator(`[data-constraint="${k}"] .profile-editor__constraint-name`);
+  await name('k6').click();
+  await name('k7').click({ modifiers: ['Shift'] });
+  await expect(editor(page).locator('[data-quote-group]')).toContainText('2 quote scelte');
+  // Le due righe scelte sono premute anche per i lettori di schermo
+  await expect(name('k6')).toHaveAttribute('aria-pressed', 'true');
+  await expect(name('k7')).toHaveAttribute('aria-pressed', 'true');
+  await editor(page).locator('[data-equalize]').click();
+  // La seconda quota è di riferimento (misura tra parentesi, nessun campo da modificare), la prima è ancora pilotante
+  await expect(editor(page).locator('[data-constraint="k7"]')).toContainText('quota di riferimento');
+  await expect(editor(page).getByLabel('Valore di Distanza P1.1-P1.2')).toHaveValue('40');
+  await expect(editor(page).getByLabel('Valore di Distanza P1.2-P1.3')).toHaveCount(0);
+  await expect(editor(page).locator('[data-constraint-type="equal"]')).toHaveCount(1);
+  await expect(editor(page).getByText('Completamente vincolato: 0 gradi di libertà')).toBeVisible();
+  await ok(page).click();
+  await expect(editor(page)).toHaveCount(0);
+  await settled(page);
+  const saved = await getNode(page, id);
+  expect(saved.paths[0].nodes[2].p[0]).toBeCloseTo(40, 3);
+  expect(saved.paths[0].nodes[2].p[1]).toBeCloseTo(40, 3);
+  const k7 = (saved.constraints as unknown as { id: string; ref?: boolean }[]).find((q) => q.id === 'k7');
+  expect(k7?.ref).toBe(true);
+});
+
+test('Annulla riporta in un solo passo i valori di prima dopo il valore comune di più quote', async ({ page }) => {
+  const id = await addProfile(page, FULL);
+  await openEditor(page, id);
+  const name = (k: string) => editor(page).locator(`[data-constraint="${k}"] .profile-editor__constraint-name`);
+  await name('k6').click();
+  await name('k7').click({ modifiers: ['Shift'] });
+  const common = editor(page).getByLabel('Valore comune delle quote scelte');
+  await common.fill('30');
+  await common.press('Enter');
+  await expect(editor(page).getByLabel('Valore di Distanza P1.1-P1.2')).toHaveValue('30');
+  await expect(editor(page).getByLabel('Valore di Distanza P1.2-P1.3')).toHaveValue('30');
+  // Un solo Ctrl+Z (con il fuoco sulla modale) rimette 40 e 20; Ctrl+Maiusc+Z li porta di nuovo a 30
+  await editor(page).locator('.profile-editor').focus();
+  await page.keyboard.press('Control+z');
+  await expect(editor(page).getByLabel('Valore di Distanza P1.1-P1.2')).toHaveValue('40');
+  await expect(editor(page).getByLabel('Valore di Distanza P1.2-P1.3')).toHaveValue('20');
+  await page.keyboard.press('Control+Shift+z');
+  await expect(editor(page).getByLabel('Valore di Distanza P1.1-P1.2')).toHaveValue('30');
+  await expect(editor(page).getByLabel('Valore di Distanza P1.2-P1.3')).toHaveValue('30');
+});
+
+test('Penna digitata: Backspace e R nei campi non toccano il disegno né cambiano strumento', async ({ page }) => {
+  await openNewProfile(page);
+  await penTool(page).click();
+  const c = await canvasCenter(page);
+  await page.mouse.click(c.x, c.y);
+  await expect(editor(page).getByText('0 contorni, 1 nodo')).toBeVisible();
+  await page.keyboard.press('5');
+  await expect(lengthField(page)).toBeFocused();
+  // R è una lettera del campo: lo strumento Rettangolo non si accende e la Penna resta quella scelta
+  await page.keyboard.press('r');
+  await expect(lengthField(page)).toHaveValue('5r');
+  await expect(editor(page).getByRole('button', { name: 'Rettangolo', exact: true })).toHaveAttribute('aria-pressed', 'false');
+  await expect(penTool(page)).toHaveAttribute('aria-pressed', 'true');
+  // Backspace cancella i caratteri del campo (anche a campo vuoto) e non toglie il nodo al contorno
+  await page.keyboard.press('Backspace');
+  await expect(lengthField(page)).toHaveValue('5');
+  await page.keyboard.press('Backspace');
+  await expect(lengthField(page)).toHaveValue('');
+  await page.keyboard.press('Backspace');
+  await expect(editor(page).getByText('0 contorni, 1 nodo')).toBeVisible();
+  // Dopo Esc i campi spariscono e il nodo c\'è ancora; riprendendo a digitare i campi ripartono vuoti
+  await page.keyboard.press('Escape');
+  await expect(lengthField(page)).toHaveCount(0);
+  await page.keyboard.press('7');
+  await expect(lengthField(page)).toHaveValue('7');
+  await expect(angleField(page)).toHaveValue('');
+});

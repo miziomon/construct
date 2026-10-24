@@ -20,7 +20,7 @@ import { EditorToolbar } from './EditorToolbar';
 import type { ViewMode } from './EditorToolbar';
 import type { DimHit, GridSettings, QuoteProps, Tool } from './DrawingCanvas';
 import { SELECTION_CONSTRAINTS, addConstraint, addReferenceDimension, addSelectionConstraint, canApplyConstraint, createAngleDimension, createDimension, diagnose, idsOf, isDimension, equalizeLengths, moveNodesConstrained, quoteMismatch, removeConstraint, repositionDimensions, selectionItems, setCommonValue, setConstraintValue, stateText } from './dimensions';
-import { applyInferred, inferNodeConstraints, inferShapeConstraints } from './infer';
+import { applyInferred, inferClosingConstraints, inferNodeConstraints, inferShapeConstraints } from './infer';
 import { typedPenNode } from './penInput';
 import type { PenTarget } from './penInput';
 import type { Applied, DimMode, SelectionConstraint } from './dimensions';
@@ -506,7 +506,7 @@ function Editor({ target }: { target: ProfileTarget }) {
   const typePenNode = (target: Extract<PenTarget, { ok: true }>) => {
     const index = stateRef.current.pen;
     if (index === null) return;
-    const result = typedPenNode(stateRef.current.draft, index, target, scaleRef.current);
+    const result = typedPenNode(stateRef.current.draft, index, target, scaleRef.current, autoConstraints);
     if ('error' in result) {
       notify.info(result.error);
       return;
@@ -549,7 +549,13 @@ function Editor({ target }: { target: ProfileTarget }) {
       notify.error('Due segmenti diritti non racchiudono un\'area: trascina dal primo punto per curvare la chiusura, o curva uno dei due segmenti');
       return;
     }
-    commitDraft({ ...stateRef.current.draft, paths: closeContour(paths, index) }, [{ path: index, node: 0 }]);
+    let closed: Draft = { ...stateRef.current.draft, paths: closeContour(paths, index) };
+    // Vincoli dedotti anche per il lato di chiusura (orizzontale, verticale, perpendicolare al lato prima)
+    if (autoConstraints) {
+      const base = normalizeProfile(closed);
+      closed = applyInferred(base, inferClosingConstraints(base.paths, index));
+    }
+    commitDraft(closed, [{ path: index, node: 0 }]);
   };
   /** Backspace: toglie l'ultimo nodo del contorno in corso. */
   const penBackspace = () => {

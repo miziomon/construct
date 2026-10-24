@@ -104,6 +104,18 @@ describe('sezione Quote e vincoli', () => {
     expect(render({ constraints, group: ['k1'] })).not.toContain('data-quote-group');
     // Le righe del gruppo sono evidenziate
     expect(html.match(/profile-editor__constraint--selected/g)).toHaveLength(2);
+    // ...e lo dicono anche ai lettori di schermo: aria-pressed sul pulsante del nome (vero per le scelte, falso per le altre)
+    expect(html.match(/aria-pressed="true"/g)).toHaveLength(2);
+    expect(html.match(/aria-pressed="false"/g)).toHaveLength(1);
+    // Due quote angolari uguali: niente valore comune (vale per le lunghezze), né Rendi uguali
+    const angles: ProfileConstraint[] = [
+      { id: 'a1', t: 'angle', p: ['n1', 'n2', 'n2', 'n3'], v: 30 },
+      { id: 'a2', t: 'angle', p: ['n2', 'n3', 'n3', 'n1'], v: 30 },
+    ];
+    const angleGroup = render({ constraints: angles, group: ['a1', 'a2'] });
+    expect(angleGroup).toContain('data-quote-group');
+    expect(angleGroup).not.toContain('Valore comune');
+    expect(angleGroup).not.toContain('data-equalize');
   });
 
   it('la casella Vincoli automatici riflette l\'impostazione', () => {

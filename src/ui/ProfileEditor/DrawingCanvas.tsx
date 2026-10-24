@@ -295,6 +295,14 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
   const nodeR = coarse ? 20 : 10;
   // Contorno aperto che la Penna sta continuando
   const activePen = tool === 'pen' && pen !== null && paths[pen] && !paths[pen].closed ? paths[pen] : null;
+  // Senza un contorno che la Penna sta continuando (altro strumento, contorno chiuso o annullato) i campi digitati e il loro errore spariscono: alla ripresa non resta testo vecchio
+  const penActive = activePen !== null;
+  useEffect(() => {
+    if (!penActive) {
+      setPenField(null);
+      setPenError(null);
+    }
+  }, [penActive]);
 
   useEffect(() => {
     latest.current = { paths, rotate, fitBox };

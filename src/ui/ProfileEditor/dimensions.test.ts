@@ -791,6 +791,16 @@ describe('angoli oltre 180 gradi e angoli nulli', () => {
     expect(same).toMatchObject({ ok: false, reason: 'invalid' });
   });
 
+  it('il rifiuto dello 0 vale per un nodo in comune in qualunque posizione (ab e ca, ab e bc, ba e cd...)', () => {
+    for (const p of [['a', 'b', 'c', 'a'], ['a', 'b', 'b', 'c'], ['a', 'b', 'a', 'c'], ['b', 'a', 'c', 'b']]) {
+      for (const v of [0, 360]) {
+        expect(normalizeAngle({ id: 'k1', t: 'angle', p, v })).toMatch(/^I due lati si sovrapporrebbero/);
+      }
+    }
+    // Senza nodi in comune lo 0 (lati paralleli) è valido
+    expect(normalizeAngle({ id: 'k1', t: 'angle', p: ['a', 'b', 'c', 'd'], v: 0 })).toMatchObject({ v: 0 });
+  });
+
   it('270 gradi si risolve come -90 con i segmenti scambiati: l\'arco e l\'etichetta dicono 90; 400 si porta a 40', () => {
     const d = must(addFixed(hinge(), ['n1', 'n2']));
     const dim = createAngleDimension(d.paths, ['n1', 'n2'], ['n2', 'n3'], 10) as ProfileConstraint;
@@ -829,6 +839,12 @@ describe('più quote scelte insieme', () => {
     const ref = withRef.constraints!.at(-1)!.id;
     expect(groupInfo(withRef.constraints, [w, ref])).toMatchObject({ type: null, canEqualize: true });
     expect(groupInfo(d.constraints, [w, w]).canEqualize).toBe(false);
+    // Il valore comune vale solo per le lunghezze: due quote angolari pilotanti non hanno tipo comune
+    const angles: ProfileConstraint[] = [
+      { id: 'a1', t: 'angle', p: ['n1', 'n2', 'n2', 'n3'], v: 30 },
+      { id: 'a2', t: 'angle', p: ['n2', 'n3', 'n3', 'n4'], v: 30 },
+    ];
+    expect(groupInfo(angles, ['a1', 'a2'])).toEqual({ count: 2, type: null, value: null, canEqualize: false });
     // Id inesistenti e selezione vuota
     expect(groupInfo(d.constraints, ['zz', w])).toMatchObject({ count: 1, canEqualize: false });
     expect(groupInfo(undefined, [w])).toEqual({ count: 0, type: null, value: null, canEqualize: false });
@@ -855,11 +871,61 @@ describe('più quote scelte insieme', () => {
     expect(out.constraints!.at(-1)).toMatchObject({ t: 'equal', p: ['n1', 'n2', 'n2', 'n3'] });
     const len = (a: string, b: string) => Math.hypot(pos(out, a)[0] - pos(out, b)[0], pos(out, a)[1] - pos(out, b)[1]);
     expect(len('n1', 'n2')).toBeCloseTo(len('n2', 'n3'), 6);
-    // Con le quote pilotanti 40 e 20 il vincolo Uguale è in conflitto: niente
-    const driven = sized();
-    const blocked = equalizeLengths(driven, [dist(driven, 'n1', 'n2').id, dist(driven, 'n2', 'n3').id]);
-    expect(blocked).toMatchObject({ ok: false, reason: 'conflict' });
     // Una sola quota o la stessa coppia: messaggio
     expect(equalizeLengths(free, ['k1'])).toMatchObject({ ok: false, message: 'Scegli due o più distanze tra coppie diverse di nodi' });
+  });
+
+  it('equalizeLengths con quote pilotanti diverse (40 e 20): resta la prima, la seconda diventa di riferimento e il valore finale è 40', () => {
+    const driven = sized();
+    const [w, h] = [dist(driven, 'n1', 'n2'), dist(driven, 'n2', 'n3')];
+    const out = must(equalizeLengths(driven, [w.id, h.id]));
+    const first = out.constraints!.find((c) => c.id === w.id)!;
+    const second = out.constraints!.find((c) => c.id === h.id)!;
+    // La prima è ancora pilotante, la seconda è di riferimento con la misura attuale (tra parentesi)
+    expect(first.ref).toBeUndefined();
+    expect(first.v).toBe(40);
+    expect(second.ref).toBe(true);
+    expect(second.v).toBeCloseTo(40, 6);
+    expect(dimText(second, out.paths)).toBe('(40)');
+    expect(out.constraints!.at(-1)).toMatchObject({ t: 'equal', p: ['n1', 'n2', 'n2', 'n3'] });
+    // Il quadrato 40 x 40, con il report senza conflitti
+    expect(pos(out, 'n3')[0]).toBeCloseTo(40, 6);
+    expect(pos(out, 'n3')[1]).toBeCloseTo(40, 6);
+    expect(out.constraints!.filter((c) => c.t === 'dist' && !c.ref)).toHaveLength(1);
+  });
+
+  it('equalizeLengths con quote pilotanti già uguali (40 e 40): non è ridondante, la seconda diventa di riferimento', () => {
+    const driven = must(setConstraintValue(sized(), dist(sized(), 'n2', 'n3').id, 40));
+    const [w, h] = [dist(driven, 'n1', 'n2'), dist(driven, 'n2', 'n3')];
+    const out = must(equalizeLengths(driven, [w.id, h.id]));
+    expect(out.constraints!.find((c) => c.id === h.id)).toMatchObject({ ref: true });
+    expect(out.constraints!.find((c) => c.id === w.id)!.ref).toBeUndefined();
+    expect(pos(out, 'n3')[1]).toBeCloseTo(40, 6);
+  });
+
+  it('equalizeLengths: resta pilotante la prima nell\'elenco dei vincoli, non nell\'ordine di scelta', () => {
+    const driven = sized();
+    const [w, h] = [dist(driven, 'n1', 'n2'), dist(driven, 'n2', 'n3')];
+    // Gli id in ordine inverso: la prima quota dell'elenco (la larghezza) resta comunque quella che comanda
+    const out = must(equalizeLengths(driven, [h.id, w.id]));
+    expect(out.constraints!.find((c) => c.id === w.id)!.ref).toBeUndefined();
+    expect(out.constraints!.find((c) => c.id === h.id)!.ref).toBe(true);
+    expect(pos(out, 'n3')[1]).toBeCloseTo(40, 6);
+  });
+
+  it('equalizeLengths con tre quote pilotanti: una sola resta pilotante e le altre due seguono', () => {
+    // Quadrilatero con n1 fisso e tre quote (40, 20 e 30), senza lati orizzontali o verticali
+    let d: Geo = must(addFixed(start(), ['n1']));
+    d = must(addConstraint(d, { t: 'dist', p: ['n1', 'n2'], v: 40 }));
+    d = must(addConstraint(d, { t: 'dist', p: ['n2', 'n3'], v: 20 }));
+    d = must(addConstraint(d, { t: 'dist', p: ['n3', 'n4'], v: 30 }));
+    const ids = [dist(d, 'n1', 'n2').id, dist(d, 'n2', 'n3').id, dist(d, 'n3', 'n4').id];
+    const out = must(equalizeLengths(d, ids));
+    expect(out.constraints!.filter((c) => c.t === 'dist' && !c.ref)).toHaveLength(1);
+    expect(out.constraints!.filter((c) => c.t === 'equal')).toHaveLength(2);
+    const len = (a: string, b: string) => Math.hypot(pos(out, a)[0] - pos(out, b)[0], pos(out, a)[1] - pos(out, b)[1]);
+    expect(len('n1', 'n2')).toBeCloseTo(40, 6);
+    expect(len('n2', 'n3')).toBeCloseTo(40, 6);
+    expect(len('n3', 'n4')).toBeCloseTo(40, 6);
   });
 });

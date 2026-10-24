@@ -75,15 +75,15 @@ export function ConstraintsPanel({ paths, constraints, auto, onAuto, can, select
         </button>
       )}
       {group.length >= 2 && (() => {
-        // Più quote scelte: un solo valore per tutte (se sono dello stesso tipo e pilotanti) e, per le distanze, Uguale
+        // Più quote scelte: un solo valore per tutte (solo lunghezze pilotanti dello stesso tipo) e, per le distanze, Uguale
         const info = groupInfo(constraints, group);
         if (info.count < 2) return null;
         return (
           <div className="profile-editor__group" data-quote-group="">
             <p className="profile-editor__hint">{info.count} quote scelte (Maiusc+clic sul nome per aggiungere o togliere).</p>
-            {info.type && <NumberField label="Valore comune" ariaLabel="Valore comune delle quote scelte" unit={info.type === 'angle' ? '°' : 'mm'} value={info.value ?? 0} mixed={info.value === null} onCommit={onGroupValue} />}
+            {info.type && <NumberField label="Valore comune" ariaLabel="Valore comune delle quote scelte" unit="mm" value={info.value ?? 0} mixed={info.value === null} onCommit={onGroupValue} />}
             {info.canEqualize && (
-              <button type="button" className="profile-editor__mini" data-equalize="" title="Aggiunge un vincolo Uguale tra i segmenti delle distanze scelte" onClick={onEqualize}>
+              <button type="button" className="profile-editor__mini" data-equalize="" title="La prima quota pilotante resta, le altre diventano di riferimento e i segmenti si adeguano alla prima" onClick={onEqualize}>
                 Rendi uguali
               </button>
             )}
@@ -102,7 +102,7 @@ export function ConstraintsPanel({ paths, constraints, auto, onAuto, can, select
             return (
               <li key={c.id} className={className} data-constraint={c.id} data-constraint-type={c.t}>
                 <div className="profile-editor__constraint-head">
-                  <button type="button" className="profile-editor__constraint-name" title={`${label}. Maiusc+clic: scegli più quote insieme`} onClick={(e) => onSelect(selected === c.id && !e.shiftKey && group.length < 2 ? null : c.id, e.shiftKey)}>
+                  <button type="button" className="profile-editor__constraint-name" aria-pressed={selected === c.id || group.includes(c.id)} title={`${label}. Maiusc+clic: scegli più quote insieme`} onClick={(e) => onSelect(selected === c.id && !e.shiftKey && group.length < 2 ? null : c.id, e.shiftKey)}>
                     <span aria-hidden="true">{CONSTRAINT_GLYPHS[c.t]}</span> {label}
                   </button>
                   <button type="button" className="profile-editor__mini" aria-label={`Elimina ${label}`} title="Elimina" onClick={() => onDelete(c.id)}>

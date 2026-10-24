@@ -1,6 +1,6 @@
 import { dragSketch, maxResidual, measure, solveSketch, validateValue } from './constraints';
 import type { ConstraintType, Pt, Report } from './constraints';
-import { dimensionValue, isDimension, placeDimension, pointMap, pointsOf } from './dimPlacement';
+import { dimensionValue, isDimension, isLinearDimension, placeDimension, pointMap, pointsOf } from './dimPlacement';
 import { constraintIdMaker, moveNodes } from './model';
 import type { NodeRef, ProfileGeometry, SegmentRef } from './model';
 import type { PathContour, ProfileConstraint, Vec2 } from '../../scene/types';
@@ -245,7 +245,9 @@ export function normalizeAngle(c: ProfileConstraint): ProfileConstraint | string
   if (c.v === undefined || !Number.isFinite(c.v)) return c;
   let v = c.v - 360 * Math.round(c.v / 360);
   if (v === -180) v = 180;
-  if (c.p.length === 4 && c.p[0] === c.p[2] && Math.abs(v) < 1e-9) return 'I due lati si sovrapporrebbero: un angolo di 0 gradi tra due lati con un nodo in comune non è un angolo';
+  // (un nodo in comune in qualunque posizione: ab e cd, ab e dc, ba e cd... sono lo stesso caso)
+  const sharesNode = c.p.length === 4 && (c.p[0] === c.p[2] || c.p[0] === c.p[3] || c.p[1] === c.p[2] || c.p[1] === c.p[3]);
+  if (sharesNode && Math.abs(v) < 1e-9) return 'I due lati si sovrapporrebbero: un angolo di 0 gradi tra due lati con un nodo in comune non è un angolo';
   if (v < 0 && c.p.length === 4) return { ...c, p: [c.p[2], c.p[3], c.p[0], c.p[1]], v: -v };
   return { ...c, v: v + 0 };
 }
@@ -402,7 +404,7 @@ export function setConstraintValue<T extends ProfileGeometry>(d: T, id: string, 
 export interface GroupInfo {
   /** Quante delle quote scelte esistono ancora. */
   count: number;
-  /** Tutte quote pilotanti (non di riferimento) dello stesso tipo: hanno un valore comune da cambiare. */
+  /** Tutte quote di lunghezza pilotanti (non di riferimento) dello stesso tipo: hanno un valore comune da cambiare. Le quote angolari no (vedi `setCommonValue`). */
   type: ConstraintType | null;
   /** Il valore comune se sono tutti uguali (entro 1e-9), altrimenti null (il campo mostra «—»). */
   value: number | null;
@@ -414,7 +416,8 @@ export interface GroupInfo {
 export function groupInfo(constraints: ProfileConstraint[] | undefined, ids: string[]): GroupInfo {
   const chosen = ids.flatMap((id) => constraints?.find((c) => c.id === id) ?? []);
   const driving = chosen.length > 0 && chosen.every((c) => isDimension(c) && !c.ref && c.v !== undefined);
-  const sameType = driving && chosen.every((c) => c.t === chosen[0].t);
+  // Il valore comune vale per le lunghezze: un angolo comune vuole la normalizzazione e la rotazione preliminare di ogni quota, e per due angoli la via è il vincolo Uguale
+  const sameType = driving && chosen.every((c) => c.t === chosen[0].t && isLinearDimension(c));
   const value = sameType && chosen.every((c) => Math.abs((c.v as number) - (chosen[0].v as number)) < 1e-9) ? (chosen[0].v as number) : null;
   const pairs = new Set(chosen.filter((c) => c.t === 'dist').map((c) => [...c.p].sort().join('|')));
   return { count: chosen.length, type: sameType ? chosen[0].t : null, value, canEqualize: chosen.length >= 2 && chosen.every((c) => c.t === 'dist') && pairs.size === chosen.length };
@@ -435,19 +438,28 @@ export function setCommonValue<T extends ProfileGeometry>(d: T, ids: string[], v
 }
 
 /**
- * Rende uguali le distanze scelte con vincoli Uguale tra i loro segmenti (ognuno con il seguente, nell'ordine dell'elenco),
- * in un solo passo: se uno non si può aggiungere (conflitto con i valori digitati, ridondanza) non si aggiunge nessuno.
+ * Rende uguali le distanze scelte. Resta pilotante la prima (la prima quota pilotante nell'elenco, o la prima se sono tutte
+ * di riferimento): le altre diventano di riferimento (tra parentesi) e ognuna riceve un vincolo Uguale con la prima, quindi
+ * il valore finale è quello della prima e i segmenti delle altre si adeguano. Un solo passo: se un Uguale non si può
+ * aggiungere (conflitto con altri vincoli, ridondanza) non cambia nulla.
  */
 export function equalizeLengths<T extends ProfileGeometry>(d: T, ids: string[]): Applied<T> {
   const info = groupInfo(d.constraints, ids);
   if (!info.canEqualize) return { ok: false, message: 'Scegli due o più distanze tra coppie diverse di nodi', ids: [], reason: 'invalid' };
   const chosen = (d.constraints ?? []).filter((c) => ids.includes(c.id));
-  let current = d;
-  for (let i = 1; i < chosen.length; i++) {
-    const result = addConstraint(current, { t: 'equal', p: [chosen[i - 1].p[0], chosen[i - 1].p[1], chosen[i].p[0], chosen[i].p[1]] });
+  const keeper = chosen.find((c) => !c.ref) ?? chosen[0];
+  const others = chosen.filter((c) => c !== keeper);
+  // Le quote pilotanti che non restano diventano di riferimento: così non fissano più la lunghezza e l'Uguale non è né in conflitto né ridondante
+  const demoted = new Set(others.filter((c) => !c.ref).map((c) => c.id));
+  let current: T = { ...d, constraints: (d.constraints ?? []).map((c) => (demoted.has(c.id) ? { ...c, ref: true as const } : c)) };
+  for (const other of others) {
+    const result = addConstraint(current, { t: 'equal', p: [keeper.p[0], keeper.p[1], other.p[0], other.p[1]] });
     if (!result.ok) return result;
     current = result.draft;
   }
+  // Il valore promemoria delle quote diventate di riferimento è la misura che hanno adesso
+  const finalPaths = current.paths;
+  current = { ...current, constraints: (current.constraints ?? []).map((c) => (demoted.has(c.id) ? { ...c, v: dimensionValue({ ...c, v: undefined }, finalPaths) } : c)) };
   return { ok: true, draft: current, report: solveSketch(pointsOf(current.paths), validConstraints(current.paths, current.constraints)) };
 }
 

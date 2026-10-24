@@ -1,5 +1,6 @@
 import { validateValue } from './constraints';
 import { addConstraint, addReferenceDimension, placeDimension } from './dimensions';
+import { applyInferred, inferClosingConstraints, inferNodeConstraints } from './infer';
 import { appendPenNode, closeContour, normalizeProfile } from './model';
 import type { Draft, NodeRef } from './model';
 import { assignNodeIds } from '../../scene/bezier';
@@ -81,9 +82,12 @@ export type TypedNode = { draft: Draft; selection: NodeRef; closing: boolean } |
  * Aggiunge al contorno aperto `index` il nodo calcolato da `target` e le quote dei valori digitati, già posizionate fuori dal
  * disegno (`pxPerMm` è lo zoom). Se il punto cade sul primo nodo di un contorno con almeno tre nodi il contorno si chiude
  * (nessun nodo in più) e le quote vanno all'ultimo lato. Una quota già implicata dalle altre, o in conflitto, entra come
- * quota di riferimento: i numeri dell'utente non si perdono. Non risolve altro: il nodo nasce esattamente nel punto digitato.
+ * quota di riferimento: i numeri dell'utente non si perdono. Con `infer` (vincoli automatici accesi) il nuovo lato porta anche
+ * i vincoli dedotti (orizzontale, verticale, perpendicolare, coincidente; per il lato di chiusura i primi tre), salvo la
+ * direzione quando l'angolo è digitato (la sua quota la decide già). Il nodo nasce esattamente nel punto digitato, poi i
+ * vincoli dedotti possono ritoccarlo.
  */
-export function typedPenNode(current: Draft, index: number, target: Extract<PenTarget, { ok: true }>, pxPerMm: number): TypedNode {
+export function typedPenNode(current: Draft, index: number, target: Extract<PenTarget, { ok: true }>, pxPerMm: number, infer = false): TypedNode {
   const open = current.paths[index];
   if (!open || open.closed || !open.nodes.length) return { error: 'Non c\'è un contorno aperto da continuare' };
   const base = normalizeProfile(current);
@@ -103,6 +107,13 @@ export function typedPenNode(current: Draft, index: number, target: Extract<PenT
     const placed = { ...quote, ...placeDimension(drawn.paths, drawn.constraints ?? [], quote as ProfileConstraint, pxPerMm) };
     const result = addConstraint(drawn, placed);
     drawn = result.ok ? result.draft : (addReferenceDimension(drawn, placed) ?? drawn);
+  }
+  if (infer) {
+    // Vincoli dedotti dopo le quote digitate: la direzione solo se l'angolo non era scritto
+    const candidates = closing
+      ? inferClosingConstraints(drawn.paths, index, undefined, !target.typedAngle)
+      : inferNodeConstraints(drawn.paths, { path: index, node: drawn.paths[index].nodes.length - 1 }, undefined, !target.typedAngle);
+    drawn = applyInferred(drawn, candidates);
   }
   return { draft: drawn, selection: { path: index, node: closing ? 0 : paths[index].nodes.length - 1 }, closing };
 }

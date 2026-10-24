@@ -175,6 +175,64 @@ describe('quote dei valori digitati e nodo che nasce', () => {
     if (anchored.ok) expect(diagnose(anchored.draft)!.report).toMatchObject({ state: 'full', dof: 0 });
   });
 
+  it('con i vincoli automatici: la lunghezza digitata con angolo libero deduce orizzontale o verticale, senza duplicare la quota digitata', () => {
+    // Il cursore a (50, 1,5): 1,7 gradi dall'orizzontale. Lunghezza 60 digitata, angolo dal cursore
+    const target = penTarget([0, 0], [50, 1.5], '60', '');
+    if (!target.ok) throw new Error(target.message);
+    const plain = typedPenNode(start(), 0, target, 10, false);
+    expect('draft' in plain && plain.draft.constraints!.map((c) => c.t)).toEqual(['dist']);
+    const inferred = typedPenNode(start(), 0, target, 10, true);
+    if ('error' in inferred) throw new Error(inferred.error);
+    expect(inferred.draft.constraints!.map((c) => c.t)).toEqual(['dist', 'horizontal']);
+    // Il vincolo orizzontale ha portato il nodo sull'asse, la distanza resta 60
+    const [a, b] = inferred.draft.paths[0].nodes;
+    expect(b.p[1]).toBeCloseTo(a.p[1], 6);
+    expect(Math.hypot(b.p[0] - a.p[0], b.p[1] - a.p[1])).toBeCloseTo(60, 6);
+  });
+
+  it("con l'angolo digitato la direzione non si deduce (la quota dell'angolo c'è già)", () => {
+    const r = typedPenNode(start(), 0, ok([0, 0], '60', '1'), 10, true);
+    if ('error' in r) throw new Error(r.error);
+    // Un segmento a 1 grado: niente orizzontale, solo la distanza e l'angolo digitati
+    expect(r.draft.constraints!.map((c) => c.t)).toEqual(['dist', 'angle']);
+    const exact = typedPenNode(start(), 0, ok([0, 0], '60', '0'), 10, true);
+    expect('draft' in exact && exact.draft.constraints!.map((c) => c.t)).toEqual(['dist', 'angle']);
+  });
+
+  /** Un nodo digitato con i vincoli automatici accesi: i campi vuoti seguono il cursore, anche per chiudere il contorno. */
+  const follow = (d: Draft, cursor: [number, number], length = ''): Extract<ReturnType<typeof typedPenNode>, { draft: Draft }> => {
+    const nodes = d.paths[0].nodes;
+    const target = penTarget(nodes[nodes.length - 1].p, cursor, length, '');
+    if (!target.ok) throw new Error(target.message);
+    const r = typedPenNode(d, 0, target, 10, true);
+    if ('error' in r) throw new Error(r.error);
+    return r;
+  };
+
+  it("con i vincoli automatici il lato di chiusura deduce orizzontale o perpendicolare, senza duplicare ciò che c'è già", () => {
+    // Triangolo: (0,0), (20,20), (40,0). Il secondo lato è perpendicolare al primo (dedotto), la chiusura è orizzontale
+    let d = start();
+    d = follow(d, [20, 20]).draft;
+    d = follow(d, [40, 0]).draft;
+    expect(d.constraints!.map((c) => c.t)).toEqual(['perpendicular']);
+    const closed = follow(d, [0, 0]);
+    expect(closed.closing).toBe(true);
+    expect(closed.draft.paths[0].closed).toBe(true);
+    expect(closed.draft.constraints!.map((c) => c.t)).toEqual(['perpendicular', 'horizontal']);
+    // La stessa chiusura senza i vincoli automatici non porta nulla
+    const nodes = d.paths[0].nodes;
+    const target = penTarget(nodes[2].p, [0, 0], '', '');
+    if (!target.ok) throw new Error(target.message);
+    const plain = typedPenNode(d, 0, target, 10, false);
+    expect('draft' in plain && plain.draft.constraints!.map((c) => c.t)).toEqual(['perpendicular']);
+    // Con la lunghezza digitata (28,28) la chiusura chiude il triangolo e il perpendicolare sarebbe ridondante: non si aggiunge due volte
+    const typedClose = follow(start(), [40, 0], '40');
+    const second = follow(typedClose.draft, [20, 20], String(Math.hypot(20, 20)));
+    const typedLast = follow(second.draft, [0, 0], String(Math.hypot(20, 20)));
+    expect(typedLast.draft.constraints!.filter((c) => c.t === 'perpendicular')).toHaveLength(0);
+    expect(typedLast.draft.constraints!.filter((c) => c.t === 'dist' && !c.ref)).toHaveLength(3);
+  });
+
   it('angoli negativi, 0°, 90°, 270° e lunghezze piccole o enormi danno punti esatti', () => {
     for (const [l, a, expected] of [['10', '-90', [0, -10]], ['100000', '0', [100000, 0]], ['0.001', '180', [-0.001, 0]], ['25', '360', [25, 0]]] as const) {
       const r = typedPenNode(start(), 0, ok([0, 0], l, a), 10);
