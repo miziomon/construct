@@ -47,5 +47,9 @@ async function restoreImages(scene: Scene): Promise<void> {
   if (!ids.length) return;
   const found = await loadImages(ids);
   for (const image of found) await getKernel().registerImage(image.id, image.w, image.h, image.gray);
-  if (found.length < ids.length) notify.error(`${ids.length - found.length === 1 ? "Un'immagine di un Pattern non è più disponibile" : `${ids.length - found.length} immagini dei Pattern non sono più disponibili`}: il Pattern non ha effetto finché non la carichi di nuovo.`);
+  // L'avviso conta solo le immagini che mancano ai Pattern di tipo Immagine: un `imageId` conservato da un Pattern di un altro tipo non ha effetto
+  const foundIds = new Set(found.map((image) => image.id));
+  const textureIds = new Set(Object.values(scene.nodes).flatMap((node) => (node.type === 'group' && node.pattern?.kind === 'texture' && node.pattern.imageId ? [node.pattern.imageId] : [])));
+  const missing = [...textureIds].filter((id) => !foundIds.has(id)).length;
+  if (missing) notify.error(`${missing === 1 ? "Un'immagine di un Pattern non è più disponibile" : `${missing} immagini dei Pattern non sono più disponibili`}: il Pattern non ha effetto finché non la carichi di nuovo.`);
 }

@@ -147,6 +147,24 @@ describe('ripristino delle immagini nel kernel', () => {
     expect(Object.keys(restored.nodes)).toHaveLength(4);
   });
 
+  it("l'avviso conta solo i Pattern di tipo Immagine: un imageId conservato da un altro tipo che manca non avvisa", async () => {
+    const [{ restoreAssets }, { notify }] = await Promise.all([import('../import/restore'), import('../ui/notify/notifyStore')]);
+    const error = vi.spyOn(notify, 'error');
+    error.mockClear();
+    const scene = sceneWith(['img-eeeeeeeeeeeeeeee', 'img-ffffffffffffffff']);
+    // Il primo passa a un tipo a celle dal pannello (campi conservati), il secondo resta Immagine
+    (scene.nodes.g0 as GroupNode).pattern = { ...(scene.nodes.g0 as GroupNode).pattern!, kind: 'hexagon' };
+    await restoreAssets(scene);
+    expect(error).toHaveBeenCalledTimes(1);
+    expect(String(error.mock.calls[0][0])).toMatch(/^Un'immagine di un Pattern non è più disponibile/);
+    // Solo il tipo cambiato: nessun avviso
+    error.mockClear();
+    const onlyStale = sceneWith(['img-dddddddddddddddd']);
+    (onlyStale.nodes.g0 as GroupNode).pattern = { ...(onlyStale.nodes.g0 as GroupNode).pattern!, kind: 'brick' };
+    await restoreAssets(onlyStale);
+    expect(error).not.toHaveBeenCalled();
+  });
+
   it('senza Pattern Immagine non tocca il kernel né avvisa', async () => {
     const [{ restoreAssets }, { notify }] = await Promise.all([import('../import/restore'), import('../ui/notify/notifyStore')]);
     const error = vi.spyOn(notify, 'error');

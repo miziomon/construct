@@ -49,7 +49,6 @@ describe('decodeImage: memoria limitata', () => {
   });
 
   it('dati non validi: sempre il messaggio generico, mai gli errori grezzi di fflate o di atob', () => {
-    const generic = /^Immagine del progetto non valida\.$/;
     const gray = Uint8Array.from({ length: 64 * 64 }, (_, i) => (i * 31) % 256);
     const zlib = zlibSync(Uint8Array.from([...new Uint8Array(new Uint32Array([64, 64]).buffer), ...gray]), { level: 6 });
     expect(zlib.length).toBeGreaterThan(100);
@@ -74,7 +73,6 @@ describe('decodeImage: memoria limitata', () => {
         message = e instanceof Error ? `${e.constructor.name}: ${e.message}` : String(e);
       }
       expect(message, what).toMatch(/^Error: Immagine del progetto non valida\.$/);
-      expect(message, what).toMatch(new RegExp(`^Error: ${generic.source.slice(1, -1)}$`));
     }
     // Con dati validi nessun errore
     expect(decodeImage('img-v', encode(zlib)).w).toBe(64);

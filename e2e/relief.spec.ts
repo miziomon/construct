@@ -325,12 +325,18 @@ test('Pattern Immagine: un PNG caricato si converte in grigio, si salva una volt
   await settled(page);
   expect((await sceneState(page)).nodes[id].pattern.imageId).toBe(pattern.imageId);
 
-  // Un file che non è un'immagine: errore leggibile, il Pattern resta com'era
-  await input.setInputFiles({ name: 'finto.png', mimeType: 'image/png', buffer: Buffer.from('questo non è un PNG') });
+  // Intestazione PNG valida ma dati corrotti (solo i primi 40 byte del file): immagine illeggibile, il Pattern resta com'era
+  await input.setInputFiles({ name: 'corrotto.png', mimeType: 'image/png', buffer: png.subarray(0, 40) });
   await expect(page.getByRole('alert').filter({ hasText: 'immagine leggibile' })).toBeVisible();
   expect((await sceneState(page)).nodes[id].pattern.imageId).toBe(pattern.imageId);
 
-  // Formato non supportato (GIF): messaggio chiaro
+  // Un file di testo (anche con l'estensione .png): il formato si riconosce dai primi byte, non dal nome
+  await input.setInputFiles({ name: 'finto.png', mimeType: 'image/png', buffer: Buffer.from('questo non è un PNG') });
+  await expect(page.getByRole('alert').filter({ hasText: 'Formato non supportato' })).toBeVisible();
+  await expect(page.getByRole('alert').filter({ hasText: 'immagine leggibile' })).toHaveCount(0);
+  expect((await sceneState(page)).nodes[id].pattern.imageId).toBe(pattern.imageId);
+
+  // Formato non supportato (GIF): lo stesso messaggio
   await input.setInputFiles({ name: 'animata.gif', mimeType: 'image/gif', buffer: Buffer.from('GIF89a') });
   await expect(page.getByRole('alert').filter({ hasText: 'Formato non supportato' })).toBeVisible();
 });
