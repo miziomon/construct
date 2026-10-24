@@ -1071,13 +1071,13 @@ test('un nome di parametro non valido o doppio e un valore con un ciclo si rifiu
 test('il Raggio di raccordo accetta un\'espressione con i parametri del profilo (si ricorda il numero), e rifiuta un valore negativo', async ({ page }) => {
   const id = await addProfile(page, []);
   await openEditor(page, id);
-  await editor(page).getByLabel('Nome del nuovo parametro').fill('raggio');
+  await editor(page).getByLabel('Nome del nuovo parametro').fill('rcurva');
   await editor(page).getByLabel('Valore del nuovo parametro').fill('8');
   await editor(page).locator('[data-param-add]').click();
   await clickNode(page, '0:1');
   const radius = editor(page).getByLabel('Raggio');
   await expect(radius).toHaveValue('0');
-  await radius.fill('raggio / 2');
+  await radius.fill('rcurva / 2');
   await radius.press('Enter');
   await expect(radius).toHaveValue('4');
   // Un valore negativo non si applica: il raggio resta 4
