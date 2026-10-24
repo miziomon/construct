@@ -35,6 +35,17 @@ describe('sezione Parametri', () => {
   });
 });
 
+describe('parametri che non si calcolano', () => {
+  it('un ciclo, un riferimento mancante o una formula errata mostrano il perché accanto al parametro', () => {
+    const html = render({ params: { a: 'b + 1', b: 'a + 1', c: 'manca * 2', d: 5 } });
+    expect(html.match(/data-param-error/g)).toHaveLength(3);
+    expect(html).toContain('Riferimento circolare');
+    expect(html).toContain('Parametro sconosciuto: manca');
+    // Un parametro che va bene non ha l'avviso
+    expect(render({ params: { d: 5 } })).not.toContain('data-param-error');
+  });
+});
+
 describe('campo con espressione', () => {
   it('spento e con valori diversi (mixed), come il Raggio nella sezione del nodo', () => {
     const off = renderToStaticMarkup(createElement(ExprField, { label: 'Raggio', unit: 'mm', value: 0, disabled: true, onCommit: noop }));

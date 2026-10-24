@@ -10,6 +10,23 @@ const noop = () => {};
 const render = (paths: PathContour[], node: number, withRadius = true) =>
   renderToStaticMarkup(createElement(NodeSection, { paths, selection: [{ path: 0, node }], onKind: noop, onRadius: withRadius ? noop : undefined, onCoordinate: noop, onHandle: noop }));
 
+describe('nodo di un cerchio parametrico nella sezione del nodo', () => {
+  const circle: PathContour[] = [
+    { closed: true, nodes: [{ id: 'n2', p: [15, 10], kind: 'symmetric' }, { p: [10, 15], kind: 'symmetric' }, { p: [5, 10], kind: 'symmetric' }, { p: [10, 5], kind: 'symmetric' }], circ: { id: 'n1', p: [10, 10] } },
+  ];
+  it('il nodo sul bordo mostra X e Y spente e dice che il raggio è la quota Ø; il centro ha X e Y accese', () => {
+    const edge = render(circle, 0);
+    expect(edge).toContain('data-circle-note');
+    expect(edge).toContain('il raggio si cambia dalla quota Ø');
+    expect(edge.match(/<input[^>]*disabled/g)).toHaveLength(2);
+    expect(edge).not.toContain('data-fillet');
+    expect(edge).not.toContain('Tipo di nodo');
+    const center = render(circle, 4);
+    expect(center).toContain('Centro del cerchio');
+    expect(center).not.toMatch(/<input[^>]*disabled/);
+  });
+});
+
 describe('campo Raggio nella sezione del nodo', () => {
   it('uno spigolo tra due segmenti retti ha il campo acceso con il valore; senza raggio vale zero e nessuna nota', () => {
     const html = render(square(5), 2);

@@ -68,7 +68,12 @@ export function NodeSection({ paths, selection, params, onKind, onRadius, onCoor
     const parsed = parseFieldValue(text, params);
     if (!parsed.ok) notify.error(parsed.error);
     else if (parsed.v < 0) notify.error('Il raggio non può essere negativo');
-    else onRadius?.(Math.round(parsed.v * 1000) / 1000);
+    else {
+      const radius = Math.round(parsed.v * 1000) / 1000;
+      onRadius?.(radius);
+      // Il raccordo tiene il numero, non l'espressione: se il parametro cambia non lo segue
+      if (parsed.expr) notify.info(`Raggio calcolato: ${String(radius).replace('.', ',')} mm (non segue il parametro)`);
+    }
   };
   const ref = selection.length === 1 ? selection[0] : null;
   const contour = ref ? paths[ref.path] : undefined;
@@ -79,10 +84,11 @@ export function NodeSection({ paths, selection, params, onKind, onRadius, onCoor
     return (
       <section className="profile-editor__section">
         <h3 className="profile-editor__section-title">Punto selezionato</h3>
-        <NumberField label="X" unit="mm" value={node.p[0]} onCommit={(v) => onCoordinate(0, v)} />
-        <NumberField label="Y" unit="mm" value={node.p[1]} onCommit={(v) => onCoordinate(1, v)} />
+        {/* Il nodo sul bordo si legge soltanto: spostarlo cambierebbe il raggio, che si decide con la quota Ø */}
+        <NumberField label="X" unit="mm" disabled={!isCenter} value={node.p[0]} onCommit={(v) => onCoordinate(0, v)} />
+        <NumberField label="Y" unit="mm" disabled={!isCenter} value={node.p[1]} onCommit={(v) => onCoordinate(1, v)} />
         <p className="profile-editor__hint" data-circle-note="">
-          {isCenter ? 'Centro del cerchio: spostandolo il cerchio si sposta intero.' : 'Punto sul bordo del cerchio: il raggio è la quota Ø.'}
+          {isCenter ? 'Centro del cerchio: spostandolo il cerchio si sposta intero.' : 'Punto sul bordo del cerchio: le coordinate sono solo da leggere, il raggio si cambia dalla quota Ø.'}
         </p>
       </section>
     );

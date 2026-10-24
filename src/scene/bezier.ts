@@ -441,6 +441,9 @@ export function sanitizePaths(value: unknown): PathContour[] | null {
   return result;
 }
 
+/** `p` è la coppia (centro, nodo sul bordo) di un cerchio parametrico: la sola che una quota Ø può citare. */
+export const isCircleQuote = (paths: PathContour[], p: string[]): boolean => paths.some((c) => !!c.circ && !!c.nodes[0]?.id && c.circ.id === p[0] && c.nodes[0].id === p[1]);
+
 /** Costante di Bézier per approssimare un quarto di cerchio con una cubica (maniglie a 0,5523 volte il raggio). */
 export const CIRCLE_KAPPA = 0.5522847498307936;
 
@@ -543,7 +546,7 @@ export function sanitizeConstraints(value: unknown, paths: PathContour[]): Profi
       ...(typeof at === 'number' && at >= 0 && at <= 1 ? { at } : {}),
       // Espressione dei parametri locali (solo quote pilotanti) e diametro del cerchio (solo una distanza pilotante)
       ...(measured && !isRef && typeof expr === 'string' && expr.length > 0 && expr.length <= MAX_EXPR ? { expr } : {}),
-      ...(type === 'dist' && !isRef && dia === true ? { dia: true as const } : {}),
+      ...(type === 'dist' && !isRef && dia === true && isCircleQuote(paths, p as string[]) ? { dia: true as const } : {}),
     });
     seen.add(id);
   }

@@ -274,6 +274,10 @@ describe('cerchio parametrico: persistenza', () => {
     );
     expect(clean.find((c) => c.id === 'k1')).toMatchObject({ dia: true, expr: 'foro/2' });
     expect(clean.find((c) => c.id === 'k2')).not.toHaveProperty('dia');
+    // Una distanza qualunque, o con il centro e il nodo in ordine inverso, non è la quota di un cerchio
+    const other = sanitizeConstraints([{ id: 'k6', t: 'dist', p: ['n1', 'n2'], v: 5, dia: true }, { id: 'k7', t: 'dist', p: [nodeId, centerId], v: 5, dia: true }], geo.paths);
+    expect(other.find((c) => c.id === 'k6')).not.toHaveProperty('dia');
+    expect(other.find((c) => c.id === 'k7')).not.toHaveProperty('dia');
     expect(clean.find((c) => c.id === 'k2')).not.toHaveProperty('expr');
     expect(clean.find((c) => c.id === 'k3')).not.toHaveProperty('dia');
     expect(clean.find((c) => c.id === 'k4')).not.toHaveProperty('expr');
@@ -287,9 +291,19 @@ describe('cerchio parametrico: persistenza', () => {
     const scaled = bakeScale(geo.paths, 2, 2, 0, 0)[index];
     expect(scaled.circ!.p).toEqual([60, 40]);
     for (const n of scaled.nodes) expect(dist(n.p, scaled.circ!.p)).toBeCloseTo(10, 9);
-    // Scala non uniforme: sempre un cerchio, di raggio quello del nodo sul bordo
+    // Scala non uniforme: non è più un cerchio, ma un contorno normale (ellisse di 4 nodi) senza centro
     const flat = bakeScale(geo.paths, 2, 1, 0, 0)[index];
-    for (const n of flat.nodes) expect(dist(n.p, flat.circ!.p)).toBeCloseTo(dist(flat.nodes[0].p, flat.circ!.p), 9);
+    expect(flat.circ).toBeUndefined();
+    expect(flat.nodes).toHaveLength(4);
+    expect(flat.nodes[0].p[0] - 60).toBeCloseTo(10, 9);
+    expect(flat.nodes[1].p[1] - 20).toBeCloseTo(5, 9);
+    // I nodi non sono sul cerchio: il semiasse in X è doppio di quello in Y
+    expect(Math.abs(flat.nodes[0].p[0] - 60)).toBeCloseTo(2 * Math.abs(flat.nodes[1].p[1] - 20), 9);
+    // La quota Ø cade con il centro (la modale pota i vincoli all'apertura)
+    const reopened = normalizeProfile({ paths: bakeScale(geo.paths, 2, 1, 0, 0), constraints: geo.constraints });
+    expect(reopened.constraints).toBeUndefined();
+    // Scala uniforme: il cerchio e la sua quota restano
+    expect(normalizeProfile({ paths: bakeScale(geo.paths, 2, 2, 0, 0), constraints: geo.constraints }).constraints).toHaveLength(1);
   });
 
   it('normalizeProfile non dà id ai nodi derivati e mantiene la quota Ø', () => {

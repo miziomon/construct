@@ -8,7 +8,7 @@ import type { PlanPrep } from '../../scene/planRevolve';
 import { cleanPlan, DEFAULT_PLAN, featureAngles, isDefaultPlan, isPlainCircle, PLAN_PRESETS, planOutline, planPaths, planTolerance } from '../../scene/planShape';
 import type { PlanDraft } from '../../scene/planShape';
 import { hasBoundDimension } from '../../scene/resize';
-import { quoteScaleWarning } from '../../scene/quoteScale';
+import { quoteScaleWarning, scaleDropsCircles } from '../../scene/quoteScale';
 import { pathNaturalBox } from '../../scene/shapes2d';
 import { useSceneStore } from '../../scene/store';
 import type { PathContour, PathNode, ProfileConstraint, Vec2 } from '../../scene/types';
@@ -152,6 +152,8 @@ function Editor({ target }: { target: ProfileTarget }) {
       boundFields: path ? Object.keys(path.exprs ?? {}) : [],
       // Profilo con quote ridimensionato: la scala è nei nodi ma non nei valori delle quote (decisione 11a: si avvisa, non si riscrive)
       scaleWarning: path && !hasBoundDimension(path) ? quoteScaleWarning(path, 'Il profilo') : null,
+      // Scala non uniforme con cerchi parametrici: all'apertura diventano contorni normali, e l'avviso resta anche senza altre quote
+      scaleCircles: !!path && !hasBoundDimension(path) && scaleDropsCircles(path),
       // Il nodo esistente (colore, contorno 2D) e le misure che l'anteprima deve tenere
       node: path ?? null,
       size: path && hasBoundDimension(path) ? { width: path.width, depth: path.depth } : null,
@@ -1117,7 +1119,7 @@ function Editor({ target }: { target: ProfileTarget }) {
   // Stato dei vincoli (non è un avviso): sottovincolato, completamente vincolato, sovravincolato
   if (diag) chips.push(stateText(diag.report));
   // Ridimensionato con quote: i valori salvati non seguono la scala (decisione 11a): finché ci sono quote pilotanti l'avviso resta
-  const scaleChip = !!init.scaleWarning && !!draft.constraints?.some((c) => isDimension(c) && !c.ref);
+  const scaleChip = !!init.scaleWarning && (init.scaleCircles || !!draft.constraints?.some((c) => isDimension(c) && !c.ref));
   if (scaleChip) chips.push({ kind: 'warn', text: init.scaleWarning! });
   // Già salvato dopo un ridimensionamento il fattore non c'è più, ma il disaccordo sì: lo scarto lo segnala (non due volte alla prima apertura)
   else if (mismatch !== null) chips.push({ kind: 'warn', text: `Le quote non corrispondono al disegno (scarto fino a ${fmt(mismatch).replace('.', ',')} mm): alla prossima modifica i nodi tornano alle quote` });

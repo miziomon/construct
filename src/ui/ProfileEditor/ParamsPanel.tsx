@@ -24,7 +24,7 @@ export function ParamsPanel({ params, usedBy, onAdd, onSet, onDelete }: ParamsPa
   const [name, setName] = useState('');
   const [value, setValue] = useState('');
   const entries = Object.entries(params ?? {});
-  const { values } = resolveLocal(params);
+  const { values, errors } = resolveLocal(params);
   const add = () => {
     if (onAdd(name, value)) {
       setName('');
@@ -50,6 +50,11 @@ export function ParamsPanel({ params, usedBy, onAdd, onSet, onDelete }: ParamsPa
                     ×
                   </button>
                 </div>
+                {errors[key] && (
+                  <p className="profile-editor__hint profile-editor__hint--warn" role="alert" data-param-error="">
+                    {errors[key]}
+                  </p>
+                )}
                 <ExprField label="Valore" ariaLabel={`Valore del parametro ${key}`} value={values[key] ?? 0} expr={typeof v === 'string' ? v : undefined} onCommit={(text) => onSet(key, text)} />
               </li>
             );

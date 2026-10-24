@@ -505,16 +505,19 @@ export function trimDuplicateTail(paths: PathContour[], i: number): PathContour[
 export function bakeScale(paths: PathContour[], sx: number, sy: number, cx: number, cy: number): PathContour[] {
   const point = (p: Vec2): Vec2 => [cx + (p[0] - cx) * sx, cy + (p[1] - cy) * sy];
   const handle = (h: Vec2): Vec2 => [h[0] * sx, h[1] * sy];
-  return paths.map((c) => {
+  // Con una scala non uniforme il cerchio parametrico non resta un cerchio: diventa un contorno normale (un'ellisse di 4 nodi), senza
+  // il centro, e la sua quota Ø cade (la modale toglie i vincoli che citano punti che non ci sono più)
+  const uniform = Math.abs(sx - sy) <= 1e-6 * Math.max(Math.abs(sx), Math.abs(sy));
+  return paths.map(({ circ, ...c }) => {
     const scaled: PathContour = {
       ...c,
       // `id` passa com'era; il raggio di raccordo si scala con la media geometrica dei due fattori (esatta con una scala uniforme:
       // con scale diverse un arco di cerchio non resta tale, e il raggio è l'approssimazione più vicina)
       nodes: c.nodes.map((n) => ({ ...(n.id ? { id: n.id } : {}), p: point(n.p), ...(n.in ? { in: handle(n.in) } : {}), ...(n.out ? { out: handle(n.out) } : {}), kind: n.kind, ...(n.r ? { r: n.r * Math.sqrt(sx * sy) } : {}) })),
-      // Il centro di un cerchio parametrico si scala come i nodi; poi il cerchio si ricalcola (con una scala non uniforme resta un cerchio, di raggio quello del nodo sul bordo)
-      ...(c.circ ? { circ: { ...c.circ, p: point(c.circ.p) } } : {}),
+      // Il centro di un cerchio parametrico si scala come i nodi; poi il cerchio si ricalcola (solo con una scala uniforme)
+      ...(circ && uniform ? { circ: { ...circ, p: point(circ.p) } } : {}),
     };
-    return regenCircle(scaled);
+    return uniform ? regenCircle(scaled) : scaled;
   });
 }
 

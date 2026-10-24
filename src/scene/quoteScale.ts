@@ -23,13 +23,24 @@ export function pathScaleFactors(node: PathShape): { sx: number; sy: number } | 
 /** Numero con al più due decimali e la virgola italiana. */
 const fmt = (n: number) => String(Math.round(n * 100) / 100).replace('.', ',');
 
+/** Vero se il Profilo è ridimensionato in modo non uniforme e ha cerchi parametrici: aprendo la modale diventano contorni normali (ellissi) e la loro quota Ø cade. */
+export function scaleDropsCircles(node: PathShape): boolean {
+  const factors = pathScaleFactors(node);
+  return !!factors && Math.abs(factors.sx - factors.sy) > 1e-6 * Math.max(factors.sx, factors.sy) && node.paths.some((c) => c.circ);
+}
+
 /**
- * Avviso se il Profilo ha quote e non è alla misura naturale: il fattore e il valore di una quota che non si aggiorna.
- * `subject` apre la frase («Il profilo», «Profilo 2»). Null senza quote pilotanti o senza ridimensionamento.
+ * Avviso se il Profilo ha quote e non è alla misura naturale: il fattore e il valore di una quota che non si aggiorna; con una
+ * scala non uniforme e dei cerchi parametrici dice anche che diventano ellissi normali. `subject` apre la frase («Il profilo»,
+ * «Profilo 2»). Null senza quote pilotanti (e senza cerchi da perdere) o senza ridimensionamento.
  */
 export function quoteScaleWarning(node: PathShape, subject: string): string | null {
   const factors = pathScaleFactors(node);
   const quote = node.constraints?.find((c) => !c.ref && c.v !== undefined && (c.t === 'dist' || c.t === 'distX' || c.t === 'distY' || c.t === 'angle'));
-  if (!factors || !quote || quote.v === undefined) return null;
-  return `${subject}: ridimensionato ×${fmt(factors.sx)} in X e ×${fmt(factors.sy)} in Y. Le quote non si aggiornano: ${fmt(quote.v)}${quote.t === 'angle' ? '°' : ' mm'} resta il valore salvato`;
+  const drops = scaleDropsCircles(node);
+  if (!factors || (!quote && !drops) || (quote && quote.v === undefined)) return null;
+  const parts: string[] = [];
+  if (quote && quote.v !== undefined) parts.push(`Le quote non si aggiornano: ${fmt(quote.v)}${quote.t === 'angle' ? '°' : ' mm'} resta il valore salvato`);
+  if (drops) parts.push('I cerchi parametrici diventano ellissi normali e la loro quota Ø cade');
+  return `${subject}: ridimensionato ×${fmt(factors.sx)} in X e ×${fmt(factors.sy)} in Y. ${parts.join('. ')}`;
 }

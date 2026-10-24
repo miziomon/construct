@@ -989,6 +989,27 @@ describe('più quote scelte insieme', () => {
     expect(out.constraints!.find((c) => c.id === id)!.v).toBeCloseTo(measure(out.constraints!.find((c) => c.id === id)!, pointsOf(out.paths)), 4);
   });
 
+  it('equalizeLengths e makeDriving: una quota con espressione declassata a riferimento, o resa di nuovo pilotante, non porta più l\'espressione', () => {
+    const base = sized();
+    const [w, h] = [dist(base, 'n1', 'n2'), dist(base, 'n2', 'n3')];
+    const withExpr: Geo = { ...base, constraints: base.constraints!.map((c) => (c.id === h.id ? { ...c, expr: 'alto' } : c)) };
+    // L'altezza (scritta con un parametro) declassata da Rendi uguali: riferimento senza espressione
+    const equalized = must(equalizeLengths(withExpr, [w.id, h.id]));
+    const demoted = equalized.constraints!.find((c) => c.id === h.id)!;
+    expect(demoted).toMatchObject({ ref: true });
+    expect(demoted).not.toHaveProperty('expr');
+    // La quota che resta pilotante tiene la sua espressione
+    const kept = must(equalizeLengths({ ...base, constraints: base.constraints!.map((c) => (c.id === w.id ? { ...c, expr: 'larg' } : c)) }, [w.id, h.id]));
+    expect(kept.constraints!.find((c) => c.id === w.id)!.expr).toBe('larg');
+    // Un riferimento con un'espressione (file scritto a mano) reso pilotante prende la misura e perde l'espressione
+    const freed = removeConstraint(equalized, equalized.constraints!.find((c) => c.t === 'equal')!.id);
+    const dirty: Geo = { ...freed, constraints: freed.constraints!.map((c) => (c.id === h.id ? { ...c, expr: 'alto' } : c)) };
+    const driving = must(makeDriving(dirty, h.id)).constraints!.find((c) => c.id === h.id)!;
+    expect(driving.ref).toBeUndefined();
+    expect(driving).not.toHaveProperty('expr');
+    expect(driving.v).toBeCloseTo(40, 6);
+  });
+
   it('equalizeLengths con tre quote pilotanti: una sola resta pilotante e le altre due seguono', () => {
     // Quadrilatero con n1 fisso e tre quote (40, 20 e 30), senza lati orizzontali o verticali
     let d: Geo = must(addFixed(start(), ['n1']));

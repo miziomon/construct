@@ -485,7 +485,15 @@ export function equalizeLengths<T extends ProfileGeometry>(d: T, ids: string[]):
   const others = chosen.filter((c) => c !== keeper);
   // Le quote pilotanti che non restano diventano di riferimento: così non fissano più la lunghezza e l'Uguale non è né in conflitto né ridondante
   const demoted = new Set(others.filter((c) => !c.ref).map((c) => c.id));
-  let current: T = { ...d, constraints: (d.constraints ?? []).map((c) => (demoted.has(c.id) ? { ...c, ref: true as const } : c)) };
+  // (una quota di riferimento non ha espressione: misura e basta)
+  let current: T = {
+    ...d,
+    constraints: (d.constraints ?? []).map((c) => {
+      if (!demoted.has(c.id)) return c;
+      const { expr: _expr, ...plain } = c;
+      return { ...plain, ref: true as const };
+    }),
+  };
   let added = 0;
   for (const other of others) {
     const result = addConstraint(current, { t: 'equal', p: [keeper.p[0], keeper.p[1], other.p[0], other.p[1]] });
@@ -510,7 +518,8 @@ export function equalizeLengths<T extends ProfileGeometry>(d: T, ids: string[]):
 export function makeDriving<T extends ProfileGeometry>(d: T, id: string): Applied<T> {
   const c = (d.constraints ?? []).find((x) => x.id === id);
   if (!c || !c.ref || !isDimension(c)) return { ok: false, message: 'Solo una quota di riferimento si può rendere pilotante', ids: [], reason: 'invalid' };
-  const { ref: _ref, ...rest } = c;
+  // La quota prende la misura di adesso: l'espressione che avesse non vale più
+  const { ref: _ref, expr: _expr, ...rest } = c;
   let driving: ProfileConstraint = { ...rest, v: dimensionValue({ ...c, v: undefined }, d.paths) };
   if (driving.t === 'angle') {
     const normal = normalizeAngle(driving);
