@@ -1068,6 +1068,29 @@ test('un nome di parametro non valido o doppio e un valore con un ciclo si rifiu
   await expect(a).toHaveValue('5');
 });
 
+test('il Raggio di raccordo accetta un\'espressione con i parametri del profilo (si ricorda il numero), e rifiuta un valore negativo', async ({ page }) => {
+  const id = await addProfile(page, []);
+  await openEditor(page, id);
+  await editor(page).getByLabel('Nome del nuovo parametro').fill('raggio');
+  await editor(page).getByLabel('Valore del nuovo parametro').fill('8');
+  await editor(page).locator('[data-param-add]').click();
+  await clickNode(page, '0:1');
+  const radius = editor(page).getByLabel('Raggio');
+  await expect(radius).toHaveValue('0');
+  await radius.fill('raggio / 2');
+  await radius.press('Enter');
+  await expect(radius).toHaveValue('4');
+  // Un valore negativo non si applica: il raggio resta 4
+  await radius.fill('-3');
+  await radius.press('Enter');
+  await expect(radius).toHaveValue('4');
+  await ok(page).click();
+  await expect(editor(page)).toHaveCount(0);
+  await settled(page);
+  const nodes = (await getNode(page, id)).paths[0].nodes as unknown as { r?: number }[];
+  expect(nodes.map((n) => n.r)).toEqual([undefined, 4, undefined, undefined]);
+});
+
 test('Rendi uguali: resta la prima quota scelta (nell\'ordine dei clic) e l\'avviso lo dice; «Rendi pilotante» riporta una quota di riferimento a comandare', async ({ page }) => {
   const id = await addProfile(page, FULL);
   await openEditor(page, id);

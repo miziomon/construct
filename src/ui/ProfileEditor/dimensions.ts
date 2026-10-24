@@ -447,10 +447,11 @@ export function groupInfo(constraints: ProfileConstraint[] | undefined, ids: str
   const chosen = ids.flatMap((id) => constraints?.find((c) => c.id === id) ?? []);
   const driving = chosen.length > 0 && chosen.every((c) => isDimension(c) && !c.ref && c.v !== undefined);
   // Il valore comune vale per le lunghezze: un angolo comune vuole la normalizzazione e la rotazione preliminare di ogni quota, e per due angoli la via è il vincolo Uguale
-  const sameType = driving && chosen.every((c) => c.t === chosen[0].t && isLinearDimension(c));
+  // I diametri dei cerchi (`dia`: il valore salvato è il raggio, quello mostrato il diametro) non fanno gruppo: né valore comune né Uguale
+  const sameType = driving && chosen.every((c) => c.t === chosen[0].t && isLinearDimension(c) && !c.dia);
   const value = sameType && chosen.every((c) => Math.abs((c.v as number) - (chosen[0].v as number)) < 1e-9) ? (chosen[0].v as number) : null;
   const pairs = new Set(chosen.filter((c) => c.t === 'dist').map((c) => [...c.p].sort().join('|')));
-  return { count: chosen.length, type: sameType ? chosen[0].t : null, value, canEqualize: chosen.length >= 2 && chosen.every((c) => c.t === 'dist') && pairs.size === chosen.length };
+  return { count: chosen.length, type: sameType ? chosen[0].t : null, value, canEqualize: chosen.length >= 2 && chosen.every((c) => c.t === 'dist' && !c.dia) && pairs.size === chosen.length };
 }
 
 /**

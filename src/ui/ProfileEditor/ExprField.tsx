@@ -11,6 +11,9 @@ interface Props {
   expr?: string;
   /** Il testo scritto, alla conferma (Invio o uscita dal campo): lo legge chi chiama, con i parametri del profilo. */
   onCommit: (text: string) => void;
+  disabled?: boolean;
+  /** Più elementi con valori diversi: il campo è vuoto con «—» e scrivere un valore lo dà a tutti. */
+  mixed?: boolean;
 }
 
 /** Numero con al più 3 decimali, come lo mostra `NumberField`. */
@@ -22,8 +25,8 @@ const fmt = (n: number): string => String(Number(n.toFixed(3)));
  * (lo fa chi chiama, che conosce i parametri). Con un'espressione mostra ƒ e il valore calcolato accanto. Non è un
  * `NumberField` perché quello non conosce i parametri del profilo (non ha il `FormulaContext`, che esiste solo nelle Proprietà).
  */
-export function ExprField({ label, ariaLabel, unit, value, expr, onCommit }: Props) {
-  const shown = expr ?? fmt(value);
+export function ExprField({ label, ariaLabel, unit, value, expr, onCommit, disabled, mixed }: Props) {
+  const shown = mixed ? '' : (expr ?? fmt(value));
   const [text, setText] = useState(shown);
   const [focused, setFocused] = useState(false);
   // Esc annulla: il blur parte nello stesso gestore, prima che il testo si aggiorni
@@ -40,6 +43,8 @@ export function ExprField({ label, ariaLabel, unit, value, expr, onCommit }: Pro
         className="number-field__input"
         type="text"
         aria-label={ariaLabel}
+        placeholder={mixed ? '—' : undefined}
+        disabled={disabled}
         value={text}
         onFocus={(e) => {
           cancelled.current = false;
@@ -53,7 +58,8 @@ export function ExprField({ label, ariaLabel, unit, value, expr, onCommit }: Pro
             cancelled.current = false;
             return;
           }
-          if (e.target.value.trim() === shown) setText(shown);
+          // Vuoto o uguale a prima: niente da confermare (con valori diversi, mixed, un valore scritto vale per tutti)
+          if (e.target.value.trim() === shown || e.target.value.trim() === '') setText(shown);
           else onCommit(e.target.value);
         }}
         onKeyDown={(e) => {

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { sanitizeConstraints, sanitizeParams } from '../../scene/bezier';
 import type { PathContour, ProfileConstraint, ProfileParams, Vec2 } from '../../scene/types';
 import { addCircle, addConstraint, addFixed, createAngleDimension, dimText, pointMap } from './dimensions';
 import type { Applied } from './dimensions';
@@ -227,5 +228,40 @@ describe('quote con espressione', () => {
     const out = must(applyParams(d, { k: 3 }));
     expect(out.paths).toBe(d.paths);
     expect(out.params).toEqual({ k: 3 });
+  });
+});
+
+describe('i limiti dell\'editor sono quelli dei sanitizzatori (niente che sparisca alla riapertura)', () => {
+  it('addParam rifiuta i nomi che sanitizeParams scarterebbe: oltre 32 caratteri, __proto__, constructor, prototype', () => {
+    const d = squared();
+    expect(addParam(d, 'a'.repeat(33), '1')).toMatchObject({ ok: false, message: 'Il nome è troppo lungo: al massimo 32 caratteri' });
+    expect(addParam(d, 'a'.repeat(32), '1')).toMatchObject({ ok: true });
+    for (const bad of ['__proto__', 'constructor', 'prototype']) expect(addParam(d, bad, '1')).toMatchObject({ ok: false, reason: 'invalid' });
+  });
+
+  it('un valore fuori misura o un\'espressione oltre 200 caratteri si rifiuta (parametri e quote)', () => {
+    const d = squared();
+    expect(addParam(d, 'x', '200000')).toMatchObject({ ok: false, message: 'Il valore deve essere un numero entro ±100000' });
+    const longExpr = `1${' + 1'.repeat(80)}`;
+    expect(longExpr.length).toBeGreaterThan(200);
+    expect(addParam(d, 'x', longExpr)).toMatchObject({ ok: false });
+    const withX = must(addParam(d, 'x', '3'));
+    expect(setParam(withX, 'x', longExpr)).toMatchObject({ ok: false });
+    // Una quota con un'espressione che usa un parametro e supera il limite
+    const quoteExpr = `x${' + x'.repeat(100)}`;
+    expect(parseFieldValue(quoteExpr, withX.params)).toMatchObject({ ok: false });
+    // Un calcolo lungo senza parametri non si ricorda: nessun limite da rispettare
+    expect(parseFieldValue(`1${' + 1'.repeat(80)}`, withX.params)).toMatchObject({ ok: true, v: 81 });
+  });
+
+  it('ciò che l\'editor accetta sopravvive a sanitizeParams e sanitizeConstraints senza cambiare', () => {
+    let d = squared();
+    d = must(addParam(d, 'larghezza', '40'));
+    d = must(addParam(d, 'meta', 'larghezza / 2'));
+    d = must(addParam(d, 'q'.repeat(32), '12,5'));
+    d = must(addConstraint(d, { t: 'distX', p: ['n1', 'n2'], s: 1, v: 40, expr: 'larghezza' }));
+    d = must(setQuoteText(d, d.constraints!.at(-1)!.id, 'meta * 2 + 3'));
+    expect(sanitizeParams(d.params)).toEqual(d.params);
+    expect(sanitizeConstraints(d.constraints, d.paths)).toEqual(d.constraints!.map((c) => ({ ...c })).filter(() => true));
   });
 });

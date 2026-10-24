@@ -2,7 +2,7 @@ import { solveSketch, validateValue } from './constraints';
 import { describeConstraint, normalizeAngle, nodeNames, pointsOf, preRotated, preSized, setConstraintValue, solveWith, validConstraints } from './dimensions';
 import type { Applied, Messages } from './dimensions';
 import type { ProfileGeometry } from './model';
-import { MAX_PARAMS } from '../../scene/bezier';
+import { MAX_EXPR, MAX_PARAMS, validParamName, validParamNumber } from '../../scene/bezier';
 import { evalFormula, formulaDeps, nameProblem, resolveParams } from '../../scene/params';
 import type { Param, ProfileConstraint, ProfileParams } from '../../scene/types';
 
@@ -45,6 +45,8 @@ export function parseFieldValue(text: string, params: ProfileParams | undefined)
   if (raw === '') return { ok: false, error: 'Scrivi un valore' };
   if (SIMPLE_NUMBER.test(raw)) return { ok: true, v: Number(raw.replace(',', '.')) };
   const deps = formulaDeps(raw);
+  // Un'espressione che si ricorda deve stare nei limiti di quello che si salva (altrimenti sparirebbe alla prima riapertura)
+  if (deps.length && raw.length > MAX_EXPR) return { ok: false, error: `L'espressione è troppo lunga: al massimo ${MAX_EXPR} caratteri` };
   const { values, errors } = resolveLocal(params);
   // Un parametro che usa un'espressione è sbagliato lui stesso: l'errore è suo, non della quota
   const broken = deps.find((name) => errors[name]);
@@ -121,22 +123,30 @@ export function applyParams<T extends ParamGeometry>(d: T, next: ProfileParams, 
   return solveWith(start, updated, null, messages);
 }
 
-/** Valore di un parametro scritto dall'utente: un numero, oppure un'espressione (che può usare altri parametri). */
+/** Valore di un parametro scritto dall'utente: un numero, oppure un'espressione (che può usare altri parametri). Null se è vuoto. */
 export function parseParamValue(text: string): number | string | null {
   const raw = text.trim();
   if (raw === '') return null;
   return SIMPLE_NUMBER.test(raw) ? Number(raw.replace(',', '.')) : raw;
 }
 
+/** Perché un valore di parametro non si può salvare (numero fuori misura, espressione troppo lunga), o null se va bene. */
+function valueProblem(value: number | string): string | null {
+  if (typeof value === 'number') return validParamNumber(value) ? null : 'Il valore deve essere un numero entro ±100000';
+  return value.length > MAX_EXPR ? `L'espressione è troppo lunga: al massimo ${MAX_EXPR} caratteri` : null;
+}
+
 /** Aggiunge un parametro (nome valido e libero, valore numero o espressione) e rilegge le quote. */
 export function addParam<T extends ParamGeometry>(d: T, name: string, text: string): Applied<T> {
   const trimmed = name.trim();
-  const problem = nameProblem(trimmed);
+  const problem = nameProblem(trimmed) ?? (validParamName(trimmed) ? null : trimmed.length > 32 ? 'Il nome è troppo lungo: al massimo 32 caratteri' : `«${trimmed}» non è un nome ammesso`);
   if (problem) return invalid(problem);
   if (d.params && Object.hasOwn(d.params, trimmed)) return invalid(`Esiste già un parametro «${trimmed}»`);
   if (Object.keys(d.params ?? {}).length >= MAX_PARAMS) return invalid(`Al massimo ${MAX_PARAMS} parametri per profilo`);
   const value = parseParamValue(text);
   if (value === null) return invalid('Scrivi il valore del parametro: un numero o un\'espressione');
+  const bad = valueProblem(value);
+  if (bad) return invalid(bad);
   return applyParams(d, { ...d.params, [trimmed]: value }, trimmed);
 }
 
@@ -146,6 +156,8 @@ export function setParam<T extends ParamGeometry>(d: T, name: string, text: stri
   const value = parseParamValue(text);
   if (value === null) return invalid('Scrivi il valore del parametro: un numero o un\'espressione');
   if (value === d.params[name]) return invalid('Il valore è già quello');
+  const bad = valueProblem(value);
+  if (bad) return invalid(bad);
   return applyParams(d, { ...d.params, [name]: value }, name);
 }
 

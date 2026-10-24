@@ -36,6 +36,14 @@ describe('sezione Parametri', () => {
 });
 
 describe('campo con espressione', () => {
+  it('spento e con valori diversi (mixed), come il Raggio nella sezione del nodo', () => {
+    const off = renderToStaticMarkup(createElement(ExprField, { label: 'Raggio', unit: 'mm', value: 0, disabled: true, onCommit: noop }));
+    expect(off).toContain('disabled');
+    const mixed = renderToStaticMarkup(createElement(ExprField, { label: 'Raggio', unit: 'mm', value: 0, mixed: true, onCommit: noop }));
+    expect(mixed).toContain('placeholder="—"');
+    expect(mixed).toContain('value=""');
+  });
+
   it('un numero si mostra com\'è, senza ƒ; con un\'espressione si vede il testo scritto, ƒ e il valore', () => {
     const plain = renderToStaticMarkup(createElement(ExprField, { label: 'Valore', ariaLabel: 'Valore di X', unit: 'mm', value: 12.3456, onCommit: noop }));
     expect(plain).toContain('value="12.346"');

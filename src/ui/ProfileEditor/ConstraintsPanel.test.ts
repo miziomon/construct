@@ -82,6 +82,22 @@ describe('sezione Quote e vincoli', () => {
     expect(html).toContain('profile-editor__constraint--bad');
   });
 
+  it('due quote Ø scelte insieme: nessun valore comune e nessun Rendi uguali (il valore salvato è il raggio)', () => {
+    const constraints: ProfileConstraint[] = [
+      { id: 'k1', t: 'dist', p: ['n1', 'n2'], v: 5, dia: true },
+      { id: 'k2', t: 'dist', p: ['n2', 'n3'], v: 3, dia: true },
+    ];
+    const html = render({ constraints, group: ['k1', 'k2'] });
+    expect(html).toContain('data-quote-group');
+    expect(html).not.toContain('Valore comune');
+    expect(html).not.toContain('data-equalize');
+    // Il valore della riga è il diametro, con ƒ solo se c'è un'espressione
+    expect(html).toMatch(/aria-label="Valore di Diametro P1\.1"[^>]*value="10"/);
+    const withExpr = render({ constraints: [{ ...constraints[0], expr: 'foro' }] });
+    expect(withExpr).toContain('value="foro"');
+    expect(withExpr).toContain('ƒ = 10');
+  });
+
   it('una quota di riferimento ha il pulsante Rendi pilotante, una pilotante no', () => {
     const constraints: ProfileConstraint[] = [
       { id: 'k1', t: 'dist', p: ['n1', 'n2'], v: 40 },

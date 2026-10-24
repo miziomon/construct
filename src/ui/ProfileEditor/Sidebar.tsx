@@ -1,6 +1,9 @@
 import { PATH_MAX_TOLERANCE, PATH_MIN_TOLERANCE, filletInfo } from '../../scene/bezier';
-import type { PathContour, PathNode } from '../../scene/types';
+import type { PathContour, PathNode, ProfileParams } from '../../scene/types';
 import { NumberField } from '../NumberField/NumberField';
+import { notify } from '../notify/notifyStore';
+import { ExprField } from './ExprField';
+import { parseFieldValue } from './profileParams';
 import { SliderField } from '../SliderField/SliderField';
 import { TIPS } from '../PropertiesPanel/tooltips';
 import type { GridSettings } from './DrawingCanvas';
@@ -59,7 +62,14 @@ const GRID_STEPS = [0.1, 0.5, 1, 5, 10];
 const comma = (n: number) => String(n).replace('.', ',');
 
 /** «Punto selezionato»: coordinate, tipo di nodo e maniglie del nodo scelto (con più nodi solo il conteggio). Condivisa da profilo e sagoma. */
-export function NodeSection({ paths, selection, onKind, onRadius, onCoordinate, onHandle }: { paths: PathContour[]; selection: NodeRef[]; onKind: Props['onKind']; onRadius?: Props['onRadius']; onCoordinate: Props['onCoordinate']; onHandle: Props['onHandle'] }) {
+export function NodeSection({ paths, selection, params, onKind, onRadius, onCoordinate, onHandle }: { paths: PathContour[]; selection: NodeRef[]; params?: ProfileParams; onKind: Props['onKind']; onRadius?: Props['onRadius']; onCoordinate: Props['onCoordinate']; onHandle: Props['onHandle'] }) {
+  // Il raggio di raccordo accetta anche un'espressione con i parametri del profilo: si valuta qui e si tiene il numero (l'espressione non si ricorda)
+  const commitRadius = (text: string) => {
+    const parsed = parseFieldValue(text, params);
+    if (!parsed.ok) notify.error(parsed.error);
+    else if (parsed.v < 0) notify.error('Il raggio non può essere negativo');
+    else onRadius?.(Math.round(parsed.v * 1000) / 1000);
+  };
   const ref = selection.length === 1 ? selection[0] : null;
   const contour = ref ? paths[ref.path] : undefined;
   // Il centro di un cerchio parametrico ha l'indice dopo l'ultimo nodo; il suo nodo sul bordo e il centro hanno solo le coordinate
@@ -98,7 +108,7 @@ export function NodeSection({ paths, selection, onKind, onRadius, onCoordinate, 
             const note = !info.eligible ? info.reason : radius > info.rmax + 1e-9 ? `Raggio ridotto a ${comma(Math.round(info.rmax * 100) / 100)} mm: i segmenti non bastano` : undefined;
             return (
               <div data-fillet="">
-                <NumberField label="Raggio" unit="mm" min={0} disabled={!info.eligible} value={radius} onCommit={onRadius} />
+                <ExprField label="Raggio" unit="mm" disabled={!info.eligible} value={radius} onCommit={commitRadius} />
                 {note && <p className="profile-editor__hint" data-fillet-note="">{note}</p>}
               </div>
             );
@@ -140,7 +150,7 @@ export function NodeSection({ paths, selection, onKind, onRadius, onCoordinate, 
               const same = radii.every((v) => Math.abs(v - radii[0]) < 1e-9);
               return (
                 <div data-fillet="">
-                  <NumberField label="Raggio" unit="mm" min={0} value={same ? radii[0] : 0} mixed={!same} onCommit={onRadius} />
+                  <ExprField label="Raggio" unit="mm" value={same ? radii[0] : 0} mixed={!same} onCommit={commitRadius} />
                   <p className="profile-editor__hint" data-fillet-note="">
                     {eligible.length} di {selection.length} nodi possono raccordarsi: il raggio vale per quelli.
                   </p>
@@ -252,7 +262,7 @@ export function Sidebar({ draft, selection, holes, grid, sampling, boundFields, 
         {rotate && section && <SectionControl {...section} />}
       </section>
 
-      <NodeSection paths={draft.paths} selection={selection} onKind={onKind} onRadius={onRadius} onCoordinate={onCoordinate} onHandle={onHandle} />
+      <NodeSection paths={draft.paths} selection={selection} params={draft.params} onKind={onKind} onRadius={onRadius} onCoordinate={onCoordinate} onHandle={onHandle} />
 
       <ConstraintsPanel paths={draft.paths} constraints={draft.constraints ?? []} {...quote} />
 

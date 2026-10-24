@@ -553,8 +553,12 @@ export function sanitizeConstraints(value: unknown, paths: PathContour[]): Profi
 /** Nomi dei parametri: un identificatore, e mai quelli che toccherebbero il prototipo dell'oggetto. */
 const PARAM_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,31}$/;
 const RESERVED_NAMES = new Set(['__proto__', 'constructor', 'prototype']);
-/** Lunghezza massima di un'espressione di parametro. */
-const MAX_EXPR = 200;
+/** Lunghezza massima di un'espressione di parametro o di quota. */
+export const MAX_EXPR = 200;
+/** Il nome sopravvive a `sanitizeParams` (al massimo 32 caratteri, mai quelli che toccherebbero il prototipo): l'editor lo controlla prima di accettarlo. */
+export const validParamName = (name: string): boolean => PARAM_NAME.test(name) && !RESERVED_NAMES.has(name);
+/** Il valore numerico di un parametro sopravvive a `sanitizeParams` (finito, entro ±1e5). */
+export const validParamNumber = (v: number): boolean => bounded(v);
 
 /** Valida i parametri del profilo (numeri finiti o brevi espressioni): scarta le voci non valide; undefined se non ne resta nessuna. */
 export function sanitizeParams(value: unknown): ProfileParams | undefined {

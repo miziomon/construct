@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CIRCLE_KAPPA, assignNodeIds, decodePathMeta, encodePathMeta, metaVersion, nodeIds, regenCircle, sanitizeConstraints, sanitizePaths, samplePaths } from '../../scene/bezier';
 import { roundPaths } from '../../scene/store';
 import type { PathContour, ProfileConstraint, Vec2 } from '../../scene/types';
-import { addCircle, addConstraint, circleDimension, circleOfPair, circleQuote, diagnose, dimLayout, dimText, dragDimension, dragFrame, idsOf, moveNodesConstrained, nodeNames, pointMap, pointsOf, setConstraintValue, settlePaths, validConstraints } from './dimensions';
+import { addCircle, addConstraint, circleDimension, circleOfPair, circleQuote, diagnose, dimLayout, dimText, dragDimension, dragFrame, equalizeLengths, groupInfo, idsOf, moveNodesConstrained, nodeNames, pointMap, pointsOf, setCommonValue, setConstraintValue, settlePaths, validConstraints } from './dimensions';
 import type { Applied } from './dimensions';
 import { bakeScale, baseShapeContour, contourHoles, deleteNodes, moveNodes, normalizeProfile, pruneConstraints, refPoint } from './model';
 import type { Draft } from './model';
@@ -340,5 +340,24 @@ describe('cerchio parametrico: gesti e quota sul disegno', () => {
     const moved = dragDimension(q, pm, [30, layout.a2[1] + 4], 'line');
     expect(moved.off).toBeCloseTo((q.off ?? 0) + 4, 6);
     expect(index).toBe(1);
+  });
+});
+
+describe('cerchio parametrico: i diametri non fanno gruppo', () => {
+  it('groupInfo: due quote Ø (o un Ø e una distanza) non hanno valore comune né Uguale; setCommonValue ed equalizeLengths le rifiutano', () => {
+    const first = withHole(10);
+    const second = addCircle(first.geo, [50, 20], 3, 8);
+    if (typeof second === 'string') throw new Error(second);
+    const d = second.draft;
+    const [a, b] = [first.quote, second.quote];
+    expect(groupInfo(d.constraints, [a, b])).toEqual({ count: 2, type: null, value: null, canEqualize: false });
+    // Un Ø e una distanza semplice tra due nodi della piastra
+    const withDist = must(addConstraint(d, { t: 'dist', p: ['n1', 'n2'], v: 60 }));
+    const plain = withDist.constraints!.at(-1)!.id;
+    expect(groupInfo(withDist.constraints, [a, plain])).toMatchObject({ type: null, canEqualize: false });
+    expect(setCommonValue(d, [a, b], 10)).toMatchObject({ ok: false, reason: 'invalid' });
+    expect(equalizeLengths(d, [a, b])).toMatchObject({ ok: false, reason: 'invalid' });
+    // Le quote Ø restano com'erano
+    expect(d.constraints!.find((k) => k.id === a)).toMatchObject({ dia: true, v: 5 });
   });
 });
