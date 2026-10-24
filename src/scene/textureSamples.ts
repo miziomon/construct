@@ -171,7 +171,8 @@ function variantValue(kind: SampleKind, variant: number, u: number, v: number): 
     if (variant === 2) {
       // costine: coste orizzontali con la grana del filo in verticale
       const rib = 0.5 + 0.5 * Math.sin(2 * Math.PI * 10 * v);
-      const grain = 0.5 + 0.5 * Math.sin(2 * Math.PI * 64 * u);
+      // 32 periodi di grana per piastrella: 0,63 mm su 20 mm, sopra il passo di 0,5 mm della mappa di altezze
+      const grain = 0.5 + 0.5 * Math.sin(2 * Math.PI * 32 * u);
       return 0.15 + 0.85 * rib * (0.75 + 0.25 * grain);
     }
     // tela (un filo sopra e uno sotto) e panama (blocchi 2 x 2), 16 fili per lato
@@ -217,8 +218,9 @@ function variantValue(kind: SampleKind, variant: number, u: number, v: number): 
       return smoothstep(0.25, 0.75, sum / total);
     }
     if (variant === 2) {
-      // granuli: sassolini sparsi su un fondo basso (griglia 48 x 48, un granulo ogni due celle circa)
-      const n = 48;
+      // granuli: sassolini sparsi su un fondo basso (griglia 24 x 24, un granulo ogni due celle circa: su una piastrella da 20 mm le celle
+      // sono di 0,83 mm, sopra il passo di 0,5 mm della mappa di altezze)
+      const n = 24;
       const x = u * n;
       const y = v * n;
       let value = 0.05;

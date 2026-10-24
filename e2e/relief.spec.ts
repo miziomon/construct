@@ -380,7 +380,9 @@ test('Pattern Immagine: ogni esempio ha tre varianti, la variante cambia il volu
   // Cambiando esempio la variante riparte dalla prima del nuovo esempio; la libreria ha pietra e tessuto al posto dei mattoni
   await page.getByLabel('Sorgente').selectOption({ label: 'Pelle' });
   await settled(page);
+  // Il dato porta la variante predefinita in modo esplicito (non assente), e la tendina la mostra
   expect(await pattern()).toMatchObject({ sample: 'leather', sampleDesign: 'fine' });
+  await expect(variant).toHaveValue('fine');
   await variant.selectOption({ label: 'Rettile' });
   await settled(page);
   expect((await pattern()).sampleDesign).toBe('reptile');
@@ -427,12 +429,17 @@ test('Pattern Immagine: un SVG si rasterizza in grigio e incava il cubo; uno con
   expect(corners.center).toBeLessThan(30);
   expect(corners.corner).toBeGreaterThan(225);
 
-  // Un SVG con script, gestori di eventi e riferimenti esterni: si ripulisce e il disegno resta; lo script non gira
+  // Un SVG con script, gestori di eventi e riferimenti esterni: il disegno resta, nessuno script gira e non parte nessuna richiesta
+  // di rete verso l'esterno. La pulizia del testo (seconda linea di difesa: l'<img> da Blob URL non esegue script né carica risorse)
+  // è coperta dai test unitari di `svgImage.ts`: da qui non si osserva, perché il browser le bloccherebbe comunque
+  const requested: string[] = [];
+  page.on('request', (request) => requested.push(request.url()));
   const dirty = '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 100 100" onload="window.__pwned = true"><script>window.__pwned = true</script><image xlink:href="http://example.invalid/x.png" width="100" height="100"/><rect width="100" height="100" fill="#fff"/><rect x="10" y="10" width="40" height="80" fill="#000" onclick="window.__pwned = true"/></svg>';
   await input.setInputFiles({ name: 'sporco.svg', mimeType: 'image/svg+xml', buffer: Buffer.from(dirty) });
   await expect.poll(async () => (await sceneState(page)).nodes[id].pattern.imageId).not.toBe(circleId);
   await settled(page);
   expect(await page.evaluate(() => (window as unknown as { __pwned?: boolean }).__pwned)).toBeUndefined();
+  expect(requested.filter((url) => url.includes('example.invalid'))).toEqual([]);
   expect(await volume(page)).toBeLessThan(8000);
   await expect(page.locator('.status-bar')).toContainText('Mesh valida');
 
@@ -446,7 +453,9 @@ test('Pattern Immagine: un SVG si rasterizza in grigio e incava il cubo; uno con
   ];
   for (const [text, message, name] of cases) {
     await input.setInputFiles({ name, mimeType: 'image/svg+xml', buffer: Buffer.from(text) });
-    await expect(page.getByRole('alert').filter({ hasText: message })).toBeVisible();
-    expect((await sceneState(page)).nodes[id].pattern.imageId).toBe(kept);
+    // Il nome del caso nel messaggio: il locator da solo non dice quale dei casi fallisce
+    await expect(page.getByRole('alert').filter({ hasText: message }), `caso ${name}: atteso un avviso con «${message}»`).toBeVisible();
+    await expect(page.getByRole('alert').filter({ hasText: 'Formato non supportato' }), `caso ${name}: non è un formato sconosciuto`).toHaveCount(0);
+    expect((await sceneState(page)).nodes[id].pattern.imageId, `caso ${name}: il Pattern resta com'era`).toBe(kept);
   }
 });

@@ -9,7 +9,11 @@
 
 /** File SVG più grande di così non si apre. */
 export const MAX_SVG_BYTES = 2 * 1024 * 1024;
-/** Tempo massimo (ms) per disegnare l'SVG in un `<img>`. */
+/**
+ * Tempo massimo (ms) per il caricamento dell'SVG in un `<img>` (decodifica del documento). Non copre il `drawImage` che segue: è
+ * sincrono e non si può interrompere dal codice, quindi un SVG pesantissimo da disegnare (filtri enormi) può bloccare la pagina; lo
+ * limitano la dimensione del file (2 MB) e il disegno a 512 px.
+ */
 export const SVG_TIMEOUT_MS = 10_000;
 /** Lato lungo (pixel) a cui si rasterizza. */
 export const SVG_RASTER_SIDE = 512;
@@ -17,14 +21,25 @@ export const SVG_RASTER_SIDE = 512;
 const MAX_ASPECT = 100;
 
 /**
- * Toglie dall'inizio del testo ciò che può precedere l'elemento radice: BOM, spazi, dichiarazione XML, commenti e DOCTYPE senza
- * sottoinsieme interno. Si ripete finché cambia (ordine qualunque); ogni passo è ancorato all'inizio e senza backtracking pesante.
+ * Toglie dall'inizio del testo ciò che può precedere l'elemento radice: BOM, spazi, dichiarazione XML, commenti e DOCTYPE (anche con
+ * sottoinsieme interno). Si ripete finché cambia (ordine qualunque); ogni passo è ancorato all'inizio e senza backtracking pesante.
  */
 export function stripPreamble(text: string): string {
+  return preambleOf(text).body;
+}
+
+/** Come `stripPreamble`, e dice se il DOCTYPE aveva un sottoinsieme interno (`[ ... ]`: dichiarazioni di entità, attributi predefiniti). */
+function preambleOf(text: string): { body: string; internalSubset: boolean } {
+  let internalSubset = false;
   let current = text.replace(/^﻿/, '');
   for (;;) {
-    const next = current.replace(/^\s+/, '').replace(/^<\?xml[^>]*\?>/, '').replace(/^<!--[\s\S]*?-->/, '').replace(/^<!DOCTYPE[^>[]*>/i, '');
-    if (next === current) return next;
+    // Il DOCTYPE può avere un sottoinsieme interno tra parentesi quadre (con le entità): si toglie anche quello, così l'SVG si riconosce e
+    // poi si rifiuta con il suo messaggio (entità XML) invece di passare per un formato sconosciuto
+    let next = current.replace(/^\s+/, '').replace(/^<\?xml[^>]*\?>/, '').replace(/^<!--[\s\S]*?-->/, '');
+    // Prima di toglierlo si guarda se il DOCTYPE ha il sottoinsieme interno (`[ ... ]`)
+    if (/^<!DOCTYPE[^>[]*\[/i.test(next)) internalSubset = true;
+    next = next.replace(/^<!DOCTYPE[^>[]*(?:\[[\s\S]*?\]\s*)?>/i, '');
+    if (next === current) return { body: next, internalSubset };
     current = next;
   }
 }
@@ -44,32 +59,36 @@ function rejectEntities(text: string): void {
  * Pulisce un SVG: toglie `<script>`, `<foreignObject>`, gli attributi di evento (`onload=...`), gli `href` che non puntano dentro il
  * documento (`#id`) o a un'immagine `data:`, gli `url(...)` esterni degli stili e gli `@import`. Rifiuta l'SVG con entità
  * (`<!ENTITY`, che si possono espandere a dismisura). Restituisce il testo e che cosa ha tolto.
+ *
+ * È una SECONDA linea di difesa: la prima è l'`<img>` da `Blob` URL, che non esegue script né carica risorse esterne. Non vuole essere
+ * completa: per esempio non decifra gli escape CSS (`u\72l(` per `url(`), che l'`<img>` comunque non seguirebbe.
  */
 export function sanitizeSvg(text: string): { svg: string; removed: string[] } {
   rejectEntities(text);
   const removed: string[] = [];
   const strip = (pattern: RegExp, label: string, svg: string) => {
     const result = svg.replace(pattern, '');
-    if (result !== svg) removed.push(label);
+    if (result !== svg && !removed.includes(label)) removed.push(label);
     return result;
   };
   let svg = text;
-  svg = strip(/<script\b[\s\S]*?<\/script\s*>/gi, 'script', svg);
-  svg = strip(/<script\b[^>]*\/>/gi, 'script', svg);
-  svg = strip(/<foreignObject\b[\s\S]*?<\/foreignObject\s*>/gi, 'foreignObject', svg);
-  svg = strip(/<foreignObject\b[^>]*\/>/gi, 'foreignObject', svg);
+  // Anche con il prefisso dello spazio dei nomi (<svg:script>, <x:foreignObject>)
+  svg = strip(/<(?:[\w-]+:)?script\b[\s\S]*?<\/(?:[\w-]+:)?script\s*>/gi, 'script', svg);
+  svg = strip(/<(?:[\w-]+:)?script\b[^>]*\/>/gi, 'script', svg);
+  svg = strip(/<(?:[\w-]+:)?foreignObject\b[\s\S]*?<\/(?:[\w-]+:)?foreignObject\s*>/gi, 'foreignObject', svg);
+  svg = strip(/<(?:[\w-]+:)?foreignObject\b[^>]*\/>/gi, 'foreignObject', svg);
   // Attributi di evento: onload, onclick...
   svg = strip(/\son[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, 'eventi', svg);
-  // Riferimenti: restano solo quelli interni (#id) e le immagini data:
-  svg = svg.replace(/\s(?:xlink:)?href\s*=\s*("[^"]*"|'[^']*')/gi, (all, value: string) => {
+  // Riferimenti (href con qualunque prefisso): restano solo quelli interni (#id) e le immagini data:
+  svg = svg.replace(/\s(?:[\w-]+:)?href\s*=\s*("[^"]*"|'[^']*')/gi, (all, value: string) => {
     const target = value.slice(1, -1).trim();
     if (target.startsWith('#') || /^data:image\/(png|jpeg|gif|webp)[;,]/i.test(target)) return all;
     if (!removed.includes('riferimenti esterni')) removed.push('riferimenti esterni');
     return '';
   });
-  svg = strip(/@import[^;]*;/gi, 'riferimenti esterni', svg);
-  // url(...) negli stili: solo #id e data:
-  svg = svg.replace(/url\(\s*(['"]?)(?!#|data:image\/)[^)]*\)/gi, () => {
+  svg = strip(/@import[^;<]*;?/gi, 'riferimenti esterni', svg);
+  // url(...) negli stili: solo #id e le stesse immagini data: degli href
+  svg = svg.replace(/url\(\s*(['"]?)(?!#|data:image\/(?:png|jpeg|gif|webp)[;,])[^)]*\)/gi, () => {
     if (!removed.includes('riferimenti esterni')) removed.push('riferimenti esterni');
     return 'none';
   });
@@ -90,8 +109,8 @@ const rootTag = (text: string): string => /^<svg\b[^>]*>/.exec(stripPreamble(tex
 const attribute = (tag: string, name: string): string | undefined => new RegExp(`\\s${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, 'i').exec(tag)?.slice(1).find((v) => v !== undefined);
 
 /**
- * Dimensioni dell'SVG (pixel CSS, per le proporzioni): `width` e `height` se sono lunghezze, altrimenti il `viewBox`; le proporzioni
- * sono quelle del `viewBox` se c'è. Lancia un errore chiaro se non si ricavano.
+ * Dimensioni dell'SVG (pixel CSS, per le proporzioni): `width` e `height` se sono lunghezze; con il `viewBox` e un solo lato, l'altro
+ * segue le proporzioni del `viewBox` (come fa il browser); senza lati, il `viewBox`. Lancia un errore chiaro se non si ricavano.
  */
 export function svgDimensions(text: string): { w: number; h: number } {
   const tag = rootTag(text);
@@ -99,7 +118,7 @@ export function svgDimensions(text: string): { w: number; h: number } {
   const viewBox = box && box.length === 4 && box.every(Number.isFinite) && box[2] > 0 && box[3] > 0 ? { w: box[2], h: box[3] } : null;
   const width = cssLength(attribute(tag, 'width'));
   const height = cssLength(attribute(tag, 'height'));
-  if (viewBox) return { w: width ?? viewBox.w, h: height ?? viewBox.h };
+  if (viewBox) return { w: width ?? (height ? (height * viewBox.w) / viewBox.h : viewBox.w), h: height ?? (width ? (width * viewBox.h) / viewBox.w : viewBox.h) };
   if (width && height) return { w: width, h: height };
   throw new Error('SVG senza dimensioni: servono un viewBox oppure width e height in unità fisse (non percentuali).');
 }
@@ -118,8 +137,10 @@ export function svgRasterSize(w: number, h: number): { w: number; h: number } {
  * disegna l'SVG alla sua dimensione intrinseca, che altrimenti sarebbe quella (arbitraria) dichiarata nel file.
  */
 export function prepareSvg(text: string): { svg: string; w: number; h: number; removed: string[] } {
-  // Prima delle entità: un DOCTYPE con sottoinsieme interno non si riconoscerebbe come preambolo
+  // Prima delle entità (messaggio più preciso), poi il DOCTYPE con sottoinsieme interno senza entità (`<!ATTLIST ...>`: attributi
+  // predefiniti che il documento potrebbe richiedere e che qui si ignorerebbero): rifiutato con il suo messaggio
   rejectEntities(text);
+  if (preambleOf(text).internalSubset) throw new Error('SVG non supportato: il DOCTYPE ha un sottoinsieme interno (dichiarazioni tra parentesi quadre): riesporta l\'SVG senza.');
   const body = stripPreamble(text);
   if (!/^<svg[\s/>]/.test(body)) throw new Error('Il file non è un SVG valido: manca l\'elemento <svg>.');
   const { svg: clean, removed } = sanitizeSvg(body);
@@ -137,8 +158,19 @@ export function prepareSvg(text: string): { svg: string; w: number; h: number; r
 }
 
 /**
+ * Dai byte di un file (i primi `MAX_SVG_BYTES`) all'SVG preparato, se il contenuto è un SVG; `null` se non lo è (il chiamante prova gli
+ * altri formati o dice «Formato non supportato»). Rifiuta un file oltre `MAX_SVG_BYTES` (`fileSize` è la dimensione del file intero) e
+ * gli SVG con entità (anche con DOCTYPE). Puro: la rasterizzazione è un passo a parte (`rasterizeSvg`).
+ */
+export function prepareSvgFile(bytes: Uint8Array, fileSize: number): ReturnType<typeof prepareSvg> | null {
+  if (!looksLikeSvg(new TextDecoder('utf-8').decode(bytes.subarray(0, 8192)))) return null;
+  if (fileSize > MAX_SVG_BYTES) throw new Error(`L'SVG è troppo grande (${Math.round(fileSize / 1024)} KB): il massimo è ${MAX_SVG_BYTES / 1024 / 1024} MB.`);
+  return prepareSvg(new TextDecoder('utf-8').decode(bytes));
+}
+
+/**
  * Disegna l'SVG preparato su un canvas bianco di `w` × `h` pixel e ne restituisce i pixel RGBA. Browser: `<img>` con un `Blob` URL
- * (nessuno script, nessuna risorsa esterna), con un tempo massimo.
+ * (nessuno script, nessuna risorsa esterna), con un tempo massimo per il caricamento (non per il `drawImage` sincrono).
  */
 export async function rasterizeSvg(svg: string, w: number, h: number): Promise<{ rgba: Uint8ClampedArray; w: number; h: number }> {
   const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));

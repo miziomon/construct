@@ -201,6 +201,12 @@ export function gridWarning(nodes: number): string[] {
 }
 
 /**
+ * Cosa scrivere nel Pattern scegliendo una texture di esempio: l'esempio, la sua PRIMA variante in modo esplicito (non «assente»: nel
+ * dato salvato, nella chiave di cache e nell'interfaccia la variante predefinita è sempre scritta) e nessuna immagine caricata.
+ */
+export const samplePatch = (sample: SampleKind): Pick<PatternParams, 'sample' | 'sampleDesign' | 'imageId'> => ({ sample, sampleDesign: SAMPLE_VARIANTS[sample][0], imageId: undefined });
+
+/**
  * Campi salvati del Pattern «Immagine»: `imageId` (se c'è), la texture di esempio e la sua variante (di partenza 'knurl' e la prima),
  * i parametri della texture normalizzati (modo di partenza incavo) e la versione della formula del grigio. Non c'è `design`.
  */

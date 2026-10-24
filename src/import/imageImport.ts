@@ -2,7 +2,7 @@ import { getKernel } from '../kernel/client';
 import { MAX_IMAGE_SIDE, imageToGray } from '../scene/textureImage';
 import { addImage } from './assets';
 import { HEADER_BYTES, readImageHeader, unsupportedFormat } from './imageHeader';
-import { MAX_SVG_BYTES, looksLikeSvg, prepareSvg, rasterizeSvg } from './svgImage';
+import { prepareSvgFile, rasterizeSvg } from './svgImage';
 import type { ImageAsset } from './assets';
 
 /** File più grande di così non si apre (una foto di fotocamera sta ben sotto). */
@@ -50,13 +50,10 @@ const isRaster = (b: Uint8Array) => (b[0] === 0x89 && b[1] === 0x50 && b[2] === 
 async function decodeAny(file: Blob): Promise<{ rgba: Uint8ClampedArray; w: number; h: number }> {
   const head = new Uint8Array(await file.slice(0, HEADER_BYTES).arrayBuffer());
   if (isRaster(head)) return decodeRgba(file);
-  // SVG: dal contenuto (dopo BOM, XML, commenti e DOCTYPE comincia con <svg), non dall'estensione né dal tipo dichiarato
-  if (looksLikeSvg(new TextDecoder('utf-8').decode(head.subarray(0, 8192)))) {
-    if (file.size > MAX_SVG_BYTES) throw new Error(`L'SVG è troppo grande (${Math.round(file.size / 1024)} KB): il massimo è ${MAX_SVG_BYTES / 1024 / 1024} MB.`);
-    // Il file sta per intero nei primi byte letti (HEADER_BYTES = MAX_SVG_BYTES)
-    const prepared = prepareSvg(new TextDecoder('utf-8').decode(head));
-    return rasterizeSvg(prepared.svg, prepared.w, prepared.h);
-  }
+  // SVG: dal contenuto (dopo BOM, XML, commenti e DOCTYPE comincia con <svg), non dall'estensione né dal tipo dichiarato. Il file sta per
+  // intero nei primi byte letti (HEADER_BYTES = MAX_SVG_BYTES); un SVG con entità si rifiuta con il suo messaggio, non come formato ignoto
+  const prepared = prepareSvgFile(head, file.size);
+  if (prepared) return rasterizeSvg(prepared.svg, prepared.w, prepared.h);
   throw unsupportedFormat();
 }
 

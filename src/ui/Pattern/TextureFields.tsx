@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { getImage } from '../../import/assets';
 import { importImageFile } from '../../import/imageImport';
-import { normalizePattern, textureAmplitudeLimit, textureOf } from '../../scene/pattern';
+import { normalizePattern, samplePatch, textureAmplitudeLimit, textureOf } from '../../scene/pattern';
 import { normalizeTexture } from '../../scene/textureMap';
 import type { GrayImage, TextureMode, TextureParams } from '../../scene/textureMap';
 import { SAMPLE_KINDS, SAMPLE_VARIANTS } from '../../scene/textureSamples';
@@ -63,11 +63,12 @@ export function TextureFields({ params: p, onChange, disabled, history = true }:
   const fileInput = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  const image = imageOf(p, getImage);
-  // Esempio e variante come li leggono kernel e codice (un esempio sconosciuto o una variante di un'altra texture tornano ai valori di partenza)
+  // Esempio e variante come li leggono kernel e codice (un esempio sconosciuto o una variante di un'altra texture tornano ai valori di
+  // partenza, i mattoni di una versione precedente diventano pietra): la miniatura mostra la stessa immagine di tendina, kernel e codice
   const { sample, sampleDesign } = normalizePattern(p);
   const kind = sample ?? 'knurl';
   const variant = sampleDesign ?? SAMPLE_VARIANTS[kind][0];
+  const image = imageOf({ ...p, sample: kind, sampleDesign: variant }, getImage);
   const variantId = useId();
   // Parametri salvati (da cui si parte per modificare) ed effettivi (con il limite di profondità, quelli mostrati)
   const stored = normalizeTexture({ mode: 'groove', ...p.texture });
@@ -107,7 +108,7 @@ export function TextureFields({ params: p, onChange, disabled, history = true }:
     <>
       <div className="array-fields__row" title="Libreria di texture di esempio generate nel codice, oppure l'immagine che hai caricato.">
         <label className="array-fields__label" htmlFor={sourceId}>Sorgente</label>
-        <select id={sourceId} className="array-fields__select" value={p.imageId ? UPLOADED : kind} disabled={disabled} onChange={(e) => (e.target.value === UPLOADED ? undefined : onChange({ sample: e.target.value as SampleKind, sampleDesign: undefined, imageId: undefined }))}>
+        <select id={sourceId} className="array-fields__select" value={p.imageId ? UPLOADED : kind} disabled={disabled} onChange={(e) => (e.target.value === UPLOADED ? undefined : onChange(samplePatch(e.target.value as SampleKind)))}>
           {p.imageId && <option value={UPLOADED}>Immagine caricata</option>}
           {SAMPLE_KINDS.map((k) => (
             <option key={k} value={k}>{SAMPLE_LABELS[k]}</option>

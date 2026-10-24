@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { zlibSync } from 'fflate';
 import { appendFileSync } from 'node:fs';
-import { defaultPatternParams, faceFromBounds, normalizePattern, patternRelief, reliefWarnings, textureOf } from './pattern';
+import { defaultPatternParams, faceFromBounds, normalizePattern, samplePatch, patternRelief, reliefWarnings, textureOf } from './pattern';
 import { MAX_IMAGE_SIDE, SAMPLE_SIZE, fallbackHash, grayFingerprint, imageOf, imageToGray, pixelSize, sampleImage, usedImageIds } from './textureImage';
 import { textureCacheKey } from '../kernel/textureMap';
 import type { GrayImage } from './textureMap';
-import { SAMPLE_KINDS, makeSample } from './textureSamples';
+import { SAMPLE_KINDS, SAMPLE_VARIANTS, makeSample } from './textureSamples';
 import type { GroupNode, PatternParams, Scene, Vec3 } from './types';
 import { decodeImage, encodeImage } from '../import/assets';
 
@@ -217,6 +217,21 @@ describe('Pattern Immagine: normalizzazione, limiti e avvisi', () => {
     expect(imageOf({ imageId: 'img-1', sample: 'knurl', sampleDesign: 'dots' }, () => undefined)).toBeUndefined();
     // La variante entra nella chiave di cache (il Pattern normalizzato): cambiarla cambia la chiave
     expect(JSON.stringify(normalizePattern(params({ sampleDesign: 'dots' })))).not.toBe(JSON.stringify(normalizePattern(params({ sampleDesign: 'straight' }))));
+  });
+
+  it("scegliendo un esempio il dato porta la prima variante in modo esplicito: assente e predefinita non si confondono (dato, chiave di cache, kernel e codice leggono lo stesso)", () => {
+    for (const kind of SAMPLE_KINDS) {
+      const patch = samplePatch(kind);
+      expect(patch).toEqual({ sample: kind, sampleDesign: SAMPLE_VARIANTS[kind][0], imageId: undefined });
+      // Il Pattern come lo scrive il pannello delle Proprietà (senza normalizzare) e come lo normalizza il kernel hanno gli stessi campi dell'esempio
+      const raw = { ...params({ imageId: 'img-old', sampleDesign: 'dots' }), ...patch };
+      const normalized = normalizePattern(raw);
+      expect([raw.sample, raw.sampleDesign, raw.imageId]).toEqual([normalized.sample, normalized.sampleDesign, normalized.imageId]);
+      expect(imageOf(raw)).toBe(imageOf(normalized));
+      // La chiave: il dato normalizzato è lo stesso con la variante scritta o assente (progetti salvati prima)
+      const absent = { ...raw, sampleDesign: undefined };
+      expect(JSON.stringify(normalizePattern(absent))).toBe(JSON.stringify(normalized));
+    }
   });
 
   it('imageId si conserva, un esempio sconosciuto torna a knurl, la versione salvata non si sovrascrive', () => {
