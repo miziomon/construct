@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Database, Eye, FlaskConical, Magnet, Palette, Printer, RotateCcw, ShieldCheck, Trash2 } from 'lucide-react';
+import { Database, Eye, FlaskConical, Magnet, Palette, PenTool, Printer, RotateCcw, ShieldCheck, Trash2 } from 'lucide-react';
 import { NumberField } from '../NumberField/NumberField';
 import { confirmDialog } from '../notify/notifyStore';
 import { SETTING_LIMITS, useUiStore } from '../uiStore';
@@ -111,6 +111,11 @@ export function SettingsPanel({ run }: { run: (action: () => void | Promise<void
         <p className="settings__hint">Altezza utile della stampante: un oggetto più alto esce dal volume di stampa.</p>
         <NumberField label="Parete" unit="mm" value={ui.minWall} min={SETTING_LIMITS.minWall.min} max={SETTING_LIMITS.minWall.max} step={0.1} disabled={!ui.printChecks} onCommit={set('minWall')} />
         <p className="settings__hint">Parete minima stampabile: una parete più sottile è segnalata (0,8 mm sono due passate di un ugello da 0,4 mm).</p>
+      </section>
+
+      <section>
+        <h3><PenTool size={14} />Profilo</h3>
+        <Toggle id="set-profile-auto-constraints" label="Vincoli automatici" hint="Nella modale del Profilo, mentre disegni, i vincoli ovvii si aggiungono da soli: un segmento quasi orizzontale o verticale (entro 3 gradi) lo diventa, uno quasi perpendicolare al precedente lo diventa, un nodo su un altro nodo è coincidente, e il rettangolo nasce con i lati orizzontali e verticali. Si tolgono dall'elenco Quote e vincoli, o con Annulla." checked={ui.profileAutoConstraints} onChange={set('profileAutoConstraints')} />
       </section>
 
       <section>

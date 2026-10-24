@@ -1,9 +1,9 @@
-import { MAX_PATH_CONTOURS, MAX_PATH_NODES, PATH_DEFAULT_TOLERANCE, bboxOf, cubicPoint, samplePaths, segmentOf, signedArea, splitCubic } from '../../scene/bezier';
+import { MAX_PATH_CONTOURS, MAX_PATH_NODES, PATH_DEFAULT_TOLERANCE, assignNodeIds, bboxOf, circleContour, cubicPoint, filletInfo, nodeIds, regenCircle, samplePaths, segmentOf, signedArea, splitCubic } from '../../scene/bezier';
 import { ellipseContour, polygonContour, regularPolygon } from '../../scene/pathShapes';
 import { REVOLVE_DEFAULT_ANGLE, REVOLVE_DEFAULT_SEGMENTS, pathContours, pathNaturalBox } from '../../scene/shapes2d';
 import { hasBoundDimension } from '../../scene/resize';
 import { shape2dDefaults } from '../../scene/defaults';
-import type { Draft, PathContour, PathNode, Shape2DNode, Vec2 } from '../../scene/types';
+import type { Draft, PathContour, PathNode, ProfileConstraint, Shape2DNode, Vec2 } from '../../scene/types';
 
 // Il tipo vive nella scena (lo usa anche lo store): qui si riesporta per chi lo importava da qui
 export type { Draft };
@@ -32,15 +32,38 @@ const scale = (a: Vec2, k: number): Vec2 => [a[0] * k + 0, a[1] * k + 0];
 const length = (a: Vec2): number => Math.hypot(a[0], a[1]);
 const dist = (a: Vec2, b: Vec2): number => length(sub(a, b));
 
-/** Nodo con le sole maniglie che esistono: un campo `in`/`out` assente o nullo non si scrive (i dati restano puliti). */
-function makeNode(p: Vec2, inn: Vec2 | undefined, out: Vec2 | undefined, kind: PathNode['kind']): PathNode {
-  return { p, ...(inn && length(inn) > EPS ? { in: inn } : {}), ...(out && length(out) > EPS ? { out } : {}), kind };
+/**
+ * Nodo con le sole maniglie che esistono: un campo `in`/`out` assente o nullo non si scrive (i dati restano puliti).
+ * Con `base` il nodo è lo stesso nodo cambiato: ne conserva `id` e `r`, che i vincoli e il raccordo non devono perdere.
+ */
+function makeNode(p: Vec2, inn: Vec2 | undefined, out: Vec2 | undefined, kind: PathNode['kind'], base?: PathNode): PathNode {
+  return { ...(base?.id ? { id: base.id } : {}), p, ...(inn && length(inn) > EPS ? { in: inn } : {}), ...(out && length(out) > EPS ? { out } : {}), kind, ...(base?.r ? { r: base.r } : {}) };
 }
 
-/** Sostituisce il nodo indicato con il risultato di `fn`; se il riferimento non esiste i contorni restano com'erano. */
+/** Indice del centro di un cerchio parametrico nei riferimenti ai nodi: subito dopo l'ultimo nodo del contorno. */
+export const centerIndex = (c: PathContour): number => c.nodes.length;
+
+/** Posizione di un nodo o del centro di un cerchio parametrico (indice `nodes.length`); undefined se non c'è. */
+export function refPoint(paths: PathContour[], ref: NodeRef): Vec2 | undefined {
+  const c = paths[ref.path];
+  if (!c) return undefined;
+  if (c.circ && ref.node === centerIndex(c)) return c.circ.p;
+  return c.nodes[ref.node]?.p;
+}
+
+/**
+ * Dove sta il nodo sul bordo di un cerchio parametrico quando lo si porta verso `to`: sulla orizzontale del centro (è la posizione che
+ * il vincolo implicito gli dà, e la direzione di quel nodo non conta), alla distanza del punto dal centro: cambia solo il raggio.
+ */
+export function edgeAt(c: PathContour, to: Vec2): Vec2 {
+  const center = c.circ!.p;
+  return [center[0] + Math.hypot(to[0] - center[0], to[1] - center[1]), center[1]];
+}
+
+/** Sostituisce il nodo indicato con il risultato di `fn`; se il riferimento non esiste i contorni restano com'erano. Un cerchio parametrico non si tocca: i suoi nodi sono derivati dal centro e dal raggio. */
 function mapNode(paths: PathContour[], ref: NodeRef, fn: (n: PathNode) => PathNode): PathContour[] {
   const contour = paths[ref.path];
-  if (!contour || !contour.nodes[ref.node]) return paths;
+  if (!contour || !contour.nodes[ref.node] || contour.circ) return paths;
   const nodes = contour.nodes.map((n, i) => (i === ref.node ? fn(n) : n));
   return paths.map((c, i) => (i === ref.path ? { ...c, nodes } : c));
 }
@@ -49,6 +72,13 @@ function mapNode(paths: PathContour[], ref: NodeRef, fn: (n: PathNode) => PathNo
 export function moveNodes(paths: PathContour[], refs: NodeRef[], d: Vec2): PathContour[] {
   const keys = new Set(refs.map((r) => `${r.path}:${r.node}`));
   return paths.map((c, pi) => {
+    if (c.circ) {
+      // Cerchio parametrico: il solo nodo sul bordo cambia il raggio (e la direzione), il centro o uno degli altri nodi lo sposta intero
+      const touched = [...c.nodes.keys(), centerIndex(c)].filter((ni) => keys.has(`${pi}:${ni}`));
+      if (!touched.length) return c;
+      if (touched.length === 1 && touched[0] === 0) return regenCircle({ ...c, nodes: c.nodes.map((n, ni) => (ni === 0 ? { ...n, p: edgeAt(c, add(n.p, d)) } : n)) });
+      return { ...c, nodes: c.nodes.map((n) => ({ ...n, p: add(n.p, d) })), circ: { ...c.circ, p: add(c.circ.p, d) } };
+    }
     if (!c.nodes.some((_, ni) => keys.has(`${pi}:${ni}`))) return c;
     return { ...c, nodes: c.nodes.map((n, ni) => (keys.has(`${pi}:${ni}`) ? { ...n, p: add(n.p, d) } : n)) };
   });
@@ -68,7 +98,7 @@ export function moveHandle(paths: PathContour[], h: HandleRef, to: Vec2, breakTa
     let other = n[otherSide];
     if (kind === 'symmetric') other = moved ? scale(moved, -1) : undefined;
     else if (kind === 'smooth' && moved && other) other = scale(moved, -length(other) / length(moved));
-    return h.side === 'in' ? makeNode(n.p, moved, other, kind) : makeNode(n.p, other, moved, kind);
+    return h.side === 'in' ? makeNode(n.p, moved, other, kind, n) : makeNode(n.p, other, moved, kind, n);
   });
 }
 
@@ -107,7 +137,7 @@ export function setNodeKind(paths: PathContour[], r: NodeRef, kind: PathNode['ki
     else if (inn && !out) out = scale(inn, -1);
     else if (kind === 'smooth' && inn && out) inn = scale(out, -length(inn) / length(out));
     else if (out) inn = scale(out, -1);
-    return makeNode(n.p, inn, out, kind);
+    return makeNode(n.p, inn, out, kind, n);
   });
 }
 
@@ -120,7 +150,8 @@ export function setNodeKind(paths: PathContour[], r: NodeRef, kind: PathNode['ki
  */
 export function insertNode(paths: PathContour[], seg: SegmentRef, t: number): { paths: PathContour[]; node: NodeRef } | null {
   const contour = paths[seg.path];
-  if (!contour || !(t > 0 && t < 1) || contour.nodes.length >= MAX_PATH_NODES) return null;
+  // Un cerchio parametrico non ha nodi da aggiungere: i suoi quattro sono derivati dal centro e dal raggio
+  if (!contour || contour.circ || !(t > 0 && t < 1) || contour.nodes.length >= MAX_PATH_NODES) return null;
   const count = contour.closed ? contour.nodes.length : contour.nodes.length - 1;
   if (seg.segment < 0 || seg.segment >= count) return null;
   const j = (seg.segment + 1) % contour.nodes.length;
@@ -137,8 +168,8 @@ export function insertNode(paths: PathContour[], seg: SegmentRef, t: number): { 
     const mid = left[3];
     fresh = makeNode(mid, sub(left[2], mid), sub(right[1], mid), 'smooth');
     // Le maniglie degli estremi si accorciano: quella interna al segmento è la prima di ciascuna metà
-    newA = makeNode(a.p, a.in, sub(left[1], a.p), a.kind === 'symmetric' ? 'smooth' : a.kind);
-    newB = makeNode(b.p, sub(right[2], b.p), b.out, b.kind === 'symmetric' ? 'smooth' : b.kind);
+    newA = makeNode(a.p, a.in, sub(left[1], a.p), a.kind === 'symmetric' ? 'smooth' : a.kind, a);
+    newB = makeNode(b.p, sub(right[2], b.p), b.out, b.kind === 'symmetric' ? 'smooth' : b.kind, b);
   }
   // L'ultimo segmento di un contorno chiuso va dall'ultimo nodo al primo: il nuovo nodo va in fondo all'elenco
   const nodes = contour.nodes.map((n, i) => (i === seg.segment ? newA : i === j ? newB : n));
@@ -146,19 +177,126 @@ export function insertNode(paths: PathContour[], seg: SegmentRef, t: number): { 
   return { paths: paths.map((c, i) => (i === seg.path ? { ...c, nodes } : c)), node: { path: seg.path, node: seg.segment + 1 } };
 }
 
+/** Imposta il raggio di raccordo del nodo (mm); zero, negativo o non numerico lo toglie. Se il nodo non può raccordarsi il valore resta scritto ma non ha effetto (vedi `filletInfo`). */
+export function setNodeRadius(paths: PathContour[], ref: NodeRef, r: number): PathContour[] {
+  return mapNode(paths, ref, (n) => {
+    const { r: _old, ...rest } = n;
+    return Number.isFinite(r) && r > 0 ? { ...rest, r: Math.min(r, 1e5) } : rest;
+  });
+}
+
+/**
+ * Raggio di raccordo per più nodi: lo stesso valore a tutti quelli che possono raccordarsi (spigoli senza maniglie tra due
+ * segmenti retti); gli altri restano com'erano. Se nessuno può, i contorni sono gli stessi.
+ */
+export function setNodesRadius(paths: PathContour[], refs: NodeRef[], r: number): PathContour[] {
+  const eligible = refs.filter((ref) => paths[ref.path] && filletInfo(paths[ref.path], ref.node).eligible);
+  return eligible.reduce((current, ref) => setNodeRadius(current, ref, r), paths);
+}
+
 /** Elimina i nodi indicati; un contorno che resta con meno di 2 nodi sparisce. */
 export function deleteNodes(paths: PathContour[], refs: NodeRef[]): PathContour[] {
   const keys = new Set(refs.map((r) => `${r.path}:${r.node}`));
   const result: PathContour[] = [];
   paths.forEach((c, pi) => {
-    if (!c.nodes.some((_, ni) => keys.has(`${pi}:${ni}`))) {
+    if (!c.nodes.some((_, ni) => keys.has(`${pi}:${ni}`)) && !(c.circ && keys.has(`${pi}:${centerIndex(c)}`))) {
       result.push(c);
       return;
     }
+    // Un cerchio parametrico si elimina intero (non ha senso un cerchio con un nodo in meno)
+    if (c.circ) return;
     const nodes = c.nodes.filter((_, ni) => !keys.has(`${pi}:${ni}`));
     if (nodes.length >= 2) result.push({ ...c, nodes });
   });
   return result;
+}
+
+/** Contorni e vincoli di un profilo: ciò che le operazioni sui nodi devono tenere coerente. */
+export type ProfileGeometry = Pick<Draft, 'paths' | 'constraints'>;
+
+/**
+ * Toglie i vincoli che citano nodi che non esistono più (solo il filtro sugli id presenti, senza assegnarne di nuovi):
+ * lo si applica a ogni passo di cronologia, così nessun vincolo resta appeso a un nodo tolto da una funzione che non li
+ * conosce (Backspace della Penna, contorno di un nodo solo...). Una lista vuota equivale a nessun vincolo: il campo non
+ * c'è. Restituisce lo stesso oggetto se non c'è nulla da fare.
+ */
+export function pruneConstraints<T extends ProfileGeometry>(d: T): T {
+  if (!d.constraints) return d;
+  const ids = nodeIds(d.paths);
+  const kept = d.constraints.filter((c) => c.p.every((id) => ids.has(id)));
+  if (kept.length === d.constraints.length && kept.length > 0) return d;
+  const result: T = { ...d };
+  if (kept.length) result.constraints = kept;
+  else delete result.constraints;
+  return result;
+}
+
+/**
+ * Normalizza un profilo dopo una modifica ai nodi, in un solo punto: toglie i vincoli che citano nodi che non esistono
+ * più e dà un id ai nodi che non l'hanno (contatore del profilo). L'ORDINE conta: si filtra sugli id esistenti PRIMA di
+ * assegnare i nuovi, perché il contatore può riusare l'id di un nodo cancellato e un vincolo rimasto appeso finirebbe
+ * sul nodo sbagliato. Restituisce lo stesso oggetto se non c'è nulla da fare.
+ */
+export function normalizeProfile<T extends ProfileGeometry>(d: T): T {
+  // Prima i vincoli, sugli id che i contorni hanno ora; poi gli id mancanti
+  const pruned = pruneConstraints(d);
+  const paths = assignNodeIds(pruned.paths);
+  return paths === pruned.paths ? pruned : { ...pruned, paths };
+}
+
+/** Vincoli di direzione: valgono per tutto un segmento retto, quindi passano a entrambe le sue metà. Gli altri restano sugli estremi. */
+const DIRECTION_TYPES = new Set<ProfileConstraint['t']>(['horizontal', 'vertical', 'angle', 'parallel', 'perpendicular', 'collinear']);
+
+/** Generatore di id di vincolo liberi (`k1`, `k2`...), che riparte dopo il numero più alto già usato. */
+export function constraintIdMaker(list: ProfileConstraint[]): () => string {
+  const used = new Set(list.map((c) => c.id));
+  let counter = list.reduce((max, c) => Math.max(max, Number(/^k(\d+)$/.exec(c.id)?.[1] ?? 0)), 0);
+  return () => {
+    do counter++;
+    while (used.has(`k${counter}`));
+    return `k${counter}`;
+  };
+}
+
+/**
+ * Come `insertNode`, tenendo coerenti id e vincoli. Il nodo nuovo (e ogni nodo ancora senza id) riceve un id. Se il
+ * segmento è RETTO, i vincoli di direzione che lo citano (orizzontale, verticale, angolo, parallelo, perpendicolare,
+ * collineare) passano a entrambe le metà (a-m e m-b), perché il nuovo nodo sta sulla stessa retta. Se è una curva, o per
+ * ogni altro vincolo (lunghezze, uguale, punto medio...), restano sugli estremi originali, dove continuano a essere veri.
+ */
+export function insertNodeWithConstraints<T extends ProfileGeometry>(d: T, seg: SegmentRef, t: number): (T & { node: NodeRef }) | null {
+  // Prima gli id: servono per riconoscere gli estremi del segmento nei vincoli
+  const base = normalizeProfile(d);
+  const inserted = insertNode(base.paths, seg, t);
+  if (!inserted) return null;
+  const contour = base.paths[seg.path];
+  const a = contour.nodes[seg.segment].id as string;
+  const b = contour.nodes[(seg.segment + 1) % contour.nodes.length].id as string;
+  // Il nodo nuovo riceve il suo id dal contatore del profilo
+  const result = normalizeProfile({ ...base, paths: inserted.paths });
+  const m = result.paths[seg.path].nodes[inserted.node.node].id as string;
+  const list = result.constraints;
+  // Su una curva i vincoli restano com'erano: i nodi nuovi non sono sulla corda
+  if (!list?.length || !segmentOf(contour, seg.segment).straight) return { ...result, node: inserted.node };
+  const fresh = constraintIdMaker(list);
+  // Ogni vincolo di direzione che ha (a, b) come segmento, in qualunque ordine, diventa due: uno per metà
+  const split = (c: ProfileConstraint): ProfileConstraint[] => {
+    if (!DIRECTION_TYPES.has(c.t)) return [c];
+    // Posizione del segmento nell'elenco dei punti: la coppia (0, 1) o, nei vincoli a quattro punti, la coppia (2, 3)
+    const at = [0, 2].find((i) => i + 1 < c.p.length && ((c.p[i] === a && c.p[i + 1] === b) || (c.p[i] === b && c.p[i + 1] === a)));
+    if (at === undefined) return [c];
+    const half = (id: string, x: string, y: string): ProfileConstraint => ({ ...c, id, p: c.p.map((q, i) => (i === at ? x : i === at + 1 ? y : q)) });
+    // L'ordine segue quello del vincolo: (a, b) diventa (a, m) e (m, b), (b, a) diventa (b, m) e (m, a). La prima metà tiene l'id originale
+    return c.p[at] === a ? [half(c.id, a, m), half(fresh(), m, b)] : [half(c.id, b, m), half(fresh(), m, a)];
+  };
+  return { ...result, constraints: list.flatMap(split), node: inserted.node };
+}
+
+/** Come `deleteNodes`, e i vincoli che citano un nodo cancellato spariscono con lui (nello stesso passo di cronologia). */
+export function deleteNodesWithConstraints<T extends ProfileGeometry>(d: T, refs: NodeRef[]): T {
+  // Prima gli id (gli indici dei riferimenti non cambiano), poi la cancellazione e la pulizia dei vincoli rimasti appesi
+  const base = normalizeProfile(d);
+  return normalizeProfile({ ...base, paths: deleteNodes(base.paths, refs) });
 }
 
 /**
@@ -306,7 +444,7 @@ export function appendPenNode(paths: PathContour[], current: number | null, p: V
 
 /** Contorno percorso al contrario: nodi in ordine inverso e maniglie `in` e `out` scambiate, la forma non cambia. */
 function reversed(c: PathContour): PathContour {
-  return { ...c, nodes: c.nodes.slice().reverse().map((n) => makeNode(n.p, n.out, n.in, n.kind)) };
+  return { ...c, nodes: c.nodes.slice().reverse().map((n) => makeNode(n.p, n.out, n.in, n.kind, n)) };
 }
 
 /** Vero se `ref` è il primo o l'ultimo nodo di un contorno aperto (un estremo da cui riprendere il disegno). */
@@ -367,10 +505,20 @@ export function trimDuplicateTail(paths: PathContour[], i: number): PathContour[
 export function bakeScale(paths: PathContour[], sx: number, sy: number, cx: number, cy: number): PathContour[] {
   const point = (p: Vec2): Vec2 => [cx + (p[0] - cx) * sx, cy + (p[1] - cy) * sy];
   const handle = (h: Vec2): Vec2 => [h[0] * sx, h[1] * sy];
-  return paths.map((c) => ({
-    ...c,
-    nodes: c.nodes.map((n) => ({ p: point(n.p), ...(n.in ? { in: handle(n.in) } : {}), ...(n.out ? { out: handle(n.out) } : {}), kind: n.kind })),
-  }));
+  // Con una scala non uniforme il cerchio parametrico non resta un cerchio: diventa un contorno normale (un'ellisse di 4 nodi), senza
+  // il centro, e la sua quota Ø cade (la modale toglie i vincoli che citano punti che non ci sono più)
+  const uniform = Math.abs(sx - sy) <= 1e-6 * Math.max(Math.abs(sx), Math.abs(sy));
+  return paths.map(({ circ, ...c }) => {
+    const scaled: PathContour = {
+      ...c,
+      // `id` passa com'era; il raggio di raccordo si scala con la media geometrica dei due fattori (esatta con una scala uniforme:
+      // con scale diverse un arco di cerchio non resta tale, e il raggio è l'approssimazione più vicina)
+      nodes: c.nodes.map((n) => ({ ...(n.id ? { id: n.id } : {}), p: point(n.p), ...(n.in ? { in: handle(n.in) } : {}), ...(n.out ? { out: handle(n.out) } : {}), kind: n.kind, ...(n.r ? { r: n.r * Math.sqrt(sx * sy) } : {}) })),
+      // Il centro di un cerchio parametrico si scala come i nodi; poi il cerchio si ricalcola (solo con una scala uniforme)
+      ...(circ && uniform ? { circ: { ...circ, p: point(circ.p) } } : {}),
+    };
+    return uniform ? regenCircle(scaled) : scaled;
+  });
 }
 
 /** Opzioni dell'aggancio: `radius` e `grid` sono in mm (chi chiama converte i pixel con lo zoom). */
@@ -437,7 +585,7 @@ export const POLYGON_SIDES = { min: 3, max: 24, default: 6 };
  * primo vertice verso il puntatore. Con `shift`: quadrato e cerchio (lato maggiore) o, per il poligono, l'angolo a multipli di 15°.
  */
 export interface BaseShape {
-  tool: 'rect' | 'ellipse' | 'polygon';
+  tool: 'rect' | 'ellipse' | 'polygon' | 'circle';
   center: Vec2;
   to: Vec2;
   shift: boolean;
@@ -451,6 +599,11 @@ const MIN_SHAPE = 1e-6;
 /** Contorno chiuso della forma base, con le sue coordinate nel sistema dell'editor; null se la misura è nulla. */
 export function baseShapeContour(s: BaseShape): PathContour | null {
   const [dx, dy] = sub(s.to, s.center);
+  // Cerchio parametrico (anteprima: gli id veri li dà `addCircle` al rilascio)
+  if (s.tool === 'circle') {
+    const radius = Math.hypot(dx, dy);
+    return radius <= MIN_SHAPE ? null : circleContour(s.center, radius, 'preview-c', 'preview-n');
+  }
   if (s.tool === 'polygon') {
     const radius = Math.hypot(dx, dy);
     if (radius <= MIN_SHAPE) return null;
@@ -504,10 +657,17 @@ export function draftFromNode(node: Extract<Shape2DNode, { kind: 'path' }>): Dra
     // Stesso minimo di `svgContours`, così il disegno coincide con quello che il kernel scala
     const sx = Math.max(0.01, node.width) / box.width;
     const sy = Math.max(0.01, node.depth) / box.depth;
+    // Attenzione: con la scala incorporata i valori `v` delle quote e `x`, `y` di `fixed` NON si scalano e non corrispondono più
+    // ai nodi. Decisione 11a dello studio quote: la modale avvisa con il fattore (`quoteScaleWarning`) e non riscrive i valori
+    // (scalare nodi e quote insieme è la tappa «c», futura)
     if (sx !== 1 || sy !== 1) paths = bakeScale(paths, sx, sy, box.cx, box.cy);
   }
   return {
+    // Gli id dei profili vecchi non si assegnano qui (cambierebbe l'identità dei contorni, su cui si basa `baked` in
+    // ProfileEditor): li assegna l'editor all'apertura con `normalizeProfile`
     paths,
+    ...(node.constraints?.length ? { constraints: node.constraints } : {}),
+    ...(node.params && Object.keys(node.params).length ? { params: node.params } : {}),
     tolerance: node.tolerance,
     extrusion: node.extrusion ?? 'linear',
     height: node.height,

@@ -21,6 +21,10 @@ interface Props {
   pickLabel?: string;
   /** Il campo vuole un numero intero (conteggi): il risultato di un calcolo si arrotonda. */
   integer?: boolean;
+  /** Più elementi con valori diversi: il campo è vuoto con «—» e scrivere un valore lo dà a tutti. */
+  mixed?: boolean;
+  /** Nome accessibile del campo quando l'etichetta visibile è troppo breve per distinguerlo da altri (es. «Valore» in un elenco). */
+  ariaLabel?: string;
 }
 
 /**
@@ -29,8 +33,8 @@ interface Props {
  * Accetta anche un calcolo senza parametri ("10 / 2"). Nel pannello Proprietà un doppio clic sul nome lo lega a un
  * parametro: il campo diventa allora un'icona fx con il valore, non modificabile.
  */
-export function NumberField({ label, value, onCommit, min = -Infinity, max = Infinity, step = 1, unit, disabled, path, pickLabel, integer }: Props) {
-  const [text, setText] = useState(String(value));
+export function NumberField({ label, value, onCommit, min = -Infinity, max = Infinity, step = 1, unit, disabled, path, pickLabel, integer, ariaLabel, mixed }: Props) {
+  const [text, setText] = useState(mixed ? '' : String(value));
   const [focused, setFocused] = useState(false);
   // Esc annulla: all'uscita dal campo (blur) il testo scritto non si conferma. Serve un flag perché il blur parte nello
   // stesso gestore di Esc, prima che `setText` abbia aggiornato il valore che `onBlur` legge dal DOM
@@ -41,13 +45,13 @@ export function NumberField({ label, value, onCommit, min = -Infinity, max = Inf
 
   // Allinea il testo al valore esterno (es. dopo un trascinamento del gizmo) quando non si sta scrivendo
   useEffect(() => {
-    if (!focused) setText(String(round(value, 3)));
-  }, [value, focused]);
+    if (!focused) setText(mixed ? '' : String(round(value, 3)));
+  }, [value, focused, mixed]);
 
   const commit = (raw: string) => {
     // Accetta la virgola decimale italiana
     const parsed = Number(raw.replace(',', '.'));
-    if (raw.trim() === '') return setText(String(round(value, 3)));
+    if (raw.trim() === '') return setText(mixed ? '' : String(round(value, 3)));
     let number = parsed;
     if (!Number.isFinite(parsed)) {
       // Non è un numero semplice: un calcolo senza parametri ("10 / 2")
@@ -61,7 +65,7 @@ export function NumberField({ label, value, onCommit, min = -Infinity, max = Inf
     const clamped = Math.min(max, Math.max(min, number));
     const next = integer ? Math.round(clamped) : round(clamped, 3);
     setText(String(next));
-    if (next !== value) onCommit(next);
+    if (mixed || next !== value) onCommit(next);
   };
 
   /** Doppio clic sul nome: apre il selettore dei parametri (solo se il campo ha un percorso e c'è un oggetto). */
@@ -87,6 +91,8 @@ export function NumberField({ label, value, onCommit, min = -Infinity, max = Inf
         className="number-field__input"
         type="text"
         inputMode="decimal"
+        aria-label={ariaLabel}
+        placeholder={mixed ? '—' : undefined}
         disabled={disabled}
         value={text}
         onFocus={(e) => {

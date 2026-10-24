@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import Module from 'manifold-3d';
 import type { ManifoldToplevel } from 'manifold-3d';
 import { Evaluator } from './evaluate';
+import { circleContour } from '../scene/bezier';
 import { shape2dDefaults } from '../scene/defaults';
 import { sceneToOpenScad } from '../codegen/openscad';
 import { importScad } from '../import/scad/toScene';
@@ -53,6 +54,15 @@ describe('Profilo di Bézier nel kernel', () => {
 
   it('un contorno dentro un altro è un foro (pari-dispari)', () => {
     expect(volumeOf(sceneOf(pathNode([rect(0, 0, 20, 20), rect(5, 5, 15, 15)], 20, 20, { height: 10 })))).toBeCloseTo(3000, 1);
+  });
+
+  it('un cerchio parametrico (PathContour.circ) è un contorno normale: piastra con foro Ø 10, volume (800 − π·25)·5 entro lo 0,5 %', () => {
+    const hole = circleContour([20, 10], 5, 'n5', 'n6');
+    const v = volumeOf(sceneOf(pathNode([rect(0, 0, 40, 20), hole], 40, 20, { height: 5 })));
+    expect(Math.abs(v / ((800 - Math.PI * 25) * 5) - 1)).toBeLessThan(0.005);
+    // Con il centro fuori dal contorno il cerchio è un volume in più, non un foro
+    const apart = volumeOf(sceneOf(pathNode([rect(0, 0, 40, 20), circleContour([60, 10], 5, 'n5', 'n6')], 65, 20, { height: 5 })));
+    expect(Math.abs(apart / ((800 + Math.PI * 25) * 5) - 1)).toBeLessThan(0.005);
   });
 
   it('width e depth scalano il disegno attorno al centro', () => {

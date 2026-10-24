@@ -12,8 +12,10 @@ export async function openApp(page: Page, options: { welcome?: boolean } = {}): 
   if (!options.welcome) {
     await page.addInitScript(() => {
       localStorage.setItem('construct:welcomed', '1');
+      // I vincoli automatici del Profilo (acceso di default) nelle prove restano spenti: disegnano e trascinano a mano senza vincoli
+      // dedotti; le prove dedicate li accendono dalla casella nel pannello
       // Solo se mancano: un test che ricarica la pagina non deve perdere le preferenze che ha cambiato (formato persist di zustand)
-      if (localStorage.getItem('construct:ui') === null) localStorage.setItem('construct:ui', JSON.stringify({ state: { welcomeAlways: false }, version: 0 }));
+      if (localStorage.getItem('construct:ui') === null) localStorage.setItem('construct:ui', JSON.stringify({ state: { welcomeAlways: false, profileAutoConstraints: false }, version: 0 }));
     });
   }
   await page.goto('/');

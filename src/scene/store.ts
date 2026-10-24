@@ -4,7 +4,7 @@ import { current } from 'immer';
 import { temporal } from 'zundo';
 import type { PlanDraft } from './planShape';
 import type { ScadImport } from '../import/scad/toScene';
-import type { Binding, CornerNode, Draft, EdgeNode, GroupNode, GroupOp, MeshNode, Param, PathContour, PrimitiveKind, PrimitiveNode, Scene, SceneNode, Shape2DKind, Shape2DNode, Vec2, Vec3 } from './types';
+import type { Binding, CornerNode, Draft, EdgeNode, GroupNode, GroupOp, MeshNode, Param, PathContour, PrimitiveKind, PrimitiveNode, ProfileConstraint, ProfileParams, Scene, SceneNode, Shape2DKind, Shape2DNode, Vec2, Vec3 } from './types';
 import { notify } from '../ui/notify/notifyStore';
 import { applyBindings, boundValue, formulaDeps, holdBound, nameProblem, renameInExpr, resolveParams, setPath } from './params';
 import { randomColor } from './color';
@@ -17,6 +17,8 @@ import { addImportedRoots, addPlateScene, moveRootsToPlate, plateName, platesOf,
 import { composeTransform, conjugate, eulerToMatrix, matrixToEuler, normalizeMirror, round, toLocalTransform } from './math';
 import type { Mirror, Transform } from './math';
 import { pathNaturalSize } from './shapes2d';
+import { assignNodeIds, nodeIds } from './bezier';
+import { pathScaleFactors, quoteScaleWarning } from './quoteScale';
 import { hasBoundDimension } from './resize';
 import { compensatePosition } from './pathPlacement';
 import { convertToPath as convertShapeToPath } from './convertPath';
@@ -42,7 +44,7 @@ interface SceneState {
    * Aggiunge un Profilo di Bézier (forma 2D `path`) dai contorni dati, appoggiato sul piatto. I nodi si arrotondano a 4
    * decimali; larghezza e profondità sono quelle naturali delle curve. Per ora nasce solo da qui (test) e dall'import di .scad.
    */
-  addPath: (input: { paths: PathContour[]; tolerance?: number; extrusion?: 'linear' | 'rotate'; height?: number; twist?: number; scaleTop?: number; revolveAngle?: number; revolveSegments?: number; plan?: PlanDraft; at?: [number, number]; name?: string }) => string;
+  addPath: (input: { paths: PathContour[]; tolerance?: number; extrusion?: 'linear' | 'rotate'; height?: number; twist?: number; scaleTop?: number; revolveAngle?: number; revolveSegments?: number; plan?: PlanDraft; constraints?: ProfileConstraint[]; params?: ProfileParams; at?: [number, number]; name?: string }) => string;
   /**
    * Applica il disegno della modale a un Profilo esistente in un solo passo di Annulla ("Profilo"): contorni a 4 decimali,
    * parametri di estrusione, `width × depth` = misure naturali del disegno (non scritte se qualche misura è legata a un
@@ -134,8 +136,19 @@ export function roundPaths(paths: PathContour[]): PathContour[] {
   const r4 = ([x, y]: Vec2): Vec2 => [round(x, 4) || 0, round(y, 4) || 0];
   return paths.map((c) => ({
     closed: c.closed,
-    nodes: c.nodes.map((n) => ({ p: r4(n.p), ...(n.in ? { in: r4(n.in) } : {}), ...(n.out ? { out: r4(n.out) } : {}), kind: n.kind })),
+    // `id` e `r` (raggio di raccordo, 4 decimali) restano; le quote dei vincoli non si arrotondano (si salvano esatte)
+    nodes: c.nodes.map((n) => ({ ...(n.id ? { id: n.id } : {}), p: r4(n.p), ...(n.in ? { in: r4(n.in) } : {}), ...(n.out ? { out: r4(n.out) } : {}), kind: n.kind, ...(n.r ? { r: round(n.r, 4) } : {}) })),
+    // Il centro di un cerchio parametrico si arrotonda come i nodi
+    ...(c.circ ? { circ: { id: c.circ.id, p: r4(c.circ.p) } } : {}),
   }));
+}
+
+/** Vincoli che citano solo nodi esistenti (un nodo cancellato porta via i suoi vincoli), oppure undefined se non ne resta nessuno. */
+function liveConstraints(list: ProfileConstraint[] | undefined, paths: PathContour[]): ProfileConstraint[] | undefined {
+  if (!list?.length) return undefined;
+  const ids = nodeIds(paths);
+  const kept = list.filter((c) => c.p.every((id) => ids.has(id)));
+  return kept.length ? kept : undefined;
 }
 
 export const emptyScene = (): Scene => ({ nodes: {}, rootIds: [] });
@@ -338,12 +351,18 @@ export const useSceneStore = create<SceneState>()(
       addPath: (input) => {
         const id = newId();
         act('Aggiungi Profilo', (s) => {
-          const { paths, at, name, ...params } = input;
-          const rounded = roundPaths(paths);
+          const { paths, at, name, constraints, params: profileParams, ...params } = input;
+          const drawn = roundPaths(paths);
+          // Prima i vincoli (sugli id che i contorni hanno ora), poi gli id mancanti: il contatore può riusare l'id di un nodo cancellato
+          const live = liveConstraints(constraints, drawn);
+          const rounded = assignNodeIds(drawn);
           const size = pathNaturalSize({ paths: rounded });
           const node = {
             ...shape2dDefaults('path'),
             ...params,
+            // Vincoli e parametri del profilo: solo se ce ne sono, per non scrivere campi vuoti nel nodo
+            ...(live ? { constraints: live } : {}),
+            ...(profileParams && Object.keys(profileParams).length ? { params: profileParams } : {}),
             paths: rounded,
             width: size.width,
             depth: size.depth,
@@ -369,7 +388,10 @@ export const useSceneStore = create<SceneState>()(
         let held = false;
         act('Profilo', (s) => {
           const target = s.scene.nodes[id] as Shape2DNode;
-          const rounded = roundPaths(draft.paths);
+          const drawn = roundPaths(draft.paths);
+          // Vincoli orfani via prima di assegnare gli id mancanti (vedi addPath)
+          const live = liveConstraints(draft.constraints, drawn);
+          const rounded = assignNodeIds(drawn);
           const size = pathNaturalSize({ paths: rounded });
           const patch: Record<string, unknown> = {
             paths: rounded,
@@ -393,6 +415,11 @@ export const useSceneStore = create<SceneState>()(
           const path = target as Extract<Shape2DNode, { kind: 'path' }>;
           if (draft.plan) path.plan = draft.plan;
           else delete path.plan;
+          // Vincoli e parametri della modale: quelli che non ci sono più si tolgono dal nodo
+          if (live) path.constraints = live;
+          else delete path.constraints;
+          if (draft.params && Object.keys(draft.params).length) path.params = draft.params;
+          else delete path.params;
         });
         // Come in updateNode: se un campo legato doveva cambiare, l'utente lo sa invece di vederlo restare com'era
         if (held) noteHeld(node.name);
@@ -486,6 +513,16 @@ export const useSceneStore = create<SceneState>()(
           Object.assign(node, kept.patch);
         });
         if (held) noteHeld(before?.name);
+        // Profilo con quote ridimensionato (Larghezza, Profondità, Scala, gizmo): le quote non si aggiornano, l'utente lo sa
+        const after = get().scene.nodes[id];
+        // (Non con misure legate a un parametro: la modale non incorpora la scala, come per le quote il disegno resta quello dei nodi)
+        if (before?.type === 'shape2d' && before.kind === 'path' && after?.type === 'shape2d' && after.kind === 'path' && !hasBoundDimension(after) && ('width' in patch || 'depth' in patch)) {
+          const [was, now] = [pathScaleFactors(before), pathScaleFactors(after)];
+          if (now && (!was || Math.abs(was.sx - now.sx) > 1e-6 || Math.abs(was.sy - now.sy) > 1e-6)) {
+            const warning = quoteScaleWarning(after, `«${after.name}»`);
+            if (warning) notify.info(warning);
+          }
+        }
         // Le misure inserite diventano il punto di partenza delle prossime forme dello stesso tipo
         if (before && (before.type === 'primitive' || before.type === 'shape2d') && !isLocked(get().scene, id)) rememberShape(before.kind, patch);
       },

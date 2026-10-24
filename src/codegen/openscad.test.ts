@@ -331,8 +331,15 @@ describe('sceneToOpenScad: Profilo di Bézier', () => {
     expect(at).toBeGreaterThan(-1);
     expect(rows[at + 1]).toMatch(/^polygon\(/);
     const meta = JSON.parse(rows[at].replace('// construct:path ', ''));
+    // Senza vincoli né parametri il formato resta la versione 1, leggibile anche dalle app vecchie
     expect(meta).toMatchObject({ v: 1, w: 10, d: 20, t: 0.05 });
     expect(meta.paths).toStrictEqual(node.paths);
+  });
+
+  it('con vincoli o parametri il commento passa alla versione 2 e li porta in k e q', () => {
+    const node = profile({ paths: [{ closed: false, nodes: U[0].nodes.map((n, i) => ({ id: `n${i + 1}`, ...n })) }], constraints: [{ id: 'k1', t: 'horizontal', p: ['n1', 'n2'] }], params: { w: 10 } });
+    const row = lines(codeOf(node)).find((l) => l.startsWith('// construct:path '))!;
+    expect(JSON.parse(row.replace('// construct:path ', ''))).toMatchObject({ v: 2, k: node.constraints, q: { w: 10 } });
   });
 
   it('con il contorno (offset) il commento resta subito prima di polygon()', () => {

@@ -1,8 +1,9 @@
 import { useRef } from 'react';
-import { Circle, Hand, Hexagon, MousePointer2, PenTool, Redo2, Square, Undo2, Upload } from 'lucide-react';
+import { Circle, CircleDot, Hand, Hexagon, MousePointer2, PenTool, Redo2, RulerDimensionLine, Square, Undo2, Upload } from 'lucide-react';
 import { NumberField } from '../NumberField/NumberField';
 import type { Tool } from './DrawingCanvas';
 import { POLYGON_SIDES } from './model';
+import type { DimMode } from './dimensions';
 
 /** Quali disegni mostra la modale: il profilo, la sagoma vista dall'alto (sperimentale) o tutti e due. */
 export type ViewMode = 'profile' | 'plan' | 'both';
@@ -17,6 +18,9 @@ interface Props {
   /** Lati del Poligono regolare (campo accanto agli strumenti, solo con il Poligono attivo). */
   sides: number;
   onSides: (sides: number) => void;
+  /** Modo dello strumento Quota: lunghezza allineata, solo orizzontale o solo verticale (i tre pulsanti accanto agli strumenti, con la Quota attiva). */
+  dimMode: DimMode;
+  onDimMode: (mode: DimMode) => void;
   onImportSvg: (file: File) => void;
   /** Forme base e Importa SVG non valgono per il disegno attivo (la sagoma è un contorno solo): il testo dice perché. */
   shapesOff?: string;
@@ -25,6 +29,13 @@ interface Props {
   /** Selettore dei disegni: assente senza la funzione sperimentale. `disabled` dice perché la sagoma non c'è. */
   views?: { mode: ViewMode; onMode: (mode: ViewMode) => void; disabled?: string };
 }
+
+const DIM_MODES: [DimMode, string, string][] = [
+  ['len', 'Allineata', 'Distanza tra i due nodi, nella loro direzione'],
+  ['h', 'Orizzontale', 'Solo la distanza in orizzontale (X) tra i due nodi'],
+  ['v', 'Verticale', 'Solo la distanza in verticale (Y) tra i due nodi'],
+  ['ang', 'Angolo', 'Angolo tra due segmenti: clic sul primo e sul secondo segmento (con un nodo in comune è l\'angolo tra i due lati), poi digita i gradi'],
+];
 
 const VIEWS: [ViewMode, string][] = [
   ['profile', 'Profilo'],
@@ -36,14 +47,14 @@ const VIEWS: [ViewMode, string][] = [
  * Barra sopra i disegni: strumenti (Seleziona, Penna, Sposta vista), Annulla e Ripeti a destra degli strumenti, e con la
  * sagoma sperimentale il selettore dei disegni. Gli strumenti sono uno solo per tutta la modale.
  */
-export function EditorToolbar({ tool, onTool, canUndo, canRedo, onUndo, onRedo, sides, onSides, onImportSvg, shapesOff, target, views }: Props) {
+export function EditorToolbar({ tool, onTool, canUndo, canRedo, onUndo, onRedo, sides, onSides, dimMode, onDimMode, onImportSvg, shapesOff, target, views }: Props) {
   const where = target ? ` (${target})` : '';
   const fileInput = useRef<HTMLInputElement>(null);
   const off = (title: string) => shapesOff ?? title;
   return (
     <div className="profile-editor__toolbar" role="toolbar" aria-label="Strumenti di disegno">
       <div className="profile-editor__toolgroup">
-        <button type="button" aria-pressed={tool === 'select'} title="Seleziona (V): sposta nodi e maniglie (Alt: la maniglia si muove da sola e il nodo è uno spigolo), clic su una curva per selezionare tutto il contorno (trascinala per spostarlo). Con la quota di sezione visibile, trascinala per cambiare la quota" onClick={() => onTool('select')}>
+        <button type="button" aria-pressed={tool === 'select'} title="Seleziona (V): sposta nodi e maniglie (Alt: la maniglia si muove da sola e il nodo è uno spigolo), clic su una curva per selezionare tutto il contorno (trascinala per spostarlo), Alt+clic su un segmento per sceglierne i due nodi (per Orizzontale, Verticale, Coincidente). Le quote si trascinano dall'etichetta (lungo la linea) o dalla linea (più o meno lontana). Con la quota di sezione visibile, trascinala per cambiare la quota" onClick={() => onTool('select')}>
           <MousePointer2 size={16} />
           <span>Seleziona</span>
         </button>
@@ -63,6 +74,9 @@ export function EditorToolbar({ tool, onTool, canUndo, canRedo, onUndo, onRedo, 
           <Circle size={16} />
           <span>Ellisse</span>
         </button>
+        <button type="button" aria-pressed={tool === 'circle'} disabled={!!shapesOff} title={off('Cerchio quotato (O): premi sul centro e trascina per il raggio. Nasce con la quota Ø (si cambia con un clic sull\'etichetta) e il centro si sposta o si quota come un nodo: ideale per i fori. Il contorno dentro un altro è un foro')} aria-label="Cerchio" onClick={() => onTool('circle')}>
+          <CircleDot size={16} />
+        </button>
         <button type="button" aria-pressed={tool === 'polygon'} disabled={!!shapesOff} title={off('Poligono regolare (G): premi sul centro e trascina, il primo vertice va verso il puntatore (Maiusc: angolo a multipli di 15°). Il numero di lati si sceglie nel campo Lati')} onClick={() => onTool('polygon')}>
           <Hexagon size={16} />
           <span>Poligono</span>
@@ -70,6 +84,19 @@ export function EditorToolbar({ tool, onTool, canUndo, canRedo, onUndo, onRedo, 
         {tool === 'polygon' && !shapesOff && (
           <div className="profile-editor__sides">
             <NumberField label="Lati" min={POLYGON_SIDES.min} max={POLYGON_SIDES.max} integer value={sides} onCommit={onSides} />
+          </div>
+        )}
+        <button type="button" aria-pressed={tool === 'dim'} disabled={!!shapesOff} title={off('Quota (D): clic su un segmento, o su due nodi, poi digita il valore e premi Invio: i nodi si spostano alla misura. Il modo (allineata, orizzontale, verticale) si sceglie accanto; su un segmento curvo la quota misura la distanza tra i due nodi (la corda). Clic su un\'etichetta per cambiare il valore, trascinala per spostarla')} onClick={() => onTool('dim')}>
+          <RulerDimensionLine size={16} />
+          <span>Quota</span>
+        </button>
+        {tool === 'dim' && !shapesOff && (
+          <div className="profile-editor__segmented profile-editor__dimmode" role="group" aria-label="Modo della quota">
+            {DIM_MODES.map(([mode, label, tip]) => (
+              <button key={mode} type="button" aria-pressed={dimMode === mode} title={tip} onClick={() => onDimMode(mode)}>
+                {label}
+              </button>
+            ))}
           </div>
         )}
         <button type="button" disabled={!!shapesOff} title={off('Importa SVG: aggiunge al disegno i contorni di un file SVG conservandone le curve (in millimetri, con la X del file e il fondo a y = 0)')} onClick={() => fileInput.current?.click()}>

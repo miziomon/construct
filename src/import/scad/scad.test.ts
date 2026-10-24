@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { sceneToOpenScad } from '../../codegen/openscad';
+import { circleContour } from '../../scene/bezier';
 import { primitiveDefaults, shape2dDefaults } from '../../scene/defaults';
 import { addPlateScene, moveRootsToPlate, platesOf, renamePlateScene } from '../../scene/plates';
 import type { GroupNode, PrimitiveNode, Scene, Shape2DNode } from '../../scene/types';
@@ -461,6 +462,65 @@ describe('import di file OpenSCAD: Profilo di Bézier (andata e ritorno)', () =>
     expect(result).toMatchObject({ type: 'shape2d', kind: 'path', name: 'Profilo', tolerance: 0.05, width: 20.1234, depth: 18.5, height: 8, twist: 45, scaleTop: 0.8, offset: 1.5, offsetJoin: 'sharp' });
     expect(result.paths).toStrictEqual(PATHS);
     near(result.position, [10, 20, 5]);
+  });
+
+  it('id dei nodi, raggio, vincoli e parametri fanno andata e ritorno nel commento; la geometria non cambia', () => {
+    const withIds = [
+      { closed: true, nodes: [{ id: 'n1', ...corner([0, 0]) }, { id: 'n2', r: 1.5, ...corner([20, 0]) }, { id: 'n3', ...corner([10, 18]) }] },
+    ];
+    const constraints = [{ id: 'k1', t: 'dist' as const, p: ['n1', 'n2'], v: 20, off: 6, at: 0.4 }, { id: 'k2', t: 'horizontal' as const, p: ['n1', 'n2'] }];
+    const original = node({ paths: withIds, constraints, params: { w: 20 }, width: 20, depth: 18 } as Partial<Shape2DNode>);
+    const result = back(codeOf(original)) as Extract<Shape2DNode, { kind: 'path' }>;
+    expect(result.kind).toBe('path');
+    expect(result.paths).toStrictEqual(withIds);
+    expect(result.constraints).toStrictEqual(constraints);
+    expect(result.params).toStrictEqual({ w: 20 });
+    // Senza vincoli il nodo importato non ha i campi
+    const plain = back(codeOf(node({ paths: withIds, width: 20, depth: 18 } as Partial<Shape2DNode>))) as Extract<Shape2DNode, { kind: 'path' }>;
+    expect(plain).not.toHaveProperty('constraints');
+    expect(plain).not.toHaveProperty('params');
+    // Il codice con i vincoli ha gli stessi punti di quello senza: i vincoli non influenzano la geometria
+    const strip = (c: string) => c.split('\n').filter((l) => !l.includes('construct:path')).join('\n');
+    expect(strip(codeOf(original))).toBe(strip(codeOf(node({ paths: withIds, width: 20, depth: 18 } as Partial<Shape2DNode>))));
+  });
+
+  it('il cerchio parametrico (centro, quota Ø con espressione, parametri) fa andata e ritorno nel commento v:2', () => {
+    const plate = { closed: true, nodes: [{ id: 'n1', ...corner([0, 0]) }, { id: 'n2', ...corner([40, 0]) }, { id: 'n3', ...corner([40, 20]) }, { id: 'n4', ...corner([0, 20]) }] };
+    const hole = circleContour([20, 10], 5, 'n5', 'n6');
+    const constraints = [{ id: 'k1', t: 'dist' as const, p: ['n5', 'n6'], v: 5, dia: true as const, expr: 'foro / 2 * 2' }];
+    const original = node({ paths: [plate, hole], constraints, params: { foro: 10 }, width: 40, depth: 20 } as Partial<Shape2DNode>);
+    const code = codeOf(original);
+    expect(code).toContain('"v":2');
+    expect(code).toContain('"circ"');
+    const result = back(code) as Extract<Shape2DNode, { kind: 'path' }>;
+    expect(result.kind).toBe('path');
+    expect(result.paths).toStrictEqual([plate, hole]);
+    expect(result.paths[1].nodes.map((n) => !!n.id)).toEqual([true, false, false, false]);
+    expect(result.constraints).toStrictEqual(constraints);
+    expect(result.params).toStrictEqual({ foro: 10 });
+  });
+
+  it('il raggio di raccordo: il codice scrive lo stesso poligono del kernel (con l\'arco), il commento è v:2 e si rilegge come Profilo con r', () => {
+    const rounded = [{ closed: true, nodes: [{ p: [0, 0] as [number, number], kind: 'corner' as const, r: 4 }, { p: [30, 0] as [number, number], kind: 'corner' as const }, { p: [30, 20] as [number, number], kind: 'corner' as const, r: 6 }, { p: [0, 20] as [number, number], kind: 'corner' as const }] }];
+    const original = node({ paths: rounded, width: 30, depth: 20 } as Partial<Shape2DNode>);
+    const code = codeOf(original);
+    expect(code).toContain('"v":2');
+    // I punti scritti sono quelli del kernel (pathContours, arrotondati a 4 decimali come il codice): più dei 4 spigoli, con gli archi
+    const written = [...code.matchAll(/\[(-?[\d.]+), (-?[\d.]+)\]/g)].length;
+    expect(written).toBeGreaterThan(4);
+    const result = back(code) as Extract<Shape2DNode, { kind: 'path' }>;
+    expect(result.kind).toBe('path');
+    expect(result.paths).toStrictEqual(rounded);
+    // Un file v:1 con un raggio (scritto a mano) si legge lo stesso, con lo stesso poligono
+    expect((back(code.replace('"v":2', '"v":1')) as Extract<Shape2DNode, { kind: 'path' }>).paths).toStrictEqual(rounded);
+  });
+
+  it('un commento v:1 di un file vecchio si importa ancora come Profilo', () => {
+    // Senza vincoli il file è scritto in versione 1 (anche gli id dei nodi vi stanno senza cambiarla)
+    const v1 = codeOf(node());
+    expect(v1).toContain('"v":1');
+    expect(back(v1)).toMatchObject({ kind: 'path' });
+    expect((back(v1) as Extract<Shape2DNode, { kind: 'path' }>).paths).toStrictEqual(PATHS);
   });
 
   it('rotazione: torna un Profilo senza revolveRadius', () => {

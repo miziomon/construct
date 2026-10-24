@@ -3,6 +3,7 @@ import {
   MAX_CONTOUR_SAMPLES,
   MAX_PATH_SAMPLES,
   PATH_MAX_TOLERANCE,
+  assignNodeIds,
   bboxOf,
   cubicExtrema,
   cubicPoint,
@@ -11,6 +12,8 @@ import {
   flattenCubic,
   sampleContour,
   samplePaths,
+  sanitizeConstraints,
+  sanitizeParams,
   sanitizePaths,
   segmentOf,
   selfIntersections,
@@ -18,7 +21,7 @@ import {
   splitCubic,
   type Cubic,
 } from './bezier';
-import type { PathContour, PathNode, Vec2 } from './types';
+import type { PathContour, PathNode, ProfileConstraint, Vec2 } from './types';
 
 const node = (p: Vec2, out?: Vec2, inn?: Vec2, kind: PathNode['kind'] = 'corner'): PathNode => ({ p, ...(inn ? { in: inn } : {}), ...(out ? { out } : {}), kind });
 
@@ -223,8 +226,129 @@ describe('dati non fidati', () => {
     const text = encodePathMeta(meta);
     expect(decodePathMeta(text.slice(0, -3))).toBeNull();
     expect(decodePathMeta('42')).toBeNull();
-    expect(decodePathMeta(text.replace('"v":1', '"v":2'))).toBeNull();
+    expect(decodePathMeta(text.replace('"v":1', '"v":3'))).toBeNull();
     expect(decodePathMeta(text.replace('"w":10', '"w":-1'))).toBeNull();
     expect(decodePathMeta(text.replace('"closed":true', '"closed":1'))).toBeNull();
+  });
+});
+
+describe('id dei nodi, raccordo, vincoli e parametri (formato v:2)', () => {
+  /** Triangolo con id `n1`, `n2`, `n3`. */
+  const tri = (): PathContour[] => [{ closed: true, nodes: [{ id: 'n1', ...node([0, 0]) }, { id: 'n2', ...node([10, 0]), r: 2 }, { id: 'n3', ...node([10, 10]) }] }];
+  const dist = (id: string, a: string, b: string, v: number): ProfileConstraint => ({ id, t: 'dist', p: [a, b], v });
+
+  it('sanitizePaths conserva id e r validi e scarta quelli rovinati o ripetuti (anche tra contorni)', () => {
+    expect(sanitizePaths(tri())).toStrictEqual(tri());
+    const dirty = [
+      { closed: true, nodes: [{ id: 'a', ...node([0, 0]), r: -1 }, { id: 'a', ...node([1, 0]), r: 'x' }, { id: 'b c', ...node([1, 1]), r: 0 }] },
+      { closed: false, nodes: [{ id: 'a', ...node([5, 5]) }, { id: 5, ...node([6, 6]), r: Infinity }] },
+    ];
+    const clean = sanitizePaths(dirty)!;
+    // Il primo id vale; i ripetuti, i malformati e quelli non stringa spariscono; un r non valido o nullo sparisce
+    expect(clean[0].nodes.map((n) => n.id)).toEqual(['a', undefined, undefined]);
+    expect(clean[1].nodes.map((n) => n.id)).toEqual([undefined, undefined]);
+    expect(clean.flatMap((c) => c.nodes).some((n) => 'r' in n)).toBe(false);
+  });
+
+  it('assignNodeIds assegna solo gli id mancanti con un contatore che riparte dopo il più alto, senza riusare id presi', () => {
+    const paths: PathContour[] = [{ closed: true, nodes: [node([0, 0]), { id: 'n7', ...node([1, 0]) }, node([1, 1])] }, { closed: false, nodes: [{ id: 'n8', ...node([5, 5]) }, node([6, 6])] }];
+    const out = assignNodeIds(paths);
+    expect(out[0].nodes.map((n) => n.id)).toEqual(['n9', 'n7', 'n10']);
+    expect(out[1].nodes.map((n) => n.id)).toEqual(['n8', 'n11']);
+    // Non modifica l'input e, con tutti gli id presenti, restituisce lo stesso riferimento
+    expect(paths[0].nodes[0].id).toBeUndefined();
+    expect(assignNodeIds(out)).toBe(out);
+    // Senza id parte da n1; un id non numerico non confonde il contatore
+    expect(assignNodeIds([{ closed: false, nodes: [node([0, 0]), { id: 'foo', ...node([1, 1]) }] }])[0].nodes.map((n) => n.id)).toEqual(['n1', 'foo']);
+  });
+
+  it('sanitizeConstraints scarta tipo ignoto, punti sbagliati o inesistenti, valori non finiti e id ripetuti', () => {
+    const good = [dist('k1', 'n1', 'n2', 10), { id: 'k2', t: 'horizontal', p: ['n1', 'n2'] }, { id: 'k3', t: 'fixed', p: ['n3'], x: 1, y: 2 }, { id: 'k4', t: 'angle', p: ['n1', 'n2', 'n2', 'n3'], v: 45, ref: true, off: -3, at: 0.25 }];
+    expect(sanitizeConstraints(good, tri())).toStrictEqual(good);
+    const bad = [
+      { id: 'a', t: 'magia', p: ['n1', 'n2'] },
+      { id: 'b', t: 'dist', p: ['n1', 'n9'], v: 5 },
+      { id: 'c', t: 'dist', p: ['n1'], v: 5 },
+      { id: 'd', t: 'dist', p: ['n1', 'n2'], v: NaN },
+      { id: 'e', t: 'dist', p: ['n1', 'n2'] },
+      { id: 'f', t: 'dist', p: ['n1', 'n2'], v: -4 },
+      { id: 'g', t: 'fixed', p: ['n1'], x: 1 },
+      { id: 'k1', t: 'vertical', p: ['n1', 'n3'] },
+      { id: 'h h', t: 'vertical', p: ['n1', 'n3'] },
+      { t: 'vertical', p: ['n1', 'n3'] },
+      { id: 'i', t: 'horizontal', p: ['n1', 5] },
+      { id: 'j', t: 'parallel', p: ['n1', 'n2', 'n3'] },
+      'stringa',
+      null,
+    ];
+    expect(sanitizeConstraints([good[0], ...bad], tri())).toStrictEqual([good[0]]);
+    // Campi facoltativi non validi: il campo si perde, il vincolo resta. Una quota di riferimento può non avere v
+    expect(sanitizeConstraints([{ id: 'a', t: 'dist', p: ['n1', 'n2'], v: 3, off: Infinity, at: 7, s: 2, extra: 1 }, { id: 'b', t: 'dist', p: ['n1', 'n2'], ref: true }], tri())).toStrictEqual([
+      { id: 'a', t: 'dist', p: ['n1', 'n2'], v: 3 },
+      { id: 'b', t: 'dist', p: ['n1', 'n2'], ref: true },
+    ]);
+    expect(sanitizeConstraints('no', tri())).toEqual([]);
+    expect(sanitizeConstraints(good, [])).toEqual([]);
+  });
+
+  it('sanitizeConstraints scarta i punti ripetuti non previsti dal tipo e ammette il nodo condiviso tra due segmenti', () => {
+    const paths: PathContour[] = [{ closed: true, nodes: [{ id: 'n1', ...node([0, 0]) }, { id: 'n2', ...node([10, 0]) }, { id: 'n3', ...node([10, 10]) }, { id: 'n4', ...node([0, 10]) }] }];
+    const one = (t: string, p: string[], extra: object = {}) => sanitizeConstraints([{ id: 'k1', t, p, ...extra }], paths).length;
+    // Un segmento non ha due estremi uguali
+    expect(one('horizontal', ['n1', 'n1'])).toBe(0);
+    expect(one('dist', ['n2', 'n2'], { v: 5 })).toBe(0);
+    expect(one('parallel', ['n1', 'n2', 'n3', 'n3'])).toBe(0);
+    // Gli stessi due segmenti (anche rovesciati) non sono due segmenti
+    expect(one('parallel', ['n1', 'n2', 'n1', 'n2'])).toBe(0);
+    expect(one('perpendicular', ['n1', 'n2', 'n2', 'n1'])).toBe(0);
+    // Il nodo condiviso va bene tra segmenti: angolo, parallelo, perpendicolare, uguale, collineare
+    expect(one('angle', ['n1', 'n2', 'n2', 'n3'], { v: 90 })).toBe(1);
+    expect(one('perpendicular', ['n1', 'n2', 'n1', 'n4'])).toBe(1);
+    expect(one('parallel', ['n1', 'n2', 'n4', 'n3'])).toBe(1);
+    expect(one('equal', ['n1', 'n2', 'n1', 'n4'])).toBe(1);
+    expect(one('collinear', ['n1', 'n2', 'n2', 'n3'])).toBe(1);
+    // Simmetrico e punto medio vogliono punti tutti diversi
+    expect(one('symmetric', ['n1', 'n2', 'n2', 'n3'])).toBe(0);
+    expect(one('symmetric', ['n1', 'n2', 'n3', 'n4'])).toBe(1);
+    expect(one('midpoint', ['n1', 'n1', 'n2'])).toBe(0);
+    expect(one('midpoint', ['n3', 'n1', 'n2'])).toBe(1);
+  });
+
+  it('sanitizeParams tiene numeri finiti e brevi espressioni, scarta nomi cattivi e il prototipo', () => {
+    expect(sanitizeParams({ w: 10, h: 'w * 2' })).toStrictEqual({ w: 10, h: 'w * 2' });
+    const out = sanitizeParams(JSON.parse('{"__proto__": 1, "constructor": 2, "1x": 3, "ok": 4, "nan": null, "big": 1e300, "long": "' + 'x'.repeat(201) + '"}'))!;
+    expect(out).toStrictEqual({ ok: 4 });
+    expect(Object.getPrototypeOf(out)).toBe(Object.prototype);
+    expect(sanitizeParams({})).toBeUndefined();
+    expect(sanitizeParams([1, 2])).toBeUndefined();
+    expect(sanitizeParams('x')).toBeUndefined();
+  });
+
+  it('andata e ritorno v:2 con id, r, vincoli e parametri; senza vincoli né parametri i campi k e q non ci sono', () => {
+    const meta = { paths: tri(), tolerance: 0.05, width: 10, depth: 10, constraints: [dist('k1', 'n1', 'n2', 10)], params: { w: 10 } };
+    const text = encodePathMeta(meta);
+    expect(text).not.toContain('\n');
+    expect(JSON.parse(text)).toMatchObject({ v: 2, k: meta.constraints, q: meta.params });
+    expect(decodePathMeta(text)).toStrictEqual(meta);
+    // Senza raggi: gli id dei nodi non cambiano la versione
+    const noRadius = tri().map((c) => ({ ...c, nodes: c.nodes.map(({ r: _r, ...n }) => n) }));
+    const plain = encodePathMeta({ paths: noRadius, tolerance: 0.05, width: 10, depth: 10 });
+    expect(Object.keys(JSON.parse(plain))).toEqual(['v', 'w', 'd', 't', 'paths']);
+    // La versione è 2 solo con vincoli, parametri o un raccordo (che cambia la forma): senza, resta 1 anche con gli id nei nodi
+    expect(JSON.parse(plain).v).toBe(1);
+    expect(JSON.parse(encodePathMeta({ paths: tri(), tolerance: 0.05, width: 10, depth: 10 })).v).toBe(2);
+    expect(JSON.parse(encodePathMeta({ ...meta, constraints: undefined })).v).toBe(2);
+    expect(JSON.parse(encodePathMeta({ ...meta, params: undefined })).v).toBe(2);
+    expect(JSON.parse(encodePathMeta({ ...meta, paths: noRadius, constraints: [], params: {} })).v).toBe(1);
+    expect(decodePathMeta(plain)).toStrictEqual({ paths: noRadius, tolerance: 0.05, width: 10, depth: 10 });
+  });
+
+  it('un commento v:1 si legge ancora (senza vincoli, anche se ne contiene) e uno v:2 con vincoli rovinati si legge senza di essi', () => {
+    const plainPaths = [{ closed: true, nodes: [node([0, 0]), node([10, 0]), node([10, 10])] }];
+    const v1 = JSON.stringify({ v: 1, w: 10, d: 10, t: 0.05, paths: plainPaths, k: [dist('k1', 'n1', 'n2', 1)] });
+    expect(decodePathMeta(v1)).toStrictEqual({ paths: plainPaths, tolerance: 0.05, width: 10, depth: 10 });
+    const v2 = JSON.stringify({ v: 2, w: 10, d: 10, t: 0.05, paths: tri(), k: [dist('k1', 'n1', 'n9', 1), dist('k2', 'n1', 'n2', 5)], q: { w: NaN } });
+    expect(decodePathMeta(v2)).toStrictEqual({ paths: tri(), tolerance: 0.05, width: 10, depth: 10, constraints: [dist('k2', 'n1', 'n2', 5)] });
+    expect(decodePathMeta(JSON.stringify({ v: 3, w: 10, d: 10, t: 0.05, paths: tri() }))).toBeNull();
   });
 });

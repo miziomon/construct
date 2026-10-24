@@ -1,9 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type MutableRefObject, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type MutableRefObject, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { TrianglesCenterlineDashedVertical, Maximize, ZoomIn, ZoomOut } from 'lucide-react';
-import { MAX_PATH_CONTOURS, cubicPoint, segmentOf } from '../../scene/bezier';
-import type { PathContour, PathNode, Vec2 } from '../../scene/types';
-import { appendPenNode, baseShapeContour, contourContains, cycleKind, gridStep, insertNode, joinContours, moveHandle, moveNodes, nearestSegment, resumeContour, setNodeKind, snapPoint } from './model';
+import { MAX_PATH_CONTOURS, cubicPoint, expandFillets, segmentOf } from '../../scene/bezier';
+import type { PathContour, PathNode, ProfileConstraint, Vec2 } from '../../scene/types';
+import { appendPenNode, baseShapeContour, centerIndex, contourContains, cycleKind, gridStep, insertNodeWithConstraints, joinContours, moveHandle, moveNodes, nearestSegment, refPoint, resumeContour, setNodeKind, snapPoint } from './model';
 import type { HandleRef, NodeRef, SegmentRef } from './model';
+import { ANGLE_R_PX, DIM_GAP_PX, dimLabel, dragDimension, dragFrame, isPositionedDimension, pointMap, settlePaths } from './dimensions';
+import type { NodeState } from './dimensions';
+import { QuoteOverlay, quoteLabelPoint } from './QuoteOverlay';
+import { penTarget } from './penInput';
+import type { PenTarget } from './penInput';
 
 /** Aggancio e griglia: il passo (mm) serve anche a disegnare le righe; gli interruttori dicono a cosa ci si aggancia. */
 export interface GridSettings {
@@ -16,7 +21,38 @@ export interface GridSettings {
   showAxis: boolean;
 }
 
-export type Tool = 'select' | 'pen' | 'pan' | 'rect' | 'ellipse' | 'polygon';
+export type Tool = 'select' | 'pen' | 'pan' | 'rect' | 'ellipse' | 'polygon' | 'circle' | 'dim';
+
+/** Che cosa c'è sotto il puntatore con lo strumento Quota: un nodo, oppure un segmento (la quota va tra i suoi estremi). */
+export type DimHit = { kind: 'node'; ref: NodeRef } | { kind: 'segment'; seg: SegmentRef };
+
+/** Quote e vincoli sul disegno: stato da mostrare e gesti da riferire alla modale, che decide e fa il passo di cronologia. */
+export interface QuoteProps {
+  /** Vincoli in conflitto o ridondanti (rossi) e vincoli da evidenziare per qualche secondo dopo un rifiuto. */
+  bad: Set<string>;
+  flash: Set<string>;
+  /** Vincolo scelto nell'elenco del pannello (o più quote scelte insieme). */
+  selected: string | string[] | null;
+  /** Stato di ogni nodo con id (gradi di libertà), null se il disegno non ha vincoli. */
+  states: Map<string, NodeState> | null;
+  /** Nodi già scelti con lo strumento Quota. */
+  pick: NodeRef[];
+  /** Quota in corso di scrittura: `con` con il valore proposto e i nodi com'erano; `isNew` = non è ancora nel disegno. */
+  edit: { con: ProfileConstraint; paths: PathContour[]; isNew: boolean; text: string } | null;
+  /** Clic con lo strumento Quota (`pxPerMm` serve a distanziare la linea di quota di 30 pixel). */
+  onDimClick: (hit: DimHit, pxPerMm: number) => void;
+  /** Clic sull'etichetta di una quota o sull'icona di un vincolo. */
+  onLabelClick: (id: string) => void;
+  /** Il campo della quota si conferma (Invio o uscita) o si annulla (Esc). */
+  onEditCommit: (text: string) => void;
+  onEditCancel: () => void;
+  /** Trascinamento dell'etichetta o della linea di quota: nuova posizione (`off`, `at`) in corso; il passo di cronologia lo chiude il rilascio. */
+  onQuoteMove: (id: string, off: number, at: number) => void;
+  /** Clic nel vuoto: nessuna quota o vincolo resta scelto. */
+  onDeselect: () => void;
+  /** Lo zoom (pixel per mm) ogni volta che cambia: serve alla disposizione automatica delle quote. */
+  onScale: (pxPerMm: number) => void;
+}
 
 /** Che cosa serve a chi disegna sotto i contorni: da disegno a pixel e dimensione dell'area. */
 export interface CanvasContext {
@@ -37,6 +73,16 @@ interface Props {
   onClosedOnly?: () => void;
   /** Inserimento di un nodo sulla curva al posto di quello del modello (la sagoma lo fa anche negli speculari). */
   insertOverride?: (paths: PathContour[], seg: SegmentRef, t: number) => { paths: PathContour[]; node: NodeRef } | null;
+  /** Vincoli del disegno: l'inserimento di un nodo li tiene coerenti (i vincoli di direzione passano alle due metà), il trascinamento li rispetta. */
+  constraints?: ProfileConstraint[];
+  /** Quote e vincoli sul disegno; assente nella sagoma. */
+  quote?: QuoteProps;
+  /** Alt+clic su un segmento (con Maiusc: in aggiunta): sceglie il segmento. Senza, sceglie i suoi due nodi. */
+  onPickSegment?: (seg: SegmentRef, additive: boolean) => void;
+  /** Penna: Invio nei campi Lunghezza e Angolo digitati: il nodo nasce nel punto calcolato (`typedLength` e `typedAngle` dicono quali campi non erano vuoti). */
+  onPenType?: (target: Extract<PenTarget, { ok: true }>) => void;
+  /** Forma base disegnata (rettangolo, ellisse, poligono): al posto di `onCommit`, così la modale può aggiungere i vincoli ovvi. */
+  onShape?: (tool: 'rect' | 'ellipse' | 'polygon' | 'circle', paths: PathContour[], selection: NodeRef[]) => void;
   /** Disegno sotto i contorni (ingombro, livelli, assi di simmetria...). */
   underlay?: (ctx: CanvasContext) => ReactNode;
   /** Riquadro (x0, y0, x1, y1) in mm che «Adatta» e l'apertura inquadrano, al posto dei nodi; cambiandolo si inquadra di nuovo. */
@@ -58,8 +104,8 @@ interface Props {
   spaceDown: MutableRefObject<boolean>;
   /** Modifica in corso (trascinamento): non è un passo della cronologia. */
   onLive: (paths: PathContour[], selection?: NodeRef[]) => void;
-  /** Modifica conclusa: un passo della cronologia. */
-  onCommit: (paths: PathContour[], selection: NodeRef[]) => void;
+  /** Modifica conclusa: un passo della cronologia. Con `constraints` (anche vuoti) i vincoli del disegno si sostituiscono. */
+  onCommit: (paths: PathContour[], selection: NodeRef[], constraints?: ProfileConstraint[]) => void;
   onSelect: (selection: NodeRef[]) => void;
   tool: Tool;
   /** Vista specchiata in orizzontale (solo in rotazione): la parte non ruotata sta a destra dell'asse. Non cambia i dati. */
@@ -154,14 +200,18 @@ type Hit = { type: 'handle'; ref: HandleRef } | { type: 'node'; ref: NodeRef } |
 /** Gesto in corso (si tiene in un ref: cambia a ogni movimento e non deve ridisegnare da solo). */
 type Drag =
   | { type: 'pan'; sx: number; sy: number; cx: number; cy: number }
-  | { type: 'node'; refs: NodeRef[]; base: PathContour[]; last: PathContour[]; primary: Vec2; down: Vec2; sx: number; sy: number; moved: boolean; collapse: NodeRef | null }
+  // `soft`: con i vincoli, un fotogramma ha dovuto rinunciare al tentativo rigido (il resto del trascinamento è morbido)
+  | { type: 'node'; refs: NodeRef[]; base: PathContour[]; last: PathContour[]; primary: Vec2; down: Vec2; sx: number; sy: number; moved: boolean; collapse: NodeRef | null; soft: boolean }
   // Alt è momentaneo: `frozen` è lo stato nell'istante in cui è stato premuto (l'altra maniglia resta com'era), `to` il punto agganciato più recente
   | { type: 'handle'; ref: HandleRef; base: PathContour[]; last: PathContour[]; frozen: PathContour[]; to: Vec2 | null; sx: number; sy: number; moved: boolean; alt: boolean }
   | { type: 'box'; sx: number; sy: number; shift: boolean; base: NodeRef[]; moved: boolean }
   // Forma base (rettangolo, ellisse, poligono) trascinata dal centro: `last` è il disegno con la forma in anteprima (`base` se non c'è ancora una misura), `live` dice se il disegno è già stato cambiato
-  | { type: 'shape'; tool: 'rect' | 'ellipse' | 'polygon'; center: Vec2; base: PathContour[]; last: PathContour[]; sx: number; sy: number; moved: boolean; live: boolean }
+  | { type: 'shape'; tool: 'rect' | 'ellipse' | 'polygon' | 'circle'; center: Vec2; base: PathContour[]; last: PathContour[]; sx: number; sy: number; moved: boolean; live: boolean }
   // Quota di sezione: si trascina solo con Seleziona, dopo nodi, maniglie e curve
   | { type: 'section' }
+  // Etichetta (`label`: cambia `at` e `off`) o linea (`line`: cambia `off`) di una quota di lunghezza; senza movimento un clic sull'etichetta apre il campo
+  // `grab`: scarto (mm) dal puntatore al centro dell'etichetta, `grabOff` quello (mm) dal puntatore alla linea, al clic: al primo movimento niente salta sotto il puntatore
+  | { type: 'quote'; id: string; part: 'label' | 'line'; sx: number; sy: number; moved: boolean; grab: Vec2; grabOff: number }
   // Penna, ripresa da un estremo (maniglia in uscita) o chiusura sul primo nodo (`close`, maniglia in entrata opposta al mouse): il trascinamento la disegna
   // (nodo liscio, spigolo con Alt); `last` parte dal nodo reso liscio
   | { type: 'resume'; ref: HandleRef; current: number; close: boolean; base: PathContour[]; last: PathContour[]; frozen: PathContour[]; to: Vec2 | null; sx: number; sy: number; moved: boolean; alt: boolean }
@@ -177,7 +227,7 @@ type Drag =
  * zoom sul puntatore, Spazio o tasto centrale per la panoramica. Le modifiche passano da `onLive` (durante il gesto) e
  * `onCommit` (al rilascio): un gesto è un solo passo della cronologia.
  */
-export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, insertOverride, underlay, fitBox, section, onSection, refit, contours, crossings, holes, selection, grid, spaceDown, onLive, onCommit, onSelect, tool, flip, onFlip, pen, onPenLive, onPenResume, onPenClose, onPenFinish, onPenLimit, onPenStep, onShapeLimit, onShapeCancel, fitRequest, sides }: Props) {
+export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, insertOverride, constraints, quote, onPickSegment, onPenType, onShape, underlay, fitBox, section, onSection, refit, contours, crossings, holes, selection, grid, spaceDown, onLive, onCommit, onSelect, tool, flip, onFlip, pen, onPenLive, onPenResume, onPenClose, onPenFinish, onPenLimit, onPenStep, onShapeLimit, onShapeCancel, fitRequest, sides }: Props) {
   const wrap = useRef<HTMLDivElement>(null);
   const svg = useRef<SVGSVGElement>(null);
   const [size, setSize] = useState({ w: 600, h: 400 });
@@ -197,7 +247,41 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
   const [altHeld, setAltHeld] = useState(false);
   // Penna, senza contorno in corso: punto della curva in cui un clic inserirebbe un nodo; estremo aperto che un clic riprenderebbe o unirebbe
   const [insertAt, setInsertAt] = useState<Vec2 | null>(null);
+  /** Inserisce un nodo sulla curva: quello della sagoma se c'è, altrimenti quello del modello, che tiene coerenti id e vincoli. */
+  const insertOnCurve = (seg: SegmentRef, t: number): { paths: PathContour[]; node: NodeRef; constraints?: ProfileConstraint[] } | null =>
+    insertOverride ? insertOverride(paths, seg, t) : insertNodeWithConstraints({ paths, constraints }, seg, t);
   const [endHot, setEndHot] = useState<NodeRef | null>(null);
+  // Penna con valori digitati: i campi Lunghezza e Angolo vicino al nodo (testi e campo con il fuoco) e l'errore dell'ultimo Invio
+  const [penField, setPenField] = useState<{ length: string; angle: string; focus: 'length' | 'angle' } | null>(null);
+  const [penError, setPenError] = useState<string | null>(null);
+  const lengthInput = useRef<HTMLInputElement>(null);
+  const angleInput = useRef<HTMLInputElement>(null);
+  const penOpen = penField !== null;
+  const penFocus = penField?.focus;
+  useEffect(() => {
+    if (!penOpen) return;
+    const el = penFocus === 'angle' ? angleInput.current : lengthInput.current;
+    el?.focus();
+    const end = el?.value.length ?? 0;
+    el?.setSelectionRange(end, end);
+  }, [penOpen, penFocus]);
+  // Lo zoom si comunica alla modale (disposizione automatica delle quote); `quote` cambia a ogni render, quindi si legge da un ref
+  const quoteRef = useRef(quote);
+  quoteRef.current = quote;
+  useEffect(() => {
+    quoteRef.current?.onScale(view.s);
+  }, [view.s]);
+  // Campo della quota in scrittura: si mette a fuoco appena montato, ma un attimo dopo (il clic che l'ha aperto sposterebbe subito il fuoco sull'area)
+  const editInput = useRef<HTMLInputElement>(null);
+  const editKey = quote?.edit ? `${quote.edit.isNew ? 'new' : quote.edit.con.id}:${quote.edit.con.t}:${quote.edit.con.p.join('-')}` : '';
+  useEffect(() => {
+    if (!editKey) return;
+    const t = setTimeout(() => {
+      editInput.current?.focus();
+      editInput.current?.select();
+    }, 0);
+    return () => clearTimeout(t);
+  }, [editKey]);
   const lastPointer = useRef<[number, number] | null>(null);
   // Panoramica in corso: il cursore diventa una mano chiusa
   const [panning, setPanning] = useState(false);
@@ -211,6 +295,14 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
   const nodeR = coarse ? 20 : 10;
   // Contorno aperto che la Penna sta continuando
   const activePen = tool === 'pen' && pen !== null && paths[pen] && !paths[pen].closed ? paths[pen] : null;
+  // Senza un contorno che la Penna sta continuando (altro strumento, contorno chiuso o annullato) i campi digitati e il loro errore spariscono: alla ripresa non resta testo vecchio
+  const penActive = activePen !== null;
+  useEffect(() => {
+    if (!penActive) {
+      setPenField(null);
+      setPenError(null);
+    }
+  }, [penActive]);
 
   useEffect(() => {
     latest.current = { paths, rotate, fitBox };
@@ -318,7 +410,8 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
     const keys = new Set<string>();
     for (const r of selection) {
       const c = paths[r.path];
-      if (!c) continue;
+      // Un cerchio parametrico non ha maniglie da mostrare: i suoi nodi sono derivati dal centro e dal raggio
+      if (!c || c.circ) continue;
       const n = c.nodes.length;
       for (const delta of [-1, 0, 1]) {
         const i = r.node + delta;
@@ -343,8 +436,16 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
       }
     }
     for (let pi = paths.length - 1; pi >= 0; pi--) {
-      for (let ni = paths[pi].nodes.length - 1; ni >= 0; ni--) {
-        const sp = toS(paths[pi].nodes[ni].p);
+      const c = paths[pi];
+      // Cerchio parametrico: si toccano solo il centro (indice dopo l'ultimo nodo) e il nodo sul bordo; gli altri tre sono derivati
+      if (c.circ) {
+        const [sc, se] = [toS(c.circ.p), toS(c.nodes[0].p)];
+        if (Math.hypot(sc[0] - sx, sc[1] - sy) <= nodeR) return { type: 'node', ref: { path: pi, node: centerIndex(c) } };
+        if (Math.hypot(se[0] - sx, se[1] - sy) <= nodeR) return { type: 'node', ref: { path: pi, node: 0 } };
+        continue;
+      }
+      for (let ni = c.nodes.length - 1; ni >= 0; ni--) {
+        const sp = toS(c.nodes[ni].p);
         if (Math.hypot(sp[0] - sx, sp[1] - sy) <= nodeR) return { type: 'node', ref: { path: pi, node: ni } };
       }
     }
@@ -358,7 +459,8 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
    */
   const snapped = (p: Vec2, e: { ctrlKey: boolean; shiftKey?: boolean }, others: Vec2[] | undefined, prev?: Vec2): Vec2 =>
     e.ctrlKey ? p : snapPoint(p, { grid: grid.snapGrid ? gridStep(grid.step, view.s) : undefined, nodes: grid.snapNodes ? others : undefined, prev, ortho: grid.snapOrtho && !!prev, angle45: !!e.shiftKey && !!prev, radius: SNAP_RADIUS_PX / view.s });
-  const allNodes = () => paths.flatMap((c) => c.nodes.map((n) => n.p));
+  // I punti a cui ci si aggancia: i nodi e i centri dei cerchi parametrici
+  const allNodes = () => paths.flatMap((c) => [...c.nodes.map((n) => n.p), ...(c.circ ? [c.circ.p] : [])]);
 
   /** Estremo di un contorno aperto sotto il puntatore (pixel), escluso il contorno `except` (quello in corso). */
   const endAt = (sx: number, sy: number, except: number | null): NodeRef | null => {
@@ -375,7 +477,8 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
   /** Penna senza contorno in corso: dove un clic sulla curva inserirebbe un nodo (a qualche pixel dalla curva e lontano dai nodi), o null. */
   const insertCandidate = (sx: number, sy: number): { seg: SegmentRef; t: number; point: Vec2 } | null => {
     const near = nearestSegment(paths, (coarse ? 12 : 6) / view.s, toW(sx, sy));
-    if (!near || !(near.t > 0 && near.t < 1)) return null;
+    // Su un cerchio parametrico non si inseriscono nodi
+    if (!near || paths[near.path]?.circ || !(near.t > 0 && near.t < 1)) return null;
     for (const c of paths) {
       for (const n of c.nodes) {
         const sp = toS(n.p);
@@ -411,6 +514,11 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
   const onPointerDown = (e: ReactPointerEvent<SVGSVGElement>) => {
     e.currentTarget.setPointerCapture(e.pointerId);
     wrap.current?.focus();
+    // Un clic nel disegno chiude i campi digitati della Penna (il nodo si decide con il clic)
+    if (penField) {
+      setPenField(null);
+      setPenError(null);
+    }
     const [sx, sy] = pos(e);
     // Panoramica: tasto destro o centrale, barra spaziatrice, o lo strumento Sposta vista
     if (e.button === 1 || e.button === 2 || spaceDown.current || tool === 'pan') {
@@ -420,8 +528,44 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
       return;
     }
     if (e.button !== 0) return;
+    // Etichetta di una quota o icona di un vincolo: apre il campo (quota) o sceglie il vincolo; non inizia nessun gesto
+    // Una quota di lunghezza si trascina dall'etichetta (cambia la posizione lungo la linea e la distanza) o dalla linea (la distanza):
+    // il clic senza movimento sull'etichetta apre il campo. Etichette e linee valgono solo con Seleziona e Quota, e prima dei segmenti
+    // del contorno; nodi e maniglie hanno la precedenza sulla linea (la linea sta di solito lontana dai nodi)
+    const target = quote && (tool === 'select' || tool === 'dim') && e.target instanceof Element ? e.target : null;
+    const labelId = target?.closest('[data-qid]')?.getAttribute('data-qid');
+    if (labelId && quote) {
+      const con = constraints?.find((c) => c.id === labelId && isPositionedDimension(c));
+      if (con) {
+        const label = dimLabel(con, pointMap(paths), (con.t === 'angle' ? ANGLE_R_PX : DIM_GAP_PX) / view.s);
+        const at = toW(sx, sy);
+        drag.current = { type: 'quote', id: labelId, part: 'label', sx, sy, moved: false, grab: label ? [label[0] - at[0], label[1] - at[1]] : [0, 0], grabOff: 0 };
+      } else quote.onLabelClick(labelId);
+      return;
+    }
+    const lineId = target?.closest('[data-qline]')?.getAttribute('data-qline');
+    if (lineId && quote) {
+      const under = hitTest(sx, sy);
+      const con = constraints?.find((c) => c.id === lineId && isPositionedDimension(c));
+      if (con && under.type !== 'node' && under.type !== 'handle') {
+        // Lo scarto dalla linea (proiettato sulla sua normale, o sul raggio) si tiene, così la linea non salta sotto il puntatore
+        const shown = con.off ?? (con.t === 'angle' ? ANGLE_R_PX : DIM_GAP_PX) / view.s;
+        drag.current = { type: 'quote', id: lineId, part: 'line', sx, sy, moved: false, grab: [0, 0], grabOff: shown - dragDimension(con, pointMap(paths), toW(sx, sy), 'line').off };
+        return;
+      }
+    }
+    // Strumento Quota: un nodo (due nodi = una quota) o un segmento (la quota tra i suoi estremi); la modale decide il resto
+    if (tool === 'dim') {
+      if (closedOnly || !quote) return;
+      const hit = hitTest(sx, sy);
+      if (hit.type === 'node') quote.onDimClick({ kind: 'node', ref: hit.ref }, view.s);
+      else if (hit.type === 'segment') quote.onDimClick({ kind: 'segment', seg: hit.seg }, view.s);
+      // Clic nel vuoto: nessuna quota o vincolo resta scelto
+      else if (hit.type === 'none') quote.onDeselect();
+      return;
+    }
     const w = toW(sx, sy);
-    if (tool === 'rect' || tool === 'ellipse' || tool === 'polygon') {
+    if (tool === 'rect' || tool === 'ellipse' || tool === 'polygon' || tool === 'circle') {
       // Sagoma: un contorno solo, sempre chiuso; le forme base non si aggiungono
       if (closedOnly) {
         onClosedOnly?.();
@@ -441,8 +585,8 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
       // Sagoma: la Penna inserisce solo nodi sulla curva (Ctrl o ⌘ non servono: non c'è altro da fare)
       if (closedOnly) {
         const candidate = insertCandidate(sx, sy);
-        const inserted = candidate && (insertOverride ?? insertNode)(paths, candidate.seg, candidate.t);
-        if (inserted) onCommit(inserted.paths, [inserted.node]);
+        const inserted = candidate && insertOnCurve(candidate.seg, candidate.t);
+        if (inserted) onCommit(inserted.paths, [inserted.node], inserted.constraints ?? []);
         else onClosedOnly?.();
         return;
       }
@@ -482,9 +626,9 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
       // Su una curva, senza contorno in corso e senza Ctrl o ⌘: un nodo sulla curva (la forma non cambia)
       if (!activePen && !e.ctrlKey && !e.metaKey) {
         const candidate = insertCandidate(sx, sy);
-        const inserted = candidate && (insertOverride ?? insertNode)(paths, candidate.seg, candidate.t);
+        const inserted = candidate && insertOnCurve(candidate.seg, candidate.t);
         if (inserted) {
-          onCommit(inserted.paths, [inserted.node]);
+          onCommit(inserted.paths, [inserted.node], inserted.constraints ?? []);
           return;
         }
       }
@@ -511,17 +655,25 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
       if (next !== selection) onSelect(next);
       const refs = next.some((r) => same(r, hit.ref)) ? next : [];
       drag.current = {
-        type: 'node', refs, base: paths, last: paths, primary: paths[hit.ref.path].nodes[hit.ref.node].p, down: w, sx, sy, moved: false,
+        type: 'node', refs, base: paths, last: paths, primary: refPoint(paths, hit.ref)!, down: w, sx, sy, moved: false,
         // Un clic senza trascinamento su un nodo di una selezione multipla lascia solo quel nodo
         collapse: !e.shiftKey && selected && selection.length > 1 ? hit.ref : null,
+        soft: false,
       };
+    } else if (hit.type === 'segment' && e.altKey && !paths[hit.seg.path].circ) {
+      // Alt+clic su un segmento: sceglie il segmento, cioè i suoi due nodi (così Orizzontale e Verticale valgono per quel lato con un clic;
+      // Coincidente no: serve a due nodi scelti uno a uno, non a un segmento)
+      // Con Maiusc si aggiunge a quelli già scelti (due segmenti per Parallelo, Perpendicolare, Uguale, Collineare)
+      if (onPickSegment) onPickSegment(hit.seg, e.shiftKey);
+      else onSelect([{ path: hit.seg.path, node: hit.seg.segment }, { path: hit.seg.path, node: (hit.seg.segment + 1) % paths[hit.seg.path].nodes.length }]);
     } else if (hit.type === 'segment') {
       // Il clic su una curva seleziona tutto il contorno (Maiusc lo aggiunge o lo toglie) e trascinandola lo si sposta
-      const all: NodeRef[] = paths[hit.seg.path].nodes.map((_, node) => ({ path: hit.seg.path, node }));
+      const hitContour = paths[hit.seg.path];
+      const all: NodeRef[] = [...hitContour.nodes.map((_, node) => ({ path: hit.seg.path, node })), ...(hitContour.circ ? [{ path: hit.seg.path, node: centerIndex(hitContour) }] : [])];
       const selected = all.every((r) => selection.some((x) => same(x, r)));
       const next = e.shiftKey ? (selected ? selection.filter((r) => r.path !== hit.seg.path) : [...selection.filter((r) => r.path !== hit.seg.path), ...all]) : all;
       onSelect(next);
-      drag.current = { type: 'node', refs: e.shiftKey && selected ? [] : all, base: paths, last: paths, primary: paths[hit.seg.path].nodes[0].p, down: w, sx, sy, moved: false, collapse: null };
+      drag.current = { type: 'node', refs: e.shiftKey && selected ? [] : all, base: paths, last: paths, primary: paths[hit.seg.path].nodes[0].p, down: w, sx, sy, moved: false, collapse: null, soft: false };
     } else if (nearSection(sy, sx) && !e.shiftKey) {
       drag.current = { type: 'section' };
       setSectionHot(true);
@@ -529,7 +681,7 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
       // Clic dentro un contorno interamente selezionato: lo si trascina anche dal riempimento
       const filled = e.shiftKey ? -1 : paths.findLastIndex((c, pi) => c.nodes.length >= 3 && c.nodes.every((_, ni) => selection.some((r) => r.path === pi && r.node === ni)) && contourContains(c, w));
       if (filled >= 0) {
-        drag.current = { type: 'node', refs: selection, base: paths, last: paths, primary: paths[filled].nodes[0].p, down: w, sx, sy, moved: false, collapse: null };
+        drag.current = { type: 'node', refs: selection, base: paths, last: paths, primary: paths[filled].nodes[0].p, down: w, sx, sy, moved: false, collapse: null, soft: false };
       } else drag.current = { type: 'box', sx, sy, shift: e.shiftKey, base: selection, moved: false };
     }
   };
@@ -626,6 +778,15 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
     }
     if (d.type === 'section') {
       moveSection(sy, e);
+    } else if (d.type === 'quote') {
+      if (!d.moved && Math.hypot(sx - d.sx, sy - d.sy) < DRAG_THRESHOLD) return;
+      d.moved = true;
+      // La quota passa per il puntatore (senza aggancio: la posizione è libera)
+      const con = constraints?.find((c) => c.id === d.id);
+      if (con && quote) {
+        const moved = dragDimension(con, pointMap(paths), [w[0] + d.grab[0], w[1] + d.grab[1]], d.part);
+        quote.onQuoteMove(d.id, moved.off + d.grabOff, moved.at);
+      }
     } else if (d.type === 'pan') {
       changeView({ ...view, cx: d.cx - (sgn * (sx - d.sx)) / view.s, cy: d.cy + (sy - d.sy) / view.s });
     } else if (d.type === 'node') {
@@ -635,9 +796,22 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
       // Il nodo cliccato segue il puntatore (agganciato) e gli altri selezionati si muovono dello stesso vettore
       const target: Vec2 = [d.primary[0] + w[0] - d.down[0], d.primary[1] + w[1] - d.down[1]];
       const moving = new Set(d.refs.map(keyOf));
-      const others = d.base.flatMap((c, pi) => c.nodes.filter((_, ni) => !moving.has(`${pi}:${ni}`)).map((n) => n.p));
+      // Con i vincoli gli altri nodi si muovono con il trascinamento: l'aggancio guarda dove stanno adesso (`last`), non dov'erano al clic
+      const others = d.last.flatMap((c, pi) => c.nodes.filter((_, ni) => !moving.has(`${pi}:${ni}`)).map((n) => n.p));
       const p = snapped(target, e, others);
-      d.last = moveNodes(d.base, d.refs, [p[0] - d.primary[0], p[1] - d.primary[1]]);
+      const delta: Vec2 = [p[0] - d.primary[0], p[1] - d.primary[1]];
+      if (constraints?.length) {
+        // Con i vincoli i nodi trascinati vanno dove dice il mouse e gli altri si adattano (rigido, poi morbido); un fotogramma
+        // che non si risolve si salta e il disegno resta com'era
+        const targets = d.refs.flatMap((ref) => {
+          const q = refPoint(d.base, ref);
+          return q ? [{ ref, to: [q[0] + delta[0], q[1] + delta[1]] as Vec2 }] : [];
+        });
+        const frame = dragFrame(d.last, constraints, targets, d.soft);
+        d.soft = frame.soft;
+        if (!frame.paths) return;
+        d.last = frame.paths;
+      } else d.last = moveNodes(d.base, d.refs, delta);
       onLive(d.last);
     } else if (d.type === 'handle') {
       if (!d.moved && Math.hypot(sx - d.sx, sy - d.sy) < DRAG_THRESHOLD) return;
@@ -696,12 +870,18 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
       setSectionHot(false);
       return;
     }
+    if (d.type === 'quote') {
+      // Senza movimento un clic sull'etichetta apre il campo del valore; trascinata, la quota è già al suo posto (il passo lo chiude la modale)
+      if (!d.moved && d.part === 'label') quote?.onLabelClick(d.id);
+      return;
+    }
     // Penna: il nodo appena aggiunto (con la maniglia del trascinamento) è un passo della cronologia; anche la ripresa
     // di un estremo con una maniglia disegnata
     if (d.type === 'pen') onPenStep?.(d.last);
     else if (d.type === 'resume' && !d.close && d.moved) onPenStep?.(d.last);
     if (d.type === 'node') {
-      if (d.moved) onCommit(d.last, d.refs);
+      // Al rilascio il disegno si porta alla precisione piena (senza vincoli non cambia nulla)
+      if (d.moved) onCommit(settlePaths(d.last, constraints), d.refs);
       else if (d.collapse) onSelect([d.collapse]);
     } else if (d.type === 'resume') {
       if (d.close) onPenClose(d.current, d.moved ? d.last : undefined);
@@ -709,12 +889,17 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
       if (d.moved) onCommit(d.last, selection);
     } else if (d.type === 'shape') {
       // Il contorno nuovo resta selezionato e lo strumento resta attivo
-      if (d.last !== d.base) onCommit(d.last, d.last[d.base.length].nodes.map((_, node) => ({ path: d.base.length, node })));
+      if (d.last !== d.base) {
+        const created = d.last[d.base.length].nodes.map((_, node) => ({ path: d.base.length, node }));
+        if (onShape) onShape(d.tool, d.last, created);
+        else onCommit(d.last, created);
+      }
       // Una forma mostrata e poi tornata a misura nulla: non c'è nulla da concludere, il disegno è quello di prima
       else if (d.live) onShapeCancel();
     } else if (d.type === 'box') {
       if (!d.moved) {
-        // Clic nel vuoto: azzera la selezione (con Maiusc la lascia)
+        // Clic nel vuoto: azzera la selezione (con Maiusc la lascia) e la quota scelta
+        if (!d.shift) quote?.onDeselect();
         if (!d.shift && selection.length) onSelect([]);
         return;
       }
@@ -722,19 +907,25 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
       const [x0, x1] = [Math.min(d.sx, sx), Math.max(d.sx, sx)];
       const [y0, y1] = [Math.min(d.sy, sy), Math.max(d.sy, sy)];
       const inside: NodeRef[] = [];
-      paths.forEach((c, pi) =>
+      paths.forEach((c, pi) => {
         c.nodes.forEach((n, ni) => {
+          // Dei nodi di un cerchio parametrico si prende solo quello sul bordo (gli altri sono derivati)
+          if (c.circ && ni > 0) return;
           const [px, py] = toS(n.p);
           if (px >= x0 && px <= x1 && py >= y0 && py <= y1) inside.push({ path: pi, node: ni });
-        }),
-      );
+        });
+        if (c.circ) {
+          const [px, py] = toS(c.circ.p);
+          if (px >= x0 && px <= x1 && py >= y0 && py <= y1) inside.push({ path: pi, node: centerIndex(c) });
+        }
+      });
       onSelect(d.shift ? [...d.base, ...inside.filter((r) => !d.base.some((b) => same(b, r)))] : inside);
     }
   };
 
   // Doppio clic su un nodo: scorre il tipo (spigolo, liscio, simmetrico)
   const onDoubleClick = (e: ReactMouseEvent<SVGSVGElement>) => {
-    if (tool === 'pan' || tool === 'rect' || tool === 'ellipse' || tool === 'polygon') return;
+    if (tool === 'pan' || tool === 'rect' || tool === 'ellipse' || tool === 'polygon' || tool === 'circle' || tool === 'dim') return;
     // Penna: il doppio clic termina il contorno (il nodo doppio lo toglie chi termina)
     if (tool === 'pen') {
       if (!closedOnly) onPenFinish();
@@ -743,8 +934,10 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
     const [sx, sy] = pos(e);
     const hit = hitTest(sx, sy);
     if (hit.type !== 'node') return;
-    const kind = paths[hit.ref.path].nodes[hit.ref.node].kind;
-    onCommit(setNodeKind(paths, hit.ref, cycleKind(kind)), [hit.ref]);
+    // Il tipo di un nodo di un cerchio parametrico non si cambia (e il centro non è un nodo)
+    const node = paths[hit.ref.path].nodes[hit.ref.node];
+    if (!node || paths[hit.ref.path].circ) return;
+    onCommit(setNodeKind(paths, hit.ref, cycleKind(node.kind)), [hit.ref]);
   };
 
   // --- Disegno --------------------------------------------------------------------------------------------------------
@@ -778,11 +971,85 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
   const outsideWidth = flip ? Math.max(0, size.w - outsideX) : Math.max(0, Math.min(size.w, origin[0]));
   const fill = contours.map((poly) => `M${poly.map((p) => toS(p).map(f1).join(' ')).join('L')}Z`).join(' ');
 
+  // Penna con valori digitati: il punto che nascerebbe dai due campi (con il cursore per i campi vuoti) e il segmento di anteprima
+  const penLast = activePen ? activePen.nodes[activePen.nodes.length - 1].p : null;
+  const penTyped = penField && penLast ? penTarget(penLast, cursor, penField.length, penField.angle) : null;
+  const previewTo = penField ? (penTyped?.ok ? penTyped.p : null) : hover;
+  /** Invio nei campi: il nodo nasce nel punto calcolato, oppure l'errore resta sotto i campi (Esc, Tab e gli altri tasti non lo toccano). */
+  const confirmPenField = () => {
+    if (!penTyped) return;
+    if (!penTyped.ok) {
+      setPenError(penTyped.message);
+      return;
+    }
+    onPenType?.(penTyped);
+    setPenField(null);
+    setPenError(null);
+    // Il fuoco torna al disegno: la cifra successiva apre i campi per il segmento seguente
+    setTimeout(() => wrap.current?.focus(), 0);
+  };
+  const onPenFieldKey = (e: ReactKeyboardEvent<HTMLInputElement>) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      confirmPenField();
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+      setPenField((f) => (f ? { ...f, focus: f.focus === 'length' ? 'angle' : 'length' } : f));
+    } else if (e.key === 'Escape') {
+      // Esc chiude i campi ma non il disegno: il contorno della Penna resta com'è
+      e.preventDefault();
+      setPenField(null);
+      setPenError(null);
+      setTimeout(() => wrap.current?.focus(), 0);
+    }
+  };
+  /** Penna con un contorno in corso: una cifra (o il segno, il punto, la virgola) o Tab apre i campi Lunghezza e Angolo. */
+  const onCanvasKey = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (tool !== 'pen' || !activePen || closedOnly || penField || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (/^[0-9.,-]$/.test(e.key) || e.key === 'Tab') {
+      e.preventDefault();
+      e.stopPropagation();
+      setPenField({ length: e.key === 'Tab' ? '' : e.key, angle: '', focus: 'length' });
+      setPenError(null);
+    }
+  };
+
+  /** Stato di vincolo del nodo (`def` = completamente vincolato, `err` = in conflitto; `free` è l'aspetto di sempre). */
+  const nodeState = (n: PathNode): NodeState | '' => (quote?.states && n.id ? quote.states.get(n.id) ?? 'free' : '');
+  /** Stato di un punto del risolutore dato il suo id (il centro di un cerchio parametrico non è un nodo). */
+  const idState = (id: string): NodeState | '' => (quote?.states ? quote.states.get(id) ?? 'free' : '');
+  /** Stato del contorno: rosso se un nodo è in conflitto, altrimenti scuro solo se tutti i nodi sono completamente vincolati. */
+  const contourState = (c: PathContour): NodeState | '' => {
+    if (!quote?.states || c.nodes.length === 0) return '';
+    // Un cerchio parametrico ha due punti del risolutore: il centro e il nodo sul bordo (gli altri tre non hanno id)
+    const all = c.circ ? [idState(c.circ.id), nodeState(c.nodes[0])] : c.nodes.map(nodeState);
+    return all.includes('err') ? 'err' : all.every((s) => s === 'def') ? 'def' : '';
+  };
+  /** Modificatore di classe per `def` ed `err` (`free` e nessuno stato lasciano l'aspetto di sempre). */
+  const stateMod = (base: string, state: NodeState | '') => (state === 'def' || state === 'err' ? ` ${base}--${state}` : '');
+  const editAt = quote?.edit ? quoteLabelPoint(quote.edit.con, quote.edit.paths, toS, view.s) : null;
+
+  /** Il centro di un cerchio parametrico: un cerchietto con una croce, scelto e trascinato come un nodo (indice dopo l'ultimo nodo). */
+  const centerMark = (c: PathContour, pi: number): ReactNode => {
+    if (!c.circ) return null;
+    const [x, y] = toS(c.circ.p);
+    const index = centerIndex(c);
+    const state = idState(c.circ.id);
+    const selected = selection.some((r) => r.path === pi && r.node === index);
+    return (
+      <g key={`${pi}:c`} data-state={state || undefined} className={`profile-editor__node profile-editor__node--center${stateMod('profile-editor__node', state)}${selected ? ' profile-editor__node--selected' : ''}`} transform={`translate(${f1(x)} ${f1(y)})`} data-node={`${pi}:${index}`} data-kind="center">
+        <circle r={3.5} />
+        <path d="M-8 0H8M0 -8V8" />
+      </g>
+    );
+  };
+
   const nodeShape = (kind: PathNode['kind']) =>
     kind === 'corner' ? <rect x={-4.5} y={-4.5} width={9} height={9} /> : kind === 'symmetric' ? <polygon points="0,-6 6,0 0,6 -6,0" /> : <circle r={5} />;
 
   return (
-    <div ref={wrap} className={`profile-editor__canvas${closedOnly ? ' profile-editor__canvas--plan' : ''}`} tabIndex={0} role="group" aria-label={label ?? 'Disegno del profilo'} data-tool={tool} data-panning={panning || undefined} data-closed-only={closedOnly || undefined}>
+    <div ref={wrap} className={`profile-editor__canvas${closedOnly ? ' profile-editor__canvas--plan' : ''}`} tabIndex={0} role="group" aria-label={label ?? 'Disegno del profilo'} data-tool={tool} data-panning={panning || undefined} data-closed-only={closedOnly || undefined} onKeyDown={onCanvasKey}>
       <svg
         ref={svg}
         className="profile-editor__svg"
@@ -793,7 +1060,8 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
         onPointerLeave={() => {
-          setCursor(null);
+          // Con i campi della Penna aperti il cursore resta l'ultimo visto: passare sul pannello non deve far saltare i campi vuoti a 10 mm e 0 gradi
+          if (!penField) setCursor(null);
           setHover(null);
           setInsertAt(null);
           setEndHot(null);
@@ -844,7 +1112,7 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
         )}
         <path className="profile-editor__fill" fillRule="evenodd" d={fill} />
         {paths.map((c, pi) => (
-          <path key={pi} className={`profile-editor__curve${holes[pi] ? ' profile-editor__curve--hole' : ''}`} d={contourPath(c, toS)} />
+          <path key={pi} className={`profile-editor__curve${holes[pi] ? ' profile-editor__curve--hole' : ''}${stateMod('profile-editor__curve', contourState(c))}`} d={contourPath(expandFillets(c), toS)} />
         ))}
         {/* Maniglie dei nodi selezionati e dei loro vicini */}
         {[...shown].map((key) => {
@@ -864,25 +1132,42 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
           });
         })}
         {/* Nodi: la forma dice il tipo (quadrato = spigolo, cerchio = liscio, rombo = simmetrico) */}
-        {paths.map((c, pi) =>
-          c.nodes.map((n, ni) => {
+        {paths.map((c, pi) => [
+          ...c.nodes.map((n, ni) => {
+            // Dei quattro nodi di un cerchio parametrico si vede solo quello sul bordo (gli altri sono derivati dal centro e dal raggio)
+            if (c.circ && ni > 0) return null;
             const [x, y] = toS(n.p);
             const selected = selection.some((r) => r.path === pi && r.node === ni);
             return (
-              <g key={`${pi}:${ni}`} className={`profile-editor__node${selected ? ' profile-editor__node--selected' : ''}${activePen && pi === pen && ni === 0 && activePen.nodes.length >= 2 ? ' profile-editor__node--first' : ''}${tool === 'pen' && endHot && endHot.path === pi && endHot.node === ni ? ' profile-editor__node--resume' : ''}`} transform={`translate(${f1(x)} ${f1(y)})`} data-node={`${pi}:${ni}`} data-kind={n.kind}>
+              <g key={`${pi}:${ni}`} data-state={nodeState(n) || undefined} className={`profile-editor__node${stateMod('profile-editor__node', nodeState(n))}${selected ? ' profile-editor__node--selected' : ''}${activePen && pi === pen && ni === 0 && activePen.nodes.length >= 2 ? ' profile-editor__node--first' : ''}${tool === 'pen' && endHot && endHot.path === pi && endHot.node === ni ? ' profile-editor__node--resume' : ''}`} transform={`translate(${f1(x)} ${f1(y)})`} data-node={`${pi}:${ni}`} data-kind={n.kind}>
                 {nodeShape(n.kind)}
               </g>
             );
           }),
-        )}
+          centerMark(c, pi),
+        ])}
         {crossings.map((q, i) => {
           const [x, y] = toS(q);
           return <circle key={i} className="profile-editor__crossing" cx={x} cy={y} r={7} />;
         })}
+        {/* Quote e vincoli: linee di quota, etichette, icone */}
+        {quote && (
+          <QuoteOverlay
+            paths={paths}
+            constraints={constraints ?? []}
+            toS={toS}
+            pxPerMm={view.s}
+            bad={quote.bad}
+            flash={quote.flash}
+            selected={quote.selected}
+            draft={quote.edit?.isNew ? { con: quote.edit.con, paths: quote.edit.paths } : null}
+            pick={quote.pick}
+          />
+        )}
         {/* Penna: il segmento che nascerebbe dal prossimo clic (curvo se l'ultimo nodo ha la maniglia) e il punto agganciato */}
-        {activePen && hover && (() => {
+        {activePen && previewTo && (() => {
           const last = activePen.nodes[activePen.nodes.length - 1];
-          const [a, b] = [toS(last.p), toS(hover)];
+          const [a, b] = [toS(last.p), toS(previewTo)];
           const d = last.out ? `M${a.map(f1).join(' ')} C${toS(add(last.p, last.out)).map(f1).join(' ')} ${b.map(f1).join(' ')} ${b.map(f1).join(' ')}` : `M${a.map(f1).join(' ')} L${b.map(f1).join(' ')}`;
           return <path className="profile-editor__preview" d={d} />;
         })()}
@@ -897,6 +1182,56 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
         {tool === 'pen' && hover && <circle className="profile-editor__snap" cx={toS(hover)[0]} cy={toS(hover)[1]} r={4} />}
         {rubber && <rect className="profile-editor__rubber" x={Math.min(rubber.x0, rubber.x1)} y={Math.min(rubber.y0, rubber.y1)} width={Math.abs(rubber.x1 - rubber.x0)} height={Math.abs(rubber.y1 - rubber.y0)} />}
       </svg>
+      {penField && penLast && penTyped && (
+        <div className="profile-editor__penin" role="group" aria-label="Lunghezza e angolo del segmento" style={{ left: Math.max(4, Math.min(size.w - 236, toS(penLast)[0] + 16)), top: Math.max(4, Math.min(size.h - 118, toS(penLast)[1] + 16)) }}>
+          {(() => {
+            const d: Vec2 = cursor ? [cursor[0] - penLast[0], cursor[1] - penLast[1]] : [10, 0];
+            return (
+              <>
+                <label>
+                  Lunghezza
+                  <input ref={lengthInput} type="text" inputMode="decimal" aria-label="Lunghezza in mm" placeholder={fmt(Math.hypot(d[0], d[1]))} value={penField.length} onChange={(e) => { setPenError(null); setPenField({ ...penField, length: e.target.value }); }} onKeyDown={onPenFieldKey} />
+                  mm
+                </label>
+                <label>
+                  Angolo
+                  <input ref={angleInput} type="text" inputMode="decimal" aria-label="Angolo in gradi" placeholder={fmt((Math.atan2(d[1], d[0]) * 180) / Math.PI)} value={penField.angle} onChange={(e) => { setPenError(null); setPenField({ ...penField, angle: e.target.value }); }} onKeyDown={onPenFieldKey} />
+                  °
+                </label>
+              </>
+            );
+          })()}
+          {penError && (
+            <p className="profile-editor__penin-error" role="alert">
+              {penError}
+            </p>
+          )}
+          <p className="profile-editor__hint">Tab cambia campo, Invio conferma il nodo, Esc chiude. Un campo vuoto segue il cursore.</p>
+        </div>
+      )}
+      {quote?.edit && editAt && (
+        <input
+          key={editKey}
+          ref={editInput}
+          className="profile-editor__qedit"
+          type="text"
+          inputMode="decimal"
+          aria-label="Valore della quota"
+          defaultValue={quote.edit.text}
+          style={{ left: Math.max(2, editAt[0] - 43), top: Math.max(2, editAt[1] - 13) }}
+          onKeyDown={(e) => {
+            // Invio conferma, Esc annulla; gli altri tasti restano al campo (la modale non li prende: è un campo di testo)
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              quote.onEditCommit(e.currentTarget.value);
+            } else if (e.key === 'Escape') {
+              e.preventDefault();
+              quote.onEditCancel();
+            }
+          }}
+          onBlur={(e) => quote.onEditCommit(e.currentTarget.value)}
+        />
+      )}
       {rotate && outsideWidth >= OUTSIDE_LABEL_MIN && (
         <div className="profile-editor__flip" style={{ left: outsideX + outsideWidth / 2, top: size.h / 2 + 14 }}>
           <button type="button" title="Specchia la vista in orizzontale: la parte non ruotata passa dall'altro lato dell'asse, il disegno resta com'è" onClick={onFlip}>
@@ -907,7 +1242,7 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
       )}
       {paths.length === 0 && !closedOnly && (
         <div className="profile-editor__empty" role="note">
-          {tool === 'pen' ? 'Fai clic nel disegno per aggiungere il primo punto' : tool === 'rect' || tool === 'ellipse' || tool === 'polygon' ? 'Premi sul centro e trascina per disegnare la forma' : 'Scegli la Penna e fai clic per iniziare, oppure parti da una forma base (R, C, G) o da un SVG'}
+          {tool === 'pen' ? 'Fai clic nel disegno per aggiungere il primo punto' : tool === 'rect' || tool === 'ellipse' || tool === 'polygon' || tool === 'circle' ? 'Premi sul centro e trascina per disegnare la forma' : 'Scegli la Penna e fai clic per iniziare, oppure parti da una forma base (R, C, G) o da un SVG'}
         </div>
       )}
       <div className="profile-editor__zoom" role="toolbar" aria-label="Vista del disegno">

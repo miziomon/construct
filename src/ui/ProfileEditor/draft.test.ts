@@ -95,8 +95,8 @@ describe('bozza del disegno', () => {
     expect(loadDraft('abc', s)).toBeNull();
     s.data.set(key, '{non json');
     expect(loadDraft('abc', s)).toBeNull();
-    const put = (draft: unknown, v = 1) => s.data.set(key, JSON.stringify({ v, draft }));
-    put(triangle, 2);
+    const put = (draft: unknown, v = 2) => s.data.set(key, JSON.stringify({ v, draft }));
+    put(triangle, 3);
     expect(loadDraft('abc', s)).toBeNull();
     put({ ...triangle, paths: [{ closed: true, nodes: [{ p: [0, 'x'], kind: 'corner' }, { p: [1, 1], kind: 'corner' }] }] });
     expect(loadDraft('abc', s)).toBeNull();
@@ -142,5 +142,96 @@ describe('store della modale del Profilo', () => {
     expect(useProfileEditor.getState().target).toEqual({ new: true, at: [5, 6] });
     useProfileEditor.getState().close();
     expect(useProfileEditor.getState().target).toBeNull();
+  });
+});
+
+describe('bozza v:2 con id, vincoli e parametri', () => {
+  const withIds: Draft = {
+    ...triangle,
+    paths: [{ closed: true, nodes: [{ id: 'n1', p: [0, 0], kind: 'corner' }, { id: 'n2', p: [10, 0], kind: 'corner' }, { id: 'n3', p: [5, 8], kind: 'corner' }] }],
+    constraints: [{ id: 'k1', t: 'dist', p: ['n1', 'n2'], v: 10, off: 3 }],
+    params: { w: 10 },
+  };
+
+  it('si salva con versione 2 e si rilegge uguale, vincoli e parametri compresi', () => {
+    const s = fakeStorage();
+    saveDraft('abc', withIds, s);
+    vi.advanceTimersByTime(500);
+    expect(JSON.parse(s.data.get('construct:profile-draft:abc')!).v).toBe(2);
+    expect(loadDraft('abc', s)).toEqual(withIds);
+  });
+
+  it('con un raccordo (cambia la forma) la bozza è versione 2 anche senza vincoli', () => {
+    const s = fakeStorage();
+    const filleted: Draft = { ...withIds, constraints: undefined, params: undefined, paths: [{ closed: true, nodes: withIds.paths[0].nodes.map((n) => (n.id === 'n2' ? { ...n, r: 1.5 } : n)) }] };
+    saveDraft('abc', filleted, s);
+    vi.advanceTimersByTime(500);
+    expect(JSON.parse(s.data.get('construct:profile-draft:abc')!).v).toBe(2);
+    expect(loadDraft('abc', s)?.paths[0].nodes[1].r).toBe(1.5);
+  });
+
+  it('senza vincoli né parametri la bozza si salva ancora in versione 1, con gli id dei nodi', () => {
+    const s = fakeStorage();
+    const plain: Draft = { ...withIds, constraints: undefined, params: undefined };
+    saveDraft('abc', plain, s);
+    vi.advanceTimersByTime(500);
+    expect(JSON.parse(s.data.get('construct:profile-draft:abc')!).v).toBe(1);
+    expect(loadDraft('abc', s)?.paths).toEqual(withIds.paths);
+    saveDraft('abc', { ...plain, constraints: [] , params: {} }, s);
+    vi.advanceTimersByTime(500);
+    expect(JSON.parse(s.data.get('construct:profile-draft:abc')!).v).toBe(1);
+  });
+
+  it('la posizione delle quote (off, at) e le quote di riferimento sopravvivono alla bozza', () => {
+    const s = fakeStorage();
+    const placed: Draft = {
+      ...withIds,
+      constraints: [
+        { id: 'k1', t: 'dist', p: ['n1', 'n2'], v: 10, off: -4.5, at: 0.2 },
+        { id: 'k2', t: 'dist', p: ['n2', 'n3'], v: 9.4, ref: true, off: 6, at: 0.8 },
+      ],
+    };
+    saveDraft('abc', placed, s);
+    vi.advanceTimersByTime(500);
+    expect(loadDraft('abc', s)?.constraints).toEqual(placed.constraints);
+  });
+
+  it('i vincoli appesi (contorno scartato, nodo tolto) non finiscono nella bozza, che resta v:1', () => {
+    const s = fakeStorage();
+    const orphan = { id: 'k2', t: 'horizontal' as const, p: ['n1', 'n8'] };
+    // Contorno di un solo nodo (la Penna lo sta iniziando): non si salva, e porta via il vincolo che lo cita
+    const started: Draft = { ...withIds, params: undefined, constraints: [orphan, { id: 'k3', t: 'dist', p: ['n1', 'n7'], v: 3 }], paths: [...withIds.paths, { closed: false, nodes: [{ id: 'n7', p: [1, 1], kind: 'corner' }] }] };
+    saveDraft('abc', started, s);
+    vi.advanceTimersByTime(500);
+    const saved = JSON.parse(s.data.get('construct:profile-draft:abc')!);
+    expect(saved.v).toBe(1);
+    expect(saved.draft.constraints).toBeUndefined();
+    // I vincoli validi restano, anche con un orfano accanto
+    saveDraft('abc', { ...withIds, constraints: [...withIds.constraints!, orphan] }, s);
+    vi.advanceTimersByTime(500);
+    expect(JSON.parse(s.data.get('construct:profile-draft:abc')!)).toMatchObject({ v: 2, draft: { constraints: withIds.constraints } });
+  });
+
+  it('una bozza v:1 si legge ancora (senza vincoli, anche se ne contiene); con vincoli il prossimo salvataggio è v:2', () => {
+    const s = fakeStorage();
+    const key = 'construct:profile-draft:abc';
+    s.data.set(key, JSON.stringify({ v: 1, draft: withIds }));
+    const old = loadDraft('abc', s)!;
+    expect(old.constraints).toBeUndefined();
+    expect(old.params).toBeUndefined();
+    expect(old.paths).toEqual(withIds.paths);
+    saveDraft('abc', { ...old, constraints: withIds.constraints }, s);
+    vi.advanceTimersByTime(500);
+    expect(JSON.parse(s.data.get(key)!).v).toBe(2);
+  });
+
+  it('i vincoli che citano nodi mancanti o rovinati si scartano senza rifiutare la bozza', () => {
+    const s = fakeStorage();
+    const key = 'construct:profile-draft:abc';
+    const bad = { ...withIds, constraints: [...withIds.constraints!, { id: 'k2', t: 'dist', p: ['n1', 'n9'], v: 5 }, { id: 'k3', t: 'dist', p: ['n1', 'n2'], v: NaN }], params: { w: 1, '1x': 2 } };
+    s.data.set(key, JSON.stringify({ v: 2, draft: bad }));
+    const loaded = loadDraft('abc', s)!;
+    expect(loaded.constraints).toEqual(withIds.constraints);
+    expect(loaded.params).toEqual({ w: 1 });
   });
 });

@@ -579,7 +579,7 @@ test('rotazione con il disegno vuoto: l\'asse resta al centro dell\'area (passan
   // Con lo spazio per disegnare: a destra dell'asse c'è metà area
   await editor(page).getByRole('button', { name: 'Adatta', exact: true }).click();
   expect(Math.abs((await axis()) - (await mid()))).toBeLessThan(3);
-  await editor(page).getByRole('button', { name: 'Lineare' }).click();
+  await editor(page).getByRole('button', { name: 'Lineare', exact: true }).click();
   await editor(page).getByRole('button', { name: 'Rotazionale' }).click();
   expect(Math.abs((await axis()) - (await mid()))).toBeLessThan(3);
 });

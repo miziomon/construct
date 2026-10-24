@@ -226,7 +226,8 @@ Regole trasversali:
 
 - **Griglia e snap**: passo scelto tra 0,1, 0,5, 1, 5, 10 mm, adattato allo zoom; snap a griglia, a nodi esistenti e a
   orizzontale e verticale; Maiusc vincola a 45 gradi; Ctrl sospende lo snap.
-- **Coordinate digitabili**: il nodo selezionato mostra X e Y in `NumberField` (formule e parametri compresi). Per le
+- **Coordinate digitabili**: il nodo selezionato mostra X e Y in `NumberField` (calcoli come `10/4`, senza parametri: nella modale non c'è
+  il `FormulaContext`; i parametri locali del profilo si usano nelle quote, vedi `docs/studio-quote-profilo.md`). Per le
   maniglie: lunghezza e angolo. È la sostituzione leggera dei vincoli di Fusion: precisione numerica senza risolutore.
 - **Cronologia locale**: Ctrl+Z e Ctrl+Maiusc+Z dentro la modale agiscono sullo stato del disegno. Su OK **un solo passo**
   nella cronologia della scena (`op` etichettato "Profilo"), come ogni operazione utente.

@@ -1,4 +1,6 @@
-import type { PathContour, PathNode, Vec2 } from './types';
+// Dipendenza da ui/ProfileEditor: `constraints.ts` è il risolutore puro, senza import; andrà spostato in scene/ (rimandato)
+import { NPTS, type ConstraintType } from '../ui/ProfileEditor/constraints';
+import type { PathContour, PathNode, ProfileConstraint, ProfileParams, Vec2 } from './types';
 
 /**
  * Curve di Bézier cubiche dei profili `path`: campionamento in poligoni, riquadro, autointersezioni e validazione.
@@ -137,14 +139,135 @@ function splitAt(c: Cubic, ts: number[]): Cubic[] {
 /** Tolleranza dentro i limiti consentiti (un valore non numerico vale quello predefinito). */
 const clampTolerance = (tol: number): number => (Number.isFinite(tol) ? Math.min(PATH_MAX_TOLERANCE, Math.max(PATH_MIN_TOLERANCE, tol)) : PATH_DEFAULT_TOLERANCE);
 
+// --- Raggio di raccordo per nodo ---------------------------------------------------------------------------------------
+
+/**
+ * Raggio di raccordo (`r` di un nodo): lo spigolo si sostituisce con un arco di cerchio tangente ai due segmenti retti che
+ * vi arrivano. È un'ESPANSIONE A VALLE: i nodi del contorno restano quelli di controllo (il risolutore dei vincoli e le
+ * quote lavorano su di loro, mai sui punti dell'arco) e l'arco nasce solo quando il contorno si campiona. Poiché kernel,
+ * codice OpenSCAD, anteprima e riquadro campionano tutti con `sampleContour`, il poligono è lo stesso ovunque.
+ *
+ * Vale per un nodo `corner` senza maniglie, con un segmento retto prima e uno dopo (un contorno aperto non raccorda i suoi
+ * estremi). Con maniglie o segmenti curvi il raggio si ignora (`filletInfo` lo dice all'interfaccia). Il raggio si riduce
+ * se i segmenti non bastano: la distanza di tangenza non supera la lunghezza del segmento, né la sua metà se il nodo
+ * dall'altra parte è raccordato a sua volta (così due raccordi vicini non si sovrappongono).
+ */
+export interface FilletInfo {
+  /** Il nodo può avere un raggio di raccordo. */
+  eligible: boolean;
+  /** Raggio massimo (mm) con cui l'arco sta nei segmenti; 0 se il nodo non può raccordarsi. */
+  rmax: number;
+  /** Perché non può, per l'interfaccia. */
+  reason?: string;
+}
+
+/** Indici del nodo precedente e di quello successivo, o -1 se non ci sono (estremi di un contorno aperto). */
+function neighbours(c: PathContour, i: number): [number, number] {
+  const n = c.nodes.length;
+  return [i > 0 ? i - 1 : c.closed ? n - 1 : -1, i < n - 1 ? i + 1 : c.closed ? 0 : -1];
+}
+
+/** Direzioni unitarie dal nodo `i` verso il precedente e il successivo, con le lunghezze dei due segmenti; null se non è un angolo valido. */
+function corner(c: PathContour, i: number): { u: Vec2; v: Vec2; lenU: number; lenV: number; phi: number } | null {
+  const [pi, ni] = neighbours(c, i);
+  if (pi < 0 || ni < 0 || pi === ni || c.nodes.length < 3) return null;
+  const [p, q, s] = [c.nodes[pi].p, c.nodes[i].p, c.nodes[ni].p];
+  const [lenU, lenV] = [Math.hypot(p[0] - q[0], p[1] - q[1]), Math.hypot(s[0] - q[0], s[1] - q[1])];
+  if (lenU < 1e-9 || lenV < 1e-9) return null;
+  const u: Vec2 = [(p[0] - q[0]) / lenU, (p[1] - q[1]) / lenU];
+  const v: Vec2 = [(s[0] - q[0]) / lenV, (s[1] - q[1]) / lenV];
+  const cos = u[0] * v[0] + u[1] * v[1];
+  // Segmenti allineati (angolo piatto) o ripiegati l'uno sull'altro: nessun arco
+  if (Math.abs(cos) > 1 - 1e-9) return null;
+  return { u, v, lenU, lenV, phi: Math.acos(Math.max(-1, Math.min(1, cos))) };
+}
+
+/** Il nodo `i` è uno spigolo senza maniglie tra due segmenti retti (a prescindere dal raggio). */
+function isSharpCorner(c: PathContour, i: number): boolean {
+  const n = c.nodes[i];
+  if (!n || n.kind !== 'corner' || hasHandle(n.in) || hasHandle(n.out)) return false;
+  const [pi, ni] = neighbours(c, i);
+  if (pi < 0 || ni < 0 || hasHandle(c.nodes[pi].out) || hasHandle(c.nodes[ni].in)) return false;
+  return corner(c, i) !== null;
+}
+
+/** Il nodo `i` ha un raggio e può raccordarsi. */
+const isFilleted = (c: PathContour, i: number): boolean => (c.nodes[i]?.r ?? 0) > 0 && isSharpCorner(c, i);
+
+/** Se il nodo `i` può avere un raggio di raccordo e fino a quanto. */
+export function filletInfo(c: PathContour, i: number): FilletInfo {
+  const n = c.nodes[i];
+  if (!n) return { eligible: false, rmax: 0, reason: 'Nodo inesistente' };
+  if (n.kind !== 'corner' || hasHandle(n.in) || hasHandle(n.out)) return { eligible: false, rmax: 0, reason: 'Il raccordo vale per uno spigolo senza maniglie' };
+  const [pi, ni] = neighbours(c, i);
+  if (pi < 0 || ni < 0) return { eligible: false, rmax: 0, reason: 'Il raccordo vale per un nodo con un segmento prima e uno dopo' };
+  if (hasHandle(c.nodes[pi].out) || hasHandle(c.nodes[ni].in)) return { eligible: false, rmax: 0, reason: 'Il raccordo vale tra due segmenti retti' };
+  const k = corner(c, i);
+  if (!k) {
+    // Nodi coincidenti: un segmento senza lunghezza; altrimenti i due segmenti sono sulla stessa retta
+    const zero = [pi, ni].some((j) => Math.hypot(c.nodes[j].p[0] - n.p[0], c.nodes[j].p[1] - n.p[1]) < 1e-9);
+    return { eligible: false, rmax: 0, reason: zero ? 'Un segmento ha lunghezza zero' : 'I due segmenti sono allineati: non c\'è uno spigolo' };
+  }
+  // Distanza di tangenza al massimo: il segmento intero, o la metà se dall'altra parte c'è un altro raccordo
+  const reach = Math.min(k.lenU * (isFilleted(c, pi) ? 0.5 : 1), k.lenV * (isFilleted(c, ni) ? 0.5 : 1));
+  return { eligible: true, rmax: reach * Math.tan(k.phi / 2) };
+}
+
+/** Nodi (con le maniglie) dell'arco di raccordo del nodo `i`, dal punto di tangenza sul segmento prima a quello sul segmento dopo. */
+function filletNodes(c: PathContour, i: number): PathNode[] {
+  const k = corner(c, i)!;
+  const info = filletInfo(c, i);
+  const r = Math.min(c.nodes[i].r as number, info.rmax);
+  const q = c.nodes[i].p;
+  const t = r / Math.tan(k.phi / 2);
+  // Centro dell'arco sulla bisettrice, a r / sin(phi/2) dallo spigolo
+  const bis: Vec2 = [k.u[0] + k.v[0], k.u[1] + k.v[1]];
+  const bl = Math.hypot(bis[0], bis[1]);
+  const d = r / Math.sin(k.phi / 2);
+  const o: Vec2 = [q[0] + (bis[0] / bl) * d, q[1] + (bis[1] / bl) * d];
+  const t1: Vec2 = [q[0] + k.u[0] * t, q[1] + k.u[1] * t];
+  const t2: Vec2 = [q[0] + k.v[0] * t, q[1] + k.v[1] * t];
+  // Arco minore da t1 a t2
+  const a1 = Math.atan2(t1[1] - o[1], t1[0] - o[0]);
+  let sweep = Math.atan2(t2[1] - o[1], t2[0] - o[0]) - a1;
+  if (sweep > Math.PI) sweep -= 2 * Math.PI;
+  if (sweep < -Math.PI) sweep += 2 * Math.PI;
+  // Una cubica per ogni quarto di giro al più: l'errore del cerchio resta sotto lo 0,03% del raggio
+  const pieces = Math.max(1, Math.ceil(Math.abs(sweep) / (Math.PI / 2) - 1e-9));
+  const delta = sweep / pieces;
+  const handle = (4 / 3) * Math.tan(Math.abs(delta) / 4) * r;
+  const dir = Math.sign(delta);
+  const nodes: PathNode[] = [];
+  for (let j = 0; j <= pieces; j++) {
+    const a = a1 + j * delta;
+    // Primo e ultimo punto sono le tangenze esatte (nessun errore di arrotondamento sul segmento retto)
+    const p: Vec2 = j === 0 ? t1 : j === pieces ? t2 : [o[0] + r * Math.cos(a), o[1] + r * Math.sin(a)];
+    const tangent: Vec2 = [-Math.sin(a) * dir * handle, Math.cos(a) * dir * handle];
+    nodes.push({ p, kind: 'smooth', ...(j > 0 ? { in: [-tangent[0], -tangent[1]] as Vec2 } : {}), ...(j < pieces ? { out: tangent } : {}) });
+  }
+  return nodes;
+}
+
+/**
+ * Il contorno con i raccordi espansi in archi (nodi in più, nessuna `id` né `r`). Senza raccordi restituisce lo stesso
+ * contorno. È il contorno che si campiona, si disegna e si esporta; i nodi di controllo restano quelli di `c`.
+ */
+export function expandFillets(c: PathContour): PathContour {
+  if (!c.nodes.some((n) => (n.r ?? 0) > 0)) return c;
+  const nodes = c.nodes.flatMap((n, i) => (isFilleted(c, i) ? filletNodes(c, i) : [n]));
+  return { closed: c.closed, nodes };
+}
+
 /**
  * Poligono che approssima un contorno entro `tol` mm. Ogni cubica si spezza prima nei suoi estremi in x e y, così il
  * riquadro del poligono è quello esatto della curva qualunque sia la tolleranza (D2). Un contorno chiuso non ripete il
  * primo punto in fondo. Oltre il tetto di punti per contorno `flattenCubic` smette di suddividere (il lavoro resta limitato) ma
  * nessun segmento viene saltato: chi chiama riconosce il superamento dalla lunghezza e ricampiona con più tolleranza.
  */
-export function sampleContour(c: PathContour, tol: number): Vec2[] {
+export function sampleContour(source: PathContour, tol: number): Vec2[] {
   const t = clampTolerance(tol);
+  // I raccordi (`r` dei nodi) diventano archi prima del campionamento: poligono unico per kernel, OpenSCAD e disegno
+  const c = expandFillets(source);
   if (c.nodes.length === 0) return [];
   const points: Vec2[] = [c.nodes[0].p];
   for (let i = 0; i < segmentCount(c); i++) {
@@ -156,8 +279,10 @@ export function sampleContour(c: PathContour, tol: number): Vec2[] {
     }
   }
   // Un contorno chiuso torna al primo punto: il duplicato finale si toglie. Si tolgono anche i doppioni consecutivi
-  const unique = points.filter((p, i) => i === 0 || p[0] !== points[i - 1][0] || p[1] !== points[i - 1][1]);
-  if (c.closed && unique.length > 1 && unique[unique.length - 1][0] === unique[0][0] && unique[unique.length - 1][1] === unique[0][1]) unique.pop();
+  // (con una tolleranza di 1e-9 mm: un raccordo che arriva al massimo del raggio ha l'estremo dell'arco sul nodo vicino, a meno di un errore di calcolo)
+  const same = (p: Vec2, q: Vec2) => Math.hypot(p[0] - q[0], p[1] - q[1]) < 1e-9;
+  const unique = points.filter((p, i) => i === 0 || !same(p, points[i - 1]));
+  if (c.closed && unique.length > 1 && same(unique[unique.length - 1], unique[0])) unique.pop();
   return unique;
 }
 
@@ -264,13 +389,20 @@ function vec2(value: unknown): Vec2 | null {
   return [x || 0, y || 0];
 }
 
+/** Un id valido (di nodo o di vincolo): poche lettere, cifre, trattini (finisce nel commento del codice OpenSCAD). */
+const NODE_ID = /^[A-Za-z0-9_-]{1,16}$/;
+
 /**
  * Valida contorni arrivati da fuori (file .scad, bozze): al massimo 100 contorni di 2-500 nodi, numeri finiti entro
  * ±1e5, tipi del nodo noti. Restituisce oggetti nuovi, senza i campi in più, oppure null se qualcosa non va.
+ * `id` e `r` sono facoltativi e non fanno fallire la lettura: un `id` malformato o già usato da un altro nodo del profilo
+ * (si tiene il primo) e un `r` non valido o nullo si scartano, e `assignNodeIds` ridà un id al nodo che ne è privo.
  */
 export function sanitizePaths(value: unknown): PathContour[] | null {
   if (!Array.isArray(value) || value.length > MAX_PATH_CONTOURS) return null;
   const result: PathContour[] = [];
+  // Id già visti in tutto il profilo: devono essere unici anche tra contorni diversi
+  const seen = new Set<string>();
   for (const raw of value) {
     if (typeof raw !== 'object' || raw === null) return null;
     const { closed, nodes } = raw as { closed?: unknown; nodes?: unknown };
@@ -278,18 +410,213 @@ export function sanitizePaths(value: unknown): PathContour[] | null {
     const clean: PathNode[] = [];
     for (const n of nodes) {
       if (typeof n !== 'object' || n === null) return null;
-      const { p, in: inn, out, kind } = n as { p?: unknown; in?: unknown; out?: unknown; kind?: unknown };
+      const { id, p, in: inn, out, kind, r } = n as { id?: unknown; p?: unknown; in?: unknown; out?: unknown; kind?: unknown; r?: unknown };
       const position = vec2(p);
       if (!position || typeof kind !== 'string' || !KINDS.has(kind as PathNode['kind'])) return null;
       // Le maniglie sono facoltative: se ci sono devono essere valide, se mancano il campo non esiste proprio
       const handleIn = inn === undefined ? undefined : vec2(inn);
       const handleOut = out === undefined ? undefined : vec2(out);
       if (handleIn === null || handleOut === null) return null;
-      clean.push({ p: position, ...(handleIn ? { in: handleIn } : {}), ...(handleOut ? { out: handleOut } : {}), kind: kind as PathNode['kind'] });
+      // Id: stringa breve e mai vista prima, altrimenti il campo non c'è
+      const nodeId = typeof id === 'string' && NODE_ID.test(id) && !seen.has(id) ? id : undefined;
+      if (nodeId) seen.add(nodeId);
+      // Raggio di raccordo: numero finito positivo entro il limite delle coordinate
+      const radius = typeof r === 'number' && Number.isFinite(r) && r > 0 && r <= MAX_COORD ? r : undefined;
+      clean.push({ ...(nodeId ? { id: nodeId } : {}), p: position, ...(handleIn ? { in: handleIn } : {}), ...(handleOut ? { out: handleOut } : {}), kind: kind as PathNode['kind'], ...(radius ? { r: radius } : {}) });
     }
-    result.push({ closed, nodes: clean });
+    // Cerchio parametrico: solo su un contorno chiuso di 4 nodi con il primo che ha un id; i tre nodi derivati non hanno id
+    const rawCirc = (raw as { circ?: unknown }).circ;
+    let circ: PathContour['circ'];
+    if (typeof rawCirc === 'object' && rawCirc !== null && closed && clean.length === 4 && clean[0].id) {
+      const { id: circId, p: circP } = rawCirc as { id?: unknown; p?: unknown };
+      const center = vec2(circP);
+      if (center && typeof circId === 'string' && NODE_ID.test(circId) && !seen.has(circId)) {
+        seen.add(circId);
+        circ = { id: circId, p: center };
+        for (let i = 1; i < 4; i++) delete clean[i].id;
+      }
+    }
+    result.push({ closed, nodes: clean, ...(circ ? { circ } : {}) });
   }
   return result;
+}
+
+/** `p` è la coppia (centro, nodo sul bordo) di un cerchio parametrico: la sola che una quota Ø può citare. */
+export const isCircleQuote = (paths: PathContour[], p: string[]): boolean => paths.some((c) => !!c.circ && !!c.nodes[0]?.id && c.circ.id === p[0] && c.nodes[0].id === p[1]);
+
+/** Costante di Bézier per approssimare un quarto di cerchio con una cubica (maniglie a 0,5523 volte il raggio). */
+export const CIRCLE_KAPPA = 0.5522847498307936;
+
+/** Un vettore ruotato di 90 gradi in senso antiorario (esatto: nessuna trigonometria). */
+const quarter = (v: Vec2): Vec2 => [-v[1] + 0, v[0] + 0];
+
+/**
+ * Ricalcola i tre nodi derivati e le maniglie di un cerchio parametrico dal suo centro (`circ.p`) e dal primo nodo (sul bordo,
+ * che resta dov'è). I nodi stanno a quarti di giro dal primo, tutti lisci e simmetrici con le maniglie a `CIRCLE_KAPPA` volte
+ * il raggio. Un contorno senza `circ` resta com'è. Restituisce lo stesso oggetto se è già coerente.
+ */
+export function regenCircle(c: PathContour): PathContour {
+  if (!c.circ || c.nodes.length !== 4) return c;
+  const [first] = c.nodes;
+  const center = c.circ.p;
+  let spoke: Vec2 = [first.p[0] - center[0], first.p[1] - center[1]];
+  let changed = false;
+  const nodes = c.nodes.map((n, k): PathNode => {
+    const out: Vec2 = (([x, y]) => [x * CIRCLE_KAPPA + 0, y * CIRCLE_KAPPA + 0] as Vec2)(quarter(spoke));
+    const handleIn: Vec2 = [-out[0] || 0, -out[1] || 0];
+    const p: Vec2 = k === 0 ? n.p : [center[0] + spoke[0], center[1] + spoke[1]];
+    const next: PathNode = { ...(n.id ? { id: n.id } : {}), p, in: handleIn, out, kind: 'symmetric' };
+    spoke = quarter(spoke);
+    const same = n.kind === 'symmetric' && n.p[0] === p[0] && n.p[1] === p[1] && n.in?.[0] === handleIn[0] && n.in?.[1] === handleIn[1] && n.out?.[0] === out[0] && n.out?.[1] === out[1] && !n.r;
+    if (!same) changed = true;
+    return next;
+  });
+  return changed ? { ...c, nodes } : c;
+}
+
+/** Contorno di un cerchio parametrico di centro `center` e raggio `r`: il primo nodo (con id) a destra del centro. */
+export function circleContour(center: Vec2, r: number, centerId: string, nodeId: string): PathContour {
+  const first: PathNode = { id: nodeId, p: [center[0] + r, center[1]], kind: 'symmetric' };
+  return regenCircle({ closed: true, nodes: [first, { p: [0, 0], kind: 'symmetric' }, { p: [0, 0], kind: 'symmetric' }, { p: [0, 0], kind: 'symmetric' }], circ: { id: centerId, p: center } });
+}
+
+/** Tipi di vincolo tra due segmenti (4 punti, `angle` anche 2) in cui i segmenti possono avere in comune un nodo. */
+const SHARED_NODE_OK = new Set<ConstraintType>(['angle', 'parallel', 'perpendicular', 'equal', 'collinear']);
+
+/**
+ * Punti ripetuti: un segmento non ha due estremi uguali, i due segmenti non sono lo stesso, e il nodo condiviso è ammesso
+ * solo nei vincoli tra segmenti (angolo, parallelo, perpendicolare, uguale, collineare). Punto medio e simmetrico vogliono
+ * punti tutti diversi.
+ */
+function distinctPoints(type: ConstraintType, p: string[]): boolean {
+  if (p.length >= 2 && p[0] === p[1]) return false;
+  if (p.length === 4) {
+    if (p[2] === p[3] || (p[0] === p[2] && p[1] === p[3]) || (p[0] === p[3] && p[1] === p[2])) return false;
+    return SHARED_NODE_OK.has(type) || new Set(p).size === 4;
+  }
+  return p.length !== 3 || new Set(p).size === 3;
+}
+/** Tetti dei dati dei vincoli (anche per quelli che arrivano da un file .scad non fidato). */
+export const MAX_CONSTRAINTS = 1000;
+export const MAX_PARAMS = 100;
+/** Numero finito entro ±1e5 (coordinate, misure, scostamenti). */
+const bounded = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x) && Math.abs(x) <= MAX_COORD;
+
+/** Tutti gli id dei nodi di un profilo. */
+export const nodeIds = (paths: PathContour[]): Set<string> => new Set(paths.flatMap((c) => [...(c.circ ? [c.circ.id] : []), ...c.nodes.flatMap((n) => (n.id ? [n.id] : []))]));
+
+/**
+ * Valida i vincoli arrivati da fuori contro i contorni (già validati) a cui si riferiscono. A differenza di `sanitizePaths`
+ * non fallisce mai: scarta i vincoli sbagliati e tiene gli altri (al più 1000). Si scarta un vincolo con tipo ignoto,
+ * numero di punti sbagliato, nodi inesistenti, valori non finiti o mancanti (`v` per le quote, `x` e `y` per `fixed`; una
+ * quota di riferimento può non avere `v`) e l'id già usato da un vincolo precedente. Restituisce oggetti nuovi, senza i
+ * campi in più, e una lista vuota per un dato che non è un elenco.
+ */
+export function sanitizeConstraints(value: unknown, paths: PathContour[]): ProfileConstraint[] {
+  if (!Array.isArray(value)) return [];
+  const ids = nodeIds(paths);
+  const seen = new Set<string>();
+  const result: ProfileConstraint[] = [];
+  for (const raw of value) {
+    if (result.length >= MAX_CONSTRAINTS) break;
+    if (typeof raw !== 'object' || raw === null) continue;
+    const { id, t, p, v, s, x, y, ref, off, at, expr, dia } = raw as Record<string, unknown>;
+    if (typeof id !== 'string' || !NODE_ID.test(id) || seen.has(id)) continue;
+    if (typeof t !== 'string' || !Object.hasOwn(NPTS, t)) continue;
+    const type = t as ConstraintType;
+    // Punti: il numero giusto per il tipo (l'angolo anche 4: dal segmento ab al segmento cd) e tutti esistenti
+    const want = NPTS[type];
+    if (!Array.isArray(p) || (p.length !== want && !(type === 'angle' && p.length === 4)) || !p.every((q) => typeof q === 'string' && ids.has(q))) continue;
+    if (!distinctPoints(type, p)) continue;
+    const isRef = ref === true;
+    // Misura: obbligatoria per le quote (tranne il riferimento), positiva per la lunghezza, con segno solo l'angolo
+    const measured = type === 'dist' || type === 'distX' || type === 'distY' || type === 'angle';
+    if (measured && !isRef && !(bounded(v) && (type === 'angle' || (type === 'dist' ? v > 0 : v >= 0)))) continue;
+    if (type === 'fixed' && !(bounded(x) && bounded(y))) continue;
+    // Campi facoltativi non validi: il campo si perde, il vincolo resta
+    result.push({
+      id,
+      t: type,
+      p: [...(p as string[])],
+      ...(measured && bounded(v) ? { v } : {}),
+      ...(s === 1 || s === -1 ? { s } : {}),
+      ...(type === 'fixed' ? { x: x as number, y: y as number } : {}),
+      ...(isRef ? { ref: true } : {}),
+      ...(bounded(off) ? { off } : {}),
+      ...(typeof at === 'number' && at >= 0 && at <= 1 ? { at } : {}),
+      // Espressione dei parametri locali (solo quote pilotanti) e diametro del cerchio (solo una distanza pilotante)
+      ...(measured && !isRef && typeof expr === 'string' && expr.length > 0 && expr.length <= MAX_EXPR ? { expr } : {}),
+      ...(type === 'dist' && !isRef && dia === true && isCircleQuote(paths, p as string[]) ? { dia: true as const } : {}),
+    });
+    seen.add(id);
+  }
+  return result;
+}
+
+/** Nomi dei parametri: un identificatore, e mai quelli che toccherebbero il prototipo dell'oggetto. */
+const PARAM_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,31}$/;
+const RESERVED_NAMES = new Set(['__proto__', 'constructor', 'prototype']);
+/** Lunghezza massima di un'espressione di parametro o di quota. */
+export const MAX_EXPR = 200;
+/** Il nome sopravvive a `sanitizeParams` (al massimo 32 caratteri, mai quelli che toccherebbero il prototipo): l'editor lo controlla prima di accettarlo. */
+export const validParamName = (name: string): boolean => PARAM_NAME.test(name) && !RESERVED_NAMES.has(name);
+/** Il valore numerico di un parametro sopravvive a `sanitizeParams` (finito, entro ±1e5). */
+export const validParamNumber = (v: number): boolean => bounded(v);
+
+/** Valida i parametri del profilo (numeri finiti o brevi espressioni): scarta le voci non valide; undefined se non ne resta nessuna. */
+export function sanitizeParams(value: unknown): ProfileParams | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
+  const result: ProfileParams = {};
+  let count = 0;
+  for (const [name, v] of Object.entries(value)) {
+    if (count >= MAX_PARAMS) break;
+    if (!PARAM_NAME.test(name) || RESERVED_NAMES.has(name)) continue;
+    if (!(bounded(v) || (typeof v === 'string' && v.length <= MAX_EXPR))) continue;
+    result[name] = v;
+    count++;
+  }
+  return count ? result : undefined;
+}
+
+/**
+ * Assegna un id ai nodi che non ne hanno, con un contatore per profilo (`n1`, `n2`...) che riparte dopo il numero più alto
+ * già usato; gli id esistenti non cambiano. Se tutti i nodi ne hanno già, restituisce gli stessi contorni (stesso
+ * riferimento, così la cache e la cronologia non vedono un cambiamento).
+ */
+export function assignNodeIds(paths: PathContour[]): PathContour[] {
+  // I tre nodi derivati di un cerchio parametrico non hanno id e non lo devono avere (non sono punti del risolutore)
+  const needsId = (c: PathContour) => c.nodes.some((n, i) => !n.id && !(c.circ && i > 0));
+  if (!paths.some(needsId)) return paths;
+  // Il contatore parte oltre il più alto `n<k>` presente, e un id già preso (anche non numerico) non si riusa
+  const taken = nodeIds(paths);
+  let counter = 0;
+  for (const id of taken) {
+    const k = /^n(\d+)$/.exec(id);
+    if (k) counter = Math.max(counter, Number(k[1]));
+  }
+  // Nuovo id: il prossimo numero libero
+  const fresh = (): string => {
+    do counter++;
+    while (taken.has(`n${counter}`));
+    return `n${counter}`;
+  };
+  return paths.map((c) => (needsId(c) ? { ...c, nodes: c.nodes.map((n, i) => (n.id || (c.circ && i > 0) ? n : { ...n, id: fresh() })) } : c));
+}
+
+/** `count` id di nodo liberi (`n<k>`) oltre il più alto già usato nel profilo: per i punti che nascono insieme (il cerchio parametrico). */
+export function freshNodeIds(paths: PathContour[], count: number): string[] {
+  const taken = nodeIds(paths);
+  let counter = 0;
+  for (const id of taken) {
+    const k = /^n(\d+)$/.exec(id);
+    if (k) counter = Math.max(counter, Number(k[1]));
+  }
+  const out: string[] = [];
+  while (out.length < count) {
+    counter++;
+    if (!taken.has(`n${counter}`)) out.push(`n${counter}`);
+  }
+  return out;
 }
 
 /** Dati di un profilo `path` che finiscono nel commento del codice OpenSCAD. */
@@ -298,14 +625,36 @@ interface PathMeta {
   tolerance: number;
   width: number;
   depth: number;
+  constraints?: ProfileConstraint[];
+  params?: ProfileParams;
 }
 
-/** Commento `// construct:path`: i dati su una sola riga di JSON, senza arrotondamenti (i nodi sono già arrotondati dallo store). */
+/**
+ * Commento `// construct:path`: i dati su una sola riga di JSON, senza arrotondamenti (i nodi sono già arrotondati dallo
+ * store). La versione è 2 SOLO se ci sono `k` (vincoli), `q` (parametri) o un raccordo `r` che cambia la forma: un'app che
+ * conosce solo la versione 1 non la riconosce e il poligono resta un Poligono qualsiasi. Senza, resta 1: gli `id` dei nodi
+ * non rendono illeggibile il commento (il lettore v:1 li ignora o li legge).
+ */
 export function encodePathMeta(p: PathMeta): string {
-  return JSON.stringify({ v: 1, w: p.width, d: p.depth, t: p.tolerance, paths: p.paths });
+  const k = p.constraints?.length ? { k: p.constraints } : {};
+  const q = p.params && Object.keys(p.params).length ? { q: p.params } : {};
+  return JSON.stringify({ v: metaVersion(p), w: p.width, d: p.depth, t: p.tolerance, paths: p.paths, ...k, ...q });
 }
 
-/** Rilegge il commento: null se non è JSON, la versione è ignota, le misure non sono valide o i contorni non passano `sanitizePaths`. */
+/**
+ * Versione del formato del commento e della bozza: 2 se ci sono vincoli, parametri, un cerchio parametrico o un raccordo (`r`
+ * di un nodo: cambia la forma, e un'app che lo ignorasse rileggerebbe un poligono diverso da quello scritto), altrimenti 1.
+ */
+export function metaVersion(p: { constraints?: unknown[]; params?: object; paths?: PathContour[] }): 1 | 2 {
+  const filleted = p.paths?.some((c) => c.circ || c.nodes.some((n) => (n.r ?? 0) > 0));
+  return p.constraints?.length || (p.params && Object.keys(p.params).length) || filleted ? 2 : 1;
+}
+
+/**
+ * Rilegge il commento (versione 1 o 2): null se non è JSON, la versione è ignota, le misure non sono valide o i contorni
+ * non passano `sanitizePaths`. Una versione 1 non ha vincoli. I vincoli e i parametri non validi si scartano senza
+ * rifiutare il profilo, che è comunque la forma scritta nel codice.
+ */
 export function decodePathMeta(text: string): PathMeta | null {
   let data: unknown;
   try {
@@ -314,9 +663,17 @@ export function decodePathMeta(text: string): PathMeta | null {
     return null;
   }
   if (typeof data !== 'object' || data === null) return null;
-  const { v, w, d, t, paths } = data as { v?: unknown; w?: unknown; d?: unknown; t?: unknown; paths?: unknown };
+  const { v, w, d, t, paths, k, q } = data as { v?: unknown; w?: unknown; d?: unknown; t?: unknown; paths?: unknown; k?: unknown; q?: unknown };
   const finite = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x) && x > 0 && x <= MAX_COORD;
-  if (v !== 1 || !finite(w) || !finite(d) || !finite(t)) return null;
+  if ((v !== 1 && v !== 2) || !finite(w) || !finite(d) || !finite(t)) return null;
   const clean = sanitizePaths(paths);
-  return clean ? { paths: clean, tolerance: clampTolerance(t), width: w, depth: d } : null;
+  if (!clean) return null;
+  const result: PathMeta = { paths: clean, tolerance: clampTolerance(t), width: w, depth: d };
+  if (v === 2) {
+    const constraints = sanitizeConstraints(k, clean);
+    const params = sanitizeParams(q);
+    if (constraints.length) result.constraints = constraints;
+    if (params) result.params = params;
+  }
+  return result;
 }

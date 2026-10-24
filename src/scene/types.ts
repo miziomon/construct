@@ -96,6 +96,8 @@ export type Shape2DKind = 'circle' | 'square' | 'ring' | 'heart' | 'star' | 'egg
 
 /** Punto del piano XY in mm (Y verso l'alto). */
 import type { PlanDraft } from './planShape';
+// Dipendenza di tipo da ui/ProfileEditor: `constraints.ts` è il risolutore puro, senza import; andrà spostato in scene/ (rimandato)
+import type { Constraint } from '../ui/ProfileEditor/constraints';
 
 export type Vec2 = [number, number];
 
@@ -104,16 +106,56 @@ export type Vec2 = [number, number];
  * da quel lato). `kind` dice come si muovono le maniglie nell'editor: la forma dipende solo da `p`, `in` e `out`.
  */
 export interface PathNode {
+  /**
+   * Identità del nodo, stabile quando se ne inseriscono o cancellano altri (contatore del profilo: `n1`, `n2`...): i
+   * vincoli la citano al posto dell'indice. Facoltativa: i profili vecchi ne sono privi finché non si aprono nella modale
+   * (`assignNodeIds` in bezier.ts). Unica in tutto il profilo, non solo nel contorno.
+   */
+  id?: string;
   p: Vec2;
   in?: Vec2;
   out?: Vec2;
   kind: 'corner' | 'smooth' | 'symmetric';
+  /** Raggio di raccordo dello spigolo in mm (assente = nessun raccordo). Solo conservato: non cambia ancora la forma. */
+  r?: number;
 }
+
+/**
+ * Vincolo o quota del Profilo: un `Constraint` del risolutore (src/ui/ProfileEditor/constraints.ts, `p` = id dei nodi) più
+ * la posizione grafica della quota nell'editor, che non influisce sulla geometria.
+ */
+export interface ProfileConstraint extends Constraint {
+  /**
+   * Distanza con segno (mm) della linea di quota dal segmento. Per la lunghezza allineata è la distanza dalla normale a
+   * sinistra del segmento (Y verso l'alto); per le distanze in X e in Y è lo scostamento dalla Y (o X) a metà tra i due nodi,
+   * positivo verso l'alto (o la destra). Vedi `dimLayout` in ui/ProfileEditor/dimPlacement.ts.
+   */
+  off?: number;
+  /** Posizione dell'etichetta lungo la linea di quota, da 0 (primo estremo) a 1 (secondo). */
+  at?: number;
+  /**
+   * Espressione con i parametri locali del profilo (`larghezza/2 + 3`) da cui deriva `v`, per le quote pilotanti. `v` è sempre
+   * il valore valutato (la lettura non rivaluta mai): l'espressione si rilegge solo quando l'utente cambia un parametro.
+   */
+  expr?: string;
+  /** Quota di un cerchio parametrico: una `dist` tra il centro e il suo punto sul bordo, mostrata come diametro (`v` resta il raggio). */
+  dia?: true;
+}
+
+/** Parametri con nome del profilo (numeri o espressioni), locali al profilo. */
+export type ProfileParams = Record<string, number | string>;
 
 /** Contorno di nodi di Bézier cubiche: `closed` unisce l'ultimo nodo al primo; un segmento senza maniglie è retto. */
 export interface PathContour {
   closed: boolean;
   nodes: PathNode[];
+  /**
+   * Cerchio parametrico (foro quotato): il contorno ha 4 nodi lisci a 0, 90, 180 e 270 gradi attorno al centro `p`, con le
+   * maniglie a 0,5523 volte il raggio. Il centro e il primo nodo (sul bordo, con id) sono i punti del risolutore; gli altri tre
+   * nodi non hanno id e si ricalcolano da quei due (`regenCircle`). `id` è l'identità del centro, come per i nodi. Per tutto il
+   * resto (kernel, codice OpenSCAD, campionamento) è un contorno chiuso normale: nessun tipo di segmento nuovo.
+   */
+  circ?: { id: string; p: Vec2 };
 }
 
 /** Stato del disegno nella modale del Profilo: contorni e parametri di estrusione (quelli del nodo `path`). */
@@ -128,6 +170,14 @@ export interface Draft {
   revolveSegments: number;
   /** Sagoma di rotazione (sperimentale); assente = cerchio, oppure non toccata dalla modale. */
   plan?: PlanDraft;
+  /**
+   * Vincoli e quote, UNA lista per profilo e non per contorno: un vincolo può legare nodi di contorni diversi (per esempio
+   * un foro rispetto al bordo). Citano i nodi per `id`. Assente = nessun vincolo. Non si risolvono mai alla lettura: le
+   * coordinate salvate nei nodi sono già la soluzione.
+   */
+  constraints?: ProfileConstraint[];
+  /** Parametri con nome, locali al profilo. */
+  params?: ProfileParams;
 }
 
 /**
@@ -251,6 +301,9 @@ export type Shape2DNode = BaseNode & {
       depth: number;
       /** Sagoma di rotazione (sperimentale): la forma vista dall'alto lungo cui si ruota il profilo. Assente = cerchio. */
       plan?: PlanDraft;
+      /** Vincoli e parametri del disegno (vedi `Draft`): non influiscono sulla geometria, che sta già nei nodi. */
+      constraints?: ProfileConstraint[];
+      params?: ProfileParams;
     }
   | {
       /**

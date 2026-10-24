@@ -1,9 +1,16 @@
-import { PATH_MAX_TOLERANCE, PATH_MIN_TOLERANCE } from '../../scene/bezier';
-import type { PathContour, PathNode } from '../../scene/types';
+import { PATH_MAX_TOLERANCE, PATH_MIN_TOLERANCE, filletInfo } from '../../scene/bezier';
+import type { PathContour, PathNode, ProfileParams } from '../../scene/types';
 import { NumberField } from '../NumberField/NumberField';
+import { notify } from '../notify/notifyStore';
+import { ExprField } from './ExprField';
+import { parseFieldValue } from './profileParams';
 import { SliderField } from '../SliderField/SliderField';
 import { TIPS } from '../PropertiesPanel/tooltips';
 import type { GridSettings } from './DrawingCanvas';
+import { ConstraintsPanel } from './ConstraintsPanel';
+import type { ConstraintsPanelProps } from './ConstraintsPanel';
+import { ParamsPanel } from './ParamsPanel';
+import type { ParamsPanelProps } from './ParamsPanel';
 import type { Draft, NodeRef } from './model';
 
 interface Props {
@@ -23,6 +30,8 @@ interface Props {
   /** Modifica conclusa di un parametro (campo numerico): un passo. */
   onPatch: (patch: Partial<Draft>) => void;
   onKind: (kind: PathNode['kind']) => void;
+  /** Raggio di raccordo (mm) del nodo selezionato; assente nella sagoma, che non ha raccordi. */
+  onRadius?: (radius: number) => void;
   /** Porta il nodo selezionato alla coordinata indicata (asse 0 = X, 1 = Y). */
   onCoordinate: (axis: 0 | 1, value: number) => void;
   /** Imposta lunghezza (mm) e angolo (gradi) di una maniglia del nodo selezionato. */
@@ -33,6 +42,10 @@ interface Props {
   onDeletePath: (index: number) => void;
   /** Quota di sezione della sagoma (solo con la funzione sperimentale e in rotazione). */
   section?: SectionProps;
+  /** Quote e vincoli (sezione «Quote e vincoli»). */
+  quote: Omit<ConstraintsPanelProps, 'paths' | 'constraints'>;
+  /** Parametri locali del profilo (sezione «Parametri»). */
+  paramsPanel: ParamsPanelProps;
 }
 
 /** Tipi di nodo: il simbolo ripete la forma che il nodo ha nel disegno. */
@@ -49,10 +62,37 @@ const GRID_STEPS = [0.1, 0.5, 1, 5, 10];
 const comma = (n: number) => String(n).replace('.', ',');
 
 /** «Punto selezionato»: coordinate, tipo di nodo e maniglie del nodo scelto (con più nodi solo il conteggio). Condivisa da profilo e sagoma. */
-export function NodeSection({ paths, selection, onKind, onCoordinate, onHandle }: { paths: PathContour[]; selection: NodeRef[]; onKind: Props['onKind']; onCoordinate: Props['onCoordinate']; onHandle: Props['onHandle'] }) {
+export function NodeSection({ paths, selection, params, onKind, onRadius, onCoordinate, onHandle }: { paths: PathContour[]; selection: NodeRef[]; params?: ProfileParams; onKind: Props['onKind']; onRadius?: Props['onRadius']; onCoordinate: Props['onCoordinate']; onHandle: Props['onHandle'] }) {
+  // Il raggio di raccordo accetta anche un'espressione con i parametri del profilo: si valuta qui e si tiene il numero (l'espressione non si ricorda)
+  const commitRadius = (text: string) => {
+    const parsed = parseFieldValue(text, params);
+    if (!parsed.ok) notify.error(parsed.error);
+    else if (parsed.v < 0) notify.error('Il raggio non può essere negativo');
+    else {
+      const radius = Math.round(parsed.v * 1000) / 1000;
+      onRadius?.(radius);
+      // Il raccordo tiene il numero, non l'espressione: se il parametro cambia non lo segue
+      if (parsed.expr) notify.info(`Raggio calcolato: ${String(radius).replace('.', ',')} mm (non segue il parametro)`);
+    }
+  };
   const ref = selection.length === 1 ? selection[0] : null;
   const contour = ref ? paths[ref.path] : undefined;
-  const node = ref && contour ? contour.nodes[ref.node] : undefined;
+  // Il centro di un cerchio parametrico ha l'indice dopo l'ultimo nodo; il suo nodo sul bordo e il centro hanno solo le coordinate
+  const isCenter = !!ref && !!contour?.circ && ref.node === contour.nodes.length;
+  const node: PathNode | undefined = ref && contour ? (isCenter ? { p: contour.circ!.p, kind: 'symmetric' } : contour.nodes[ref.node]) : undefined;
+  if (node && ref && contour?.circ) {
+    return (
+      <section className="profile-editor__section">
+        <h3 className="profile-editor__section-title">Punto selezionato</h3>
+        {/* Il nodo sul bordo si legge soltanto: spostarlo cambierebbe il raggio, che si decide con la quota Ø */}
+        <NumberField label="X" unit="mm" disabled={!isCenter} value={node.p[0]} onCommit={(v) => onCoordinate(0, v)} />
+        <NumberField label="Y" unit="mm" disabled={!isCenter} value={node.p[1]} onCommit={(v) => onCoordinate(1, v)} />
+        <p className="profile-editor__hint" data-circle-note="">
+          {isCenter ? 'Centro del cerchio: spostandolo il cerchio si sposta intero.' : 'Punto sul bordo del cerchio: le coordinate sono solo da leggere, il raggio si cambia dalla quota Ø.'}
+        </p>
+      </section>
+    );
+  }
   return (
     <section className="profile-editor__section">
       <h3 className="profile-editor__section-title">Punto selezionato</h3>
@@ -67,6 +107,18 @@ export function NodeSection({ paths, selection, onKind, onCoordinate, onHandle }
               </button>
             ))}
           </div>
+          {onRadius && node.kind === 'corner' && (() => {
+            // Raggio di raccordo: per gli spigoli (i nodi lisci e simmetrici non l'hanno); vale tra due segmenti retti, e se non bastano si riduce
+            const info = filletInfo(contour, ref.node);
+            const radius = node.r ?? 0;
+            const note = !info.eligible ? info.reason : radius > info.rmax + 1e-9 ? `Raggio ridotto a ${comma(Math.round(info.rmax * 100) / 100)} mm: i segmenti non bastano` : undefined;
+            return (
+              <div data-fillet="">
+                <ExprField label="Raggio" unit="mm" disabled={!info.eligible} value={radius} onCommit={commitRadius} />
+                {note && <p className="profile-editor__hint" data-fillet-note="">{note}</p>}
+              </div>
+            );
+          })()}
           {(['in', 'out'] as const).map((side) => {
             const h = node[side];
             const length = h ? Math.hypot(h[0], h[1]) : 0;
@@ -85,7 +137,7 @@ export function NodeSection({ paths, selection, onKind, onCoordinate, onHandle }
       ) : (
         selection.length > 1 ? (
           <>
-            <p className="profile-editor__hint">{selection.length} nodi selezionati: il tipo vale per tutti.</p>
+            <p className="profile-editor__hint">{selection.length} nodi selezionati: il tipo e il raggio valgono per tutti.</p>
             <div className="profile-editor__segmented" role="group" aria-label="Tipo dei nodi selezionati">
               {KINDS.map((k) => {
                 const kinds = selection.map((r) => paths[r.path]?.nodes[r.node]?.kind);
@@ -96,6 +148,21 @@ export function NodeSection({ paths, selection, onKind, onCoordinate, onHandle }
                 );
               })}
             </div>
+            {onRadius && (() => {
+              // Raggio comune: a tutti gli spigoli compatibili tra i nodi scelti; «—» se i valori sono diversi
+              const eligible = selection.filter((r) => paths[r.path] && filletInfo(paths[r.path], r.node).eligible);
+              if (!eligible.length) return null;
+              const radii = eligible.map((r) => paths[r.path].nodes[r.node].r ?? 0);
+              const same = radii.every((v) => Math.abs(v - radii[0]) < 1e-9);
+              return (
+                <div data-fillet="">
+                  <ExprField label="Raggio" unit="mm" value={same ? radii[0] : 0} mixed={!same} onCommit={commitRadius} />
+                  <p className="profile-editor__hint" data-fillet-note="">
+                    {eligible.length} di {selection.length} nodi possono raccordarsi: il raggio vale per quelli.
+                  </p>
+                </div>
+              );
+            })()}
           </>
         ) : (
           <p className="profile-editor__hint">Seleziona un nodo per leggerne e cambiarne le coordinate. Doppio clic su un nodo: cambia il tipo.</p>
@@ -166,7 +233,7 @@ export function SectionControl({ z, min, max, show, onZ, onShow }: SectionProps)
 }
 
 /** Colonna di destra della modale: estrusione, punto selezionato, percorsi, griglia e snap, qualità. */
-export function Sidebar({ draft, selection, holes, grid, sampling, boundFields, onExtrusion, onLive, onPatch, onKind, onCoordinate, onHandle, onGrid, onSelectPath, onClosePath, onDeletePath, section }: Props) {
+export function Sidebar({ draft, selection, holes, grid, sampling, boundFields, onExtrusion, onLive, onPatch, onKind, onRadius, onCoordinate, onHandle, onGrid, onSelectPath, onClosePath, onDeletePath, section, quote, paramsPanel }: Props) {
   const rotate = draft.extrusion === 'rotate';
   // Uno slider legato a un parametro non si muove da qui: la formula decide il valore (si cambia dalle Proprietà)
   const bound = (field: string) => boundFields.includes(field);
@@ -201,7 +268,11 @@ export function Sidebar({ draft, selection, holes, grid, sampling, boundFields, 
         {rotate && section && <SectionControl {...section} />}
       </section>
 
-      <NodeSection paths={draft.paths} selection={selection} onKind={onKind} onCoordinate={onCoordinate} onHandle={onHandle} />
+      <NodeSection paths={draft.paths} selection={selection} params={draft.params} onKind={onKind} onRadius={onRadius} onCoordinate={onCoordinate} onHandle={onHandle} />
+
+      <ConstraintsPanel paths={draft.paths} constraints={draft.constraints ?? []} {...quote} />
+
+      <ParamsPanel {...paramsPanel} />
 
       <section className="profile-editor__section">
         <h3 className="profile-editor__section-title">Percorsi</h3>
