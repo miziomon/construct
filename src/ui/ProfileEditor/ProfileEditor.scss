@@ -642,8 +642,8 @@
   &__toolgroup {
     display: flex;
     flex-wrap: wrap;
-    // Gli strumenti vanno a capo prima di coprire i pulsanti dello zoom, in alto a destra
-    max-width: calc(100% - 130px);
+    // Gli strumenti vanno a capo prima di coprire i pulsanti della cronologia, a destra (la riga di nove strumenti deve starci a una riga: Cerchio è solo l'icona)
+    max-width: calc(100% - 90px);
     gap: $space-1;
 
     button {
