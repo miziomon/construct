@@ -111,6 +111,17 @@ describe('pulizia', () => {
     expect(svg).toContain('</style>');
   });
 
+  it('toglie <set> e <animate> che scrivono un href (anche con prefisso e con altri attributi), non le altre animazioni', () => {
+    const dirty = '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 10 10"><a><set attributeName="href" to="javascript:alert(1)"/><rect width="1" height="1"/></a><a><animate begin="0s" attributeName=\'xlink:href\' values="http://example.com/a;http://example.com/b" dur="1s"></animate><circle r="1"/></a><s:set attributeName="href" to="x"/><rect width="2" height="2"><animate attributeName="x" from="0" to="5" dur="1s"/></rect></svg>';
+    const { svg, removed } = sanitizeSvg(dirty);
+    for (const bad of ['javascript:', 'example.com', 'attributeName="href"', "attributeName='xlink:href'", 's:set']) expect(svg, bad).not.toContain(bad);
+    // Restano le forme e le animazioni di altri attributi
+    expect(svg).toContain('<rect width="1" height="1"/>');
+    expect(svg).toContain('<circle r="1"/>');
+    expect(svg).toContain('<animate attributeName="x" from="0" to="5" dur="1s"/>');
+    expect(removed).toContain('animazioni di riferimenti');
+  });
+
   it('un SVG pulito non cambia e non segnala nulla', () => {
     const { svg, removed } = sanitizeSvg(CIRCLE);
     expect(svg).toBe(CIRCLE);
@@ -119,7 +130,7 @@ describe('pulizia', () => {
 
   it('rifiuta le entità XML (espansione a dismisura), anche dentro un DOCTYPE', () => {
     const bomb = '<?xml version="1.0"?><!DOCTYPE svg [<!ENTITY a "aaaaaaaaaa"><!ENTITY b "&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;">]><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><text>&b;</text></svg>';
-    expect(() => sanitizeSvg(bomb)).toThrow(/entità XML/);
+    expect(() => sanitizeSvg(bomb)).toThrow(/entità XML.*riesporta l'SVG senza DTD/);
     expect(() => prepareSvg(bomb)).toThrow(/entità XML/);
   });
 });
@@ -166,6 +177,12 @@ describe('dimensioni e rasterizzazione', () => {
     expect([bare.w, bare.h]).toEqual([512, 256]);
     // Con xmlns:xlink resta (serve ai riferimenti interni)
     expect(prepareSvg('<svg xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 4 4"><use xlink:href="#a"/></svg>').svg).toContain('xmlns:xlink=');
+  });
+
+  it('commenti e istruzioni di elaborazione dopo </svg> non rendono il documento incompleto; altro testo sì', () => {
+    const body = '<svg viewBox="0 0 10 10"><rect width="5" height="5"/></svg>';
+    for (const tail of ['', '\n', '\n<!-- fine -->\n', '<?editor versione 3?>', ' <!-- a --> <?x y?> <!-- b -->\n']) expect(() => prepareSvg(body + tail), JSON.stringify(tail)).not.toThrow();
+    for (const tail of ['<rect/>', 'testo', '<!-- aperto']) expect(() => prepareSvg(body + tail), tail).toThrow(/incompleto/);
   });
 
   it('SVG vuoto, incompleto o non SVG: messaggi in italiano', () => {

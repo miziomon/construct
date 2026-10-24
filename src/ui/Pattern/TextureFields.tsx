@@ -94,7 +94,7 @@ export function TextureFields({ params: p, onChange, disabled, history = true }:
     setProblem(null);
     try {
       const asset = await importImageFile(file);
-      onChange({ imageId: asset.id, sample: undefined });
+      onChange({ imageId: asset.id, sample: undefined, sampleDesign: undefined });
     } catch (err) {
       setProblem(err instanceof Error ? err.message : 'Impossibile leggere l\'immagine.');
     } finally {

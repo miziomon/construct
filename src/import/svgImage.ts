@@ -47,12 +47,28 @@ function preambleOf(text: string): { body: string; internalSubset: boolean } {
 /** Vero se il contenuto (non l'estensione) è un documento SVG: dopo BOM, spazi, XML, commenti e DOCTYPE comincia con `<svg`. */
 export const looksLikeSvg = (text: string): boolean => /^<svg[\s/>]/.test(stripPreamble(text));
 
+/**
+ * Vero se l'elemento radice si chiude con `</svg>` e dopo c'è solo ciò che il formato ammette in coda: spazi, commenti e istruzioni di
+ * elaborazione (`<?...?>`), che gli editor aggiungono a volte.
+ */
+function closesRoot(svg: string): boolean {
+  const end = svg.lastIndexOf('</svg');
+  const close = end < 0 ? -1 : svg.indexOf('>', end);
+  if (close < 0 || !/^<\/svg\s*>$/.test(svg.slice(end, close + 1))) return false;
+  let rest = svg.slice(close + 1);
+  for (;;) {
+    const next = rest.replace(/^\s+/, '').replace(/^<!--[\s\S]*?-->/, '').replace(/^<\?[\s\S]*?\?>/, '');
+    if (next === rest) return next === '';
+    rest = next;
+  }
+}
+
 /** Elementi che disegnano qualcosa: senza nessuno l'SVG è vuoto. */
 const DRAWING = /<(path|rect|circle|ellipse|line|polyline|polygon|text|image|use)[\s/>]/;
 
 /** Rifiuta l'SVG con entità XML (`<!ENTITY`): si possono espandere a dismisura (miliardi di risate). */
 function rejectEntities(text: string): void {
-  if (/<!ENTITY/i.test(text)) throw new Error('SVG non supportato: contiene entità XML, che non si possono caricare in sicurezza.');
+  if (/<!ENTITY/i.test(text)) throw new Error('SVG non supportato: contiene entità XML, che non si possono caricare in sicurezza: riesporta l\'SVG senza DTD.');
 }
 
 /**
@@ -77,6 +93,8 @@ export function sanitizeSvg(text: string): { svg: string; removed: string[] } {
   svg = strip(/<(?:[\w-]+:)?script\b[^>]*\/>/gi, 'script', svg);
   svg = strip(/<(?:[\w-]+:)?foreignObject\b[\s\S]*?<\/(?:[\w-]+:)?foreignObject\s*>/gi, 'foreignObject', svg);
   svg = strip(/<(?:[\w-]+:)?foreignObject\b[^>]*\/>/gi, 'foreignObject', svg);
+  // Animazioni che scrivono un href (`<set attributeName="href" to="..."/>`, `<animate ...>`): aggirerebbero la pulizia degli href
+  svg = strip(/<((?:[\w-]+:)?(?:set|animate))\b(?=[^>]*\battributeName\s*=\s*(["'])(?:[\w-]+:)?href\2)[^>]*?(?:\/>|>[\s\S]*?<\/\1\s*>)/gi, 'animazioni di riferimenti', svg);
   // Attributi di evento: onload, onclick...
   svg = strip(/\son[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, 'eventi', svg);
   // Riferimenti (href con qualunque prefisso): restano solo quelli interni (#id) e le immagini data:
@@ -146,7 +164,7 @@ export function prepareSvg(text: string): { svg: string; w: number; h: number; r
   const { svg: clean, removed } = sanitizeSvg(body);
   // Ben formato in modo grossolano: l'elemento radice si chiude (o è vuoto e si chiude da sé)
   const tag = rootTag(clean);
-  if (!tag || !(tag.endsWith('/>') || /<\/svg\s*>\s*$/.test(clean))) throw new Error('Il file non è un SVG valido: il documento è incompleto.');
+  if (!tag || !(tag.endsWith('/>') || closesRoot(clean))) throw new Error('Il file non è un SVG valido: il documento è incompleto.');
   if (tag.endsWith('/>') || !DRAWING.test(clean)) throw new Error('L\'SVG è vuoto: non contiene forme da disegnare.');
   const intrinsic = svgDimensions(clean);
   const { w, h } = svgRasterSize(intrinsic.w, intrinsic.h);
