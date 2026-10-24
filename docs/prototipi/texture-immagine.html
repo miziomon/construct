@@ -788,9 +788,10 @@ function regionRect(region) {
 }
 /**
 * Superficie della texture sul rettangolo; null se la quota è nulla ovunque (ampiezza 0, livello medio agli estremi). `embed` è
-* quanto la pelle (rilievo) entra nel pezzo: `EMBED`, ma il Pattern lo limita a metà dello spessore (come per le borchie).
+* quanto la pelle (rilievo) entra nel pezzo: `EMBED`, ma il Pattern lo limita a metà dello spessore (come per le borchie);
+* `floorZ` è la quota più bassa che il solido può toccare (vedi `textureFloor`), per il modo «entrambi».
 */
-function faceSurface(img, params, rect, step = .5, embed = EMBED) {
+function faceSurface(img, params, rect, step = .5, embed = EMBED, floorZ = -Infinity) {
 	const tex = normalizeTexture(params);
 	const h = makeTextureHeight(img, tex);
 	const [lo, hi] = heightRange(tex);
@@ -820,7 +821,8 @@ function faceSurface(img, params, rect, step = .5, embed = EMBED) {
 		};
 	}
 	// both: la quota cambia segno. Piano di base 0,4 mm sotto l'incavo più profondo; la pelle entra di EMBED sotto il piano
-	const base = lo - .4;
+	// Il piano di base sta 0,4 mm sotto l'incavo più profondo, ma la pelle (un piede più in basso) non esce dal fondo del pezzo (`floorZ`)
+	const base = Math.min(Math.max(lo - .4, floorZ + embed), lo);
 	return {
 		op: "skin",
 		grid: sampleGrid(rect, step, h),

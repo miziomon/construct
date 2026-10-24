@@ -6,7 +6,7 @@ import { buildPattern } from './pattern';
 import { heightSolid } from './relief';
 import { faceSurface } from './textureMap';
 import { sceneToOpenScad } from '../codegen/openscad';
-import { addImage } from '../import/assets';
+import { addImage, getImage } from '../import/assets';
 import { primitiveDefaults } from '../scene/defaults';
 import { defaultPatternParams, faceFromBounds, frameRect, normalizePattern, textureOf, thicknessAlong } from '../scene/pattern';
 import { sampleGrid } from '../scene/relief';
@@ -193,6 +193,60 @@ describe('Pattern Immagine: «entrambi» su una faccia sola', () => {
   });
 });
 
+describe('Pattern Immagine: «entrambi» su pannelli sottilissimi', () => {
+  it('con il limite di profondità basso il piano di base della pelle non esce dal fondo (pannello da 0,5 mm)', () => {
+    for (const thickness of [0.5, 0.3, 1]) {
+      const thin: Vec3 = [80, 60, thickness];
+      const tb = { min: thin.map((v) => -v / 2) as Vec3, max: thin.map((v) => v / 2) as Vec3 };
+      const piece = wasm.Manifold.cube(thin, true);
+      for (const midlevel of [0.5, 0.1, 0.9]) {
+        const params = normalizePattern({ ...defaultPatternParams(tb, 7), kind: 'texture', margin: 0, sample: 'noise', faces: [faceFromBounds(tb, 'z+')], texture: { ...base, mode: 'both', amplitude: 20, tile: 10, midlevel } });
+        const result = buildPattern(wasm, piece, params);
+        expect(result.status()).toBe('NoError');
+        expect(result.boundingBox().min[2]).toBeGreaterThanOrEqual(-thickness / 2 - 1e-6);
+        expect(result.boundingBox().min[2]).toBeCloseTo(-thickness / 2, 3);
+        // Un solo corpo e il fondo intero: nessun foro che attraversi il pannello
+        expect(result.decompose().length).toBe(1);
+        const bottom = result.slice(-thickness / 2 + 0.005);
+        expect(bottom.area()).toBeCloseTo(4800, 2);
+        bottom.delete();
+        result.delete();
+      }
+      piece.delete();
+    }
+  });
+
+  it('faceSurface: il piano della pelle non scende sotto `floorZ` e, senza, resta 0,4 mm sotto l\'incavo', () => {
+    const rect = { minX: -10, maxX: 10, minY: -10, maxY: 10 };
+    const params = { ...base, mode: 'both' as const, amplitude: 1, midlevel: 0.5 };
+    const free = faceSurface(sampleImage('noise'), params, rect, 1, 0.2)!;
+    // Incavo più profondo -0,5: base a -0,9 e piano a -1,1
+    expect(free.planeZ).toBeCloseTo(-0.5 - 0.4 - 0.2, 6);
+    // Fondo del pezzo a -1: la base sale a -0,8 e il piano della pelle (un piede sotto) si ferma al fondo
+    const limited = faceSurface(sampleImage('noise'), params, rect, 1, 0.2, -1)!;
+    expect(limited.planeZ).toBeCloseTo(-1, 6);
+    // Mai oltre l'incavo più profondo (altrimenti gli incavi più profondi della base non si scaverebbero)
+    expect(limited.column![0]).toBeLessThanOrEqual(-0.5 + 1e-9);
+  });
+});
+
+describe('Pattern Immagine: chiave di cache del kernel', () => {
+  it('non dipende dai campi dell\'altro gruppo rimasti nel Pattern (cambio di tipo) ma dipende dall\'immagine registrata', async () => {
+    const clean = scene({});
+    const stale = scene({ design: 'basket', relief: { kind: 'wood', gap: 3 } as never, reliefAlgorithm: 1 });
+    const ev = new Evaluator(wasm);
+    const key = (s: Scene) => (ev as unknown as { key: (scene: Scene, node: unknown) => string }).key(s, s.nodes.g);
+    expect(key(stale)).toBe(key(clean));
+    // Con un'immagine caricata la chiave cambia quando la si registra (altrimenti resterebbe in cache il risultato senza effetto)
+    const asset = await addImage({ w: 2, h: 2, data: Uint8Array.from([0, 255, 255, 0]) });
+    const withImage = scene({ imageId: asset.id, sample: undefined });
+    const before = key(withImage);
+    ev.registerImage(asset.id, { w: 2, h: 2, data: Uint8Array.from([0, 255, 255, 0]) });
+    expect(key(withImage)).not.toBe(before);
+    expect(key(withImage).length).toBeLessThan(1200);
+  });
+});
+
 describe('Pattern Immagine su una faccia inclinata', () => {
   const pyramid = (patch: Partial<PatternParams>, texture: Partial<TextureParams> = {}): Scene => {
     const cone = { ...primitiveDefaults('cone'), id: 'c', name: 'Piramide', position: [0, 0, 0], radiusBottom: 20, radiusTop: 0, height: 20, segments: 4 } as PrimitiveNode;
@@ -293,7 +347,7 @@ describe('Pattern Immagine nel codice OpenSCAD', () => {
     expect(missing).not.toContain('zmap');
     // Registrata nel registro del thread principale (funzione di ricerca di partenza)
     const asset = await addImage({ w: 4, h: 4, data: Uint8Array.from({ length: 16 }, (_, i) => (i % 2 ? 0 : 255)) });
-    const found = sceneToOpenScad(scene({ imageId: asset.id, sample: undefined }, { tile: 8 }));
+    const found = sceneToOpenScad(scene({ imageId: asset.id, sample: undefined }, { tile: 8 }), { images: getImage });
     expect(found).toContain('zmap = [');
   });
 

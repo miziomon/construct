@@ -1,5 +1,5 @@
 import type { CrossSection, Manifold, ManifoldToplevel } from 'manifold-3d';
-import { patternRelief, cutReach, faceFrame, frameRect, isAdditiveKind, isAxisFace, isReliefKind, normalizePattern, patternCells, studCentersOf, studEmbedOf, studRelief, textureOf } from '../scene/pattern';
+import { patternRelief, cutReach, faceFrame, frameRect, isAdditiveKind, isAxisFace, isReliefKind, normalizePattern, patternCells, studCentersOf, studEmbedOf, studRelief, textureFloor, textureOf } from '../scene/pattern';
 import { imageOf } from '../scene/textureImage';
 import type { ImageLookup } from '../scene/textureImage';
 import type { FaceFrame } from '../scene/pattern';
@@ -114,7 +114,7 @@ function textureToolsFor(wasm: ManifoldToplevel, child: Manifold, p: PatternPara
   const none = { cut: [] as Manifold[], add: [] as Manifold[] };
   if (!found) return none;
   const { region, frame } = found;
-  const surface = faceSurface(image, textureOf(p), frameRect(p, face), p.preview ? PREVIEW_STEP : 0.5, studEmbedOf(face));
+  const surface = faceSurface(image, textureOf(p), frameRect(p, face), p.preview ? PREVIEW_STEP : 0.5, studEmbedOf(face), textureFloor(p));
   const tool = surface ? clipToRegion(wasm, heightSolid(wasm, surface.grid, surface.planeZ, surface.side), region, surface.zFrom, surface.zTo) : null;
   if (!surface || !tool) {
     region.delete();

@@ -1,12 +1,11 @@
 import { getKernel } from '../kernel/client';
 import { MAX_IMAGE_SIDE, imageToGray } from '../scene/textureImage';
 import { addImage } from './assets';
+import { HEADER_BYTES, readImageHeader } from './imageHeader';
 import type { ImageAsset } from './assets';
 
 /** File più grande di così non si apre (una foto di fotocamera sta ben sotto). */
 export const MAX_IMAGE_FILE_BYTES = 20 * 1024 * 1024;
-/** Oltre questi pixel (circa 100 megapixel) la decodifica supererebbe la memoria di una scheda del browser. */
-const MAX_IMAGE_PIXELS = 100_000_000;
 /** Lato massimo a cui si disegna l'immagine prima di leggerne i pixel: oltre, si riduce già nel disegno (la riduzione finale a 512 px è `imageToGray`). */
 const MAX_DECODE_SIDE = 2048;
 
@@ -16,7 +15,9 @@ const MAX_DECODE_SIDE = 2048;
  */
 async function decodeRgba(file: Blob): Promise<{ rgba: Uint8ClampedArray; w: number; h: number }> {
   if (file.size > MAX_IMAGE_FILE_BYTES) throw new Error(`Il file è troppo grande (${Math.round(file.size / 1024 / 1024)} MB): il massimo è ${MAX_IMAGE_FILE_BYTES / 1024 / 1024} MB.`);
-  if (file.type && file.type !== 'image/png' && file.type !== 'image/jpeg') throw new Error('Formato non supportato: servono immagini PNG o JPG.');
+  // Formato e dimensioni dai primi byte, PRIMA di decodificare: `createImageBitmap` allocherebbe tutti i pixel di un'immagine enorme
+  // (e il tipo dichiarato dal browser dipende dall'estensione, non dal contenuto)
+  readImageHeader(new Uint8Array(await file.slice(0, HEADER_BYTES).arrayBuffer()));
   let bitmap: ImageBitmap;
   try {
     bitmap = await createImageBitmap(file, { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
@@ -24,7 +25,6 @@ async function decodeRgba(file: Blob): Promise<{ rgba: Uint8ClampedArray; w: num
     throw new Error('Il file non è un\'immagine leggibile: servono immagini PNG o JPG valide.');
   }
   try {
-    if (bitmap.width * bitmap.height > MAX_IMAGE_PIXELS) throw new Error(`L'immagine è troppo grande (${bitmap.width} × ${bitmap.height} pixel): riducila prima di caricarla.`);
     // Le immagini enormi si riducono già nel disegno, per non allocare centinaia di MB di pixel
     const scale = Math.min(1, MAX_DECODE_SIDE / Math.max(bitmap.width, bitmap.height));
     const w = Math.max(1, Math.round(bitmap.width * scale));

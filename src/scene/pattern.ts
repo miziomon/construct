@@ -90,11 +90,27 @@ const RELIEF_FLOOR = 0.2;
  * lo spessore si divide a metà, così le due incisioni non si attraversano. Infinito senza facce.
  */
 export function reliefDepthLimit(p: PatternParams): number {
+  const thickness = reliefThickness(p);
+  return Number.isFinite(thickness) ? Math.max(0.05, thickness - RELIEF_FLOOR) : Infinity;
+}
+
+/**
+ * Spessore (mm) di cui dispone il rilievo di una faccia: lo spessore dell'ingombro lungo la normale (come in `reliefDepthLimit`),
+ * dimezzato se c'è una faccia opposta; il minimo tra le facce. Infinito senza facce.
+ */
+export function reliefThickness(p: PatternParams): number {
   const faces = (p.faces?.length ? p.faces : p.face ? [p.face] : []).map(normalizeFace);
   const dot = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
   const limits = faces.map((f) => f.thickness / (faces.some((o) => o !== f && dot(o.normal, f.normal) < -0.999) ? 2 : 1));
-  return limits.length ? Math.max(0.05, Math.min(...limits) - RELIEF_FLOOR) : Infinity;
+  return limits.length ? Math.min(...limits) : Infinity;
 }
+
+/**
+ * Quota più bassa (z della faccia, negativa) che il solido della texture può toccare: 0,02 mm sopra il fondo del pezzo. Nel modo
+ * «entrambi» il piano di base della pelle sta sotto l'incavo più profondo e non deve uscire dalla faccia opposta, nemmeno su un
+ * pannello sottile (`faceSurface` lo limita qui).
+ */
+export const textureFloor = (p: PatternParams): number => 0.02 - reliefThickness(p);
 
 /** Rilievo Mattoni per kernel, codice e pannello: parametri normalizzati e profondità limitata allo spessore (`reliefDepthLimit`). */
 export function brickRelief(p: PatternParams): { design: ReliefDesign; relief: BrickParams & { kind: 'brick' } } {
@@ -244,7 +260,7 @@ export function reliefWarnings(p: PatternParams, lookup?: ImageLookup): string[]
     }
     if (stored.mode !== 'relief' && stored.amplitude > texture.amplitude + 1e-9) out.push(`Profondità ridotta a ${mm(texture.amplitude)} mm (sull'ingombro del pezzo): l'incavo non deve attraversare il pezzo.`);
     if (texture.amplitude > 0 && texture.amplitude < 0.2) out.push(`Ampiezza sotto ${mm(0.2)} mm, lo spessore di uno strato: la texture non si vede in stampa.`);
-    out.push(...gridWarning(Math.max(...q.faces.map((face) => gridNodeCount(frameRect(q, face), 0.5)))));
+    out.push(...gridWarning(q.faces.reduce((sum, face) => sum + gridNodeCount(frameRect(q, face), 0.5), 0)));
     return out;
   }
   if (q.kind === 'studs') {
@@ -279,7 +295,7 @@ export function reliefWarnings(p: PatternParams, lookup?: ImageLookup): string[]
       if (Math.abs(length - relief.plankL) > 0.05) out.push(`Il listello misura ${mm(length)} × ${mm(relief.plankW)} mm: la lunghezza si arrotonda a un multiplo della larghezza (fuga compresa).`);
     }
     // La venatura è una mappa di altezze a 0,5 mm: su una faccia grande il codice OpenSCAD diventa enorme
-    if (relief.grainDepth > 0) out.push(...gridWarning(Math.max(...q.faces.map((face) => gridNodeCount(frameRect(q, face), 0.5)))));
+    if (relief.grainDepth > 0) out.push(...gridWarning(q.faces.reduce((sum, face) => sum + gridNodeCount(frameRect(q, face), 0.5), 0)));
     return out;
   }
   const { design, relief } = brickRelief(q);
@@ -408,7 +424,9 @@ export function sameFace(a: PatternFace, b: PatternFace): boolean {
 export function normalizePattern(p: PatternParams): PatternParams {
   const num = (v: number, fallback: number) => (Number.isFinite(v) ? v : fallback);
   const int = (v: number, min: number, max: number) => Math.min(max, Math.max(min, Math.round(num(v, min))));
-  const { face: legacy, ...rest } = p;
+  // I campi dei rilievi (disegno, misure, versione) e dell'Immagine (immagine, esempio, texture, versione) si tolgono tutti e si
+  // riscrivono sotto solo per il tipo scelto: cambiando tipo non restano quelli dell'altro gruppo (e la chiave di cache non li vede)
+  const { face: legacy, design: _design, relief: _relief, reliefAlgorithm: _reliefAlgorithm, imageId: _imageId, sample: _sample, texture: _texture, textureAlgorithm: _textureAlgorithm, ...rest } = p;
   const given = p.faces?.length ? p.faces : legacy ? [legacy] : [faceFromBounds(p.bounds, 'z+')];
   const faces = given.map(normalizeFace).filter((f, i, all) => all.findIndex((o) => sameFace(o, f)) === i);
   const kind = (['voronoi', 'hexagon', 'circle', 'diamond', 'triangle', 'brick', 'studs', 'hammered', 'wood', 'texture'] as string[]).includes(p.kind) ? p.kind : 'voronoi';

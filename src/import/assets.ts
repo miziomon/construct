@@ -1,6 +1,6 @@
 import { del, get, set } from 'idb-keyval';
-import { unzlibSync, zlibSync } from 'fflate';
-import { grayFingerprint } from '../scene/textureImage';
+import { Unzlib, unzlibSync, zlibSync } from 'fflate';
+import { MAX_IMAGE_SIDE, grayFingerprint } from '../scene/textureImage';
 import type { GrayImage } from '../scene/textureMap';
 
 /** Mesh importata, immutabile: sta fuori dallo store della scena (che ne conserva solo l'id). */
@@ -172,8 +172,25 @@ export function encodeImage(asset: ImageAsset): string {
 }
 
 export function decodeImage(id: string, base64: string): ImageAsset {
-  const raw = unzlibSync(fromBase64(base64));
+  // Un file di progetto non è fidato: si decomprime a flusso con un tetto (intestazione più un grigio di `MAX_IMAGE_SIDE` pixel di
+  // lato), così un dato corrotto o malevolo non alloca gigabyte
+  const limit = 8 + MAX_IMAGE_SIDE * MAX_IMAGE_SIDE;
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  const inflate = new Unzlib((chunk) => {
+    total += chunk.length;
+    if (total > limit) throw new Error('Immagine del progetto non valida: più grande di 512 pixel di lato.');
+    chunks.push(chunk);
+  });
+  inflate.push(fromBase64(base64), true);
+  const raw = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    raw.set(chunk, offset);
+    offset += chunk.length;
+  }
+  if (raw.length < 8) throw new Error('Immagine del progetto non valida.');
   const [w, h] = new Uint32Array(raw.slice(0, 8).buffer);
-  if (!(w > 0 && h > 0) || raw.length !== 8 + w * h) throw new Error('Immagine del progetto non valida.');
+  if (!(w > 0 && h > 0) || w > MAX_IMAGE_SIDE || h > MAX_IMAGE_SIDE || raw.length !== 8 + w * h) throw new Error('Immagine del progetto non valida.');
   return { id, w, h, gray: raw.slice(8) };
 }

@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { zlibSync } from 'fflate';
 import { appendFileSync } from 'node:fs';
-import { defaultPatternParams, normalizePattern, patternRelief, reliefWarnings, textureOf } from './pattern';
-import { MAX_IMAGE_SIDE, SAMPLE_SIZE, grayFingerprint, imageOf, imageToGray, pixelSize, sampleImage, usedImageIds } from './textureImage';
+import { defaultPatternParams, faceFromBounds, normalizePattern, patternRelief, reliefWarnings, textureOf } from './pattern';
+import { MAX_IMAGE_SIDE, SAMPLE_SIZE, fallbackHash, grayFingerprint, imageOf, imageToGray, pixelSize, sampleImage, usedImageIds } from './textureImage';
 import { textureCacheKey } from '../kernel/textureMap';
 import type { GrayImage } from './textureMap';
 import { SAMPLE_KINDS, makeSample } from './textureSamples';
@@ -71,12 +72,68 @@ describe('immagini: decodifica e impronta', () => {
   });
 });
 
+describe('impronta senza crypto.subtle (contesto non sicuro)', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("ripiego sincrono a 64 bit: stesso formato dell'id, stabile, sensibile a ogni pixel e alle dimensioni", async () => {
+    vi.stubGlobal('crypto', undefined);
+    const a = gradient(16, 8);
+    const id = await grayFingerprint(a);
+    expect(id).toMatch(/^img-[0-9a-f]{16}$/);
+    expect(await grayFingerprint({ ...a, data: a.data.slice() })).toBe(id);
+    // Ogni pixel conta: cambiarne uno qualunque cambia l'id
+    const ids = new Set<string>();
+    for (let k = 0; k < a.data.length; k += 9) {
+      const other = a.data.slice();
+      other[k] ^= 1;
+      ids.add(await grayFingerprint({ ...a, data: other }));
+    }
+    expect(ids.size).toBe(Math.ceil(a.data.length / 9));
+    expect(ids.has(id)).toBe(false);
+    expect(await grayFingerprint({ w: 8, h: 16, data: a.data })).not.toBe(id);
+    expect(await grayFingerprint({ w: 17, h: 8, data: new Uint8Array(17 * 8) })).not.toBe(await grayFingerprint({ w: 16, h: 8, data: new Uint8Array(16 * 8) }));
+  });
+
+  it('`fallbackHash` è deterministico e distribuisce bene (nessuna collisione su 20.000 messaggi brevi)', () => {
+    const seen = new Set<string>();
+    for (let i = 0; i < 20_000; i++) seen.add(fallbackHash(Uint8Array.from([i & 255, (i >> 8) & 255, (i >> 16) & 255, 7])));
+    expect(seen.size).toBe(20_000);
+    expect(fallbackHash(new Uint8Array(0))).toMatch(/^[0-9a-f]{16}$/);
+    expect(fallbackHash(Uint8Array.from([1, 2, 3]))).toBe(fallbackHash(Uint8Array.from([1, 2, 3])));
+  });
+
+  it("con crypto.subtle presente l'id è lo SHA-256, quindi diverso da quello di riserva per la stessa immagine", async () => {
+    const a = gradient(16, 8);
+    const secure = await grayFingerprint(a);
+    vi.stubGlobal('crypto', undefined);
+    expect(await grayFingerprint(a)).not.toBe(secure);
+  });
+});
+
 describe('immagini: codifica per il progetto e peso', () => {
   it('andata e ritorno senza perdite, con dimensioni e pixel', () => {
     const g = gradient(37, 11);
     const back = decodeImage('img-x', encodeImage({ id: 'img-x', w: g.w, h: g.h, gray: g.data }));
     expect([back.id, back.w, back.h]).toEqual(['img-x', 37, 11]);
     expect(Array.from(back.gray)).toEqual(Array.from(g.data));
+  });
+
+  it('dimensioni oltre 512 pixel o una bomba di compressione: rifiutate, senza allocare il buffer enorme', () => {
+    // Intestazione 600 × 1 con i pixel giusti: oltre il lato massimo
+    expect(() => decodeImage('img-big', encodeImage({ id: 'img-big', w: 600, h: 1, gray: new Uint8Array(600) }))).toThrow(/non valida/);
+    expect(() => decodeImage('img-big', encodeImage({ id: 'img-big', w: 1, h: 513, gray: new Uint8Array(513) }))).toThrow(/non valida/);
+    // Esattamente 512 × 512: ammessa
+    expect(decodeImage('img-ok', encodeImage({ id: 'img-ok', w: 512, h: 512, gray: new Uint8Array(512 * 512) })).w).toBe(512);
+    // 64 MB di zeri compressi in pochi KB: si ferma al tetto prima di allocarli tutti
+    const bomb = new Uint8Array(8 + 64 * 1024 * 1024);
+    new Uint32Array(bomb.buffer, 0, 2).set([512, 512]);
+    const compressed = zlibSync(bomb, { level: 9 });
+    expect(compressed.length).toBeLessThan(200_000);
+    let base64 = '';
+    for (let i = 0; i < compressed.length; i += 0x8000) base64 += String.fromCharCode(...compressed.subarray(i, i + 0x8000));
+    expect(() => decodeImage('img-bomb', btoa(base64))).toThrow(/non valida/);
+    // Dato troncato o corto
+    expect(() => decodeImage('img-short', btoa(String.fromCharCode(...zlibSync(new Uint8Array(4)))))).toThrow(/non valida/);
   });
 
   it('un dato corrotto o con dimensioni sbagliate dà un errore chiaro', () => {
@@ -119,6 +176,23 @@ describe('Pattern Immagine: normalizzazione, limiti e avvisi', () => {
     // I tipi a celle non guadagnano campi dell'immagine
     const hex = normalizePattern(params({ kind: 'hexagon' }));
     for (const key of ['imageId', 'sample', 'texture', 'textureAlgorithm']) expect(hex).not.toHaveProperty(key);
+  });
+
+  it("cambiando tipo si tolgono i campi dell'altro gruppo (e la chiave di cache non li vede)", () => {
+    const stale = { design: 'basket', relief: { kind: 'wood', gap: 3 }, reliefAlgorithm: 1, imageId: 'img-abc', sample: 'waves', texture: { mode: 'relief' }, textureAlgorithm: 1 } as unknown as Partial<PatternParams>;
+    const keys = (p: PatternParams) => Object.keys(p).filter((k) => ['design', 'relief', 'reliefAlgorithm', 'imageId', 'sample', 'texture', 'textureAlgorithm'].includes(k) && (p as unknown as Record<string, unknown>)[k] !== undefined).sort();
+    // Immagine: niente campi dei rilievi
+    expect(keys(normalizePattern(params({ ...stale, kind: 'texture' })))).toEqual(['imageId', 'sample', 'texture', 'textureAlgorithm']);
+    // Rilievi: niente campi dell'Immagine (anche per il legno, che ha il suo `relief`)
+    for (const kind of ['brick', 'studs', 'hammered', 'wood'] as const) expect(keys(normalizePattern(params({ ...stale, kind })))).toEqual(['design', 'relief', 'reliefAlgorithm']);
+    // Tipi a celle: nessuno dei due gruppi
+    for (const kind of ['voronoi', 'hexagon', 'circle', 'diamond', 'triangle'] as const) expect(keys(normalizePattern(params({ ...stale, kind })))).toEqual([]);
+    // Dal legno ai mattoni il rilievo ricomincia dai valori di partenza (il `relief` del legno non resta)
+    expect(normalizePattern(params({ ...stale, kind: 'brick' })).relief).toMatchObject({ kind: 'brick', brickW: 24 });
+    // La chiave di cache (il Pattern normalizzato) è la stessa con o senza i campi vecchi
+    const clean = JSON.stringify(normalizePattern(params({ kind: 'texture' })));
+    expect(JSON.stringify(normalizePattern(params({ ...stale, kind: 'texture', imageId: undefined, sample: undefined, texture: undefined, textureAlgorithm: undefined })))).toBe(clean);
+    expect(JSON.stringify(normalizePattern(params({ ...stale, kind: 'hexagon' })))).toBe(JSON.stringify(normalizePattern(params({ kind: 'hexagon' }))));
   });
 
   it('imageId si conserva, un esempio sconosciuto torna a knurl, la versione salvata non si sovrascrive', () => {
@@ -167,6 +241,20 @@ describe('Pattern Immagine: normalizzazione, limiti e avvisi', () => {
     // Faccia grande: la mappa a 0,5 mm ha più di 200.000 nodi
     const bigBounds = { min: [-150, -150, -2.5] as Vec3, max: [150, 150, 2.5] as Vec3 };
     expect(reliefWarnings({ ...defaultPatternParams(bigBounds, 1), kind: 'texture' }).some((w) => w.startsWith('Mappa di altezze di circa'))).toBe(true);
+  });
+
+  it('avviso del peso della mappa: somma dei nodi di tutte le facce, non il massimo (Legno e Immagine)', () => {
+    // Una faccia di 200 × 200 mm ha circa 163.000 nodi a 0,5 mm (sotto 200.000), due facce circa 326.000
+    const big = { min: [-100, -100, -2.5] as Vec3, max: [100, 100, 2.5] as Vec3 };
+    const top = faceFromBounds(big, 'z+');
+    const bottom = faceFromBounds(big, 'z-');
+    for (const kind of ['wood', 'texture'] as const) {
+      const base = { ...defaultPatternParams(big, 1), kind };
+      expect(reliefWarnings({ ...base, faces: [top] }).filter((w) => w.startsWith('Mappa di altezze'))).toHaveLength(0);
+      const two = reliefWarnings({ ...base, faces: [top, bottom] }).filter((w) => w.startsWith('Mappa di altezze'));
+      expect(two).toHaveLength(1);
+      expect(two[0]).toMatch(/circa 3\d\d\.\d{3} nodi/);
+    }
   });
 
   it('chiave di cache: breve e stabile, dipende da id e parametri, mai dai pixel (anche quella dei nodi della scena)', () => {

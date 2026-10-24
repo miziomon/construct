@@ -10,11 +10,10 @@ import { resolveEnds } from '../scene/edgeEnds';
 import { stretchFactors } from '../scene/ellipse';
 import { isScaled, scaleOf } from '../scene/groupScale';
 import { circularStep, linearStep, normalizeArray } from '../scene/arrayPattern';
-import { cutReach, faceFrame, frameRect, isAdditiveKind, isAxisFace, isReliefKind, normalizePattern, patternCells, patternRelief, studCentersOf, studEmbedOf, textureOf } from '../scene/pattern';
+import { cutReach, faceFrame, frameRect, isAdditiveKind, isAxisFace, isReliefKind, normalizePattern, patternCells, patternRelief, studCentersOf, studEmbedOf, textureFloor, textureOf } from '../scene/pattern';
 import { imageOf } from '../scene/textureImage';
 import type { ImageLookup } from '../scene/textureImage';
 import { faceSurface } from '../kernel/textureMap';
-import { getImage } from '../import/assets';
 import { woodMaxDepth } from '../scene/relief';
 import { BEST_ENGINE } from '../kernel/relief';
 import { brickScad, hammeredScad, polyhedronInline, studScad, woodScad } from './reliefScad';
@@ -491,9 +490,10 @@ function arrayLines(params: ArrayParams, child: (depth: number) => string[], dep
 /**
  * Come il generatore ottiene i pixel delle immagini (Pattern «Immagine»): il codice parte dai soli parametri della scena, e per
  * le mesh importate `meshLines` scrive solo il nome del file (non legge mai l'asset). Il `zmap` invece ha bisogno dei pixel, quindi
- * `sceneToOpenScad` riceve una funzione `images` (id dell'asset a grigio decodificato) che di partenza legge il registro delle
- * immagini del thread principale (`getImage`, src/import/assets.ts). Una variabile del modulo la porta fino a `patternLines`
- * senza cambiare le firme di tutte le funzioni intermedie; si imposta e si ripristina dentro `sceneToOpenScad`.
+ * `sceneToOpenScad` riceve una funzione `images` (id dell'asset a grigio decodificato): il generatore resta puro, senza importare il
+ * registro delle immagini (`getImage`, src/import/assets.ts), che passano i chiamanti dell'interfaccia (modale del codice, esportazione).
+ * Una variabile del modulo la porta fino a `patternLines` senza cambiare le firme di tutte le funzioni intermedie; si imposta e si
+ * ripristina (try/finally) dentro `sceneToOpenScad`.
  */
 let imageLookup: ImageLookup | undefined;
 
@@ -533,7 +533,7 @@ function reliefPatternLines(p: PatternParams, child: (depth: number) => string[]
     if (!image) data.push(`${pad}// Immagine non disponibile: caricala di nuovo, senza la mappa il Pattern non ha effetto`);
     else {
       p.faces.forEach((face, i) => {
-        const surface = faceSurface(image, tex, frameRect(p, face), 0.5, studEmbedOf(face));
+        const surface = faceSurface(image, tex, frameRect(p, face), 0.5, studEmbedOf(face), textureFloor(p));
         if (!surface) return;
         const poly = polyhedronInline(surface.grid, surface.planeZ, surface.side, p.faces.length > 1 ? `_${i + 1}` : '');
         data.push(...poly.data.map((l) => `${pad}${l}`));
@@ -755,11 +755,11 @@ function generateScad(source: Scene, options: { plateSpacing?: number }): string
 
 /**
  * Codice OpenSCAD della scena (vedi `generateScad`). `images` dà il grigio delle immagini del Pattern «Immagine» dall'id
- * dell'asset (di partenza il registro delle immagini del thread principale): senza i pixel il Pattern esce con un commento.
+ * dell'asset (i chiamanti dell'interfaccia passano `getImage`): senza i pixel il Pattern esce con un commento.
  */
 export function sceneToOpenScad(source: Scene, options: { plateSpacing?: number; images?: ImageLookup } = {}): string {
   const previous = imageLookup;
-  imageLookup = options.images ?? getImage;
+  imageLookup = options.images;
   try {
     return generateScad(source, options);
   } finally {

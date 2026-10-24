@@ -332,5 +332,5 @@ test('Pattern Immagine: un PNG caricato si converte in grigio, si salva una volt
 
   // Formato non supportato (GIF): messaggio chiaro
   await input.setInputFiles({ name: 'animata.gif', mimeType: 'image/gif', buffer: Buffer.from('GIF89a') });
-  await expect(page.getByRole('alert').filter({ hasText: 'PNG o JPG' })).toBeVisible();
+  await expect(page.getByRole('alert').filter({ hasText: 'Formato non supportato' })).toBeVisible();
 });

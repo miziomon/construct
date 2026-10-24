@@ -37,12 +37,34 @@ export function sampleImage(kind: SampleKind): GrayImage {
  */
 export const imageToGray = (rgba: ArrayLike<number>, w: number, h: number): GrayImage => resizeGray(rgbaToGray(rgba, w, h), MAX_IMAGE_SIDE);
 
-/** Impronta SHA-256 (16 caratteri esadecimali) di dimensioni e pixel del grigio, con il prefisso `img-` che lo distingue dalle mesh. */
+/**
+ * Hash di riserva a 64 bit (due FNV-1a a 32 bit con moltiplicatori diversi e una miscelazione finale in stile murmur), sincrono:
+ * serve quando `crypto.subtle` non c'è (contesto non sicuro, per esempio la pagina servita in HTTP su un indirizzo di rete locale).
+ * Gli id dei due metodi sono diversi: un'immagine caricata in un contesto sicuro e poi in uno non sicuro non si riconosce come la
+ * stessa (resta una copia in più), ma il progetto si apre e funziona (l'id è salvato nel file).
+ */
+export function fallbackHash(bytes: Uint8Array): string {
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  for (const b of bytes) {
+    h1 = Math.imul(h1 ^ b, 2654435761);
+    h2 = Math.imul(h2 ^ b, 1597334677);
+  }
+  // Più passate di miscelazione: ogni metà dipende da tutti i bit dell'altra
+  for (let pass = 0; pass < 2; pass++) {
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  }
+  return [h2, h1].map((h) => (h >>> 0).toString(16).padStart(8, '0')).join('');
+}
+
+/** Impronta (16 caratteri esadecimali) di dimensioni e pixel del grigio: SHA-256 se disponibile, altrimenti `fallbackHash`; prefisso `img-` che lo distingue dalle mesh. */
 export async function grayFingerprint(img: GrayImage): Promise<string> {
   const bytes = new Uint8Array(8 + img.data.length);
   new DataView(bytes.buffer).setUint32(0, img.w);
   new DataView(bytes.buffer).setUint32(4, img.h);
   bytes.set(img.data, 8);
+  if (!globalThis.crypto?.subtle) return `img-${fallbackHash(bytes)}`;
   const digest = await crypto.subtle.digest('SHA-256', bytes);
   return `img-${Array.from(new Uint8Array(digest).slice(0, 8), (b) => b.toString(16).padStart(2, '0')).join('')}`;
 }

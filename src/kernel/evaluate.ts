@@ -4,6 +4,7 @@ import { edgeProfile, endMargin, endOvershoot, endPlanesOf, hasPerpendicularEnds
 import { resolveEnds } from '../scene/edgeEnds';
 import { stretchFactors } from '../scene/ellipse';
 import { buildPattern } from './pattern';
+import { normalizePattern } from '../scene/pattern';
 import type { GrayImage } from '../scene/textureMap';
 import { subdivideContours, twistPieceLength } from './twist';
 import { brushSegments, minkowskiOf } from './minkowski';
@@ -93,7 +94,7 @@ export class Evaluator {
         return `${scene.nodes[c].mode === 'hole' ? '-' : '+'}${k}`;
       });
       // Il Guscio ha in più i suoi spessori (e l'ingombro usato dalla cavità scalata)
-      const shell = node.op === 'shell' ? `,${JSON.stringify(node.shell ?? null)}` : node.op === 'array' ? `,${JSON.stringify(node.array ?? null)}` : node.op === 'pattern' ? `,${JSON.stringify(node.pattern ?? null)}${node.pattern?.imageId ? `,i${this.images.has(node.pattern.imageId) ? 1 : 0}` : ''}` : '';
+      const shell = node.op === 'shell' ? `,${JSON.stringify(node.shell ?? null)}` : node.op === 'array' ? `,${JSON.stringify(node.array ?? null)}` : node.op === 'pattern' ? `,${JSON.stringify(node.pattern ? normalizePattern(node.pattern) : null)}${node.pattern?.imageId ? `,i${this.images.has(node.pattern.imageId) ? 1 : 0}` : ''}` : '';
       return `G(${node.op},${node.position},${node.rotation}${node.mirror ? `,m${node.mirror.map(Number)}` : ''}${node.groupScale ? `,s${node.groupScale}` : ''}${shell})[${kids.join('|')}]`;
     }
     const { id: _id, name: _name, color: _color, mode: _mode, locked: _locked, hidden: _hidden, lockRatio: _lockRatio, ...geometry } = node;
