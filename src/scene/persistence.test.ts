@@ -86,7 +86,7 @@ describe('file di progetto JSON', () => {
     const { scene: loaded } = sceneFromJson(sceneToJson(scene));
     expect(loaded.params).toEqual(scene.params);
     expect(loaded.nodes.t.exprs).toEqual({ 'size.2': { expr: '2 * spessore', min: 0.1 } });
-    expect(JSON.parse(sceneToJson(scene)).version).toBe(7);
+    expect(JSON.parse(sceneToJson(scene)).version).toBe(8);
     const broken = JSON.parse(sceneToJson(scene));
     broken.scene.params = [{ id: 1 }];
     expect(() => sceneFromJson(JSON.stringify(broken))).toThrow('progetto Construct');

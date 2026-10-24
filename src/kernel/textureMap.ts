@@ -64,8 +64,12 @@ export interface FaceSurface {
   column: [number, number] | null;
 }
 
-/** Superficie della texture sul rettangolo; null se la quota è nulla ovunque (ampiezza 0, livello medio agli estremi). */
-export function faceSurface(img: GrayImage, params: Partial<TextureParams>, rect: Rect, step = 0.5): FaceSurface | null {
+/**
+ * Superficie della texture sul rettangolo; null se la quota è nulla ovunque (ampiezza 0, livello medio agli estremi). `embed` è
+ * quanto la pelle (rilievo) entra nel pezzo: `EMBED`, ma il Pattern lo limita a metà dello spessore (come per le borchie);
+ * `floorZ` è la quota più bassa che il solido può toccare (vedi `textureFloor`), per il modo «entrambi».
+ */
+export function faceSurface(img: GrayImage, params: Partial<TextureParams>, rect: Rect, step = 0.5, embed = EMBED, floorZ = -Infinity): FaceSurface | null {
   const tex = normalizeTexture(params);
   const h = makeTextureHeight(img, tex);
   const [lo, hi] = heightRange(tex);
@@ -76,11 +80,12 @@ export function faceSurface(img: GrayImage, params: Partial<TextureParams>, rect
   }
   if (tex.mode === 'relief') {
     // Dove il rilievo è sotto FLOOR la superficie resta un po' sotto la faccia
-    return { op: 'add', grid: sampleGrid(rect, step, (x, y) => (h(x, y) < FLOOR ? -FLOOR : h(x, y))), planeZ: -EMBED, side: 'below', zFrom: -EMBED, zTo: hi + 1, column: null };
+    return { op: 'add', grid: sampleGrid(rect, step, (x, y) => (h(x, y) < FLOOR ? -FLOOR : h(x, y))), planeZ: -embed, side: 'below', zFrom: -embed, zTo: hi + 1, column: null };
   }
   // both: la quota cambia segno. Piano di base 0,4 mm sotto l'incavo più profondo; la pelle entra di EMBED sotto il piano
-  const base = lo - 0.4;
-  return { op: 'skin', grid: sampleGrid(rect, step, h), planeZ: base - EMBED, side: 'below', zFrom: base - EMBED, zTo: hi + 1, column: [base, hi + 1] };
+  // Il piano di base sta 0,4 mm sotto l'incavo più profondo, ma la pelle (un piede più in basso) non esce dal fondo del pezzo (`floorZ`)
+  const base = Math.min(Math.max(lo - 0.4, floorZ + embed), lo);
+  return { op: 'skin', grid: sampleGrid(rect, step, h), planeZ: base - embed, side: 'below', zFrom: base - embed, zTo: hi + 1, column: [base, hi + 1] };
 }
 
 /**

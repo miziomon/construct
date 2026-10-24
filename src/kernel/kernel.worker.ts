@@ -24,6 +24,11 @@ const api = {
     return (await getEvaluator()).registerAsset(id, positions, indices);
   },
 
+  /** Registra il grigio di un'immagine del Pattern «Immagine» (id = impronta dei pixel); il buffer si copia, il thread principale tiene l'originale. */
+  async registerImage(id: string, w: number, h: number, data: Uint8Array): Promise<void> {
+    (await getEvaluator()).registerImage(id, { w, h, data: new Uint8Array(data) });
+  },
+
   /** Calcola le mesh di tutti gli oggetti alla radice. I buffer tornano al thread principale senza copia. */
   async evaluate(scene: Scene): Promise<EvalResult> {
     const ev = await getEvaluator();

@@ -7,7 +7,7 @@ import { isCutter, wrapInGroup } from './treatment';
 import type { PatternParams, Scene, Vec3 } from './types';
 
 /** Etichetta del gruppo, in italiano, per tipo di pattern. */
-const KIND_NAMES: Record<PatternParams['kind'], string> = { voronoi: 'Voronoi', hexagon: 'Esagoni', circle: 'Cerchi', diamond: 'Rombi', triangle: 'Triangoli' };
+const KIND_NAMES: Record<PatternParams['kind'], string> = { voronoi: 'Voronoi', hexagon: 'Esagoni', circle: 'Cerchi', diamond: 'Rombi', triangle: 'Triangoli', brick: 'Mattoni', studs: 'Borchie', hammered: 'Rame battuto', wood: 'Legno', texture: 'Immagine' };
 
 /**
  * Applica un Pattern alla scena: l'oggetto viene sostituito da un gruppo `pattern` che lo contiene come unico figlio
