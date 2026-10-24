@@ -60,6 +60,20 @@ describe('intestazione di PNG e JPEG', () => {
     expect(readImageHeader(jpeg(sof(0xc0, 10_000, 10_000)))).toMatchObject({ w: 10_000, h: 10_000 });
   });
 
+  it('JPEG che finisce nei byte di riempimento FF: «danneggiato», non un errore grezzo di lettura', () => {
+    for (const bytes of [[0xff, 0xd8, 0xff, 0xff, 0xff], [0xff, 0xd8, 0xff, 0xff, 0xff, 0xff, 0xff], [0xff, 0xd8, 0xff, 0xe0, 0, 4, 0, 0, 0xff, 0xff, 0xff]]) {
+      let error: unknown;
+      try {
+        readImageHeader(Uint8Array.from(bytes));
+      } catch (e) {
+        error = e;
+      }
+      expect(error).toBeInstanceOf(Error);
+      expect(error).not.toBeInstanceOf(RangeError);
+      expect((error as Error).message).toMatch(/danneggiato/);
+    }
+  });
+
   it('JPEG senza SOF, troncato o con segmenti sbagliati: errore chiaro', () => {
     expect(() => readImageHeader(jpeg(segment(0xe0, [1, 2, 3])))).toThrow(/danneggiato/);
     expect(() => readImageHeader(Uint8Array.from([0xff, 0xd8, 0xff]))).toThrow(/danneggiato/);

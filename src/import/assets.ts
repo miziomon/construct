@@ -171,9 +171,14 @@ export function encodeImage(asset: ImageAsset): string {
   return toBase64(zlibSync(raw, { level: 6 }));
 }
 
+/** Byte di input per ogni `push` della decompressione (vedi `decodeImage`). */
+const INFLATE_SLICE = 1024;
+
 export function decodeImage(id: string, base64: string): ImageAsset {
   // Un file di progetto non è fidato: si decomprime a flusso con un tetto (intestazione più un grigio di `MAX_IMAGE_SIDE` pixel di
-  // lato), così un dato corrotto o malevolo non alloca gigabyte
+  // lato), così un dato corrotto o malevolo non alloca gigabyte. L'input va a fette piccole: con un solo `push` fflate decomprime tutto
+  // prima di chiamare `ondata` (un buffer da gigabyte già allocato); con fette di 1 KB ogni `push` produce al più circa 1 MB (rapporto
+  // massimo di deflate, 1032 a 1) e l'eccezione del tetto ferma il lavoro al primo blocco di troppo
   const limit = 8 + MAX_IMAGE_SIDE * MAX_IMAGE_SIDE;
   const chunks: Uint8Array[] = [];
   let total = 0;
@@ -182,7 +187,8 @@ export function decodeImage(id: string, base64: string): ImageAsset {
     if (total > limit) throw new Error('Immagine del progetto non valida: più grande di 512 pixel di lato.');
     chunks.push(chunk);
   });
-  inflate.push(fromBase64(base64), true);
+  const input = fromBase64(base64);
+  for (let i = 0; i === 0 || i < input.length; i += INFLATE_SLICE) inflate.push(input.subarray(i, i + INFLATE_SLICE), i + INFLATE_SLICE >= input.length);
   const raw = new Uint8Array(total);
   let offset = 0;
   for (const chunk of chunks) {

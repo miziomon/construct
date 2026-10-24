@@ -42,6 +42,8 @@ function jpegSize(bytes: Uint8Array): { w: number; h: number } {
     if (bytes[i] !== 0xff) throw new Error('Il file JPG è danneggiato: segmento non valido.');
     // Byte di riempimento FF prima del marcatore
     while (bytes[i + 1] === 0xff) i++;
+    // Il file finisce nei byte di riempimento: manca il marcatore (o la sua lunghezza)
+    if (i + 4 > bytes.length) break;
     const marker = bytes[i + 1];
     // Marcatori senza lunghezza: SOI, TEM, RSTn, EOI
     if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7) || marker === 0xd9) {

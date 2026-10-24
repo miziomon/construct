@@ -417,6 +417,21 @@ export function sameFace(a: PatternFace, b: PatternFace): boolean {
   return [0, 1, 2].every((i) => Math.abs(na[i] - nb[i]) < 1e-3) && Math.abs(offset(a, na) - offset(b, nb)) < 1e-2;
 }
 
+/** I campi dei gruppi «rilievo» e «immagine» del Pattern: `normalizePattern` tiene solo quelli del tipo scelto. */
+const GROUP_KEYS = ['design', 'relief', 'reliefAlgorithm', 'imageId', 'sample', 'texture', 'textureAlgorithm'] as const;
+
+/**
+ * Come `normalizePattern`, ma conserva i campi dei gruppi che quel tipo non usa (il disegno e le misure del rilievo, l'immagine
+ * caricata e la sua texture), da `raw`: passando a un tipo a celle e tornando non si perdono. Per lo stato di uno strumento che si
+ * modifica a ogni passo; il Pattern salvato, la chiave di cache e il kernel usano `normalizePattern`, che li toglie.
+ */
+export function normalizeKeepingGroups(raw: PatternParams): PatternParams {
+  const normalized = normalizePattern(raw);
+  const kept: Record<string, unknown> = {};
+  for (const key of GROUP_KEYS) if (normalized[key] === undefined && raw[key] !== undefined) kept[key] = raw[key];
+  return { ...normalized, ...kept };
+}
+
 /**
  * Parametri entro i limiti: conteggi interi e massimi, misure positive, facce con normale unitaria (senza doppioni).
  * Converte anche i progetti della 0.20.0: la `face` unica diventa `faces` e il reticolo 3D (tolto) diventa Voronoi.

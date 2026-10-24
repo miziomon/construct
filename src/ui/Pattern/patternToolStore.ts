@@ -4,7 +4,7 @@ import type { NodeMesh } from '../../kernel/evaluate';
 import { useResultStore } from '../../kernel/useKernel';
 import { faceMap } from '../../scene/edgeTool';
 import type { Transform } from '../../scene/math';
-import { defaultPatternParams, frameRect, hasPlanarFace, isReliefKind, normalizePattern, patternRelief, thicknessAlong } from '../../scene/pattern';
+import { defaultPatternParams, frameRect, hasPlanarFace, isReliefKind, normalizeKeepingGroups, patternRelief, thicknessAlong } from '../../scene/pattern';
 import { MAX_DENTS, gridNodeCount } from '../../scene/relief';
 import { applyPattern, worldToLocal } from '../../scene/patternTool';
 import { localBounds } from '../../scene/shell';
@@ -223,7 +223,8 @@ export const usePatternTool = create<PatternToolState>()((set, get) => {
     setParams: (patch) => {
       const { params } = get();
       if (!params) return;
-      set({ params: normalizePattern({ ...params, ...patch }) });
+      // I campi dell'altro gruppo di tipi (rilievo, immagine) si conservano: tornando al tipo non si perdono disegno, misure e immagine
+      set({ params: normalizeKeepingGroups({ ...params, ...patch }) });
       rebuild();
     },
 
@@ -266,7 +267,7 @@ export const usePatternTool = create<PatternToolState>()((set, get) => {
       const round = (v: number) => Math.round(v * 1e4) / 1e4 + 0;
       const picked: PatternFace = { origin: point.map(round) as Vec3, normal: normal.map(round) as Vec3, thickness: round(thicknessAlong(params.bounds, normal)) };
       // La faccia scelta sostituisce le precedenti: per forare altre facce si applica di nuovo il Pattern
-      set({ params: normalizePattern({ ...params, faces: [picked], region: 'face' }), picking: false, hover: null, error: null });
+      set({ params: normalizeKeepingGroups({ ...params, faces: [picked], region: 'face' }), picking: false, hover: null, error: null });
       rebuild();
     },
   };
