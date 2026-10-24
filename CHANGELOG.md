@@ -18,6 +18,19 @@ I messaggi di commit seguono i [Conventional Commits](https://www.conventionalco
 
 ## [Non rilasciato]
 
+## [0.75.0] - 2026-10-24
+
+### Aggiunto
+- **Quote e vincoli nella modale Profilo** (in stile Fusion 360), dallo studio 0.72.0: il risolutore di vincoli è ora collegato all'app. Strumento **Quota** (`D`) per distanza (allineata, orizzontale, verticale) e **angolo** su due lati, con il valore digitato sull'etichetta; vincoli **orizzontale, verticale, fisso, coincidente, parallelo, perpendicolare, uguale, punto medio, simmetrico, collineare**; stato del disegno (sottovincolato, completamente vincolato, sovravincolato) con i gradi di libertà residui nel piede, colori di stato e elenco di quote e vincoli nella barra laterale. Un vincolo che renderebbe il disegno in conflitto o ridondante si rifiuta con un avviso e si può aggiungere come **quota di riferimento** (valore tra parentesi, non vincola). Trascinando un nodo il resto del disegno lo segue rispettando i vincoli, con un solo passo di Annulla.
+- **Posizione delle quote**: ogni quota nasce **fuori dal disegno e senza sovrapporsi alle altre**; si sposta trascinando la linea di quota o l'etichetta (un passo di Annulla), e «Riposiziona quote» ridispone tutto. Posizione e valore si salvano nel progetto.
+- **Raggio di raccordo per nodo** sugli spigoli tra due segmenti retti, con anteprima e codice OpenSCAD identici al disegno.
+- **Penna con lunghezza e angolo digitati** (una cifra o Tab apre i campi), con le quote create già posizionate; **vincoli automatici** (orizzontale, verticale, perpendicolare, coincidente, rettangolo con i lati dritti) disattivabili dalla casella «Vincoli automatici»; selezione multipla con raggio comune e «Rendi uguali» per più quote; Alt+clic sceglie un segmento.
+- **Cerchio quotato** (`O`): fori circolari con la quota Ø e il centro posizionabile; **parametri locali ed espressioni** nelle quote e nel raggio (`larghezza / 2 + 3`), con elenco dei parametri nella barra laterale.
+- Avviso con il fattore quando si ridimensiona un Profilo quotato: le quote non si aggiornano da sole.
+
+### Modificato
+- I nodi del Profilo hanno un identificativo stabile; il commento `construct:path` e la bozza passano a `v:2` solo quando ci sono vincoli, parametri, cerchi o raggi di raccordo (altrimenti restano `v:1`, leggibili anche dalle versioni precedenti).
+
 ## [0.74.0] - 2026-10-24
 
 ### Aggiunto
