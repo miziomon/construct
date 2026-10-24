@@ -929,3 +929,168 @@ test('Penna digitata: Backspace e R nei campi non toccano il disegno né cambian
   await expect(lengthField(page)).toHaveValue('7');
   await expect(angleField(page)).toHaveValue('');
 });
+
+// --- Tappa 5: cerchio parametrico, parametri ed espressioni -------------------------------------------------------------
+
+/** Volume del solido calcolato dal kernel (somma delle mesh), dopo che il calcolo è finito. */
+async function solidVolume(page: Page): Promise<number> {
+  await settled(page);
+  return page.evaluate(() => window.__construct!.results.getState().meshes.reduce((v, m) => v + (m.volume ?? 0), 0));
+}
+const circleTool = (page: Page) => editor(page).getByRole('button', { name: 'Cerchio', exact: true });
+const selectTool = (page: Page) => editor(page).getByRole('button', { name: 'Seleziona', exact: true });
+
+test('foro circolare quotato: il cerchio nasce con la sua quota Ø, si porta a 10, si sposta dal centro e il volume è quello della piastra forata', async ({ page }) => {
+  // Piastra 40 x 20 alta 5: 4000 mm3 senza foro
+  const id = await addProfile(page, []);
+  expect(await solidVolume(page)).toBeCloseTo(4000, 0);
+  await openEditor(page, id);
+  // Il cerchio si disegna dal centro (a metà della piastra) trascinando: nasce con la quota Ø
+  await circleTool(page).click();
+  const [a, c] = [await center(node(page, '0:0')), await center(node(page, '0:2'))];
+  const mid = { x: (a.x + c.x) / 2, y: (a.y + c.y) / 2 };
+  await dragBy(page, mid, 40, 0);
+  await expect(labels(page)).toHaveCount(1);
+  await expect(labels(page)).toContainText('Ø');
+  await expect(editor(page).locator('[data-node="1:4"]')).toHaveCount(1);
+  // Del cerchio si vedono il centro e il nodo sul bordo (gli altri tre nodi sono derivati)
+  await expect(editor(page).locator('[data-node="1:0"]')).toHaveCount(1);
+  await expect(editor(page).locator('[data-node="1:1"]')).toHaveCount(0);
+  // Con Seleziona un clic sull'etichetta apre il campo del diametro: 10 (con lo strumento Cerchio un clic sull'etichetta inizierebbe un altro cerchio)
+  await selectTool(page).click();
+  await labels(page).click();
+  await typeValue(page, '10');
+  await expect(labels(page)).toHaveText('Ø10');
+  // Seleziona: il centro si trascina e il cerchio si sposta intero, con lo stesso diametro
+  await selectTool(page).click();
+  const [before, edgeBefore] = [await center(node(page, '1:4')), await center(node(page, '1:0'))];
+  await dragBy(page, before, 30, -10);
+  const [after, edgeAfter] = [await center(node(page, '1:4')), await center(node(page, '1:0'))];
+  expect(after.x - before.x).toBeGreaterThan(20);
+  expect(edgeAfter.x - edgeBefore.x).toBeCloseTo(after.x - before.x, 0);
+  await expect(labels(page)).toHaveText('Ø10');
+  await ok(page).click();
+  await expect(editor(page)).toHaveCount(0);
+  await settled(page);
+  // Salvato: due contorni, il secondo con il cerchio parametrico e la quota Ø (raggio 5, diametro)
+  const saved = (await getNode(page, id)) as unknown as { paths: { circ?: { id: string; p: number[] }; nodes: { id?: string }[] }[]; constraints?: { t: string; v?: number; dia?: boolean }[] };
+  expect(saved.paths).toHaveLength(2);
+  expect(saved.paths[1].circ).toBeTruthy();
+  expect(saved.paths[1].nodes.map((n) => !!n.id)).toEqual([true, false, false, false]);
+  expect(saved.constraints!.filter((q) => q.dia)).toHaveLength(1);
+  expect(saved.constraints!.find((q) => q.dia)!.v).toBeCloseTo(5, 6);
+  // Volume: (800 - π·5²) · 5 = 3607,3 mm3 (il foro è un poligono: pochi mm3 di scarto)
+  const volume = await solidVolume(page);
+  expect(volume).toBeGreaterThan(3590);
+  expect(volume).toBeLessThan(3625);
+  // Riaperto: il cerchio c'è ancora, con la quota Ø10
+  await openEditor(page, id);
+  await expect(labels(page)).toHaveText('Ø10');
+  await expect(editor(page).locator('[data-node="1:4"]')).toHaveCount(1);
+});
+
+test('quota con espressione: ƒ e il valore calcolato, il cambio del parametro ricalcola il disegno in un solo passo di Annulla, un\'espressione non valida non cambia nulla', async ({ page }) => {
+  const id = await addProfile(page, SQUARED);
+  await openEditor(page, id);
+  // Il parametro larghezza = 40
+  await editor(page).getByLabel('Nome del nuovo parametro').fill('larghezza');
+  await editor(page).getByLabel('Valore del nuovo parametro').fill('40');
+  await editor(page).locator('[data-param-add]').click();
+  await expect(editor(page).locator('[data-param="larghezza"]')).toHaveCount(1);
+  await expect(editor(page).getByLabel('Valore del parametro larghezza')).toHaveValue('40');
+  // Una quota di larghezza scritta con il parametro: l'etichetta mostra ƒ
+  await quoteTool(page).click();
+  await clickSegment(page, '0:0', '0:1');
+  await typeValue(page, 'larghezza');
+  await expect(labels(page)).toHaveText('40 ƒ');
+  await expect(editor(page).getByLabel('Valore di Distanza P1.1-P1.2')).toHaveValue('larghezza');
+  // Cambiare il parametro: la quota e il disegno seguono, in un solo passo
+  const width = editor(page).getByLabel('Valore del parametro larghezza');
+  await width.fill('80');
+  await width.press('Enter');
+  await expect(labels(page)).toHaveText('80 ƒ');
+  await expect(editor(page).getByLabel('Valore di Distanza P1.1-P1.2')).toHaveValue('larghezza');
+  await editor(page).locator('.profile-editor').focus();
+  await page.keyboard.press('Control+z');
+  await expect(labels(page)).toHaveText('40 ƒ');
+  await expect(editor(page).getByLabel('Valore del parametro larghezza')).toHaveValue('40');
+  await page.keyboard.press('Control+Shift+z');
+  await expect(labels(page)).toHaveText('80 ƒ');
+  // Un'espressione più complessa dall'etichetta: larghezza/2 + 3 = 43
+  await selectTool(page).click();
+  await labels(page).click();
+  await typeValue(page, 'larghezza/2 + 3');
+  await expect(labels(page)).toHaveText('43 ƒ');
+  // Un'espressione non valida o con un parametro sconosciuto non cambia nulla
+  await labels(page).click();
+  await typeValue(page, 'sconosciuto * 2');
+  await expect(labels(page)).toHaveText('43 ƒ');
+  await labels(page).click();
+  await typeValue(page, 'larghezza +* 2');
+  await expect(labels(page)).toHaveText('43 ƒ');
+  // Un parametro usato da una quota non si elimina
+  await editor(page).getByRole('button', { name: 'Elimina il parametro larghezza' }).click();
+  await expect(editor(page).locator('[data-param="larghezza"]')).toHaveCount(1);
+  await ok(page).click();
+  await expect(editor(page)).toHaveCount(0);
+  await settled(page);
+  const saved = (await getNode(page, id)) as unknown as { paths: { nodes: { p: [number, number] }[] }[]; params?: Record<string, number | string>; constraints?: { expr?: string; v?: number }[] };
+  expect(saved.params).toEqual({ larghezza: 80 });
+  const quote = saved.constraints!.find((q) => q.expr);
+  expect(quote).toMatchObject({ expr: 'larghezza/2 + 3', v: 43 });
+  expect(saved.paths[0].nodes[1].p[0]).toBeCloseTo(43, 3);
+  // Riaperto: parametro e quota con espressione ci sono ancora (e il disegno non si risolve da solo)
+  await openEditor(page, id);
+  await expect(editor(page).getByLabel('Valore del parametro larghezza')).toHaveValue('80');
+  await expect(labels(page)).toHaveText('43 ƒ');
+});
+
+test('un nome di parametro non valido o doppio e un valore con un ciclo si rifiutano e dicono perché', async ({ page }) => {
+  const id = await addProfile(page, SQUARED);
+  await openEditor(page, id);
+  const add = async (name: string, value: string) => {
+    await editor(page).getByLabel('Nome del nuovo parametro').fill(name);
+    await editor(page).getByLabel('Valore del nuovo parametro').fill(value);
+    await editor(page).locator('[data-param-add]').click();
+  };
+  await add('1a', '5');
+  await expect(editor(page).locator('[data-param]')).toHaveCount(0);
+  await add('a', '5');
+  await expect(editor(page).locator('[data-param="a"]')).toHaveCount(1);
+  await add('a', '6');
+  await expect(editor(page).locator('[data-param]')).toHaveCount(1);
+  await add('b', 'a + 1');
+  await expect(editor(page).locator('[data-param="b"]')).toHaveCount(1);
+  // Un ciclo (a usa b, b usa a): il valore resta com'era
+  const a = editor(page).getByLabel('Valore del parametro a');
+  await a.fill('b + 1');
+  await a.press('Enter');
+  await expect(a).toHaveValue('5');
+});
+
+test('Rendi uguali: resta la prima quota scelta (nell\'ordine dei clic) e l\'avviso lo dice; «Rendi pilotante» riporta una quota di riferimento a comandare', async ({ page }) => {
+  const id = await addProfile(page, FULL);
+  await openEditor(page, id);
+  const name = (k: string) => editor(page).locator(`[data-constraint="${k}"] .profile-editor__constraint-name`);
+  // Scelta prima l'altezza (k7, 20): resta lei, la larghezza (k6) diventa di riferimento e il quadrato è 20 x 20
+  await name('k7').click();
+  await name('k6').click({ modifiers: ['Shift'] });
+  await editor(page).locator('[data-equalize]').click();
+  await expect(page.getByText(/Resta pilotante Distanza P1\.2-P1\.3/)).toBeVisible();
+  await expect(editor(page).locator('[data-constraint="k6"]')).toContainText('quota di riferimento');
+  await expect(editor(page).getByLabel('Valore di Distanza P1.2-P1.3')).toHaveValue('20');
+  // Con l'Uguale ancora lì, rendere pilotante la larghezza renderebbe il disegno sovravincolato: si rifiuta e resta di riferimento
+  await editor(page).locator('[data-constraint="k6"] [data-make-driving]').click();
+  await expect(editor(page).locator('[data-constraint="k6"]')).toContainText('quota di riferimento');
+  // Tolto l'Uguale, la quota di riferimento diventa pilotante con la misura di adesso (20)
+  await editor(page).locator('[data-constraint-type="equal"] button[aria-label^="Elimina"]').click();
+  await editor(page).locator('[data-constraint="k6"] [data-make-driving]').click();
+  await expect(editor(page).getByLabel('Valore di Distanza P1.1-P1.2')).toHaveValue('20');
+  await expect(editor(page).locator('[data-constraint="k6"] [data-make-driving]')).toHaveCount(0);
+  await ok(page).click();
+  await expect(editor(page)).toHaveCount(0);
+  await settled(page);
+  const saved = await getNode(page, id);
+  expect(saved.paths[0].nodes[2].p[0]).toBeCloseTo(20, 3);
+  expect(saved.paths[0].nodes[2].p[1]).toBeCloseTo(20, 3);
+});

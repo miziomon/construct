@@ -1,5 +1,6 @@
 import { NumberField } from '../NumberField/NumberField';
-import { CONSTRAINT_GLYPHS, CONSTRAINT_NAMES, CONSTRAINT_NEEDS, SELECTION_CONSTRAINTS, describeConstraint, dimensionValue, groupInfo, isDimension, isPositionedDimension, nodeNames } from './dimensions';
+import { ExprField } from './ExprField';
+import { CONSTRAINT_GLYPHS, CONSTRAINT_NAMES, CONSTRAINT_NEEDS, SELECTION_CONSTRAINTS, describeConstraint, dimensionValue, groupInfo, isDimension, isPositionedDimension, nodeNames, shownValue } from './dimensions';
 import type { SelectionConstraint } from './dimensions';
 import type { PathContour, ProfileConstraint } from '../../scene/types';
 
@@ -22,8 +23,10 @@ export interface ConstraintsPanelProps {
   onEqualize: () => void;
   /** Aggiunge il vincolo ai nodi scelti. */
   onApply: (type: SelectionConstraint) => void;
-  /** Cambia il valore di una quota. */
-  onValue: (id: string, value: number) => void;
+  /** Cambia il valore di una quota: il testo scritto, numero o espressione con i parametri del profilo (lo legge chi chiama). */
+  onValue: (id: string, text: string) => void;
+  /** Rende pilotante una quota di riferimento (prende la misura che il disegno ha adesso). */
+  onDrive: (id: string) => void;
   onDelete: (id: string) => void;
   /** Vincoli automatici mentre si disegna (impostazione persistente): casella nella sezione. */
   auto: boolean;
@@ -50,7 +53,7 @@ const BUTTON_TIPS: Record<SelectionConstraint, string> = {
  * Sezione «Quote e vincoli» della colonna di destra: i pulsanti dei vincoli (Orizzontale, Verticale, Fisso, Coincidente,
  * Parallelo, Perpendicolare, Uguale, Punto medio, Simmetrico, Collineare) per ciò che è scelto e l'elenco di tutte le quote e i vincoli del disegno, con il valore modificabile delle quote.
  */
-export function ConstraintsPanel({ paths, constraints, auto, onAuto, can, selectionText, bad, selected, group, onGroupValue, onEqualize, onSelect, onApply, onValue, onDelete, onReposition }: ConstraintsPanelProps) {
+export function ConstraintsPanel({ paths, constraints, auto, onAuto, can, selectionText, bad, selected, group, onGroupValue, onEqualize, onSelect, onApply, onValue, onDrive, onDelete, onReposition }: ConstraintsPanelProps) {
   const names = nodeNames(paths);
   return (
     <section className="profile-editor__section" data-quotes-panel="">
@@ -111,9 +114,14 @@ export function ConstraintsPanel({ paths, constraints, auto, onAuto, can, select
                 </div>
                 {dim &&
                   (c.ref ? (
-                    <p className="profile-editor__hint">({String(Math.round(dimensionValue(c, paths) * 100) / 100).replace('.', ',')} {unit}) quota di riferimento</p>
+                    <>
+                      <p className="profile-editor__hint">({String(Math.round(dimensionValue(c, paths) * 100) / 100).replace('.', ',')} {unit}) quota di riferimento</p>
+                      <button type="button" className="profile-editor__mini" data-make-driving="" title="La quota prende la misura di adesso e comincia a vincolare il disegno (se non è già vincolato da altri vincoli)" onClick={() => onDrive(c.id)}>
+                        Rendi pilotante
+                      </button>
+                    </>
                   ) : (
-                    <NumberField label="Valore" ariaLabel={`Valore di ${label}`} unit={unit} value={c.v ?? 0} onCommit={(v) => onValue(c.id, v)} />
+                    <ExprField label="Valore" ariaLabel={`Valore di ${label}`} unit={unit} value={shownValue(c, paths)} expr={c.expr} onCommit={(text) => onValue(c.id, text)} />
                   ))}
               </li>
             );

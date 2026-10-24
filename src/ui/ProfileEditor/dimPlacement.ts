@@ -44,12 +44,13 @@ export const isDimension = (c: Pick<ProfileConstraint, 't'>): boolean => DIMENSI
 
 /** Punti del risolutore: i nodi che hanno un id (gli altri non possono essere citati da nessun vincolo). */
 export function pointsOf(paths: PathContour[]): Pt[] {
-  return paths.flatMap((c) => c.nodes.flatMap((n) => (n.id ? [{ id: n.id, x: n.p[0], y: n.p[1] }] : [])));
+  // Il centro di un cerchio parametrico è un punto (i tre nodi derivati non hanno id, quindi non ci sono)
+  return paths.flatMap((c) => [...(c.circ ? [{ id: c.circ.id, x: c.circ.p[0], y: c.circ.p[1] }] : []), ...c.nodes.flatMap((n) => (n.id ? [{ id: n.id, x: n.p[0], y: n.p[1] }] : []))]);
 }
 
 /** Posizione di ogni nodo con id. */
 export function pointMap(paths: PathContour[]): Map<string, Vec2> {
-  return new Map(paths.flatMap((c) => c.nodes.flatMap((n): [string, Vec2][] => (n.id ? [[n.id, n.p]] : []))));
+  return new Map(paths.flatMap((c) => [...(c.circ ? ([[c.circ.id, c.circ.p]] as [string, Vec2][]) : []), ...c.nodes.flatMap((n): [string, Vec2][] => (n.id ? [[n.id, n.p]] : []))]));
 }
 
 /** Misura attuale di una quota (per una quota di riferimento è l'unico valore che ha). Le distanze in X e in Y si mostrano sempre positive. */
@@ -64,11 +65,15 @@ export function dimensionValue(c: ProfileConstraint, paths: PathContour[]): numb
 /** Numero con al più due decimali e la virgola italiana. */
 export const fmtDim = (n: number): string => String(Number(n.toFixed(2))).replace('.', ',');
 
-/** Testo dell'etichetta di una quota: il valore, tra parentesi se è di riferimento. */
+/** Valore che l'utente vede e scrive: il diametro per la quota di un cerchio (il valore salvato è il raggio), altrimenti `dimensionValue`. */
+export const shownValue = (c: ProfileConstraint, paths: PathContour[]): number => (c.dia ? 2 * dimensionValue(c, paths) : dimensionValue(c, paths));
+
+/** Testo dell'etichetta di una quota: il valore (Ø davanti al diametro, ƒ dietro a un'espressione), tra parentesi se è di riferimento. */
 export function dimText(c: ProfileConstraint, paths: PathContour[]): string {
-  const v = dimensionValue(c, paths);
-  const text = c.t === 'angle' ? `${fmtDim(v)}°` : fmtDim(v);
-  return c.ref ? `(${text})` : text;
+  const v = shownValue(c, paths);
+  const text = c.t === 'angle' ? `${fmtDim(v)}°` : `${c.dia ? 'Ø' : ''}${fmtDim(v)}`;
+  const shown = c.expr ? `${text} ƒ` : text;
+  return c.ref ? `(${shown})` : shown;
 }
 
 /** Larghezza (pixel) dell'etichetta a pillola per un testo. */
@@ -90,8 +95,10 @@ export interface DimLayout {
  * un nodo citato non c'è.
  */
 export function dimLayout(c: ProfileConstraint, pm: Map<string, Vec2>, fallbackOff: number): DimLayout | null {
-  const a = pm.get(c.p[0]);
   const b = pm.get(c.p[1]);
+  const center = pm.get(c.p[0]);
+  // Il diametro di un cerchio: la corda per il centro, dal punto opposto a quello sul bordo (la linea di quota la affianca a `off`)
+  const a: Vec2 | undefined = c.dia && center && b ? [2 * center[0] - b[0], 2 * center[1] - b[1]] : center;
   if (!a || !b) return null;
   const off = c.off ?? fallbackOff;
   const at = c.at ?? 0.5;
@@ -178,8 +185,10 @@ export function dragDimension(c: ProfileConstraint, pm: Map<string, Vec2>, p: Ve
     const along = Math.abs(l.span) < 1e-9 ? c.at ?? 0.5 : wrap(Math.atan2(p[1] - l.vertex[1], p[0] - l.vertex[0]) - l.start) / l.span;
     return { off: Math.min(1e5, Math.hypot(p[0] - l.vertex[0], p[1] - l.vertex[1])), at: part === 'label' ? Math.min(1, Math.max(0, along)) : c.at ?? 0.5 };
   }
-  const a = pm.get(c.p[0]);
   const b = pm.get(c.p[1]);
+  const center = pm.get(c.p[0]);
+  // Il diametro di un cerchio parte dal punto opposto a quello sul bordo (come in `dimLayout`)
+  const a: Vec2 | undefined = c.dia && center && b ? [2 * center[0] - b[0], 2 * center[1] - b[1]] : center;
   const keep = c.at ?? 0.5;
   if (!a || !b) return { off: c.off ?? 0, at: keep };
   const clamp01 = (t: number) => Math.min(1, Math.max(0, t));
@@ -329,13 +338,15 @@ function placeAngle(paths: PathContour[], others: ProfileConstraint[], con: Pick
  * la parte (opposta al baricentro, o l'altra) che chiede meno passi; se da nessuna c'è posto entro `MAX_STEPS` resta alla distanza iniziale. `others` sono le
  * quote già posizionate (quelle senza nodi nel disegno si ignorano). `at` è sempre 0,5.
  */
-export function placeDimension(paths: PathContour[], others: ProfileConstraint[], con: Pick<ProfileConstraint, 't' | 'p' | 'v' | 's' | 'ref'>, pxPerMm: number): { off: number; at: number } {
+export function placeDimension(paths: PathContour[], others: ProfileConstraint[], con: Pick<ProfileConstraint, 't' | 'p' | 'v' | 's' | 'ref' | 'dia'>, pxPerMm: number): { off: number; at: number } {
   const pm = pointMap(paths);
   const a = pm.get(con.p[0]);
   const b = pm.get(con.p[1]);
   const at = 0.5;
   if (con.t === 'angle') return con.p.every((id) => pm.has(id)) ? placeAngle(paths, others, con, Math.max(pxPerMm, 1e-6)) : { off: 0, at };
   if (!a || !b || !isLinearDimension(con)) return { off: 0, at };
+  // Il diametro di un cerchio sta sopra il cerchio, a un raggio e mezzo dal centro (le linee di richiamo sfiorano il cerchio)
+  if (con.dia) return { off: Math.hypot(b[0] - a[0], b[1] - a[1]) + DIM_GAP_PX / Math.max(pxPerMm, 1e-6), at };
   const px = Math.max(pxPerMm, 1e-6);
   const geometry = contourGeometry(paths);
   // Baricentro del contorno del primo nodo

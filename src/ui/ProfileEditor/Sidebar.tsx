@@ -6,6 +6,8 @@ import { TIPS } from '../PropertiesPanel/tooltips';
 import type { GridSettings } from './DrawingCanvas';
 import { ConstraintsPanel } from './ConstraintsPanel';
 import type { ConstraintsPanelProps } from './ConstraintsPanel';
+import { ParamsPanel } from './ParamsPanel';
+import type { ParamsPanelProps } from './ParamsPanel';
 import type { Draft, NodeRef } from './model';
 
 interface Props {
@@ -39,6 +41,8 @@ interface Props {
   section?: SectionProps;
   /** Quote e vincoli (sezione «Quote e vincoli»). */
   quote: Omit<ConstraintsPanelProps, 'paths' | 'constraints'>;
+  /** Parametri locali del profilo (sezione «Parametri»). */
+  paramsPanel: ParamsPanelProps;
 }
 
 /** Tipi di nodo: il simbolo ripete la forma che il nodo ha nel disegno. */
@@ -58,7 +62,21 @@ const comma = (n: number) => String(n).replace('.', ',');
 export function NodeSection({ paths, selection, onKind, onRadius, onCoordinate, onHandle }: { paths: PathContour[]; selection: NodeRef[]; onKind: Props['onKind']; onRadius?: Props['onRadius']; onCoordinate: Props['onCoordinate']; onHandle: Props['onHandle'] }) {
   const ref = selection.length === 1 ? selection[0] : null;
   const contour = ref ? paths[ref.path] : undefined;
-  const node = ref && contour ? contour.nodes[ref.node] : undefined;
+  // Il centro di un cerchio parametrico ha l'indice dopo l'ultimo nodo; il suo nodo sul bordo e il centro hanno solo le coordinate
+  const isCenter = !!ref && !!contour?.circ && ref.node === contour.nodes.length;
+  const node: PathNode | undefined = ref && contour ? (isCenter ? { p: contour.circ!.p, kind: 'symmetric' } : contour.nodes[ref.node]) : undefined;
+  if (node && ref && contour?.circ) {
+    return (
+      <section className="profile-editor__section">
+        <h3 className="profile-editor__section-title">Punto selezionato</h3>
+        <NumberField label="X" unit="mm" value={node.p[0]} onCommit={(v) => onCoordinate(0, v)} />
+        <NumberField label="Y" unit="mm" value={node.p[1]} onCommit={(v) => onCoordinate(1, v)} />
+        <p className="profile-editor__hint" data-circle-note="">
+          {isCenter ? 'Centro del cerchio: spostandolo il cerchio si sposta intero.' : 'Punto sul bordo del cerchio: il raggio è la quota Ø.'}
+        </p>
+      </section>
+    );
+  }
   return (
     <section className="profile-editor__section">
       <h3 className="profile-editor__section-title">Punto selezionato</h3>
@@ -199,7 +217,7 @@ export function SectionControl({ z, min, max, show, onZ, onShow }: SectionProps)
 }
 
 /** Colonna di destra della modale: estrusione, punto selezionato, percorsi, griglia e snap, qualità. */
-export function Sidebar({ draft, selection, holes, grid, sampling, boundFields, onExtrusion, onLive, onPatch, onKind, onRadius, onCoordinate, onHandle, onGrid, onSelectPath, onClosePath, onDeletePath, section, quote }: Props) {
+export function Sidebar({ draft, selection, holes, grid, sampling, boundFields, onExtrusion, onLive, onPatch, onKind, onRadius, onCoordinate, onHandle, onGrid, onSelectPath, onClosePath, onDeletePath, section, quote, paramsPanel }: Props) {
   const rotate = draft.extrusion === 'rotate';
   // Uno slider legato a un parametro non si muove da qui: la formula decide il valore (si cambia dalle Proprietà)
   const bound = (field: string) => boundFields.includes(field);
@@ -237,6 +255,8 @@ export function Sidebar({ draft, selection, holes, grid, sampling, boundFields, 
       <NodeSection paths={draft.paths} selection={selection} onKind={onKind} onRadius={onRadius} onCoordinate={onCoordinate} onHandle={onHandle} />
 
       <ConstraintsPanel paths={draft.paths} constraints={draft.constraints ?? []} {...quote} />
+
+      <ParamsPanel {...paramsPanel} />
 
       <section className="profile-editor__section">
         <h3 className="profile-editor__section-title">Percorsi</h3>

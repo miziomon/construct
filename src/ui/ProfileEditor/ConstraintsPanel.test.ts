@@ -24,7 +24,7 @@ const canFor = (nodes: number[], segments: number[]): Record<SelectionConstraint
   return Object.fromEntries(SELECTION_CONSTRAINTS.map((t) => [t, canApplyConstraint(t, items)])) as Record<SelectionConstraint, boolean>;
 };
 const render = (patch: Partial<ConstraintsPanelProps> = {}) =>
-  renderToStaticMarkup(createElement(ConstraintsPanel, { paths, constraints: [], can: canFor([], []), selectionText: '', bad: new Set<string>(), selected: null, onSelect: noop, onApply: noop, onValue: noop, onDelete: noop, onReposition: noop, auto: true, onAuto: noop, group: [], onGroupValue: noop, onEqualize: noop, ...patch }));
+  renderToStaticMarkup(createElement(ConstraintsPanel, { paths, constraints: [], can: canFor([], []), selectionText: '', bad: new Set<string>(), selected: null, onSelect: noop, onApply: noop, onValue: noop, onDrive: noop, onDelete: noop, onReposition: noop, auto: true, onAuto: noop, group: [], onGroupValue: noop, onEqualize: noop, ...patch }));
 
 /** Il pulsante di un vincolo (il suo tag di apertura) nel markup. */
 const button = (html: string, type: string) => html.match(new RegExp(`<button[^>]*data-constraint-button="${type}"[^>]*>`))![0];
@@ -80,6 +80,16 @@ describe('sezione Quote e vincoli', () => {
     // Stati della riga
     expect(html).toContain('profile-editor__constraint--selected');
     expect(html).toContain('profile-editor__constraint--bad');
+  });
+
+  it('una quota di riferimento ha il pulsante Rendi pilotante, una pilotante no', () => {
+    const constraints: ProfileConstraint[] = [
+      { id: 'k1', t: 'dist', p: ['n1', 'n2'], v: 40 },
+      { id: 'k2', t: 'dist', p: ['n2', 'n3'], v: 20, ref: true },
+    ];
+    const html = render({ constraints });
+    expect(html.match(/data-make-driving/g)).toHaveLength(1);
+    expect(html).toContain('quota di riferimento');
   });
 
   it('più quote scelte: il campo valore comune (vuoto con «—» se diverse) e Rendi uguali per le distanze', () => {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { sceneToOpenScad } from '../../codegen/openscad';
+import { circleContour } from '../../scene/bezier';
 import { primitiveDefaults, shape2dDefaults } from '../../scene/defaults';
 import { addPlateScene, moveRootsToPlate, platesOf, renamePlateScene } from '../../scene/plates';
 import type { GroupNode, PrimitiveNode, Scene, Shape2DNode } from '../../scene/types';
@@ -481,6 +482,22 @@ describe('import di file OpenSCAD: Profilo di Bézier (andata e ritorno)', () =>
     // Il codice con i vincoli ha gli stessi punti di quello senza: i vincoli non influenzano la geometria
     const strip = (c: string) => c.split('\n').filter((l) => !l.includes('construct:path')).join('\n');
     expect(strip(codeOf(original))).toBe(strip(codeOf(node({ paths: withIds, width: 20, depth: 18 } as Partial<Shape2DNode>))));
+  });
+
+  it('il cerchio parametrico (centro, quota Ø con espressione, parametri) fa andata e ritorno nel commento v:2', () => {
+    const plate = { closed: true, nodes: [{ id: 'n1', ...corner([0, 0]) }, { id: 'n2', ...corner([40, 0]) }, { id: 'n3', ...corner([40, 20]) }, { id: 'n4', ...corner([0, 20]) }] };
+    const hole = circleContour([20, 10], 5, 'n5', 'n6');
+    const constraints = [{ id: 'k1', t: 'dist' as const, p: ['n5', 'n6'], v: 5, dia: true as const, expr: 'foro / 2 * 2' }];
+    const original = node({ paths: [plate, hole], constraints, params: { foro: 10 }, width: 40, depth: 20 } as Partial<Shape2DNode>);
+    const code = codeOf(original);
+    expect(code).toContain('"v":2');
+    expect(code).toContain('"circ"');
+    const result = back(code) as Extract<Shape2DNode, { kind: 'path' }>;
+    expect(result.kind).toBe('path');
+    expect(result.paths).toStrictEqual([plate, hole]);
+    expect(result.paths[1].nodes.map((n) => !!n.id)).toEqual([true, false, false, false]);
+    expect(result.constraints).toStrictEqual(constraints);
+    expect(result.params).toStrictEqual({ foro: 10 });
   });
 
   it('il raggio di raccordo: il codice scrive lo stesso poligono del kernel (con l\'arco), il commento è v:2 e si rilegge come Profilo con r', () => {

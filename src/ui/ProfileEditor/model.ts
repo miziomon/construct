@@ -1,4 +1,4 @@
-import { MAX_PATH_CONTOURS, MAX_PATH_NODES, PATH_DEFAULT_TOLERANCE, assignNodeIds, bboxOf, cubicPoint, filletInfo, nodeIds, samplePaths, segmentOf, signedArea, splitCubic } from '../../scene/bezier';
+import { MAX_PATH_CONTOURS, MAX_PATH_NODES, PATH_DEFAULT_TOLERANCE, assignNodeIds, bboxOf, circleContour, cubicPoint, filletInfo, nodeIds, regenCircle, samplePaths, segmentOf, signedArea, splitCubic } from '../../scene/bezier';
 import { ellipseContour, polygonContour, regularPolygon } from '../../scene/pathShapes';
 import { REVOLVE_DEFAULT_ANGLE, REVOLVE_DEFAULT_SEGMENTS, pathContours, pathNaturalBox } from '../../scene/shapes2d';
 import { hasBoundDimension } from '../../scene/resize';
@@ -40,10 +40,30 @@ function makeNode(p: Vec2, inn: Vec2 | undefined, out: Vec2 | undefined, kind: P
   return { ...(base?.id ? { id: base.id } : {}), p, ...(inn && length(inn) > EPS ? { in: inn } : {}), ...(out && length(out) > EPS ? { out } : {}), kind, ...(base?.r ? { r: base.r } : {}) };
 }
 
-/** Sostituisce il nodo indicato con il risultato di `fn`; se il riferimento non esiste i contorni restano com'erano. */
+/** Indice del centro di un cerchio parametrico nei riferimenti ai nodi: subito dopo l'ultimo nodo del contorno. */
+export const centerIndex = (c: PathContour): number => c.nodes.length;
+
+/** Posizione di un nodo o del centro di un cerchio parametrico (indice `nodes.length`); undefined se non c'è. */
+export function refPoint(paths: PathContour[], ref: NodeRef): Vec2 | undefined {
+  const c = paths[ref.path];
+  if (!c) return undefined;
+  if (c.circ && ref.node === centerIndex(c)) return c.circ.p;
+  return c.nodes[ref.node]?.p;
+}
+
+/**
+ * Dove sta il nodo sul bordo di un cerchio parametrico quando lo si porta verso `to`: sulla orizzontale del centro (è la posizione che
+ * il vincolo implicito gli dà, e la direzione di quel nodo non conta), alla distanza del punto dal centro: cambia solo il raggio.
+ */
+export function edgeAt(c: PathContour, to: Vec2): Vec2 {
+  const center = c.circ!.p;
+  return [center[0] + Math.hypot(to[0] - center[0], to[1] - center[1]), center[1]];
+}
+
+/** Sostituisce il nodo indicato con il risultato di `fn`; se il riferimento non esiste i contorni restano com'erano. Un cerchio parametrico non si tocca: i suoi nodi sono derivati dal centro e dal raggio. */
 function mapNode(paths: PathContour[], ref: NodeRef, fn: (n: PathNode) => PathNode): PathContour[] {
   const contour = paths[ref.path];
-  if (!contour || !contour.nodes[ref.node]) return paths;
+  if (!contour || !contour.nodes[ref.node] || contour.circ) return paths;
   const nodes = contour.nodes.map((n, i) => (i === ref.node ? fn(n) : n));
   return paths.map((c, i) => (i === ref.path ? { ...c, nodes } : c));
 }
@@ -52,6 +72,13 @@ function mapNode(paths: PathContour[], ref: NodeRef, fn: (n: PathNode) => PathNo
 export function moveNodes(paths: PathContour[], refs: NodeRef[], d: Vec2): PathContour[] {
   const keys = new Set(refs.map((r) => `${r.path}:${r.node}`));
   return paths.map((c, pi) => {
+    if (c.circ) {
+      // Cerchio parametrico: il solo nodo sul bordo cambia il raggio (e la direzione), il centro o uno degli altri nodi lo sposta intero
+      const touched = [...c.nodes.keys(), centerIndex(c)].filter((ni) => keys.has(`${pi}:${ni}`));
+      if (!touched.length) return c;
+      if (touched.length === 1 && touched[0] === 0) return regenCircle({ ...c, nodes: c.nodes.map((n, ni) => (ni === 0 ? { ...n, p: edgeAt(c, add(n.p, d)) } : n)) });
+      return { ...c, nodes: c.nodes.map((n) => ({ ...n, p: add(n.p, d) })), circ: { ...c.circ, p: add(c.circ.p, d) } };
+    }
     if (!c.nodes.some((_, ni) => keys.has(`${pi}:${ni}`))) return c;
     return { ...c, nodes: c.nodes.map((n, ni) => (keys.has(`${pi}:${ni}`) ? { ...n, p: add(n.p, d) } : n)) };
   });
@@ -123,7 +150,8 @@ export function setNodeKind(paths: PathContour[], r: NodeRef, kind: PathNode['ki
  */
 export function insertNode(paths: PathContour[], seg: SegmentRef, t: number): { paths: PathContour[]; node: NodeRef } | null {
   const contour = paths[seg.path];
-  if (!contour || !(t > 0 && t < 1) || contour.nodes.length >= MAX_PATH_NODES) return null;
+  // Un cerchio parametrico non ha nodi da aggiungere: i suoi quattro sono derivati dal centro e dal raggio
+  if (!contour || contour.circ || !(t > 0 && t < 1) || contour.nodes.length >= MAX_PATH_NODES) return null;
   const count = contour.closed ? contour.nodes.length : contour.nodes.length - 1;
   if (seg.segment < 0 || seg.segment >= count) return null;
   const j = (seg.segment + 1) % contour.nodes.length;
@@ -171,10 +199,12 @@ export function deleteNodes(paths: PathContour[], refs: NodeRef[]): PathContour[
   const keys = new Set(refs.map((r) => `${r.path}:${r.node}`));
   const result: PathContour[] = [];
   paths.forEach((c, pi) => {
-    if (!c.nodes.some((_, ni) => keys.has(`${pi}:${ni}`))) {
+    if (!c.nodes.some((_, ni) => keys.has(`${pi}:${ni}`)) && !(c.circ && keys.has(`${pi}:${centerIndex(c)}`))) {
       result.push(c);
       return;
     }
+    // Un cerchio parametrico si elimina intero (non ha senso un cerchio con un nodo in meno)
+    if (c.circ) return;
     const nodes = c.nodes.filter((_, ni) => !keys.has(`${pi}:${ni}`));
     if (nodes.length >= 2) result.push({ ...c, nodes });
   });
@@ -475,12 +505,17 @@ export function trimDuplicateTail(paths: PathContour[], i: number): PathContour[
 export function bakeScale(paths: PathContour[], sx: number, sy: number, cx: number, cy: number): PathContour[] {
   const point = (p: Vec2): Vec2 => [cx + (p[0] - cx) * sx, cy + (p[1] - cy) * sy];
   const handle = (h: Vec2): Vec2 => [h[0] * sx, h[1] * sy];
-  return paths.map((c) => ({
-    ...c,
-    // `id` passa com'era; il raggio di raccordo si scala con la media geometrica dei due fattori (esatta con una scala uniforme:
-    // con scale diverse un arco di cerchio non resta tale, e il raggio è l'approssimazione più vicina)
-    nodes: c.nodes.map((n) => ({ ...(n.id ? { id: n.id } : {}), p: point(n.p), ...(n.in ? { in: handle(n.in) } : {}), ...(n.out ? { out: handle(n.out) } : {}), kind: n.kind, ...(n.r ? { r: n.r * Math.sqrt(sx * sy) } : {}) })),
-  }));
+  return paths.map((c) => {
+    const scaled: PathContour = {
+      ...c,
+      // `id` passa com'era; il raggio di raccordo si scala con la media geometrica dei due fattori (esatta con una scala uniforme:
+      // con scale diverse un arco di cerchio non resta tale, e il raggio è l'approssimazione più vicina)
+      nodes: c.nodes.map((n) => ({ ...(n.id ? { id: n.id } : {}), p: point(n.p), ...(n.in ? { in: handle(n.in) } : {}), ...(n.out ? { out: handle(n.out) } : {}), kind: n.kind, ...(n.r ? { r: n.r * Math.sqrt(sx * sy) } : {}) })),
+      // Il centro di un cerchio parametrico si scala come i nodi; poi il cerchio si ricalcola (con una scala non uniforme resta un cerchio, di raggio quello del nodo sul bordo)
+      ...(c.circ ? { circ: { ...c.circ, p: point(c.circ.p) } } : {}),
+    };
+    return regenCircle(scaled);
+  });
 }
 
 /** Opzioni dell'aggancio: `radius` e `grid` sono in mm (chi chiama converte i pixel con lo zoom). */
@@ -547,7 +582,7 @@ export const POLYGON_SIDES = { min: 3, max: 24, default: 6 };
  * primo vertice verso il puntatore. Con `shift`: quadrato e cerchio (lato maggiore) o, per il poligono, l'angolo a multipli di 15°.
  */
 export interface BaseShape {
-  tool: 'rect' | 'ellipse' | 'polygon';
+  tool: 'rect' | 'ellipse' | 'polygon' | 'circle';
   center: Vec2;
   to: Vec2;
   shift: boolean;
@@ -561,6 +596,11 @@ const MIN_SHAPE = 1e-6;
 /** Contorno chiuso della forma base, con le sue coordinate nel sistema dell'editor; null se la misura è nulla. */
 export function baseShapeContour(s: BaseShape): PathContour | null {
   const [dx, dy] = sub(s.to, s.center);
+  // Cerchio parametrico (anteprima: gli id veri li dà `addCircle` al rilascio)
+  if (s.tool === 'circle') {
+    const radius = Math.hypot(dx, dy);
+    return radius <= MIN_SHAPE ? null : circleContour(s.center, radius, 'preview-c', 'preview-n');
+  }
   if (s.tool === 'polygon') {
     const radius = Math.hypot(dx, dy);
     if (radius <= MIN_SHAPE) return null;

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { ANGLE_R_PX, CONSTRAINT_GLYPHS, DIM_GAP_PX, angleLayout, arcPoints, dimLabel, dimLayout, dimText, isDimension, nodeNames, pillWidthPx, pointMap, describeConstraint } from './dimensions';
+import { refPoint } from './model';
 import type { NodeRef } from './model';
 import type { PathContour, ProfileConstraint, Vec2 } from '../../scene/types';
 
@@ -153,9 +154,9 @@ export function QuoteOverlay({ paths, constraints, toS, pxPerMm, bad, flash, sel
   };
 
   const ring = (r: NodeRef, i: number): ReactNode => {
-    const n = paths[r.path]?.nodes[r.node];
-    if (!n) return null;
-    const [x, y] = toS(n.p);
+    const p = refPoint(paths, r);
+    if (!p) return null;
+    const [x, y] = toS(p);
     return <circle key={`r:${i}`} className="profile-editor__qring" cx={f1(x)} cy={f1(y)} r={11} />;
   };
 

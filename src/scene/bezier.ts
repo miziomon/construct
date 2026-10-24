@@ -424,9 +424,57 @@ export function sanitizePaths(value: unknown): PathContour[] | null {
       const radius = typeof r === 'number' && Number.isFinite(r) && r > 0 && r <= MAX_COORD ? r : undefined;
       clean.push({ ...(nodeId ? { id: nodeId } : {}), p: position, ...(handleIn ? { in: handleIn } : {}), ...(handleOut ? { out: handleOut } : {}), kind: kind as PathNode['kind'], ...(radius ? { r: radius } : {}) });
     }
-    result.push({ closed, nodes: clean });
+    // Cerchio parametrico: solo su un contorno chiuso di 4 nodi con il primo che ha un id; i tre nodi derivati non hanno id
+    const rawCirc = (raw as { circ?: unknown }).circ;
+    let circ: PathContour['circ'];
+    if (typeof rawCirc === 'object' && rawCirc !== null && closed && clean.length === 4 && clean[0].id) {
+      const { id: circId, p: circP } = rawCirc as { id?: unknown; p?: unknown };
+      const center = vec2(circP);
+      if (center && typeof circId === 'string' && NODE_ID.test(circId) && !seen.has(circId)) {
+        seen.add(circId);
+        circ = { id: circId, p: center };
+        for (let i = 1; i < 4; i++) delete clean[i].id;
+      }
+    }
+    result.push({ closed, nodes: clean, ...(circ ? { circ } : {}) });
   }
   return result;
+}
+
+/** Costante di Bézier per approssimare un quarto di cerchio con una cubica (maniglie a 0,5523 volte il raggio). */
+export const CIRCLE_KAPPA = 0.5522847498307936;
+
+/** Un vettore ruotato di 90 gradi in senso antiorario (esatto: nessuna trigonometria). */
+const quarter = (v: Vec2): Vec2 => [-v[1] + 0, v[0] + 0];
+
+/**
+ * Ricalcola i tre nodi derivati e le maniglie di un cerchio parametrico dal suo centro (`circ.p`) e dal primo nodo (sul bordo,
+ * che resta dov'è). I nodi stanno a quarti di giro dal primo, tutti lisci e simmetrici con le maniglie a `CIRCLE_KAPPA` volte
+ * il raggio. Un contorno senza `circ` resta com'è. Restituisce lo stesso oggetto se è già coerente.
+ */
+export function regenCircle(c: PathContour): PathContour {
+  if (!c.circ || c.nodes.length !== 4) return c;
+  const [first] = c.nodes;
+  const center = c.circ.p;
+  let spoke: Vec2 = [first.p[0] - center[0], first.p[1] - center[1]];
+  let changed = false;
+  const nodes = c.nodes.map((n, k): PathNode => {
+    const out: Vec2 = (([x, y]) => [x * CIRCLE_KAPPA + 0, y * CIRCLE_KAPPA + 0] as Vec2)(quarter(spoke));
+    const handleIn: Vec2 = [-out[0] || 0, -out[1] || 0];
+    const p: Vec2 = k === 0 ? n.p : [center[0] + spoke[0], center[1] + spoke[1]];
+    const next: PathNode = { ...(n.id ? { id: n.id } : {}), p, in: handleIn, out, kind: 'symmetric' };
+    spoke = quarter(spoke);
+    const same = n.kind === 'symmetric' && n.p[0] === p[0] && n.p[1] === p[1] && n.in?.[0] === handleIn[0] && n.in?.[1] === handleIn[1] && n.out?.[0] === out[0] && n.out?.[1] === out[1] && !n.r;
+    if (!same) changed = true;
+    return next;
+  });
+  return changed ? { ...c, nodes } : c;
+}
+
+/** Contorno di un cerchio parametrico di centro `center` e raggio `r`: il primo nodo (con id) a destra del centro. */
+export function circleContour(center: Vec2, r: number, centerId: string, nodeId: string): PathContour {
+  const first: PathNode = { id: nodeId, p: [center[0] + r, center[1]], kind: 'symmetric' };
+  return regenCircle({ closed: true, nodes: [first, { p: [0, 0], kind: 'symmetric' }, { p: [0, 0], kind: 'symmetric' }, { p: [0, 0], kind: 'symmetric' }], circ: { id: centerId, p: center } });
 }
 
 /** Tipi di vincolo tra due segmenti (4 punti, `angle` anche 2) in cui i segmenti possono avere in comune un nodo. */
@@ -452,7 +500,7 @@ export const MAX_PARAMS = 100;
 const bounded = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x) && Math.abs(x) <= MAX_COORD;
 
 /** Tutti gli id dei nodi di un profilo. */
-export const nodeIds = (paths: PathContour[]): Set<string> => new Set(paths.flatMap((c) => c.nodes.flatMap((n) => (n.id ? [n.id] : []))));
+export const nodeIds = (paths: PathContour[]): Set<string> => new Set(paths.flatMap((c) => [...(c.circ ? [c.circ.id] : []), ...c.nodes.flatMap((n) => (n.id ? [n.id] : []))]));
 
 /**
  * Valida i vincoli arrivati da fuori contro i contorni (già validati) a cui si riferiscono. A differenza di `sanitizePaths`
@@ -469,7 +517,7 @@ export function sanitizeConstraints(value: unknown, paths: PathContour[]): Profi
   for (const raw of value) {
     if (result.length >= MAX_CONSTRAINTS) break;
     if (typeof raw !== 'object' || raw === null) continue;
-    const { id, t, p, v, s, x, y, ref, off, at } = raw as Record<string, unknown>;
+    const { id, t, p, v, s, x, y, ref, off, at, expr, dia } = raw as Record<string, unknown>;
     if (typeof id !== 'string' || !NODE_ID.test(id) || seen.has(id)) continue;
     if (typeof t !== 'string' || !Object.hasOwn(NPTS, t)) continue;
     const type = t as ConstraintType;
@@ -493,6 +541,9 @@ export function sanitizeConstraints(value: unknown, paths: PathContour[]): Profi
       ...(isRef ? { ref: true } : {}),
       ...(bounded(off) ? { off } : {}),
       ...(typeof at === 'number' && at >= 0 && at <= 1 ? { at } : {}),
+      // Espressione dei parametri locali (solo quote pilotanti) e diametro del cerchio (solo una distanza pilotante)
+      ...(measured && !isRef && typeof expr === 'string' && expr.length > 0 && expr.length <= MAX_EXPR ? { expr } : {}),
+      ...(type === 'dist' && !isRef && dia === true ? { dia: true as const } : {}),
     });
     seen.add(id);
   }
@@ -526,7 +577,9 @@ export function sanitizeParams(value: unknown): ProfileParams | undefined {
  * riferimento, così la cache e la cronologia non vedono un cambiamento).
  */
 export function assignNodeIds(paths: PathContour[]): PathContour[] {
-  if (paths.every((c) => c.nodes.every((n) => n.id))) return paths;
+  // I tre nodi derivati di un cerchio parametrico non hanno id e non lo devono avere (non sono punti del risolutore)
+  const needsId = (c: PathContour) => c.nodes.some((n, i) => !n.id && !(c.circ && i > 0));
+  if (!paths.some(needsId)) return paths;
   // Il contatore parte oltre il più alto `n<k>` presente, e un id già preso (anche non numerico) non si riusa
   const taken = nodeIds(paths);
   let counter = 0;
@@ -540,7 +593,23 @@ export function assignNodeIds(paths: PathContour[]): PathContour[] {
     while (taken.has(`n${counter}`));
     return `n${counter}`;
   };
-  return paths.map((c) => (c.nodes.every((n) => n.id) ? c : { ...c, nodes: c.nodes.map((n) => (n.id ? n : { ...n, id: fresh() })) }));
+  return paths.map((c) => (needsId(c) ? { ...c, nodes: c.nodes.map((n, i) => (n.id || (c.circ && i > 0) ? n : { ...n, id: fresh() })) } : c));
+}
+
+/** `count` id di nodo liberi (`n<k>`) oltre il più alto già usato nel profilo: per i punti che nascono insieme (il cerchio parametrico). */
+export function freshNodeIds(paths: PathContour[], count: number): string[] {
+  const taken = nodeIds(paths);
+  let counter = 0;
+  for (const id of taken) {
+    const k = /^n(\d+)$/.exec(id);
+    if (k) counter = Math.max(counter, Number(k[1]));
+  }
+  const out: string[] = [];
+  while (out.length < count) {
+    counter++;
+    if (!taken.has(`n${counter}`)) out.push(`n${counter}`);
+  }
+  return out;
 }
 
 /** Dati di un profilo `path` che finiscono nel commento del codice OpenSCAD. */
@@ -566,11 +635,11 @@ export function encodePathMeta(p: PathMeta): string {
 }
 
 /**
- * Versione del formato del commento e della bozza: 2 se ci sono vincoli, parametri o un raccordo (`r` di un nodo: cambia la
- * forma, e un'app che lo ignorasse rileggerebbe un poligono diverso da quello scritto), altrimenti 1.
+ * Versione del formato del commento e della bozza: 2 se ci sono vincoli, parametri, un cerchio parametrico o un raccordo (`r`
+ * di un nodo: cambia la forma, e un'app che lo ignorasse rileggerebbe un poligono diverso da quello scritto), altrimenti 1.
  */
 export function metaVersion(p: { constraints?: unknown[]; params?: object; paths?: PathContour[] }): 1 | 2 {
-  const filleted = p.paths?.some((c) => c.nodes.some((n) => (n.r ?? 0) > 0));
+  const filleted = p.paths?.some((c) => c.circ || c.nodes.some((n) => (n.r ?? 0) > 0));
   return p.constraints?.length || (p.params && Object.keys(p.params).length) || filleted ? 2 : 1;
 }
 

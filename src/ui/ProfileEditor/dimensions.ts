@@ -1,8 +1,9 @@
 import { dragSketch, maxResidual, measure, solveSketch, validateValue } from './constraints';
 import type { ConstraintType, Pt, Report } from './constraints';
 import { dimensionValue, isDimension, isLinearDimension, placeDimension, pointMap, pointsOf } from './dimPlacement';
-import { constraintIdMaker, moveNodes } from './model';
+import { constraintIdMaker, edgeAt, moveNodes, normalizeProfile, refPoint } from './model';
 import type { NodeRef, ProfileGeometry, SegmentRef } from './model';
+import { circleContour, freshNodeIds, regenCircle } from '../../scene/bezier';
 import type { PathContour, ProfileConstraint, Vec2 } from '../../scene/types';
 
 /**
@@ -20,7 +21,7 @@ import type { PathContour, ProfileConstraint, Vec2 } from '../../scene/types';
  */
 
 // La geometria delle quote (posizione, testo, disposizione automatica) sta in dimPlacement.ts: da qui si riesporta
-export { ANGLE_R_PX, DIM_GAP_PX, angleLayout, arcPoints, dimLabel, dimLayout, dimText, dimensionValue, dragDimension, fmtDim, isDimension, isLinearDimension, isPositionedDimension, pillWidthPx, placeDimension, pointMap, pointsOf, repositionDimensions } from './dimPlacement';
+export { ANGLE_R_PX, DIM_GAP_PX, angleLayout, arcPoints, dimLabel, dimLayout, dimText, dimensionValue, dragDimension, fmtDim, isDimension, isLinearDimension, isPositionedDimension, pillWidthPx, placeDimension, pointMap, pointsOf, repositionDimensions, shownValue } from './dimPlacement';
 export type { AngleLayout, DimLayout } from './dimPlacement';
 
 /** Come si misura una quota: lunghezza allineata ai due nodi, solo in orizzontale (distX) o solo in verticale (distY), oppure l'angolo tra due segmenti. */
@@ -70,22 +71,30 @@ export type SelectionConstraint = (typeof SELECTION_CONSTRAINTS)[number];
 
 /** Nome leggibile dei nodi (P1.2 = secondo nodo del primo percorso): è quello del pannello, come nei contorni dell'elenco Percorsi. */
 export function nodeNames(paths: PathContour[]): Map<string, string> {
-  return new Map(paths.flatMap((c, pi) => c.nodes.flatMap((n, ni): [string, string][] => (n.id ? [[n.id, `P${pi + 1}.${ni + 1}`]] : []))));
+  // Il centro di un cerchio parametrico è C1, C2... (come il suo contorno nell'elenco)
+  return new Map(paths.flatMap((c, pi) => [...(c.circ ? ([[c.circ.id, `C${pi + 1}`]] as [string, string][]) : []), ...c.nodes.flatMap((n, ni): [string, string][] => (n.id ? [[n.id, `P${pi + 1}.${ni + 1}`]] : []))]));
 }
 
-/** Id dei nodi indicati (quelli senza id non ci sono: per citarli serve prima `normalizeProfile`). */
+/**
+ * Id dei nodi indicati (quelli senza id non ci sono: per citarli serve prima `normalizeProfile`). Il centro di un cerchio
+ * parametrico ha l'indice subito dopo l'ultimo nodo del suo contorno; gli altri tre nodi del cerchio non hanno id.
+ */
 export function idsOf(paths: PathContour[], refs: NodeRef[]): string[] {
   return refs.flatMap((r) => {
-    const id = paths[r.path]?.nodes[r.node]?.id;
+    const c = paths[r.path];
+    const id = c?.circ && r.node === c.nodes.length ? c.circ.id : c?.nodes[r.node]?.id;
     return id ? [id] : [];
   });
 }
 
 /** I vincoli che il risolutore può leggere: tutti i punti citati esistono (un nodo cancellato non lascia vincoli, ma un file rovinato sì). */
 export function validConstraints(paths: PathContour[], constraints: ProfileConstraint[] | undefined): ProfileConstraint[] {
-  if (!constraints?.length) return [];
+  // Ogni cerchio parametrico ha un vincolo implicito, mai salvato: il suo nodo sul bordo sta alla stessa altezza del centro. Così il
+  // cerchio ha tre gradi di libertà (x, y, raggio) e non quattro (la direzione di quel nodo non conta: tutti i nodi sono equivalenti)
+  const implicit = paths.flatMap((c): ProfileConstraint[] => (c.circ && c.nodes[0]?.id ? [{ id: `h-${c.circ.id}`, t: 'horizontal', p: [c.circ.id, c.nodes[0].id] }] : []));
+  if (!constraints?.length) return implicit;
   const ids = pointMap(paths);
-  return constraints.filter((c) => c.p.every((id) => ids.has(id)));
+  return [...implicit, ...constraints.filter((c) => c.p.every((id) => ids.has(id)))];
 }
 
 /**
@@ -104,9 +113,14 @@ export function writeBack(paths: PathContour[], points: Pt[]): PathContour[] {
       touched = true;
       return { ...n, p: [q.x || 0, q.y || 0] as Vec2 };
     });
-    if (!touched) return c;
+    // Il centro di un cerchio parametrico è un punto del risolutore come i nodi
+    const q = c.circ ? solved.get(c.circ.id) : undefined;
+    const moved = !!c.circ && !!q && (Math.abs(q.x - c.circ.p[0]) >= 1e-12 || Math.abs(q.y - c.circ.p[1]) >= 1e-12);
+    if (!touched && !moved) return c;
     changed = true;
-    return { ...c, nodes };
+    const written: PathContour = { ...c, nodes, ...(c.circ && moved && q ? { circ: { ...c.circ, p: [q.x || 0, q.y || 0] as Vec2 } } : {}) };
+    // I tre nodi derivati e le maniglie del cerchio seguono il centro e il nodo sul bordo
+    return regenCircle(written);
   });
   return changed ? next : paths;
 }
@@ -166,12 +180,14 @@ export function quoteMismatch(d: ProfileGeometry): number | null {
 // --- Aggiunta e modifica -----------------------------------------------------------------------------------------------
 
 /** Esito di un'aggiunta o modifica: il disegno nuovo (già risolto), oppure il perché non si è applicata e i vincoli da evidenziare. */
-export type Applied<T> = { ok: true; draft: T; report: Report } | { ok: false; message: string; ids: string[]; reason?: 'conflict' | 'redundant' | 'unsolved' | 'invalid' };
+export type Applied<T> = { ok: true; draft: T; report: Report; keeper?: string } | { ok: false; message: string; ids: string[]; reason?: 'conflict' | 'redundant' | 'unsolved' | 'invalid' };
 
 const UNSOLVED = 'Il risolutore non è arrivato a una soluzione (non è detto che ci sia un conflitto): prova un valore più vicino a quello attuale.';
 
 /** Descrizione breve di un vincolo, per i messaggi e il pannello: «Distanza P1.1-P1.2». */
 export function describeConstraint(c: ProfileConstraint, names: Map<string, string>): string {
+  // La quota di un cerchio parametrico è il suo diametro (il centro dà il nome: C1)
+  if (c.dia) return `Diametro ${names.get(c.p[0]) ?? '?'}`;
   // Un nodo condiviso tra due segmenti (angolo, parallelo...) si nomina una volta
   return `${CONSTRAINT_NAMES[c.t]} ${[...new Set(c.p)].map((id) => names.get(id) ?? '?').join('-')}`;
 }
@@ -188,7 +204,7 @@ function namesOf(ids: string[], list: ProfileConstraint[], names: Map<string, st
 }
 
 /** Frasi dei rifiuti, diverse per un vincolo nuovo, una quota nuova, un valore cambiato, un Fisso su più nodi. */
-interface Messages {
+export interface Messages {
   /** `who` = i vincoli con cui va in conflitto (può essere vuoto). */
   conflict: (who: string) => string;
   redundant: string;
@@ -204,7 +220,7 @@ const messagesFor = (what: 'Vincolo' | 'Quota'): Messages => ({
  * è ridondante o in conflitto non si applica), `strict` = qualunque ridondanza rifiuta (usato dal Fisso su più nodi).
  * Non applicato = il disegno resta com'era (chi chiama non tocca nulla).
  */
-function solveWith<T extends ProfileGeometry>(d: T, list: ProfileConstraint[], added: ProfileConstraint | null, messages: Messages, strict = false): Applied<T> {
+export function solveWith<T extends ProfileGeometry>(d: T, list: ProfileConstraint[], added: ProfileConstraint | null, messages: Messages, strict = false): Applied<T> {
   const next: T = { ...d, constraints: list };
   const rep = solveSketch(pointsOf(d.paths), validConstraints(d.paths, list));
   if (rep.unsolved) return { ok: false, message: UNSOLVED, ids: [], reason: 'unsolved' };
@@ -258,7 +274,7 @@ export function normalizeAngle(c: ProfileConstraint): ProfileConstraint | string
  * più vincolato (quello senza gradi di libertà, altrimenti il primo). Il risultato è solo il punto di partenza: la risoluzione
  * decide, e se non va il disegno originale non si tocca.
  */
-function preRotated<T extends ProfileGeometry>(d: T, c: ProfileConstraint, value: number): T {
+export function preRotated<T extends ProfileGeometry>(d: T, c: ProfileConstraint, value: number): T {
   const pm = pointMap(d.paths);
   if (!c.p.every((id) => pm.has(id))) return d;
   const delta = ((value - measure(c, pointsOf(d.paths))) * Math.PI) / 180;
@@ -307,7 +323,7 @@ export interface SelectionItems {
 export function selectionItems(paths: PathContour[], selection: NodeRef[], segments: SegmentRef[]): SelectionItems {
   const key = (r: NodeRef) => `${r.path}:${r.node}`;
   const selected = new Set(selection.map(key));
-  const idOf = (r: NodeRef) => paths[r.path]?.nodes[r.node]?.id;
+  const idOf = (r: NodeRef): string | undefined => idsOf(paths, [r])[0];
   const inSegment = new Set<string>();
   const pairs: [string, string][] = [];
   for (const seg of segments) {
@@ -395,7 +411,21 @@ export function setConstraintValue<T extends ProfileGeometry>(d: T, id: string, 
   }
   // Per una modifica la frase è «Valore non raggiungibile» (la quota c'era già); il valore uguale all'attuale non è mai ridondante
   const messages: Messages = { conflict: (who) => `Valore non raggiungibile: va in conflitto con ${who || 'i vincoli'}`, redundant: 'Valore non raggiungibile: il disegno è già vincolato da altri vincoli' };
-  return solveWith(con.t === 'angle' ? preRotated(d, edited, edited.v ?? value) : d, list.map((c) => (c.id === id ? edited : c)), edited, messages);
+  const start = con.t === 'angle' ? preRotated(d, edited, edited.v ?? value) : con.dia ? preSized(d, edited, value) : d;
+  return solveWith(start, list.map((c) => (c.id === id ? edited : c)), edited, messages);
+}
+
+/**
+ * Prima di risolvere la quota Ø di un cerchio si porta il nodo sul bordo al nuovo raggio, lungo la sua direzione: il risolutore
+ * parte da una soluzione e il centro resta dov'è (altrimenti, a norma minima, centro e bordo si spartirebbero la differenza).
+ */
+export function preSized<T extends ProfileGeometry>(d: T, c: ProfileConstraint, radius: number): T {
+  const pm = pointMap(d.paths);
+  const [center, edge] = [pm.get(c.p[0]), pm.get(c.p[1])];
+  if (!c.dia || !center || !edge || !(radius > 0)) return d;
+  const current = Math.hypot(edge[0] - center[0], edge[1] - center[1]);
+  const unit: Vec2 = current > 1e-12 ? [(edge[0] - center[0]) / current, (edge[1] - center[1]) / current] : [1, 0];
+  return { ...d, paths: writeBack(d.paths, [{ id: c.p[1], x: center[0] + unit[0] * radius, y: center[1] + unit[1] * radius }]) };
 }
 
 // --- Più quote scelte ----------------------------------------------------------------------------------------------------
@@ -434,33 +464,64 @@ export function setCommonValue<T extends ProfileGeometry>(d: T, ids: string[], v
   if (invalid) return { ok: false, message: invalid, ids: [], reason: 'invalid' };
   const chosen = new Set(ids);
   const messages: Messages = { conflict: (who) => `Valore non raggiungibile: va in conflitto con ${who || 'i vincoli'}`, redundant: 'Valore non raggiungibile: il disegno è già vincolato da altri vincoli' };
-  return solveWith(d, (d.constraints ?? []).map((c) => (chosen.has(c.id) ? { ...c, v: value } : c)), null, messages);
+  // Un valore comune è un numero: l'espressione che la quota aveva (parametri locali) si toglie
+  return solveWith(d, (d.constraints ?? []).map((c) => { if (!chosen.has(c.id)) return c; const { expr: _expr, ...plain } = c; return { ...plain, v: value }; }), null, messages);
 }
 
 /**
- * Rende uguali le distanze scelte. Resta pilotante la prima (la prima quota pilotante nell'elenco, o la prima se sono tutte
- * di riferimento): le altre diventano di riferimento (tra parentesi) e ognuna riceve un vincolo Uguale con la prima, quindi
- * il valore finale è quello della prima e i segmenti delle altre si adeguano. Un solo passo: se un Uguale non si può
- * aggiungere (conflitto con altri vincoli, ridondanza) non cambia nulla.
+ * Rende uguali le distanze scelte. Resta pilotante la prima nell'ordine di scelta (`ids`, cioè dei clic; la prima quota
+ * pilotante, o la prima se sono tutte di riferimento): le altre diventano di riferimento (tra parentesi) e ognuna riceve un
+ * vincolo Uguale con la prima, quindi il valore finale è quello della prima e i segmenti delle altre si adeguano. Un Uguale
+ * ridondante (i due lati sono già uguali per gli altri vincoli, per esempio i lati opposti di un rettangolo con orizzontali
+ * e verticali) si salta; solo un conflitto fa fallire, e allora non cambia nulla. Un solo passo. `keeper` = id della quota che resta.
  */
 export function equalizeLengths<T extends ProfileGeometry>(d: T, ids: string[]): Applied<T> {
   const info = groupInfo(d.constraints, ids);
   if (!info.canEqualize) return { ok: false, message: 'Scegli due o più distanze tra coppie diverse di nodi', ids: [], reason: 'invalid' };
-  const chosen = (d.constraints ?? []).filter((c) => ids.includes(c.id));
+  // Nell'ordine dei clic (gli id doppi e quelli che non ci sono più non contano)
+  const chosen = [...new Set(ids)].flatMap((id) => (d.constraints ?? []).find((c) => c.id === id) ?? []);
   const keeper = chosen.find((c) => !c.ref) ?? chosen[0];
   const others = chosen.filter((c) => c !== keeper);
   // Le quote pilotanti che non restano diventano di riferimento: così non fissano più la lunghezza e l'Uguale non è né in conflitto né ridondante
   const demoted = new Set(others.filter((c) => !c.ref).map((c) => c.id));
   let current: T = { ...d, constraints: (d.constraints ?? []).map((c) => (demoted.has(c.id) ? { ...c, ref: true as const } : c)) };
+  let added = 0;
   for (const other of others) {
     const result = addConstraint(current, { t: 'equal', p: [keeper.p[0], keeper.p[1], other.p[0], other.p[1]] });
-    if (!result.ok) return result;
+    // Ridondante: le due lunghezze sono già uguali per i vincoli del disegno, niente da aggiungere per questa coppia
+    if (!result.ok && result.reason === 'redundant') continue;
+    if (!result.ok) return { ...result, message: `Non si possono rendere uguali: ${result.message.charAt(0).toLowerCase()}${result.message.slice(1)}` };
     current = result.draft;
+    added++;
   }
+  if (!added && !demoted.size) return { ok: false, message: 'Le distanze scelte sono già uguali per i vincoli del disegno: non c\'è niente da aggiungere', ids: [], reason: 'redundant' };
   // Il valore promemoria delle quote diventate di riferimento è la misura che hanno adesso
   const finalPaths = current.paths;
   current = { ...current, constraints: (current.constraints ?? []).map((c) => (demoted.has(c.id) ? { ...c, v: dimensionValue({ ...c, v: undefined }, finalPaths) } : c)) };
-  return { ok: true, draft: current, report: solveSketch(pointsOf(current.paths), validConstraints(current.paths, current.constraints)) };
+  return { ok: true, draft: current, report: solveSketch(pointsOf(current.paths), validConstraints(current.paths, current.constraints)), keeper: keeper.id };
+}
+
+/**
+ * Rende pilotante una quota di riferimento: prende il valore che il disegno ha adesso e comincia a vincolare (per esempio una
+ * quota declassata da «Rendi uguali»). Se il disegno è già vincolato da altri vincoli (la quota sarebbe ridondante) o va in
+ * conflitto non si applica, e il messaggio dice perché.
+ */
+export function makeDriving<T extends ProfileGeometry>(d: T, id: string): Applied<T> {
+  const c = (d.constraints ?? []).find((x) => x.id === id);
+  if (!c || !c.ref || !isDimension(c)) return { ok: false, message: 'Solo una quota di riferimento si può rendere pilotante', ids: [], reason: 'invalid' };
+  const { ref: _ref, ...rest } = c;
+  let driving: ProfileConstraint = { ...rest, v: dimensionValue({ ...c, v: undefined }, d.paths) };
+  if (driving.t === 'angle') {
+    const normal = normalizeAngle(driving);
+    if (typeof normal === 'string') return { ok: false, message: normal, ids: [], reason: 'invalid' };
+    driving = normal;
+  }
+  const messages: Messages = {
+    conflict: (who) => `Non si può rendere pilotante: va in conflitto con ${who || 'gli altri vincoli'}`,
+    redundant: 'Non si può rendere pilotante: il disegno è già vincolato da altri vincoli, la quota resta di riferimento',
+  };
+  // Severo: anche una ridondanza con un altro vincolo (per esempio l'Uguale che l'ha declassata) rifiuta
+  return solveWith(d, (d.constraints ?? []).map((x) => (x.id === id ? driving : x)), driving, messages, true);
 }
 
 /** Toglie un vincolo o una quota. Non risolve (togliere un vincolo non può sovravincolare): il disegno resta dov'è. Senza più vincoli il campo non c'è. */
@@ -546,6 +607,55 @@ export function addReferenceDimension<T extends ProfileGeometry>(d: T, con: Omit
   return { ...d, constraints: [...list, { ...ref, v: measured }] };
 }
 
+// --- Cerchio parametrico -------------------------------------------------------------------------------------------------
+
+/** Raggio minimo (mm) di un cerchio disegnato: sotto, il gesto non crea nulla. */
+export const MIN_CIRCLE_RADIUS = 0.05;
+
+/**
+ * Aggiunge un cerchio parametrico (un foro quotato) di centro `center` e raggio `radius`: un contorno chiuso di 4 nodi lisci
+ * (il primo con id, sul bordo a destra del centro; il centro è un punto con id; vedi `PathContour.circ`) e la sua quota Ø,
+ * già posizionata sopra il cerchio. Il diametro si arrotonda a 2 decimali, perché la quota è un valore leggibile (il cerchio nasce
+ * già di quella misura). Restituisce il disegno nuovo, l'indice del contorno e l'id della quota, oppure un messaggio.
+ */
+export function addCircle<T extends ProfileGeometry>(d: T, center: Vec2, radius: number, pxPerMm: number): { draft: T; path: number; quote: string } | string {
+  const diameter = Math.round(2 * radius * 100) / 100;
+  const r = diameter / 2;
+  if (!(r >= MIN_CIRCLE_RADIUS)) return 'Il cerchio è troppo piccolo: trascina più in là dal centro';
+  const refused = validateValue('dist', r);
+  if (refused) return refused;
+  const base = normalizeProfile(d);
+  if (base.paths.length >= 100) return 'Limite raggiunto: al massimo 100 contorni per profilo';
+  const [centerId, nodeId] = freshNodeIds(base.paths, 2);
+  const paths = [...base.paths, circleContour(center, r, centerId, nodeId)];
+  const quote: Omit<ProfileConstraint, 'id'> = { t: 'dist', p: [centerId, nodeId], v: r, dia: true };
+  const placed = { ...quote, ...placeDimension(paths, base.constraints ?? [], quote as ProfileConstraint, pxPerMm) };
+  const result = addConstraint({ ...base, paths }, placed);
+  if (!result.ok) return result.message;
+  return { draft: result.draft, path: paths.length - 1, quote: result.draft.constraints!.at(-1)!.id };
+}
+
+/** La quota Ø del cerchio `index`, se c'è. */
+export function circleQuote(d: ProfileGeometry, index: number): ProfileConstraint | undefined {
+  const c = d.paths[index];
+  const first = c?.nodes[0]?.id;
+  return c?.circ && first ? (d.constraints ?? []).find((q) => q.dia && q.p[0] === c.circ!.id && q.p[1] === first) : undefined;
+}
+
+/** Il cerchio di cui `a` e `b` sono il centro e il nodo sul bordo (in qualunque ordine), o -1. */
+export function circleOfPair(paths: PathContour[], a: string, b: string): number {
+  return paths.findIndex((c) => c.circ && c.nodes[0]?.id && ((c.circ.id === a && c.nodes[0].id === b) || (c.circ.id === b && c.nodes[0].id === a)));
+}
+
+/** Nuova quota Ø per il cerchio `index` (con il diametro che ha adesso), già posizionata; un messaggio se non è un cerchio. Non risolve e non dà l'id. */
+export function circleDimension(paths: PathContour[], index: number, pxPerMm: number, existing: ProfileConstraint[] = []): Omit<ProfileConstraint, 'id'> | string {
+  const c = paths[index];
+  const first = c?.nodes[0];
+  if (!c?.circ || !first?.id) return 'Il diametro si assegna a un cerchio';
+  const dim: Omit<ProfileConstraint, 'id'> = { t: 'dist', p: [c.circ.id, first.id], v: Math.hypot(first.p[0] - c.circ.p[0], first.p[1] - c.circ.p[1]), dia: true };
+  return { ...dim, ...placeDimension(paths, existing, dim as ProfileConstraint, pxPerMm) };
+}
+
 // --- Trascinamento -----------------------------------------------------------------------------------------------------
 
 /** Un nodo trascinato e il punto (mm) in cui il mouse lo vuole. */
@@ -561,15 +671,34 @@ export interface DragTarget {
  * rinunciare al tentativo rigido: il resto del trascinamento è morbido. `paths` è null se il fotogramma non si risolve (si salta).
  */
 export function dragFrame(current: PathContour[], constraints: ProfileConstraint[] | undefined, targets: DragTarget[], soft: boolean): { paths: PathContour[] | null; soft: boolean } {
-  // Posizione libera dei nodi trascinati
+  // Posizione libera dei nodi trascinati; per un cerchio parametrico il centro (o uno dei tre nodi derivati) porta con sé tutto il
+  // cerchio, il solo nodo sul bordo ne cambia il raggio
   const where = new Map(targets.map((t) => [`${t.ref.path}:${t.ref.node}`, t.to]));
-  const moved = current.map((c, pi) => (c.nodes.some((_, ni) => where.has(`${pi}:${ni}`)) ? { ...c, nodes: c.nodes.map((n, ni) => (where.has(`${pi}:${ni}`) ? { ...n, p: where.get(`${pi}:${ni}`)! } : n)) } : c));
-  const cons = validConstraints(current, constraints);
   const moves: Record<string, Vec2> = {};
-  for (const t of targets) {
-    const id = current[t.ref.path]?.nodes[t.ref.node]?.id;
-    if (id) moves[id] = t.to;
-  }
+  const moved = current.map((c, pi) => {
+    if (c.circ) {
+      const whole = targets.find((t) => t.ref.path === pi && t.ref.node !== 0);
+      const first = targets.find((t) => t.ref.path === pi && t.ref.node === 0);
+      if (whole) {
+        const from = refPoint(current, whole.ref)!;
+        const delta: Vec2 = [whole.to[0] - from[0], whole.to[1] - from[1]];
+        const shifted: PathContour = { ...c, nodes: c.nodes.map((n) => ({ ...n, p: [n.p[0] + delta[0], n.p[1] + delta[1]] as Vec2 })), circ: { ...c.circ, p: [c.circ.p[0] + delta[0], c.circ.p[1] + delta[1]] as Vec2 } };
+        moves[c.circ.id] = shifted.circ!.p;
+        if (c.nodes[0].id) moves[c.nodes[0].id] = shifted.nodes[0].p;
+        return shifted;
+      }
+      if (first) {
+        // Il nodo sul bordo cambia il raggio: sta sempre sulla orizzontale del centro (il vincolo implicito)
+        const to = edgeAt(c, first.to);
+        if (c.nodes[0].id) moves[c.nodes[0].id] = to;
+        return regenCircle({ ...c, nodes: c.nodes.map((n, ni) => (ni === 0 ? { ...n, p: to } : n)) });
+      }
+      return c;
+    }
+    for (const [ni, n] of c.nodes.entries()) if (n.id && where.has(`${pi}:${ni}`)) moves[n.id] = where.get(`${pi}:${ni}`)!;
+    return c.nodes.some((_, ni) => where.has(`${pi}:${ni}`)) ? { ...c, nodes: c.nodes.map((n, ni) => (where.has(`${pi}:${ni}`) ? { ...n, p: where.get(`${pi}:${ni}`)! } : n)) } : c;
+  });
+  const cons = validConstraints(current, constraints);
   if (!cons.length || !Object.keys(moves).length) return { paths: moved, soft };
   const rep = dragSketch(pointsOf(current), cons, moves, soft);
   const nextSoft = soft || !rep.pinned;
@@ -593,7 +722,7 @@ export function moveNodesConstrained(paths: PathContour[], constraints: ProfileC
   // Senza vincoli è lo spostamento libero di sempre
   if (!validConstraints(paths, constraints).length) return moveNodes(paths, refs, delta);
   const targets: DragTarget[] = refs.flatMap((ref) => {
-    const p = paths[ref.path]?.nodes[ref.node]?.p;
+    const p = refPoint(paths, ref);
     return p ? [{ ref, to: [p[0] + delta[0], p[1] + delta[1]] as Vec2 }] : [];
   });
   let frame = dragFrame(paths, constraints, targets, false);

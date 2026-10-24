@@ -130,6 +130,13 @@ export interface ProfileConstraint extends Constraint {
   off?: number;
   /** Posizione dell'etichetta lungo la linea di quota, da 0 (primo estremo) a 1 (secondo). */
   at?: number;
+  /**
+   * Espressione con i parametri locali del profilo (`larghezza/2 + 3`) da cui deriva `v`, per le quote pilotanti. `v` è sempre
+   * il valore valutato (la lettura non rivaluta mai): l'espressione si rilegge solo quando l'utente cambia un parametro.
+   */
+  expr?: string;
+  /** Quota di un cerchio parametrico: una `dist` tra il centro e il suo punto sul bordo, mostrata come diametro (`v` resta il raggio). */
+  dia?: true;
 }
 
 /** Parametri con nome del profilo (numeri o espressioni), locali al profilo. */
@@ -139,6 +146,13 @@ export type ProfileParams = Record<string, number | string>;
 export interface PathContour {
   closed: boolean;
   nodes: PathNode[];
+  /**
+   * Cerchio parametrico (foro quotato): il contorno ha 4 nodi lisci a 0, 90, 180 e 270 gradi attorno al centro `p`, con le
+   * maniglie a 0,5523 volte il raggio. Il centro e il primo nodo (sul bordo, con id) sono i punti del risolutore; gli altri tre
+   * nodi non hanno id e si ricalcolano da quei due (`regenCircle`). `id` è l'identità del centro, come per i nodi. Per tutto il
+   * resto (kernel, codice OpenSCAD, campionamento) è un contorno chiuso normale: nessun tipo di segmento nuovo.
+   */
+  circ?: { id: string; p: Vec2 };
 }
 
 /** Stato del disegno nella modale del Profilo: contorni e parametri di estrusione (quelli del nodo `path`). */

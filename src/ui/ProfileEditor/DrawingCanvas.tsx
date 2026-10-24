@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent a
 import { TrianglesCenterlineDashedVertical, Maximize, ZoomIn, ZoomOut } from 'lucide-react';
 import { MAX_PATH_CONTOURS, cubicPoint, expandFillets, segmentOf } from '../../scene/bezier';
 import type { PathContour, PathNode, ProfileConstraint, Vec2 } from '../../scene/types';
-import { appendPenNode, baseShapeContour, contourContains, cycleKind, gridStep, insertNodeWithConstraints, joinContours, moveHandle, moveNodes, nearestSegment, resumeContour, setNodeKind, snapPoint } from './model';
+import { appendPenNode, baseShapeContour, centerIndex, contourContains, cycleKind, gridStep, insertNodeWithConstraints, joinContours, moveHandle, moveNodes, nearestSegment, refPoint, resumeContour, setNodeKind, snapPoint } from './model';
 import type { HandleRef, NodeRef, SegmentRef } from './model';
 import { ANGLE_R_PX, DIM_GAP_PX, dimLabel, dragDimension, dragFrame, isPositionedDimension, pointMap, settlePaths } from './dimensions';
 import type { NodeState } from './dimensions';
@@ -21,7 +21,7 @@ export interface GridSettings {
   showAxis: boolean;
 }
 
-export type Tool = 'select' | 'pen' | 'pan' | 'rect' | 'ellipse' | 'polygon' | 'dim';
+export type Tool = 'select' | 'pen' | 'pan' | 'rect' | 'ellipse' | 'polygon' | 'circle' | 'dim';
 
 /** Che cosa c'è sotto il puntatore con lo strumento Quota: un nodo, oppure un segmento (la quota va tra i suoi estremi). */
 export type DimHit = { kind: 'node'; ref: NodeRef } | { kind: 'segment'; seg: SegmentRef };
@@ -82,7 +82,7 @@ interface Props {
   /** Penna: Invio nei campi Lunghezza e Angolo digitati: il nodo nasce nel punto calcolato (`typedLength` e `typedAngle` dicono quali campi non erano vuoti). */
   onPenType?: (target: Extract<PenTarget, { ok: true }>) => void;
   /** Forma base disegnata (rettangolo, ellisse, poligono): al posto di `onCommit`, così la modale può aggiungere i vincoli ovvi. */
-  onShape?: (tool: 'rect' | 'ellipse' | 'polygon', paths: PathContour[], selection: NodeRef[]) => void;
+  onShape?: (tool: 'rect' | 'ellipse' | 'polygon' | 'circle', paths: PathContour[], selection: NodeRef[]) => void;
   /** Disegno sotto i contorni (ingombro, livelli, assi di simmetria...). */
   underlay?: (ctx: CanvasContext) => ReactNode;
   /** Riquadro (x0, y0, x1, y1) in mm che «Adatta» e l'apertura inquadrano, al posto dei nodi; cambiandolo si inquadra di nuovo. */
@@ -206,7 +206,7 @@ type Drag =
   | { type: 'handle'; ref: HandleRef; base: PathContour[]; last: PathContour[]; frozen: PathContour[]; to: Vec2 | null; sx: number; sy: number; moved: boolean; alt: boolean }
   | { type: 'box'; sx: number; sy: number; shift: boolean; base: NodeRef[]; moved: boolean }
   // Forma base (rettangolo, ellisse, poligono) trascinata dal centro: `last` è il disegno con la forma in anteprima (`base` se non c'è ancora una misura), `live` dice se il disegno è già stato cambiato
-  | { type: 'shape'; tool: 'rect' | 'ellipse' | 'polygon'; center: Vec2; base: PathContour[]; last: PathContour[]; sx: number; sy: number; moved: boolean; live: boolean }
+  | { type: 'shape'; tool: 'rect' | 'ellipse' | 'polygon' | 'circle'; center: Vec2; base: PathContour[]; last: PathContour[]; sx: number; sy: number; moved: boolean; live: boolean }
   // Quota di sezione: si trascina solo con Seleziona, dopo nodi, maniglie e curve
   | { type: 'section' }
   // Etichetta (`label`: cambia `at` e `off`) o linea (`line`: cambia `off`) di una quota di lunghezza; senza movimento un clic sull'etichetta apre il campo
@@ -410,7 +410,8 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
     const keys = new Set<string>();
     for (const r of selection) {
       const c = paths[r.path];
-      if (!c) continue;
+      // Un cerchio parametrico non ha maniglie da mostrare: i suoi nodi sono derivati dal centro e dal raggio
+      if (!c || c.circ) continue;
       const n = c.nodes.length;
       for (const delta of [-1, 0, 1]) {
         const i = r.node + delta;
@@ -435,8 +436,16 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
       }
     }
     for (let pi = paths.length - 1; pi >= 0; pi--) {
-      for (let ni = paths[pi].nodes.length - 1; ni >= 0; ni--) {
-        const sp = toS(paths[pi].nodes[ni].p);
+      const c = paths[pi];
+      // Cerchio parametrico: si toccano solo il centro (indice dopo l'ultimo nodo) e il nodo sul bordo; gli altri tre sono derivati
+      if (c.circ) {
+        const [sc, se] = [toS(c.circ.p), toS(c.nodes[0].p)];
+        if (Math.hypot(sc[0] - sx, sc[1] - sy) <= nodeR) return { type: 'node', ref: { path: pi, node: centerIndex(c) } };
+        if (Math.hypot(se[0] - sx, se[1] - sy) <= nodeR) return { type: 'node', ref: { path: pi, node: 0 } };
+        continue;
+      }
+      for (let ni = c.nodes.length - 1; ni >= 0; ni--) {
+        const sp = toS(c.nodes[ni].p);
         if (Math.hypot(sp[0] - sx, sp[1] - sy) <= nodeR) return { type: 'node', ref: { path: pi, node: ni } };
       }
     }
@@ -450,7 +459,8 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
    */
   const snapped = (p: Vec2, e: { ctrlKey: boolean; shiftKey?: boolean }, others: Vec2[] | undefined, prev?: Vec2): Vec2 =>
     e.ctrlKey ? p : snapPoint(p, { grid: grid.snapGrid ? gridStep(grid.step, view.s) : undefined, nodes: grid.snapNodes ? others : undefined, prev, ortho: grid.snapOrtho && !!prev, angle45: !!e.shiftKey && !!prev, radius: SNAP_RADIUS_PX / view.s });
-  const allNodes = () => paths.flatMap((c) => c.nodes.map((n) => n.p));
+  // I punti a cui ci si aggancia: i nodi e i centri dei cerchi parametrici
+  const allNodes = () => paths.flatMap((c) => [...c.nodes.map((n) => n.p), ...(c.circ ? [c.circ.p] : [])]);
 
   /** Estremo di un contorno aperto sotto il puntatore (pixel), escluso il contorno `except` (quello in corso). */
   const endAt = (sx: number, sy: number, except: number | null): NodeRef | null => {
@@ -467,7 +477,8 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
   /** Penna senza contorno in corso: dove un clic sulla curva inserirebbe un nodo (a qualche pixel dalla curva e lontano dai nodi), o null. */
   const insertCandidate = (sx: number, sy: number): { seg: SegmentRef; t: number; point: Vec2 } | null => {
     const near = nearestSegment(paths, (coarse ? 12 : 6) / view.s, toW(sx, sy));
-    if (!near || !(near.t > 0 && near.t < 1)) return null;
+    // Su un cerchio parametrico non si inseriscono nodi
+    if (!near || paths[near.path]?.circ || !(near.t > 0 && near.t < 1)) return null;
     for (const c of paths) {
       for (const n of c.nodes) {
         const sp = toS(n.p);
@@ -554,7 +565,7 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
       return;
     }
     const w = toW(sx, sy);
-    if (tool === 'rect' || tool === 'ellipse' || tool === 'polygon') {
+    if (tool === 'rect' || tool === 'ellipse' || tool === 'polygon' || tool === 'circle') {
       // Sagoma: un contorno solo, sempre chiuso; le forme base non si aggiungono
       if (closedOnly) {
         onClosedOnly?.();
@@ -644,12 +655,12 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
       if (next !== selection) onSelect(next);
       const refs = next.some((r) => same(r, hit.ref)) ? next : [];
       drag.current = {
-        type: 'node', refs, base: paths, last: paths, primary: paths[hit.ref.path].nodes[hit.ref.node].p, down: w, sx, sy, moved: false,
+        type: 'node', refs, base: paths, last: paths, primary: refPoint(paths, hit.ref)!, down: w, sx, sy, moved: false,
         // Un clic senza trascinamento su un nodo di una selezione multipla lascia solo quel nodo
         collapse: !e.shiftKey && selected && selection.length > 1 ? hit.ref : null,
         soft: false,
       };
-    } else if (hit.type === 'segment' && e.altKey) {
+    } else if (hit.type === 'segment' && e.altKey && !paths[hit.seg.path].circ) {
       // Alt+clic su un segmento: sceglie il segmento, cioè i suoi due nodi (così Orizzontale e Verticale valgono per quel lato con un clic;
       // Coincidente no: serve a due nodi scelti uno a uno, non a un segmento)
       // Con Maiusc si aggiunge a quelli già scelti (due segmenti per Parallelo, Perpendicolare, Uguale, Collineare)
@@ -657,7 +668,8 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
       else onSelect([{ path: hit.seg.path, node: hit.seg.segment }, { path: hit.seg.path, node: (hit.seg.segment + 1) % paths[hit.seg.path].nodes.length }]);
     } else if (hit.type === 'segment') {
       // Il clic su una curva seleziona tutto il contorno (Maiusc lo aggiunge o lo toglie) e trascinandola lo si sposta
-      const all: NodeRef[] = paths[hit.seg.path].nodes.map((_, node) => ({ path: hit.seg.path, node }));
+      const hitContour = paths[hit.seg.path];
+      const all: NodeRef[] = [...hitContour.nodes.map((_, node) => ({ path: hit.seg.path, node })), ...(hitContour.circ ? [{ path: hit.seg.path, node: centerIndex(hitContour) }] : [])];
       const selected = all.every((r) => selection.some((x) => same(x, r)));
       const next = e.shiftKey ? (selected ? selection.filter((r) => r.path !== hit.seg.path) : [...selection.filter((r) => r.path !== hit.seg.path), ...all]) : all;
       onSelect(next);
@@ -792,7 +804,7 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
         // Con i vincoli i nodi trascinati vanno dove dice il mouse e gli altri si adattano (rigido, poi morbido); un fotogramma
         // che non si risolve si salta e il disegno resta com'era
         const targets = d.refs.flatMap((ref) => {
-          const q = d.base[ref.path]?.nodes[ref.node]?.p;
+          const q = refPoint(d.base, ref);
           return q ? [{ ref, to: [q[0] + delta[0], q[1] + delta[1]] as Vec2 }] : [];
         });
         const frame = dragFrame(d.last, constraints, targets, d.soft);
@@ -895,19 +907,25 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
       const [x0, x1] = [Math.min(d.sx, sx), Math.max(d.sx, sx)];
       const [y0, y1] = [Math.min(d.sy, sy), Math.max(d.sy, sy)];
       const inside: NodeRef[] = [];
-      paths.forEach((c, pi) =>
+      paths.forEach((c, pi) => {
         c.nodes.forEach((n, ni) => {
+          // Dei nodi di un cerchio parametrico si prende solo quello sul bordo (gli altri sono derivati)
+          if (c.circ && ni > 0) return;
           const [px, py] = toS(n.p);
           if (px >= x0 && px <= x1 && py >= y0 && py <= y1) inside.push({ path: pi, node: ni });
-        }),
-      );
+        });
+        if (c.circ) {
+          const [px, py] = toS(c.circ.p);
+          if (px >= x0 && px <= x1 && py >= y0 && py <= y1) inside.push({ path: pi, node: centerIndex(c) });
+        }
+      });
       onSelect(d.shift ? [...d.base, ...inside.filter((r) => !d.base.some((b) => same(b, r)))] : inside);
     }
   };
 
   // Doppio clic su un nodo: scorre il tipo (spigolo, liscio, simmetrico)
   const onDoubleClick = (e: ReactMouseEvent<SVGSVGElement>) => {
-    if (tool === 'pan' || tool === 'rect' || tool === 'ellipse' || tool === 'polygon' || tool === 'dim') return;
+    if (tool === 'pan' || tool === 'rect' || tool === 'ellipse' || tool === 'polygon' || tool === 'circle' || tool === 'dim') return;
     // Penna: il doppio clic termina il contorno (il nodo doppio lo toglie chi termina)
     if (tool === 'pen') {
       if (!closedOnly) onPenFinish();
@@ -916,8 +934,10 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
     const [sx, sy] = pos(e);
     const hit = hitTest(sx, sy);
     if (hit.type !== 'node') return;
-    const kind = paths[hit.ref.path].nodes[hit.ref.node].kind;
-    onCommit(setNodeKind(paths, hit.ref, cycleKind(kind)), [hit.ref]);
+    // Il tipo di un nodo di un cerchio parametrico non si cambia (e il centro non è un nodo)
+    const node = paths[hit.ref.path].nodes[hit.ref.node];
+    if (!node || paths[hit.ref.path].circ) return;
+    onCommit(setNodeKind(paths, hit.ref, cycleKind(node.kind)), [hit.ref]);
   };
 
   // --- Disegno --------------------------------------------------------------------------------------------------------
@@ -997,15 +1017,33 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
 
   /** Stato di vincolo del nodo (`def` = completamente vincolato, `err` = in conflitto; `free` è l'aspetto di sempre). */
   const nodeState = (n: PathNode): NodeState | '' => (quote?.states && n.id ? quote.states.get(n.id) ?? 'free' : '');
+  /** Stato di un punto del risolutore dato il suo id (il centro di un cerchio parametrico non è un nodo). */
+  const idState = (id: string): NodeState | '' => (quote?.states ? quote.states.get(id) ?? 'free' : '');
   /** Stato del contorno: rosso se un nodo è in conflitto, altrimenti scuro solo se tutti i nodi sono completamente vincolati. */
   const contourState = (c: PathContour): NodeState | '' => {
     if (!quote?.states || c.nodes.length === 0) return '';
-    const all = c.nodes.map(nodeState);
+    // Un cerchio parametrico ha due punti del risolutore: il centro e il nodo sul bordo (gli altri tre non hanno id)
+    const all = c.circ ? [idState(c.circ.id), nodeState(c.nodes[0])] : c.nodes.map(nodeState);
     return all.includes('err') ? 'err' : all.every((s) => s === 'def') ? 'def' : '';
   };
   /** Modificatore di classe per `def` ed `err` (`free` e nessuno stato lasciano l'aspetto di sempre). */
   const stateMod = (base: string, state: NodeState | '') => (state === 'def' || state === 'err' ? ` ${base}--${state}` : '');
   const editAt = quote?.edit ? quoteLabelPoint(quote.edit.con, quote.edit.paths, toS, view.s) : null;
+
+  /** Il centro di un cerchio parametrico: un cerchietto con una croce, scelto e trascinato come un nodo (indice dopo l'ultimo nodo). */
+  const centerMark = (c: PathContour, pi: number): ReactNode => {
+    if (!c.circ) return null;
+    const [x, y] = toS(c.circ.p);
+    const index = centerIndex(c);
+    const state = idState(c.circ.id);
+    const selected = selection.some((r) => r.path === pi && r.node === index);
+    return (
+      <g key={`${pi}:c`} data-state={state || undefined} className={`profile-editor__node profile-editor__node--center${stateMod('profile-editor__node', state)}${selected ? ' profile-editor__node--selected' : ''}`} transform={`translate(${f1(x)} ${f1(y)})`} data-node={`${pi}:${index}`} data-kind="center">
+        <circle r={3.5} />
+        <path d="M-8 0H8M0 -8V8" />
+      </g>
+    );
+  };
 
   const nodeShape = (kind: PathNode['kind']) =>
     kind === 'corner' ? <rect x={-4.5} y={-4.5} width={9} height={9} /> : kind === 'symmetric' ? <polygon points="0,-6 6,0 0,6 -6,0" /> : <circle r={5} />;
@@ -1094,8 +1132,10 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
           });
         })}
         {/* Nodi: la forma dice il tipo (quadrato = spigolo, cerchio = liscio, rombo = simmetrico) */}
-        {paths.map((c, pi) =>
-          c.nodes.map((n, ni) => {
+        {paths.map((c, pi) => [
+          ...c.nodes.map((n, ni) => {
+            // Dei quattro nodi di un cerchio parametrico si vede solo quello sul bordo (gli altri sono derivati dal centro e dal raggio)
+            if (c.circ && ni > 0) return null;
             const [x, y] = toS(n.p);
             const selected = selection.some((r) => r.path === pi && r.node === ni);
             return (
@@ -1104,7 +1144,8 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
               </g>
             );
           }),
-        )}
+          centerMark(c, pi),
+        ])}
         {crossings.map((q, i) => {
           const [x, y] = toS(q);
           return <circle key={i} className="profile-editor__crossing" cx={x} cy={y} r={7} />;
@@ -1201,7 +1242,7 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
       )}
       {paths.length === 0 && !closedOnly && (
         <div className="profile-editor__empty" role="note">
-          {tool === 'pen' ? 'Fai clic nel disegno per aggiungere il primo punto' : tool === 'rect' || tool === 'ellipse' || tool === 'polygon' ? 'Premi sul centro e trascina per disegnare la forma' : 'Scegli la Penna e fai clic per iniziare, oppure parti da una forma base (R, C, G) o da un SVG'}
+          {tool === 'pen' ? 'Fai clic nel disegno per aggiungere il primo punto' : tool === 'rect' || tool === 'ellipse' || tool === 'polygon' || tool === 'circle' ? 'Premi sul centro e trascina per disegnare la forma' : 'Scegli la Penna e fai clic per iniziare, oppure parti da una forma base (R, C, G) o da un SVG'}
         </div>
       )}
       <div className="profile-editor__zoom" role="toolbar" aria-label="Vista del disegno">

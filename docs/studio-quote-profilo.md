@@ -677,6 +677,9 @@ Cose trovate durante lo studio, **non toccate**:
    `PropertiesPanel.tsx:22` e `:105` (`FormulaContext.Provider`). `NumberField.tsx` accetta il calcolo senza parametri
    (`evalFormula(raw, {})`) e, se riconosce un nome, risponde «Per usare un parametro fai doppio clic sul nome del campo»
    (`NumberField.tsx:56`): un gesto che nella modale non porta a nulla.
+   **Risolta nella tappa 5**: le quote e il diametro dei cerchi usano `ExprField` (`src/ui/ProfileEditor/ExprField.tsx`), che dà il testo a
+   `parseFieldValue` (`profileParams.ts`: `evalFormula` con i parametri locali, strada (a)); `NumberField` non è cambiato, e X, Y e
+   Lati restano numeri o calcoli senza parametri. `docs/studio-profili-bezier.md` è corretto di conseguenza.
 2. **`docs/prototipi/profilo-sagoma.html:163` cita `docs/studio-profili-sagoma.md`, che non esiste** (nessun file con quel nome nel
    repository, né in `docs/`).
 3. **«Quota» ha già tre significati**: la **quota di sezione** del Profilo con sagoma (la Z a cui si taglia: `DrawingCanvas.tsx:44`,

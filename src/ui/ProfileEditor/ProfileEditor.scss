@@ -301,6 +301,26 @@
       }
     }
 
+    // Centro di un cerchio parametrico: un cerchietto con una croce
+    &--center path {
+      fill: none;
+      stroke: color('profile-node');
+      stroke-width: 1.5;
+    }
+
+    &--center.profile-editor__node--def path {
+      stroke: color('text');
+    }
+
+    &--center.profile-editor__node--err path {
+      stroke: color('danger');
+    }
+
+    &--center.profile-editor__node--selected path {
+      stroke: color('accent');
+      stroke-width: 2.5;
+    }
+
     // Primo nodo del contorno della Penna (un clic lo chiude) o estremo aperto che un clic riprende o unisce
     &--first,
     &--resume {
@@ -317,6 +337,7 @@
   &__canvas[data-tool='dim'] &__svg,
   &__canvas[data-tool='rect'] &__svg,
   &__canvas[data-tool='ellipse'] &__svg,
+  &__canvas[data-tool='circle'] &__svg,
   &__canvas[data-tool='polygon'] &__svg {
     cursor: crosshair;
   }

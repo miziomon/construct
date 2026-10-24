@@ -19,16 +19,18 @@ import { DrawingCanvas } from './DrawingCanvas';
 import { EditorToolbar } from './EditorToolbar';
 import type { ViewMode } from './EditorToolbar';
 import type { DimHit, GridSettings, QuoteProps, Tool } from './DrawingCanvas';
-import { SELECTION_CONSTRAINTS, addConstraint, addReferenceDimension, addSelectionConstraint, canApplyConstraint, createAngleDimension, createDimension, diagnose, idsOf, isDimension, equalizeLengths, moveNodesConstrained, quoteMismatch, removeConstraint, repositionDimensions, selectionItems, setCommonValue, setConstraintValue, stateText } from './dimensions';
+import { SELECTION_CONSTRAINTS, addCircle, addConstraint, addReferenceDimension, addSelectionConstraint, canApplyConstraint, circleDimension, circleOfPair, circleQuote, createAngleDimension, createDimension, describeConstraint, diagnose, idsOf, isDimension, equalizeLengths, makeDriving, moveNodesConstrained, nodeNames, quoteMismatch, removeConstraint, repositionDimensions, selectionItems, setCommonValue, stateText } from './dimensions';
 import { applyInferred, inferClosingConstraints, inferNodeConstraints, inferShapeConstraints } from './infer';
 import { typedPenNode } from './penInput';
+import { addParam, deleteParam, paramUsers, parseFieldValue, setParam, setQuoteText } from './profileParams';
+import type { ParamsPanelProps } from './ParamsPanel';
 import type { PenTarget } from './penInput';
 import type { Applied, DimMode, SelectionConstraint } from './dimensions';
 import { validateValue } from './constraints';
 import { clearDraft, flushDrafts, loadDraft, saveDraft } from './draft';
 import { createHistory } from './history';
 import type { History } from './history';
-import { POLYGON_SIDES, canCloseContour, closeContour, contourHoles, deleteNodesWithConstraints, draftContours, draftFromNode, dropLastNode, emptyDraft, moveHandle, moveNodes, normalizeProfile, pathCenter, pruneConstraints, setNodeRadius, setNodesKind, setNodesRadius, trimDuplicateTail } from './model';
+import { POLYGON_SIDES, canCloseContour, closeContour, contourHoles, deleteNodesWithConstraints, draftContours, draftFromNode, dropLastNode, emptyDraft, moveHandle, moveNodes, normalizeProfile, pathCenter, pruneConstraints, refPoint, setNodeRadius, setNodesKind, setNodesRadius, trimDuplicateTail } from './model';
 import type { Draft, NodeRef, SegmentRef } from './model';
 import { insertPlanNode } from './planEdit';
 import { PlanSidebar } from './PlanSidebar';
@@ -109,11 +111,8 @@ interface QuoteEdit {
   text: string;
 }
 
-/** Numero scritto in un campo di quota: solo numeri (le espressioni e i parametri arrivano più avanti), virgola o punto; null se non lo è. */
-const parseQuoteValue = (text: string): number | null => {
-  const t = text.trim().replace(',', '.');
-  return /^[-+]?(\d+\.?\d*|\.\d+)$/.test(t) ? Number(t) : null;
-};
+/** Testo proposto nel campo di una quota già nel disegno: l'espressione se ce l'ha, altrimenti il valore (il diametro per la quota di un cerchio). */
+const fieldText = (c: ProfileConstraint): string => c.expr ?? fmtField(c.dia ? 2 * (c.v ?? 0) : (c.v ?? 0));
 
 /** Insieme vuoto condiviso (nessun vincolo da evidenziare). */
 const NONE: Set<string> = new Set();
@@ -514,7 +513,22 @@ function Editor({ target }: { target: ProfileTarget }) {
     commitDraft(result.draft, [result.selection], result.closing ? null : index);
   };
   /** Forma base disegnata: il rettangolo nasce con i lati orizzontali e verticali (se i vincoli automatici sono accesi). */
-  const commitShape = (tool: 'rect' | 'ellipse' | 'polygon', paths: PathContour[], nextSelection: NodeRef[]) => {
+  const commitShape = (tool: 'rect' | 'ellipse' | 'polygon' | 'circle', paths: PathContour[], nextSelection: NodeRef[]) => {
+    if (tool === 'circle') {
+      // Cerchio parametrico (foro quotato): l'ultimo contorno è l'anteprima, da cui si prendono il centro e il raggio; il cerchio vero
+      // nasce con i suoi id e la quota Ø (sul disegno senza l'anteprima), in un solo passo di cronologia
+      const preview = paths[paths.length - 1];
+      const center = preview?.circ?.p;
+      const edge = preview?.nodes[0]?.p;
+      const added = center && edge ? addCircle({ ...stateRef.current.draft, paths: paths.slice(0, -1) }, center, Math.hypot(edge[0] - center[0], edge[1] - center[1]), scaleRef.current) : 'Il cerchio è troppo piccolo: trascina più in là dal centro';
+      if (typeof added === 'string') {
+        notify.info(added);
+        dispatch({ type: 'replace', draft: committed.current, selection: [] });
+        return;
+      }
+      commitDraft(added.draft, [{ path: added.path, node: 0 }]);
+      return;
+    }
     if (!autoConstraints || tool !== 'rect') {
       commitPaths(paths, nextSelection);
       return;
@@ -651,11 +665,36 @@ function Editor({ target }: { target: ProfileTarget }) {
     return true;
   };
 
+  /**
+   * Quota Ø di un cerchio parametrico (clic sulla sua curva, o sul centro e sul nodo sul bordo): se c'è già si apre il campo del suo
+   * valore, altrimenti se ne propone una nuova con il diametro che ha. Nel campo il valore è il diametro, anche come espressione.
+   */
+  const startCircle = (index: number, pxPerMm: number) => {
+    const base = normalizeProfile(stateRef.current.draft);
+    const existing = circleQuote(base, index);
+    if (existing) {
+      setSelCon(existing.id);
+      setQuoteEdit({ base, con: existing, isNew: false, text: fieldText(existing) });
+      return;
+    }
+    const dim = circleDimension(base.paths, index, pxPerMm, base.constraints);
+    if (typeof dim === 'string') {
+      notify.error(dim);
+      return;
+    }
+    setQuoteEdit({ base, con: { ...dim, id: 'draft' }, isNew: true, text: fmtField(2 * (dim.v ?? 0)) });
+  };
   /** Quota di lunghezza tra due nodi: si propone il valore attuale in un campo sopra l'etichetta, e Invio la applica. */
   const startLinear = (a: NodeRef, b: NodeRef, pxPerMm: number) => {
     // Gli id dei nodi si danno qui (i nodi disegnati dopo l'apertura non ce li hanno): il passo di cronologia lo fa la conferma
     const base = normalizeProfile(stateRef.current.draft);
     const [idA, idB] = idsOf(base.paths, [a, b]);
+    // Il centro di un cerchio e il suo nodo sul bordo: la distanza è il raggio, e la quota è il diametro
+    const circle = idA && idB ? circleOfPair(base.paths, idA, idB) : -1;
+    if (circle >= 0) {
+      startCircle(circle, pxPerMm);
+      return;
+    }
     const dim = idA && idB ? createDimension(base.paths, dimMode === 'ang' ? 'len' : dimMode, idA, idB, pxPerMm, base.constraints) : 'Scegli due nodi diversi';
     if (typeof dim === 'string') {
       notify.error(dim);
@@ -704,6 +743,11 @@ function Editor({ target }: { target: ProfileTarget }) {
     if (hit.kind === 'segment') {
       setDimPick([]);
       const contour = stateRef.current.draft.paths[hit.seg.path];
+      // La curva di un cerchio parametrico: la quota è il suo diametro
+      if (contour?.circ) {
+        startCircle(hit.seg.path, pxPerMm);
+        return;
+      }
       if (contour) startLinear({ path: hit.seg.path, node: hit.seg.segment }, { path: hit.seg.path, node: (hit.seg.segment + 1) % contour.nodes.length }, pxPerMm);
       return;
     }
@@ -723,7 +767,7 @@ function Editor({ target }: { target: ProfileTarget }) {
     const con = current.constraints?.find((c) => c.id === id);
     if (!con) return;
     setSelCon(id);
-    if (isDimension(con) && !con.ref) setQuoteEdit({ base: current, con, isNew: false, text: fmtField(con.v ?? 0) });
+    if (isDimension(con) && !con.ref) setQuoteEdit({ base: current, con, isNew: false, text: fieldText(con) });
     else if (con.ref) notify.info('Quota di riferimento: mostra la misura, non la impone');
   };
   /** Il campo della quota si conferma (Invio o uscita dal campo). Un valore non valido o non raggiungibile lascia il disegno com'è. */
@@ -732,11 +776,13 @@ function Editor({ target }: { target: ProfileTarget }) {
     if (!edit) return;
     setQuoteEdit(null);
     refocusRoot();
-    const value = parseQuoteValue(text);
-    if (value === null) {
-      notify.error('Valore non valido: scrivi un numero');
+    // Un numero, un calcolo o un'espressione con i parametri del profilo (per un cerchio il testo è il diametro)
+    const parsed = parseFieldValue(text, stateRef.current.draft.params);
+    if (!parsed.ok) {
+      notify.error(parsed.error);
       return;
     }
+    const value = edit.con.dia ? parsed.v / 2 : parsed.v;
     const invalid = validateValue(edit.con.t, value);
     if (invalid) {
       notify.error(invalid);
@@ -744,16 +790,16 @@ function Editor({ target }: { target: ProfileTarget }) {
     }
     if (edit.isNew) {
       const { id: _draftId, ...dim } = edit.con;
-      const result = addConstraint(edit.base, { ...dim, v: value });
+      const result = addConstraint(edit.base, { ...dim, v: value, ...(parsed.expr ? { expr: parsed.expr } : {}) });
       if (result.ok) {
         commitDraft(result.draft);
         setSelCon(result.draft.constraints?.at(-1)?.id ?? null);
-      } else if (result.reason === 'conflict' || result.reason === 'redundant') {
+      } else if (!dim.dia && (result.reason === 'conflict' || result.reason === 'redundant')) {
         // Conflitto o ridondanza: non si applica, ma si offre di aggiungerla come quota di riferimento (misura senza vincolare)
         flashIds(result.ids);
         setRefOffer({ message: result.message, con: dim });
       } else reject(result.message, result.ids);
-    } else if (Math.abs(value - (edit.con.v ?? Number.NaN)) > 1e-9) applyResult(setConstraintValue(stateRef.current.draft, edit.con.id, value));
+    } else if (Math.abs(value - (edit.con.v ?? Number.NaN)) > 1e-9 || parsed.expr !== edit.con.expr) applyResult(setQuoteText(stateRef.current.draft, edit.con.id, text));
   };
   const cancelQuote = () => {
     setQuoteEdit(null);
@@ -794,8 +840,38 @@ function Editor({ target }: { target: ProfileTarget }) {
     if (selCon && ids.includes(selCon)) setSelCon(null);
   };
   const deleteConstraint = (id: string) => deleteConstraints([id]);
-  const setConstraintValueFromPanel = (id: string, value: number) => {
-    applyResult(setConstraintValue(stateRef.current.draft, id, value));
+  const setConstraintValueFromPanel = (id: string, text: string) => {
+    applyResult(setQuoteText(stateRef.current.draft, id, text));
+  };
+  /** Parametri locali del profilo: ogni cambio rilegge le quote con espressione e risolve, in un solo passo di cronologia. */
+  const paramsPanel: ParamsPanelProps = {
+    params: draft.params,
+    usedBy: (name) => {
+      const users = paramUsers(draft, name);
+      return users.quotes.length + users.params.length;
+    },
+    onAdd: (name, text) => applyResult(addParam(stateRef.current.draft, name, text)),
+    onSet: (name, text) => {
+      const result = setParam(stateRef.current.draft, name, text);
+      // Lo stesso valore (scritto in un altro modo) non è un errore: non c'è nulla da cambiare
+      if (!result.ok && result.message === 'Il valore è già quello') return;
+      applyResult(result);
+    },
+    onDelete: (name) => {
+      applyResult(deleteParam(stateRef.current.draft, name));
+    },
+  };
+  /** «Rendi uguali»: resta pilotante la prima quota scelta (nell'ordine dei clic), le altre diventano di riferimento; l'avviso dice quale resta. */
+  const equalizeGroup = () => {
+    const current = stateRef.current.draft;
+    const result = equalizeLengths(current, group);
+    if (!applyResult(result) || !result.ok || !result.keeper) return;
+    const kept = result.draft.constraints?.find((c) => c.id === result.keeper);
+    if (kept) notify.info(`Resta pilotante ${describeConstraint(kept, nodeNames(result.draft.paths))}: le altre distanze la seguono (sono di riferimento)`);
+  };
+  /** «Rendi pilotante» su una quota di riferimento: se il disegno non è già vincolato da altri vincoli, la quota comincia a vincolare. */
+  const driveConstraint = (id: string) => {
+    applyResult(makeDriving(stateRef.current.draft, id));
   };
   /** «Aggiungi come quota di riferimento»: la quota rifiutata entra con la misura che il disegno ha (tra parentesi, non vincola). */
   const addReference = () => {
@@ -941,6 +1017,7 @@ function Editor({ target }: { target: ProfileTarget }) {
     else if (key === 'r') changeTool('rect');
     else if (key === 'c') changeTool('ellipse');
     else if (key === 'g') changeTool('polygon');
+    else if (key === 'o') changeTool('circle');
     else if (key === 'd') changeTool('dim');
     else if (key === 'enter') {
       // Invio termina il contorno della Penna (sui pulsanti conserva il suo significato)
@@ -979,10 +1056,11 @@ function Editor({ target }: { target: ProfileTarget }) {
   };
 
   // --- Sidebar --------------------------------------------------------------------------------------------------------
-  const selected = selection.length === 1 && draft.paths[selection[0].path]?.nodes[selection[0].node] ? selection[0] : null;
+  // Un nodo scelto, o il centro di un cerchio parametrico (indice dopo l'ultimo nodo)
+  const selected = selection.length === 1 && refPoint(draft.paths, selection[0]) ? selection[0] : null;
   const setHandle = (side: 'in' | 'out', length: number, angle: number) => {
-    if (!selected) return;
-    const p = draft.paths[selected.path].nodes[selected.node].p;
+    const p = selected && draft.paths[selected.path].nodes[selected.node]?.p;
+    if (!selected || !p) return;
     const a = (angle * Math.PI) / 180;
     commitPaths(moveHandle(draft.paths, { ...selected, side }, [p[0] + length * Math.cos(a), p[1] + length * Math.sin(a)], false));
   };
@@ -1229,7 +1307,7 @@ function Editor({ target }: { target: ProfileTarget }) {
                 else if (selection.length > 1) commitPaths(setNodesRadius(draft.paths, selection, r), selection);
               }}
               onCoordinate={(axis, value) => {
-                const p = selected && draft.paths[selected.path].nodes[selected.node].p;
+                const p = selected && refPoint(draft.paths, selected);
                 if (selected && p) commitPaths(moveNodesConstrained(draft.paths, draft.constraints, [selected], axis === 0 ? [value - p[0], 0] : [0, value - p[1]]), selection);
               }}
               onHandle={setHandle}
@@ -1237,7 +1315,8 @@ function Editor({ target }: { target: ProfileTarget }) {
               onSelectPath={(i) => dispatch({ type: 'select', selection: draft.paths[i].nodes.map((_, node) => ({ path: i, node })) })}
               onClosePath={(i) => commitPaths(closeContour(draft.paths, i))}
               onDeletePath={(i) => commitDraft(normalizeProfile({ ...draft, paths: draft.paths.filter((_, k) => k !== i) }), [])}
-              quote={{ auto: autoConstraints, onAuto: (v) => setSettings({ profileAutoConstraints: v }), can, selectionText: selectionText ? `${selectionText} ${items.nodes.length + items.segments.length === 1 ? 'scelto' : 'scelti'}.` : '', bad: diag?.bad ?? NONE, selected: selCon, onSelect: selectConstraint, group, onGroupValue: (v) => applyResult(setCommonValue(stateRef.current.draft, group, v)), onEqualize: () => applyResult(equalizeLengths(stateRef.current.draft, group)), onApply: applyConstraintButton, onValue: setConstraintValueFromPanel, onDelete: deleteConstraint, onReposition: repositionQuotes }}
+              paramsPanel={paramsPanel}
+              quote={{ auto: autoConstraints, onAuto: (v) => setSettings({ profileAutoConstraints: v }), can, selectionText: selectionText ? `${selectionText} ${items.nodes.length + items.segments.length === 1 ? 'scelto' : 'scelti'}.` : '', bad: diag?.bad ?? NONE, selected: selCon, onSelect: selectConstraint, group, onGroupValue: (v) => applyResult(setCommonValue(stateRef.current.draft, group, v)), onEqualize: equalizeGroup, onApply: applyConstraintButton, onValue: setConstraintValueFromPanel, onDrive: driveConstraint, onDelete: deleteConstraint, onReposition: repositionQuotes }}
             />
           )}
         </div>

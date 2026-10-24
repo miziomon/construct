@@ -12,6 +12,7 @@ import {
   dimLayout,
   equalizeLengths,
   groupInfo,
+  makeDriving,
   dimText,
   dimensionValue,
   dragFrame,
@@ -910,14 +911,82 @@ describe('più quote scelte insieme', () => {
     expect(pos(out, 'n3')[1]).toBeCloseTo(40, 6);
   });
 
-  it('equalizeLengths: resta pilotante la prima nell\'elenco dei vincoli, non nell\'ordine di scelta', () => {
+  it('equalizeLengths: resta pilotante la prima quota scelta (nell\'ordine dei clic), non la prima dell\'elenco, e lo dice', () => {
     const driven = sized();
     const [w, h] = [dist(driven, 'n1', 'n2'), dist(driven, 'n2', 'n3')];
-    // Gli id in ordine inverso: la prima quota dell'elenco (la larghezza) resta comunque quella che comanda
-    const out = must(equalizeLengths(driven, [h.id, w.id]));
-    expect(out.constraints!.find((c) => c.id === w.id)!.ref).toBeUndefined();
-    expect(out.constraints!.find((c) => c.id === h.id)!.ref).toBe(true);
+    // Scelta prima l'altezza (20): è lei che comanda, la larghezza diventa di riferimento e il quadrato è 20 x 20
+    const result = equalizeLengths(driven, [h.id, w.id]);
+    if (!result.ok) throw new Error(result.message);
+    const out = result.draft;
+    expect(result.keeper).toBe(h.id);
+    expect(out.constraints!.find((c) => c.id === h.id)!.ref).toBeUndefined();
+    expect(out.constraints!.find((c) => c.id === w.id)!.ref).toBe(true);
+    expect(pos(out, 'n3')[0]).toBeCloseTo(20, 6);
+    expect(pos(out, 'n3')[1]).toBeCloseTo(20, 6);
+    // Nell'ordine dell'elenco (larghezza per prima) resta la larghezza
+    const first = equalizeLengths(driven, [w.id, h.id]);
+    if (!first.ok) throw new Error(first.message);
+    expect(first.keeper).toBe(w.id);
+    expect(pos(first.draft, 'n3')[1]).toBeCloseTo(40, 6);
+  });
+
+  it('equalizeLengths: un Uguale ridondante (lati opposti di un rettangolo con orizzontali e verticali) si salta; senza altro da fare dice che sono già uguali', () => {
+    const driven = sized();
+    const w = dist(driven, 'n1', 'n2');
+    // Il lato opposto n4-n3 ha la stessa lunghezza per i vincoli: la sua quota può solo essere di riferimento
+    const withOpposite = addReferenceDimension(driven, { t: 'dist', p: ['n4', 'n3'], v: 40 })!;
+    const opposite = withOpposite.constraints!.at(-1)!;
+    const none = equalizeLengths(withOpposite, [w.id, opposite.id]);
+    expect(none).toMatchObject({ ok: false, reason: 'redundant' });
+    if (!none.ok) expect(none.message).toMatch(/già uguali/);
+    // Con una terza quota (l'altezza, pilotante 20) l'Uguale utile si aggiunge e quello ridondante si salta: un solo Uguale, nessun errore
+    const h = dist(withOpposite, 'n2', 'n3');
+    const out = must(equalizeLengths(withOpposite, [w.id, opposite.id, h.id]));
+    expect(out.constraints!.filter((c) => c.t === 'equal')).toHaveLength(1);
     expect(pos(out, 'n3')[1]).toBeCloseTo(40, 6);
+  });
+
+  it('equalizeLengths: un conflitto fa fallire con un messaggio che dice perché, e il disegno non cambia', () => {
+    const driven = sized();
+    const w = dist(driven, 'n1', 'n2');
+    // La diagonale n1-n3 (di riferimento, 44,7) non può essere uguale alla larghezza 40 con l'altezza 20 pilotante
+    const withDiagonal = addReferenceDimension(driven, { t: 'dist', p: ['n1', 'n3'], v: 1 })!;
+    const diagonal = withDiagonal.constraints!.at(-1)!;
+    const result = equalizeLengths(withDiagonal, [w.id, diagonal.id]);
+    expect(result).toMatchObject({ ok: false, reason: 'conflict' });
+    if (!result.ok) expect(result.message).toMatch(/^Non si possono rendere uguali: /);
+  });
+
+  it('makeDriving: una quota di riferimento diventa pilotante con la misura di adesso; ridondante o già vincolata non si applica', () => {
+    const driven = sized();
+    const [w, h] = [dist(driven, 'n1', 'n2'), dist(driven, 'n2', 'n3')];
+    // Declassata da Rendi uguali e poi riportata pilotante: l'Uguale va tolto (altrimenti sarebbe ridondante), poi la quota comanda con 40
+    const equalized = must(equalizeLengths(driven, [w.id, h.id]));
+    const refId = h.id;
+    const equalId = equalized.constraints!.find((c) => c.t === 'equal')!.id;
+    expect(makeDriving(equalized, refId)).toMatchObject({ ok: false, reason: 'redundant' });
+    const freed = removeConstraint(equalized, equalId);
+    const back = must(makeDriving(freed, refId));
+    const driving = back.constraints!.find((c) => c.id === refId)!;
+    expect(driving.ref).toBeUndefined();
+    expect(driving.v).toBeCloseTo(40, 6);
+    expect(pos(back, 'n3')[1]).toBeCloseTo(40, 6);
+    // Una quota che non è di riferimento, o che non c'è, non si può rendere pilotante
+    expect(makeDriving(driven, w.id)).toMatchObject({ ok: false, reason: 'invalid' });
+    expect(makeDriving(driven, 'zz')).toMatchObject({ ok: false, reason: 'invalid' });
+    // Un messaggio che dice perché
+    const refused = makeDriving(equalized, refId);
+    if (!refused.ok) expect(refused.message).toMatch(/^Non si può rendere pilotante/);
+  });
+
+  it('makeDriving con un angolo di riferimento: prende l\'angolo di adesso', () => {
+    const hinge = (): Geo => ({ paths: [{ closed: false, nodes: [{ id: 'n1', p: [0, 0], kind: 'corner' }, { id: 'n2', p: [40, 0], kind: 'corner' }, { id: 'n3', p: [40, 20], kind: 'corner' }] }] });
+    const d = must(addFixed(hinge(), ['n1', 'n2']));
+    const ref = addReferenceDimension(d, createAngleDimension(d.paths, ['n1', 'n2'], ['n2', 'n3'], 10) as ProfileConstraint)!;
+    const id = ref.constraints!.at(-1)!.id;
+    const out = must(makeDriving(ref, id));
+    expect(out.constraints!.find((c) => c.id === id)!.ref).toBeUndefined();
+    expect(out.constraints!.find((c) => c.id === id)!.v).toBeCloseTo(measure(out.constraints!.find((c) => c.id === id)!, pointsOf(out.paths)), 4);
   });
 
   it('equalizeLengths con tre quote pilotanti: una sola resta pilotante e le altre due seguono', () => {

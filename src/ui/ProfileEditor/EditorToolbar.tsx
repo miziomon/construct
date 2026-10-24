@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { Circle, Hand, Hexagon, MousePointer2, PenTool, Redo2, RulerDimensionLine, Square, Undo2, Upload } from 'lucide-react';
+import { Circle, CircleDot, Hand, Hexagon, MousePointer2, PenTool, Redo2, RulerDimensionLine, Square, Undo2, Upload } from 'lucide-react';
 import { NumberField } from '../NumberField/NumberField';
 import type { Tool } from './DrawingCanvas';
 import { POLYGON_SIDES } from './model';
@@ -73,6 +73,10 @@ export function EditorToolbar({ tool, onTool, canUndo, canRedo, onUndo, onRedo, 
         <button type="button" aria-pressed={tool === 'ellipse'} disabled={!!shapesOff} title={off('Ellisse (C): premi sul centro e trascina (Maiusc: cerchio). Nasce con quattro nodi simmetrici')} onClick={() => onTool('ellipse')}>
           <Circle size={16} />
           <span>Ellisse</span>
+        </button>
+        <button type="button" aria-pressed={tool === 'circle'} disabled={!!shapesOff} title={off('Cerchio quotato (O): premi sul centro e trascina per il raggio. Nasce con la quota Ø (si cambia con un clic sull\'etichetta) e il centro si sposta o si quota come un nodo: ideale per i fori. Il contorno dentro un altro è un foro')} onClick={() => onTool('circle')}>
+          <CircleDot size={16} />
+          <span>Cerchio</span>
         </button>
         <button type="button" aria-pressed={tool === 'polygon'} disabled={!!shapesOff} title={off('Poligono regolare (G): premi sul centro e trascina, il primo vertice va verso il puntatore (Maiusc: angolo a multipli di 15°). Il numero di lati si sceglie nel campo Lati')} onClick={() => onTool('polygon')}>
           <Hexagon size={16} />

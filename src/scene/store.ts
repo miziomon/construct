@@ -138,6 +138,8 @@ export function roundPaths(paths: PathContour[]): PathContour[] {
     closed: c.closed,
     // `id` e `r` (raggio di raccordo, 4 decimali) restano; le quote dei vincoli non si arrotondano (si salvano esatte)
     nodes: c.nodes.map((n) => ({ ...(n.id ? { id: n.id } : {}), p: r4(n.p), ...(n.in ? { in: r4(n.in) } : {}), ...(n.out ? { out: r4(n.out) } : {}), kind: n.kind, ...(n.r ? { r: round(n.r, 4) } : {}) })),
+    // Il centro di un cerchio parametrico si arrotonda come i nodi
+    ...(c.circ ? { circ: { id: c.circ.id, p: r4(c.circ.p) } } : {}),
   }));
 }
 
