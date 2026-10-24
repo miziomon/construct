@@ -81,7 +81,7 @@ describe('intestazione di PNG e JPEG', () => {
     expect(() => readImageHeader(Uint8Array.from([0xff, 0xd8, 0x00, 0x00, 0, 0, 0, 0]))).toThrow(/danneggiato|Formato/);
   });
 
-  it('il formato si riconosce dai primi byte: GIF, WebP, BMP, AVIF e SVG sono «Formato non supportato»', () => {
+  it('il formato si riconosce dai primi byte: GIF, WebP, BMP, AVIF e testo sono «Formato non supportato» (l\'SVG lo riconosce l\'importatore dal testo)', () => {
     const text = (s: string) => Uint8Array.from(Array.from(s, (c) => c.charCodeAt(0)));
     const others: [string, Uint8Array][] = [
       ['GIF', text('GIF89a\x01\x00\x01\x00')],
@@ -89,11 +89,10 @@ describe('intestazione di PNG e JPEG', () => {
       ['BMP', text('BM\x00\x00\x00\x00\x00\x00')],
       ['AVIF', Uint8Array.from([0, 0, 0, 0x1c, ...text('ftypavif')])],
       ['testo', text('questo non è un PNG')],
+      ['SVG (non è un raster)', text('<svg xmlns="http://www.w3.org/2000/svg"></svg>')],
       ['vuoto', new Uint8Array(0)],
     ];
-    for (const [, bytes] of others) expect(() => readImageHeader(bytes)).toThrow(/^Formato non supportato: servono immagini PNG o JPG\.$/);
-    // L'SVG si dice a parte (arriva con il suo percorso), ma resta «Formato non supportato»
-    for (const svg of ['<svg xmlns="http://www.w3.org/2000/svg"></svg>', '  \n<?xml version="1.0"?><svg></svg>']) expect(() => readImageHeader(text(svg))).toThrow(/Formato non supportato \(l'SVG non è ancora previsto\)/);
+    for (const [, bytes] of others) expect(() => readImageHeader(bytes)).toThrow(/^Formato non supportato: servono immagini PNG, JPG o SVG\.$/);
   });
 
   it('assertImageSize: i limiti, in virgola mobile (nessun traboccamento a 32 bit)', () => {

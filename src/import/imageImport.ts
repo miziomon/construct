@@ -1,7 +1,8 @@
 import { getKernel } from '../kernel/client';
 import { MAX_IMAGE_SIDE, imageToGray } from '../scene/textureImage';
 import { addImage } from './assets';
-import { HEADER_BYTES, readImageHeader } from './imageHeader';
+import { HEADER_BYTES, readImageHeader, unsupportedFormat } from './imageHeader';
+import { MAX_SVG_BYTES, looksLikeSvg, prepareSvg, rasterizeSvg } from './svgImage';
 import type { ImageAsset } from './assets';
 
 /** File più grande di così non si apre (una foto di fotocamera sta ben sotto). */
@@ -39,13 +40,33 @@ async function decodeRgba(file: Blob): Promise<{ rgba: Uint8ClampedArray; w: num
   }
 }
 
+/** Primi byte di un PNG (`89 50 4E 47`) o di un JPEG (`FF D8 FF`). */
+const isRaster = (b: Uint8Array) => (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) || (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff);
+
 /**
- * Importa un'immagine PNG o JPG per il Pattern «Immagine»: la decodifica, la converte in grigio (Rec. 601 su sRGB, trasparenza
- * sul bianco), la riduce a 512 px sul lato maggiore, la registra (una sola copia per contenuto, anche in IndexedDB) e la manda al
- * kernel. Lancia un errore leggibile se il file non va bene.
+ * Pixel RGBA di un file immagine, dal contenuto: PNG o JPG (intestazione e limiti, poi `createImageBitmap`) oppure SVG (rasterizzato a
+ * 512 px nel thread principale, senza script né risorse esterne: vedi `svgImage.ts`). Altri formati: «Formato non supportato».
+ */
+async function decodeAny(file: Blob): Promise<{ rgba: Uint8ClampedArray; w: number; h: number }> {
+  const head = new Uint8Array(await file.slice(0, HEADER_BYTES).arrayBuffer());
+  if (isRaster(head)) return decodeRgba(file);
+  // SVG: dal contenuto (dopo BOM, XML, commenti e DOCTYPE comincia con <svg), non dall'estensione né dal tipo dichiarato
+  if (looksLikeSvg(new TextDecoder('utf-8').decode(head.subarray(0, 8192)))) {
+    if (file.size > MAX_SVG_BYTES) throw new Error(`L'SVG è troppo grande (${Math.round(file.size / 1024)} KB): il massimo è ${MAX_SVG_BYTES / 1024 / 1024} MB.`);
+    // Il file sta per intero nei primi byte letti (HEADER_BYTES = MAX_SVG_BYTES)
+    const prepared = prepareSvg(new TextDecoder('utf-8').decode(head));
+    return rasterizeSvg(prepared.svg, prepared.w, prepared.h);
+  }
+  throw unsupportedFormat();
+}
+
+/**
+ * Importa un'immagine PNG, JPG o SVG per il Pattern «Immagine»: la decodifica (o rasterizza), la converte in grigio (Rec. 601 su sRGB,
+ * trasparenza sul bianco), la riduce a 512 px sul lato maggiore, la registra (una sola copia per contenuto, anche in IndexedDB) e la
+ * manda al kernel. Lancia un errore leggibile se il file non va bene.
  */
 export async function importImageFile(file: Blob): Promise<ImageAsset> {
-  const { rgba, w, h } = await decodeRgba(file);
+  const { rgba, w, h } = await decodeAny(file);
   const gray = imageToGray(rgba, w, h);
   if (gray.w > MAX_IMAGE_SIDE || gray.h > MAX_IMAGE_SIDE) throw new Error('Immagine non ridimensionabile.');
   const asset = await addImage(gray);

@@ -16,12 +16,12 @@ export interface ImageHeader {
   h: number;
 }
 
-/** Messaggio di formato non riconosciuto (GIF, WebP, BMP, AVIF, SVG...). */
-export const unsupportedFormat = (what = '') => new Error(`Formato non supportato${what}: servono immagini PNG o JPG.`);
+/** Messaggio di formato non riconosciuto (GIF, WebP, BMP, AVIF...). */
+export const unsupportedFormat = () => new Error('Formato non supportato: servono immagini PNG, JPG o SVG.');
 
 const startsWith = (bytes: Uint8Array, prefix: number[]) => prefix.every((b, i) => bytes[i] === b);
 
-/** Testo ASCII dei primi byte (per riconoscere l'SVG, che si rifiuta con un messaggio più preciso). */
+/** Testo ASCII dei primi byte (per il blocco IHDR del PNG). */
 const ascii = (bytes: Uint8Array, n: number) => String.fromCharCode(...bytes.subarray(0, n));
 
 /** Dimensioni di un PNG: la firma di 8 byte, poi il blocco IHDR (lunghezza 13) con larghezza e altezza a 32 bit big endian (byte 16-23). */
@@ -71,16 +71,14 @@ export function assertImageSize(w: number, h: number): void {
 
 /**
  * Formato e dimensioni di un file dai suoi primi byte (`HEADER_BYTES`): PNG (`89 50 4E 47`) e JPEG (`FF D8 FF`). Altri formati
- * (GIF, WebP, BMP, AVIF, SVG...) danno «Formato non supportato»; un'immagine oltre il limite dei pixel un errore, senza decodificarla.
+ * (GIF, WebP, BMP, AVIF...) danno «Formato non supportato» (l'SVG lo riconosce l'importatore dal testo, vedi `looksLikeSvg`); un'immagine
+ * oltre il limite dei pixel un errore, senza decodificarla.
  */
 export function readImageHeader(bytes: Uint8Array): ImageHeader {
   let header: ImageHeader;
   if (startsWith(bytes, [0x89, 0x50, 0x4e, 0x47])) header = { format: 'png', ...pngSize(bytes) };
   else if (startsWith(bytes, [0xff, 0xd8, 0xff])) header = { format: 'jpeg', ...jpegSize(bytes) };
-  else {
-    const head = ascii(bytes, 256).trimStart().toLowerCase();
-    throw unsupportedFormat(head.startsWith('<svg') || (head.startsWith('<?xml') && head.includes('<svg')) ? " (l'SVG non è ancora previsto)" : '');
-  }
+  else throw unsupportedFormat();
   assertImageSize(header.w, header.h);
   return header;
 }

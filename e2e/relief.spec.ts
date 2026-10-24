@@ -340,3 +340,113 @@ test('Pattern Immagine: un PNG caricato si converte in grigio, si salva una volt
   await input.setInputFiles({ name: 'animata.gif', mimeType: 'image/gif', buffer: Buffer.from('GIF89a') });
   await expect(page.getByRole('alert').filter({ hasText: 'Formato non supportato' })).toBeVisible();
 });
+
+test('Pattern Immagine: ogni esempio ha tre varianti, la variante cambia il volume e il codice e si ritrova scegliendola dalla miniatura', async ({ page }) => {
+  await addShape(page, 'Cubo');
+  await page.keyboard.press('z');
+  const panel = page.getByRole('region', { name: 'Pattern' });
+  await panel.getByLabel('Tipo').selectOption({ label: 'Immagine' });
+  await settled(page);
+  await panel.getByRole('button', { name: 'OK' }).click();
+  await settled(page);
+  const id = (await sceneState(page)).rootIds[0];
+  const pattern = async () => (await sceneState(page)).nodes[id].pattern;
+  const variant = page.getByLabel('Variante', { exact: true });
+
+  // Zigrinatura: di partenza a diamante; le altre due varianti sono dritta e a punti
+  expect(await pattern()).toMatchObject({ sample: 'knurl', sampleDesign: 'diamond' });
+  await expect(variant).toHaveValue('diamond');
+  const volumes: number[] = [await volume(page)];
+  const codes: string[] = [await readCode(page)];
+  for (const [label, value] of [['Dritta', 'straight'], ['A punti', 'dots']]) {
+    await variant.selectOption({ label });
+    await settled(page);
+    expect((await pattern()).sampleDesign).toBe(value);
+    await expect(page.locator('.status-bar')).toContainText('Mesh valida');
+    volumes.push(await volume(page));
+    codes.push(await readCode(page));
+  }
+  // Tre immagini diverse: tre volumi e tre mappe (zmap) diverse
+  expect(new Set(volumes.map((v) => v.toFixed(2))).size).toBe(3);
+  expect(new Set(codes).size).toBe(3);
+  volumes.forEach((v) => expect(v).toBeLessThan(8000));
+
+  // Le miniature delle varianti fanno lo stesso: «Variante Dritta» riporta alla variante dritta
+  await page.getByRole('button', { name: 'Variante Dritta' }).click();
+  await settled(page);
+  expect((await pattern()).sampleDesign).toBe('straight');
+  expect(await volume(page)).toBeCloseTo(volumes[1], 3);
+
+  // Cambiando esempio la variante riparte dalla prima del nuovo esempio; la libreria ha pietra e tessuto al posto dei mattoni
+  await page.getByLabel('Sorgente').selectOption({ label: 'Pelle' });
+  await settled(page);
+  expect(await pattern()).toMatchObject({ sample: 'leather', sampleDesign: 'fine' });
+  await variant.selectOption({ label: 'Rettile' });
+  await settled(page);
+  expect((await pattern()).sampleDesign).toBe('reptile');
+  await expect(page.getByLabel('Sorgente').locator('option', { hasText: 'Mattoni' })).toHaveCount(0);
+  for (const label of ['Pietra', 'Tessuto']) await expect(page.getByLabel('Sorgente').locator('option', { hasText: label })).toHaveCount(1);
+  await page.getByLabel('Sorgente').selectOption({ label: 'Pietra' });
+  await settled(page);
+  expect(await pattern()).toMatchObject({ sample: 'stone', sampleDesign: 'cobbles' });
+  await expect(variant.locator('option')).toHaveText(['Ciottoli', 'Lastroni', 'Ghiaia']);
+  await expect(page.locator('.status-bar')).toContainText('Mesh valida');
+});
+
+test('Pattern Immagine: un SVG si rasterizza in grigio e incava il cubo; uno con script e riferimenti esterni si ripulisce', async ({ page }) => {
+  await addShape(page, 'Cubo');
+  await page.keyboard.press('z');
+  const panel = page.getByRole('region', { name: 'Pattern' });
+  await panel.getByLabel('Tipo').selectOption({ label: 'Immagine' });
+  await settled(page);
+  await panel.getByRole('button', { name: 'OK' }).click();
+  await settled(page);
+  const id = (await sceneState(page)).rootIds[0];
+  const input = page.locator('input[type=file][aria-label="File immagine"]');
+  const before = await volume(page);
+
+  // Cerchio nero su bianco, con la dichiarazione XML (il formato si riconosce dal contenuto, qualunque sia il nome del file)
+  const circle = '<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#ffffff"/><circle cx="50" cy="50" r="38" fill="#000000"/></svg>';
+  await input.setInputFiles({ name: 'cerchio.dat', mimeType: 'application/octet-stream', buffer: Buffer.from(circle) });
+  await expect.poll(async () => (await sceneState(page)).nodes[id].pattern.imageId).toMatch(/^img-[0-9a-f]{16}$/);
+  await settled(page);
+  const circleId = (await sceneState(page)).nodes[id].pattern.imageId;
+  await expect(page.getByLabel('Sorgente')).toHaveValue('__uploaded');
+  await expect(page.getByLabel("Anteprima in grigio dell'immagine")).toBeVisible();
+  // Il nero scava: meno volume di prima, e la mappa (zmap) è nel codice
+  const circleVolume = await volume(page);
+  expect(circleVolume).toBeLessThan(8000);
+  expect(circleVolume).not.toBeCloseTo(before, 3);
+  expect(await readCode(page)).toContain('zmap = [');
+  // Il grigio dell'immagine: nero al centro del cerchio, bianco negli angoli (si legge il pixel dalla miniatura)
+  const corners = await page.getByLabel("Anteprima in grigio dell'immagine").evaluate((canvas: HTMLCanvasElement) => {
+    const context = canvas.getContext('2d')!;
+    const at = (x: number, y: number) => context.getImageData(x, y, 1, 1).data[0];
+    return { center: at(canvas.width >> 1, canvas.height >> 1), corner: at(2, 2) };
+  });
+  expect(corners.center).toBeLessThan(30);
+  expect(corners.corner).toBeGreaterThan(225);
+
+  // Un SVG con script, gestori di eventi e riferimenti esterni: si ripulisce e il disegno resta; lo script non gira
+  const dirty = '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 100 100" onload="window.__pwned = true"><script>window.__pwned = true</script><image xlink:href="http://example.invalid/x.png" width="100" height="100"/><rect width="100" height="100" fill="#fff"/><rect x="10" y="10" width="40" height="80" fill="#000" onclick="window.__pwned = true"/></svg>';
+  await input.setInputFiles({ name: 'sporco.svg', mimeType: 'image/svg+xml', buffer: Buffer.from(dirty) });
+  await expect.poll(async () => (await sceneState(page)).nodes[id].pattern.imageId).not.toBe(circleId);
+  await settled(page);
+  expect(await page.evaluate(() => (window as unknown as { __pwned?: boolean }).__pwned)).toBeUndefined();
+  expect(await volume(page)).toBeLessThan(8000);
+  await expect(page.locator('.status-bar')).toContainText('Mesh valida');
+
+  // SVG vuoto, incompleto, con entità: messaggi chiari, il Pattern resta com'era
+  const kept = (await sceneState(page)).nodes[id].pattern.imageId;
+  const cases: [string, string, string][] = [
+    ['<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>', 'vuoto', 'vuoto.svg'],
+    ['<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="5" height="5"/>', 'incompleto', 'troncato.svg'],
+    ['<?xml version="1.0"?><!DOCTYPE svg [<!ENTITY a "aaaa">]><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><text>&a;</text></svg>', 'entità XML', 'entita.svg'],
+    ['<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%"><rect width="5" height="5"/></svg>', 'senza dimensioni', 'percentuali.svg'],
+  ];
+  for (const [text, message, name] of cases) {
+    await input.setInputFiles({ name, mimeType: 'image/svg+xml', buffer: Buffer.from(text) });
+    await expect(page.getByRole('alert').filter({ hasText: message })).toBeVisible();
+    expect((await sceneState(page)).nodes[id].pattern.imageId).toBe(kept);
+  }
+});
