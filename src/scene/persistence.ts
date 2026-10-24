@@ -4,7 +4,8 @@ import { useSceneStore } from './store';
 import { normalizeTreatmentGroups } from './treatment';
 import { migrateLegacyShapes } from './legacyShapes';
 import { platesAreValid } from './plates';
-import { decodeAsset, encodeAsset, getAsset, type MeshAsset } from '../import/assets';
+import { decodeAsset, decodeImage, encodeAsset, encodeImage, getAsset, getImage, type ImageAsset, type MeshAsset } from '../import/assets';
+import { usedImageIds } from './textureImage';
 import { restoreAssets } from '../import/restore';
 import { notify } from '../ui/notify/notifyStore';
 import { useUiStore } from '../ui/uiStore';
@@ -19,8 +20,8 @@ const VERSION_KEY = 'construct:scene-version';
 const LEGACY_KEY = 'webcad:scene';
 const FORMAT = 'construct-scene';
 const LEGACY_FORMAT = 'webcad-scene';
-/** Versione 2: il progetto include le mesh importate; 4: i piatti (`plates`); 5: parametri e formule (`params`, `exprs`); 6: la forma Stella con `points` al posto di star5 e star6; 7: il Dado con `faces` al posto di Ottaedro, Decaedro, Dodecaedro e Icosaedro. Le versioni precedenti si leggono ancora. */
-const VERSION = 7;
+/** Versione 2: il progetto include le mesh importate; 4: i piatti (`plates`); 5: parametri e formule (`params`, `exprs`); 6: la forma Stella con `points` al posto di star5 e star6; 7: il Dado con `faces` al posto di Ottaedro, Decaedro, Dodecaedro e Icosaedro; 8: il Pattern «Immagine» (`kind: 'texture'`) e le immagini nel progetto (asset `img-...`, grigio compresso). Una build più vecchia non lo aprirebbe (e non lo sovrascrive): senza questa versione leggerebbe il Pattern come Voronoi. Le versioni precedenti si leggono ancora. */
+const VERSION = 8;
 
 /** Vero durante la pulizia dei dati: la scena non deve essere riscritta mentre si cancella. */
 let autosaveSuspended = false;
@@ -84,18 +85,22 @@ export async function initPersistence(): Promise<boolean> {
   return restored;
 }
 
-/** Serializza la scena come file di progetto JSON, con le mesh importate in forma compressa. */
+/** Serializza la scena come file di progetto JSON, con le mesh importate e le immagini dei Pattern in forma compressa (una copia per immagine). */
 export function sceneToJson(scene: Scene): string {
   const assets: Record<string, string> = {};
   for (const node of Object.values(scene.nodes)) {
     const asset = node.type === 'mesh' ? getAsset(node.assetId) : undefined;
     if (asset && !assets[asset.id]) assets[asset.id] = encodeAsset(asset);
   }
+  for (const id of usedImageIds(scene)) {
+    const image = getImage(id);
+    if (image && !assets[id]) assets[id] = encodeImage({ id, w: image.w, h: image.h, gray: image.data });
+  }
   return JSON.stringify({ format: FORMAT, version: VERSION, scene, assets }, null, 2);
 }
 
 /** Legge un file di progetto; lancia un errore leggibile se non è valido. */
-export function sceneFromJson(text: string): { scene: Scene; assets: MeshAsset[] } {
+export function sceneFromJson(text: string): { scene: Scene; assets: MeshAsset[]; images: ImageAsset[] } {
   let data: { format?: string; version?: number; scene?: unknown; assets?: Record<string, string> };
   try {
     data = JSON.parse(text);
@@ -104,7 +109,10 @@ export function sceneFromJson(text: string): { scene: Scene; assets: MeshAsset[]
   }
   if ((data.format !== FORMAT && data.format !== LEGACY_FORMAT) || !isScene(data.scene)) throw new Error('Il file non è un progetto Construct valido.');
   if ((data.version ?? 1) > VERSION) throw new Error('Il progetto è stato salvato da una versione più recente di Construct.');
-  const assets = Object.entries(data.assets ?? {}).map(([id, encoded]) => decodeAsset(id, encoded));
+  // Mesh e immagini stanno nello stesso elenco: le immagini hanno l'id che comincia con `img-`
+  const entries = Object.entries(data.assets ?? {});
+  const assets = entries.filter(([id]) => !id.startsWith('img-')).map(([id, encoded]) => decodeAsset(id, encoded));
+  const images = entries.filter(([id]) => id.startsWith('img-')).map(([id, encoded]) => decodeImage(id, encoded));
   // Le scene di versioni precedenti hanno i gruppi dei trattamenti all'origine (si portano sul pezzo) le stelle a 5 o 6 punte (diventano Stella) e i quattro solidi dei dadi (diventano Dado)
-  return { scene: migrateLegacyShapes(normalizeTreatmentGroups(data.scene)), assets };
+  return { scene: migrateLegacyShapes(normalizeTreatmentGroups(data.scene)), assets, images };
 }

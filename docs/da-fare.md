@@ -227,19 +227,44 @@ Studio, nucleo di prova e prototipo: `docs/studio-quote-profilo.md`, `src/ui/Pro
 - **Deriva**: in un disegno tutto quotato e ancorato, il trascinamento continuo può spingere il disegno su un'altra soluzione dei vincoli; da risolvere prima di portare il trascinamento nell'app.
 - **Snap con zoom lontano**: `gridStep` allarga il passo di 5 volte e lo snap non rispetta più i 0,1 mm, mentre le frecce usano il passo base.
 
-## Rilievi e texture da immagine: studi (0.73.0)
+## Rilievi e texture da immagine
 
-Studi, codice di prova e prototipi: `docs/studio-pattern-rilievo.md` (mattoni, legno, ruggine, borchie, rame battuto, in CSG e mappa di altezze) e `docs/studio-texture-immagine.md` (immagine in scala di grigi come displacement, con il confronto tra i due approcci). Nessuno dei due è nell'app: il codice sta in `src/scene/relief.ts`, `src/kernel/relief.ts`, `src/codegen/reliefScad.ts` e `src/scene/textureMap.ts`, `src/kernel/textureMap.ts`, `src/codegen/textureScad.ts`. Gli STL di esempio non sono versionati (si rigenerano con i comandi in fondo agli studi). Da decidere (elenchi completi negli studi):
+Studi e prototipi: `docs/studio-pattern-rilievo.md` (mattoni, legno, ruggine, borchie, rame battuto) e `docs/studio-texture-immagine.md` (immagine in scala di grigi come spostamento, confronto tra i due motori); il prototipo della texture sta in `docs/prototipi/texture-immagine.html` (il suo blocco CORE si rigenera con `node scripts/texture-core.mjs write` quando cambiano `textureMap.ts`, `textureSamples.ts`, `relief.ts`...). Gli STL di esempio non sono versionati (si rigenerano con i comandi in fondo agli studi).
 
-- **Ordine di rilascio**: la raccomandazione è ibrida, con un'unica interfaccia «Rilievo»: mattoni e borchie in CSG per primi (3-4 giorni, il modo additivo in una PR a parte), poi rame e legno, poi il motore F da immagine (4-5 giorni); ruggine e motore M (mesh intera, 4-5 giorni) solo dopo una prova di stampa e una richiesta reale.
-- **Profondità e fughe dei rilievi**: parametro di ogni texture o `depth` e `sides` del Pattern? Fuga minima 0,8 mm con un avviso come per la parete del Voronoi?
-- **Rilievo su una faccia o su più facce**, come il Pattern attuale.
-- **Immagine nel progetto**: salvare il grigio decodificato (165-256 KB per 512 px) o un riferimento al file; lato massimo 512 px (1024 su richiesta); formula del grigio (Rec. 601 su sRGB) e trasparenza composta sul bianco.
-- **Modo predefinito** da immagine: «entrambi» con livello medio 0,5 (come Blender e BumpMesh, perde volume con una texture scura) oppure «rilievo».
-- **Export OpenSCAD**: `zmap` in un file solo come predefinito e `surface()` con PNG a fianco come opzione, o il contrario; per il motore M un `polyhedron` da megabyte con avviso, oppure solo STL e 3MF.
-- **SVG**: vettoriale (bordi esatti, codice piccolo) o raster (sfumature) come predefinito.
-- **Motore M**: ampiezza troppo alta (oltre circa mezzo lato dei triangoli compaiono sovrapposizioni): avviso o blocco; la regola è un'estrapolazione, il lato è stato provato solo a 0,8 mm.
-- **Non verificato**: Firefox e Safari, una stampa reale, immagini oltre 1024 px, margine reale e facce inclinate del motore F nel codice OpenSCAD, mesh importate e pareti sottili nel motore M.
+### Fatto (dentro il Pattern, tipi del gruppo «Rilievo»)
+
+Tutti i rilievi sono tipi del Pattern (`kind`), hanno `design` e parametri in `relief`, il margine e le facce come il Pattern a celle, `depth` e `sides` ignorati, e stesso codice nel kernel e in OpenSCAD (coerenza verificata da test sui dati scritti):
+
+- **Mattoni** (sfalsati, spina di pesce, cesto), **Borchie** (cupola, cilindro smussato, piramide; griglia quadrata o sfalsata; additivo), **Rame battuto** (martellato, sfaccettato, scaglie), **Legno** (doghe, parquet, tavola unica con nodi).
+- **Immagine** (motore F): libreria di 7 texture di esempio con 3 varianti ciascuna (zigrinatura, fibra di carbonio, pelle, pietra, tessuto, onde, rumore: 21 immagini generate nel codice, periodiche, 256 px), oppure un file PNG, JPG o SVG; modo incavo (predefinito), rilievo o entrambi; piastrella, ripetizione, rotazione, scostamento, inversione, livello medio, ampiezza, sfocatura.
+- I campi dei gruppi (rilievo, immagine) si conservano nello strumento e nelle Proprietà cambiando tipo (`normalizeKeepingGroups`); `normalizePattern` (salvataggio, chiave di cache, kernel, codice) toglie quelli dell'altro gruppo.
+
+### Decisioni prese
+
+- **Profondità**: parametro di ogni rilievo, limitata allo spessore dell'ingombro lungo la normale della faccia meno 0,2 mm (metà con facce opposte), tenendo conto di variazione (rame), nodi (tavola unica) e piede e colonna della pelle («entrambi»). Fuga minima 0,8 mm con un avviso.
+- **Una faccia o più facce**, come il Pattern a celle (ogni faccia ha il suo seme: seme + indice).
+- **Immagine nel progetto**: si salva il grigio decodificato (Rec. 601 su sRGB, trasparenza sul bianco), lato massimo 512 px, una sola copia per immagine (id = impronta SHA-256, o un hash di riserva senza `crypto.subtle`), `VERSION` 8. Peso a 512 × 512 in base64: zigrinatura 5 KB, onde 14 KB, pelle 220 KB, rumore 341 KB. L'originale non si conserva.
+- **Formato dal contenuto, non dall'estensione**: PNG (`89 50 4E 47`), JPEG (`FF D8 FF`), SVG (`<svg` dopo BOM, XML, commenti, DOCTYPE). Dimensioni lette dall'intestazione prima di decodificare (limite 100 megapixel, file fino a 20 MB; SVG fino a 2 MB).
+- **SVG raster**: rasterizzato a 512 px (lato lungo) nel thread principale con un `<img>` da `Blob` URL (nessuno script, nessuna risorsa esterna), dopo aver tolto `<script>`, `<foreignObject>`, attributi `on...`, `href` e `url()` esterni, `@import`; le entità XML si rifiutano; timeout di 10 s per il caricamento (non per il `drawImage` sincrono, che non si può interrompere: lo limitano i 2 MB e i 512 px). La pulizia del testo è una seconda linea di difesa e non è completa (per esempio non decifra gli escape CSS come `u\72l(`): la prima è l'`<img>` da Blob URL, che non esegue script né carica risorse. Un DOCTYPE con sottoinsieme interno (entità o `<!ATTLIST>`) si rifiuta con un messaggio dedicato. Sfumature ammesse (la strada vettoriale con i bordi esatti non è stata fatta).
+- **Modo predefinito** «incavo»; export OpenSCAD con la `zmap` in un solo file (nessun `surface()`); i pixel li passano i chiamanti all'interfaccia (`sceneToOpenScad(scene, { images: getImage })`: il generatore resta puro).
+- **Motore M** (mesh intera): non fatto, nessuna richiesta di texture sui pezzi curvi.
+
+### Note tecniche e limiti
+
+- **Limite di profondità sull'ingombro**: non conosce la parete vera di un pezzo cavo o di un Guscio: su un guscio sottile la fuga può bucare la parete anche sotto il limite. Da fare: limite sulla parete reale (sezione della faccia in profondità).
+- **Rame battuto e Legno**: la venatura, i nodi e l'Immagine sono una mappa di altezze a 0,5 mm di passo (tetto di 250.000 nodi, il passo si allarga; l'anteprima usa 0,8 mm): su una faccia di 300 × 300 mm sono 0,5-1 milione di triangoli e 1,2-3,4 s nel kernel (Node), su 80 × 60 mm 0,1-0,3 s. Il codice OpenSCAD pesa circa 66 KB su 80 × 60 mm e circa 780 KB su 300 × 300 mm (la `zmap` è quasi tutto): lo studio giudicava inaccettabili 212 KB per la ruggine, quindi su facce grandi serve un passo fisso più largo nell'export (oggi c'è un avviso oltre 200.000 nodi). I nodi della tavola unica si sommano alla venatura senza deformarne gli anelli; il parquet usa la lunghezza arrotondata a un multiplo della larghezza; le faccette sono celle convesse di Voronoi con un piano inclinato. Tetto di 500 celle (martellate, faccette, scaglie): sopra, le celle si allargano e il pannello avvisa.
+- **Borchie su facce non rettangolari**: i centri sono quelli della griglia nel rettangolo della faccia ridotto del margine (calcolo puro, gli stessi nel kernel e nel codice OpenSCAD); sul contorno vero (cilindro, facce inclinate) la regione ritaglia le borchie che sporgono, quindi vicino al bordo curvo compaiono borchie tagliate invece che scartate.
+- **Asset in IndexedDB**: le chiavi `construct:image:*` (immagini del Pattern «Immagine») non si cancellano mai, come `construct:asset:*` delle mesh importate: restano anche quando nessuna scena le usa più. Da fare insieme per entrambi: un elenco degli id usati dal progetto e dagli esempi salvati, e una pulizia dei restanti (manuale, dalle Impostazioni, o all'avvio dopo un po' di tempo).
+- **Mattoni e Borchie condividono il campo `relief`**: passando dall'uno all'altro le misure del primo ripartono dai valori di partenza (servirebbe un `relief` per tipo).
+
+### Resta da fare
+
+- **Motore M** (spostamento dei vertici della mesh intera, stile Blender e BumpMesh): solo dopo una richiesta reale; avvisi sull'ampiezza oltre circa mezzo lato dei triangoli.
+- **Ruggine** (mappa di altezze con ruvidità e crateri, già nel codice di prova `relief.ts`): da rilasciare solo dopo aver deciso il peso del `.scad` (78 KB a 0,5 mm con le quote in centesimi interi) e dopo una prova di stampa.
+- **SVG vettoriale** (contorni esatti come celle estruse, un solo livello di quota, codice piccolo): il codice di prova c'è (`svgContours`, `svgReliefScad`), non è nell'app.
+- **Anteprima GPU** (spostamento dei vertici in uno shader mentre si regolano i cursori, per non ricalcolare la mesh a ogni passo): non fatta; oggi l'anteprima è semplificata (calotte con 8 segmenti, mappa a 0,8 mm).
+- **Altro**: `surface()` con PNG come opzione di export, trascinamento del file sul pannello, immagini oltre 512 px (1024 su richiesta, con avviso), un `relief` per tipo, miniature dei disegni dei Mattoni e delle altre varianti.
+- **Non verificato**: Firefox e Safari (decodifica e rasterizzazione dell'SVG), una stampa reale (venatura sotto 0,3 mm, profondità delle calotte, borchie su facce laterali), margine reale e facce inclinate nel codice OpenSCAD con OpenSCAD vero (non è installato nei test: il codice si controlla sul testo e sulla griglia), mesh importate e pareti sottili.
 
 ## Font non presenti su Google Fonts
 

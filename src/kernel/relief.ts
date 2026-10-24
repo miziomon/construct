@@ -3,18 +3,24 @@ import {
   brickLayout,
   craterList,
   dentList,
+  dentProfile,
+  facetList,
   grainDepth,
   isAdditive,
   normalizeRelief,
-  plankLayout,
+  pyramidPolyhedron,
   reliefDepth,
   rustMaxDepth,
   sampleGrid,
+  SCALE_ASPECT,
+  scaleList,
   studGrid,
   studHeight,
   studProfile,
+  woodBoxes,
+  woodMaxDepth,
 } from '../scene/relief';
-import type { Box, HeightGrid, ReliefParams } from '../scene/relief';
+import type { Box, Facet, HeightGrid, ReliefParams, WoodParams } from '../scene/relief';
 import type { Rect, Vec2 } from '../scene/voronoi';
 
 /**
@@ -36,6 +42,10 @@ export interface ReliefOptions {
   segments?: number;
   /** Rettangolo a cui ancorare il disegno (di solito `frameRect`, quello della faccia): così non si sposta quando il margine cambia la regione. Se manca si usa il riquadro della regione. */
   rect?: Rect;
+  /** Solo borchie: i centri già scelti dal chiamante (vedi `studCentersFor`); se mancano si scartano quelli che non stanno interi nella regione (`studsInRegion`). */
+  centers?: Vec2[];
+  /** Solo borchie: quanto il piede entra nel pezzo (mm); vale `EMBED` ma non più di metà dello spessore (vedi `studEmbedOf`). */
+  embed?: number;
 }
 
 /** Il motore consigliato per ogni texture (vedi docs/studio-pattern-rilievo.md). */
@@ -167,19 +177,17 @@ function revolved(wasm: ManifoldToplevel, profile: [number, number][], closeZ: n
   return solid;
 }
 
+/** Piramide a base quadrata con il piede nel pezzo (vedi `pyramidPolyhedron`), con la base della punta su z = 0. */
+function pyramidStud(wasm: ManifoldToplevel, radius: number, height: number, embed: number): Manifold {
+  const { points, faces } = pyramidPolyhedron(radius, height, embed);
+  const mesh = new wasm.Mesh({ numProp: 3, vertProperties: new Float32Array(points.flat()), triVerts: new Uint32Array(faces.flat()) });
+  return new wasm.Manifold(mesh);
+}
+
 /** Calotta concava (cavità di una sfera di raggio R, profondità d, bordo r) con il bordo a z = 0, profondità verso il basso. */
 function dentCutter(wasm: ManifoldToplevel, r: number, d: number, R: number, segments: number): Manifold {
   // Arco dal fondo (0, -d) al bordo (r, 0); gli anelli sono pochi perché la calotta è molto piatta
-  const rings = 4;
-  const maxAngle = Math.asin(Math.min(1, r / R));
-  const profile: [number, number][] = [];
-  for (let k = 0; k <= rings; k++) {
-    const a = (maxAngle * k) / rings;
-    // Centro della sfera a z = R - d: il fondo (a = 0) sta a -d, il bordo a 0
-    profile.push([R * Math.sin(a), R - d - R * Math.cos(a)]);
-  }
-  // L'ultimo punto cade a z = 0 (a meno degli arrotondamenti): lo si fissa
-  profile[profile.length - 1] = [r, 0];
+  const profile = dentProfile(r, d, R, 4);
   return revolved(wasm, profile, ABOVE, segments);
 }
 
@@ -204,30 +212,21 @@ export function reliefCutter(wasm: ManifoldToplevel, region: CrossSection, param
   const segments = options.segments ?? DEFAULT_SEGMENTS;
   const rect = options.rect ?? regionRect(region);
   // Quanto in basso arriva al massimo il taglio, per il prisma di ritaglio
-  const zMin = -(p.kind === 'rust' ? rustMaxDepth(p) : p.kind === 'hammered' ? p.depth * (1 + p.jitter) + 0.1 : p.kind === 'wood' ? Math.max(p.gapDepth, p.grainDepth) : p.depth) - 1;
+  const zMin = -(p.kind === 'rust' ? rustMaxDepth(p) : p.kind === 'hammered' ? p.depth * (1 + p.jitter) + 0.1 : p.kind === 'wood' ? woodMaxDepth(p) : p.depth) - 1;
 
   // Mappa di altezze (anche per il legno in modo 'heightmap', con le fughe nella mappa)
   if (engine === 'heightmap') return clipToRegion(wasm, depthMapCutter(wasm, rect, step, reliefDepth(rect, p)), region, zMin, ABOVE + 1);
 
-  if (p.kind === 'brick' || p.kind === 'wood') {
-    // Fughe: la regione meno le celle (mattoni o doghe), estruse della profondità della fuga
-    const boxes = p.kind === 'brick' ? brickLayout(rect, p) : plankLayout(rect, p).flat().map((pl) => pl.box);
-    const cells = boxesSection(wasm, boxes);
+  if (p.kind === 'brick') {
+    // Fughe: la regione meno i mattoni, estruse della profondità della fuga
+    const cells = boxesSection(wasm, brickLayout(rect, p));
     const grooves = region.subtract(cells);
     cells.delete();
-    const depth = p.kind === 'brick' ? p.depth : p.gapDepth;
-    const groovesSolid = grooves.isEmpty() ? null : prism(wasm, grooves, -depth, ABOVE);
+    const groovesSolid = grooves.isEmpty() ? null : prism(wasm, grooves, -p.depth, ABOVE);
     grooves.delete();
-    if (p.kind === 'brick' || engine === 'csg') return groovesSolid;
-    // Legno 'hybrid': si aggiunge la venatura in mappa di altezze
-    const grain = clipToRegion(wasm, depthMapCutter(wasm, rect, step, grainDepth(rect, p)), region, zMin, ABOVE + 1);
-    if (!groovesSolid) return grain;
-    if (!grain) return groovesSolid;
-    const both = Manifold.union([groovesSolid, grain]);
-    groovesSolid.delete();
-    grain.delete();
-    return both;
+    return groovesSolid;
   }
+  if (p.kind === 'wood') return woodCutter(wasm, region, p, engine, step, rect, zMin);
 
   // Ruggine in CSG: lastra alla quota base più i crateri come calotte (senza la ruvidità, impossibile in CSG)
   // Rame battuto in CSG: una calotta per martellata
@@ -241,16 +240,72 @@ export function reliefCutter(wasm: ManifoldToplevel, region: CrossSection, param
     const slab = regionSection(wasm, rect);
     caps.push(prism(wasm, slab, -p.baseDepth, ABOVE));
     slab.delete();
+  } else if (p.kind === 'hammered' && p.design === 'facets') {
+    // Una faccetta piana inclinata per cella
+    for (const f of facetList(rect, p)) caps.push(facetSolid(wasm, f));
   } else if (p.kind === 'hammered') {
-    for (const d of dentList(rect, p)) {
+    // Calotte (martellato) oppure calotte ovali, stirate in Y e sfalsate (scaglie)
+    const scales = p.design === 'scales';
+    for (const d of scales ? scaleList(rect, p).map((c) => ({ x: c.x, y: c.y, r: c.rx, d: c.d, R: c.R })) : dentList(rect, p)) {
       const cap = dentCutter(wasm, d.r, d.d, d.R, segments);
-      caps.push(cap.translate([d.x, d.y, 0]));
+      // Per le scaglie la copia stirata in Y; per le calotte una copia identica, così `stretched` si libera allo stesso modo nei due casi
+      const stretched = scales ? cap.scale([1, SCALE_ASPECT, 1]) : cap.translate([0, 0, 0]);
       cap.delete();
+      caps.push(stretched.translate([d.x, d.y, 0]));
+      stretched.delete();
     }
   }
   const all = Manifold.union(caps);
   caps.forEach((c) => c.delete());
   return clipToRegion(wasm, all, region, zMin, ABOVE + 1);
+}
+
+/**
+ * Solido di una faccetta: la cella estrusa dal piano inclinato (vertici `f.ring`, con la z del piano) fino a `ABOVE` sopra la
+ * faccia. Poliedro convesso: fondo e coperchio a ventaglio, lati verticali; il codice OpenSCAD scrive gli stessi vertici.
+ */
+function facetSolid(wasm: ManifoldToplevel, f: Facet): Manifold {
+  const n = f.ring.length;
+  const vertices = new Float32Array(2 * n * 3);
+  f.ring.forEach(([x, y, z], i) => {
+    vertices.set([x, y, z], i * 3);
+    vertices.set([x, y, ABOVE], (n + i) * 3);
+  });
+  const tris: number[] = [];
+  // Fondo (normale verso il basso) e coperchio (verso l'alto), a ventaglio dal primo vertice
+  for (let i = 1; i < n - 1; i++) tris.push(0, i + 1, i, n, n + i, n + i + 1);
+  // Lati verticali: antiorari visti da fuori
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    tris.push(i, j, n + j, i, n + j, n + i);
+  }
+  return new wasm.Manifold(new wasm.Mesh({ numProp: 3, vertProperties: vertices, triVerts: new Uint32Array(tris) }));
+}
+
+/**
+ * Legno: le fughe tra doghe o listelli come prismi (la regione meno i rettangoli, CSG) e la venatura come mappa di altezze
+ * ('hybrid', o solo CSG con 'csg'); la tavola unica non ha fughe e vale solo la mappa (venatura e nodi). Senza venatura
+ * (`grainDepth` 0) restano le sole fughe.
+ */
+function woodCutter(wasm: ManifoldToplevel, region: CrossSection, p: WoodParams, engine: ReliefEngine, step: number, rect: Rect, zMin: number): Manifold | null {
+  const boxes = woodBoxes(rect, p).map((w) => w.box);
+  let groovesSolid: Manifold | null = null;
+  if (boxes.length) {
+    const cells = boxesSection(wasm, boxes);
+    const grooves = region.subtract(cells);
+    cells.delete();
+    groovesSolid = grooves.isEmpty() ? null : prism(wasm, grooves, -p.gapDepth, ABOVE);
+    grooves.delete();
+  }
+  if (engine === 'csg' || !(p.grainDepth > 0)) return groovesSolid;
+  // Legno 'hybrid': si aggiunge la venatura in mappa di altezze
+  const grain = clipToRegion(wasm, depthMapCutter(wasm, rect, step, grainDepth(rect, p)), region, zMin, ABOVE + 1);
+  if (!groovesSolid) return grain;
+  if (!grain) return groovesSolid;
+  const both = wasm.Manifold.union([groovesSolid, grain]);
+  groovesSolid.delete();
+  grain.delete();
+  return both;
 }
 
 /** Rettangolo come CrossSection (per la lastra di base della ruggine in CSG). */
@@ -290,7 +345,8 @@ export function studsInRegion(region: CrossSection, rect: Rect, params: ReliefPa
   const centers: Vec2[] = [];
   for (let j = 0; j < g.rows; j++) {
     for (let i = 0; i < g.cols; i++) {
-      const c: Vec2 = [g.x0 + i * g.pitch, g.y0 + j * g.pitch];
+      // Le file dispari della griglia sfalsata sono spostate di mezzo passo (`g.stagger`, zero per la griglia quadrata)
+      const c: Vec2 = [g.x0 + i * g.pitch + (j % 2 === 1 ? g.stagger : 0), g.y0 + j * g.pitch];
       if (insideRings(rings, c[0], c[1])) centers.push(c);
     }
   }
@@ -299,7 +355,7 @@ export function studsInRegion(region: CrossSection, rect: Rect, params: ReliefPa
 
 /**
  * Il solido da unire al pezzo per le texture additive (borchie), nel riferimento della faccia, ritagliato sulla regione:
- * entra di `EMBED` mm nel pezzo, così l'unione non lascia fessure. Restituisce null se non resta nulla.
+ * entra di `EMBED` mm nel pezzo (o `options.embed`), così l'unione non lascia fessure. Restituisce null se non resta nulla.
  */
 export function reliefAddition(wasm: ManifoldToplevel, region: CrossSection, params: ReliefParams, options: ReliefOptions = {}): Manifold | null {
   if (params.kind !== 'studs') throw new Error('Texture sottrattiva: usare reliefCutter');
@@ -310,23 +366,37 @@ export function reliefAddition(wasm: ManifoldToplevel, region: CrossSection, par
   if (region.isEmpty()) return null;
   const rect = options.rect ?? regionRect(region);
   const top = p.height + 1;
-  // Solo le borchie che stanno intere nella regione: nessuna borchia tagliata a metà, e il codice OpenSCAD coincide
-  const centers = studsInRegion(region, rect, p);
+  const embed = options.embed ?? EMBED;
+  // Di solito solo le borchie che stanno intere nella regione (nessuna borchia tagliata a metà); nel Pattern i centri li sceglie il chiamante
+  const centers = options.centers ?? studsInRegion(region, rect, p);
   if (centers.length === 0) return null;
 
   if (engine === 'heightmap') {
     // La mappa sta sopra il piano a -EMBED; fuori dalle borchie la superficie resta un po' sotto la faccia
     const height = studHeight(rect, p, centers);
     const grid = sampleGrid(rect, options.step ?? DEFAULT_STEP, (x, y) => Math.max(height(x, y), -FLOOR));
-    return clipToRegion(wasm, heightSolid(wasm, grid, -EMBED, 'below'), region, -EMBED, top);
+    return clipToRegion(wasm, heightSolid(wasm, grid, -embed, 'below'), region, -embed, top);
   }
 
-  // CSG: una borchia per rivoluzione del profilo (con il piede che entra nel pezzo), copiata nei centri
-  const stud = revolved(wasm, studProfile(p), -EMBED, options.segments ?? DEFAULT_SEGMENTS);
+  // CSG: una borchia per rivoluzione del profilo (con il piede che entra nel pezzo), o la piramide, copiata nei centri
+  const stud = p.shape === 'pyramid' ? pyramidStud(wasm, p.radius, p.height, embed) : revolved(wasm, studProfile(p), -embed, options.segments ?? DEFAULT_SEGMENTS);
   const copies = centers.map((c) => stud.translate([c[0], c[1], 0]));
   stud.delete();
   // Con le borchie che si toccano serve l'unione; altrimenti basta compose (nessuna booleana)
   const joined = studGrid(rect, p).pitch > 2 * p.radius ? Manifold.compose(copies) : Manifold.union(copies);
   copies.forEach((c) => c.delete());
-  return clipToRegion(wasm, joined, region, -EMBED, top);
+  // Se tutte le borchie stanno intere dentro una regione rettangolare il ritaglio non toglierebbe nulla: si salta (è l'intersezione
+  // più costosa con molte borchie) e il risultato è lo stesso
+  if (studsFitRegion(region, centers, p)) return joined;
+  return clipToRegion(wasm, joined, region, -embed, top);
+}
+
+/** Vero se la regione è un rettangolo e tutte le borchie (base di raggio `radius`, anche quadrata) stanno dentro. */
+function studsFitRegion(region: CrossSection, centers: Vec2[], p: { radius: number }): boolean {
+  const b = region.bounds();
+  const area = (b.max[0] - b.min[0]) * (b.max[1] - b.min[1]);
+  // Rettangolo: l'area della regione coincide con quella del suo riquadro
+  if (!(area > 0) || Math.abs(region.area() - area) > 1e-6 * area) return false;
+  const tolerance = 1e-6;
+  return centers.every(([x, y]) => x - p.radius >= b.min[0] - tolerance && x + p.radius <= b.max[0] + tolerance && y - p.radius >= b.min[1] - tolerance && y + p.radius <= b.max[1] + tolerance);
 }

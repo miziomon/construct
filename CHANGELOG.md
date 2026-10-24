@@ -18,6 +18,16 @@ I messaggi di commit seguono i [Conventional Commits](https://www.conventionalco
 
 ## [Non rilasciato]
 
+## [0.74.0] - 2026-10-24
+
+### Aggiunto
+- **Pattern in rilievo** (gruppo «Rilievo» nella tendina del tipo, con una tendina «Disegno» per ogni texture): i rilievi procedurali dello studio 0.73.0 sono ora nell'app, su una o più facce piane (anche inclinate), con margine e regione come i Pattern a celle, kernel e codice OpenSCAD coerenti. **Mattoni** (sfalsati, a spina di pesce, a cesto) con le fughe incavate; **Borchie** (modo additivo, il pezzo cresce) a cupola, smussate o a piramide, su griglia quadrata o sfalsata; **Rame battuto** a martellate, sfaccettato o a scaglie; **Legno** a doghe con venatura, parquet a spina di pesce o tavola unica con nodi. Fuga minima 0,8 mm con avviso, profondità limitata all'ingombro del pezzo, avvisi per i calcoli pesanti e per il `.scad` voluminoso.
+- **Pattern «Immagine»**: una texture da immagine (PNG o JPG caricati, SVG rasterizzato, oppure sette esempi della libreria con tre varianti ciascuno: zigrinatura, fibra di carbonio, pelle, pietra, tessuto, onde, rumore) diventa una mappa di altezze sulla faccia, in incavo (predefinito), rilievo o entrambi, con scala, ripetizione, rotazione, scostamento, inversione, livello medio, ampiezza e sfocatura. L'immagine si converte in grigio (lato massimo 512 px), si salva una sola volta nel progetto e il codice OpenSCAD la esporta come `zmap` in un file solo. Decodifica con limiti prima della lettura (formato dai primi byte, dimensioni dall'intestazione, tetto di decompressione) e pulizia degli SVG.
+
+### Modificato
+- Il formato del progetto passa alla versione 8 (immagini nel progetto): i file precedenti si aprono come prima; una versione vecchia dell'app leggerebbe i nuovi Pattern come Voronoi.
+- Gli esempi della libreria non includono più i «mattoni», che duplicavano il rilievo Mattoni: i progetti vecchi li leggono come «pietra».
+
 ## [0.73.0] - 2026-10-23
 
 ### Aggiunto

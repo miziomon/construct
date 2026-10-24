@@ -1,4 +1,7 @@
 // Modello dati della scena. Unità: millimetri, asse Z verso l'alto (come slicer e OpenSCAD).
+import type { ReliefDesign, ReliefParams } from './relief';
+import type { TextureParams } from './textureMap';
+import type { SampleKind } from './textureSamples';
 
 export type Vec3 = [number, number, number];
 
@@ -400,7 +403,7 @@ export interface PatternFace {
 export interface PatternParams {
   /** Versione dell'algoritmo casuale (src/scene/voronoi.ts): se cambia, i vecchi progetti cambierebbero disegno. */
   algorithm: number;
-  kind: 'voronoi' | 'hexagon' | 'circle' | 'diamond' | 'triangle';
+  kind: 'voronoi' | 'hexagon' | 'circle' | 'diamond' | 'triangle' | 'brick' | 'studs' | 'hammered' | 'wood' | 'texture';
   /** Fori: si tolgono le celle (restano le pareti); Solchi: si tolgono le pareti (restano le celle in rilievo). */
   mode: 'holes' | 'grooves';
   /** Seme del generatore casuale. */
@@ -419,6 +422,22 @@ export interface PatternParams {
   rounding: number;
   /** Cornice piena che resta attorno al disegno, in mm. */
   margin: number;
+  /** Rilievo: disegno della muratura (Mattoni, se manca vale 'running') o forma della borchia (Borchie, se manca vale 'dome'). */
+  design?: ReliefDesign;
+  /** Rilievo: misure del mattone e profondità delle fughe, o della borchia e della griglia (se mancano valgono quelle di partenza, vedi reliefDefaults). */
+  relief?: ReliefParams;
+  /** Immagine: id dell'immagine caricata (asset in `src/import/assets.ts`, grigio a 8 bit); se manca vale la texture di esempio `sample`. */
+  imageId?: string;
+  /** Immagine: texture di esempio della libreria (generata nel codice, non si salva); vale se `imageId` manca, e di partenza è 'knurl'. */
+  sample?: SampleKind;
+  /** Immagine: variante della texture di esempio (vedi `SAMPLE_VARIANTS`: per la zigrinatura diamond, straight, dots...); se manca o non è di questa texture vale la prima. */
+  sampleDesign?: string;
+  /** Immagine: piastrella, ripetizione, rotazione, scostamento, inversione, livello medio, ampiezza, sfocatura e modo (incavo, rilievo, entrambi). */
+  texture?: TextureParams;
+  /** Immagine: versione della formula del grigio e del campionamento (src/scene/textureMap.ts). */
+  textureAlgorithm?: 1;
+  /** Rilievo: versione del rumore e delle liste casuali (src/scene/relief.ts), come `algorithm` per il Voronoi. */
+  reliefAlgorithm?: 1;
   /** Facce da cui parte il taglio (almeno una); ogni faccia ha il proprio disegno (seme + indice). */
   faces: PatternFace[];
   /** Solo nei progetti della 0.20.0: la faccia unica di allora (si converte in `faces`, vedi normalizePattern). */

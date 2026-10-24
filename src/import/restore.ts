@@ -2,7 +2,8 @@ import { produce } from 'immer';
 import { getKernel } from '../kernel/client';
 import type { Scene } from '../scene/types';
 import { notify } from '../ui/notify/notifyStore';
-import { loadAssets } from './assets';
+import { usedImageIds } from '../scene/textureImage';
+import { loadAssets, loadImages } from './assets';
 
 /** Rimuove i nodi indicati e i riferimenti ai loro id (radici e figli dei gruppi). */
 function prune(scene: Scene, doomed: Set<string>): Scene {
@@ -18,10 +19,12 @@ function prune(scene: Scene, doomed: Set<string>): Scene {
 }
 
 /**
- * Prepara le mesh importate di una scena appena caricata: le recupera dall'archivio locale e le registra nel kernel.
- * I nodi la cui mesh manca o non è valida vengono tolti dalla scena, con un avviso.
+ * Prepara le mesh importate e le immagini del Pattern «Immagine» di una scena appena caricata: le recupera dall'archivio locale e
+ * le registra nel kernel. I nodi la cui mesh manca o non è valida vengono tolti dalla scena, con un avviso. Un'immagine che manca
+ * non toglie nulla: il Pattern non ha effetto finché non la si carica di nuovo (il pannello lo dice), e si avvisa.
  */
 export async function restoreAssets(scene: Scene): Promise<Scene> {
+  await restoreImages(scene);
   const meshNodes = Object.values(scene.nodes).filter((n) => n.type === 'mesh');
   if (!meshNodes.length) return scene;
 
@@ -36,4 +39,17 @@ export async function restoreAssets(scene: Scene): Promise<Scene> {
   if (!doomed.size) return scene;
   notify.error(`${doomed.size === 1 ? 'Una mesh importata non è più disponibile' : `${doomed.size} mesh importate non sono più disponibili`} e è stata rimossa dalla scena: reimporta il file originale.`);
   return prune(scene, doomed);
+}
+
+/** Registra nel kernel le immagini usate dai Pattern «Immagine» della scena; avvisa se qualcuna non si trova. */
+async function restoreImages(scene: Scene): Promise<void> {
+  const ids = usedImageIds(scene);
+  if (!ids.length) return;
+  const found = await loadImages(ids);
+  for (const image of found) await getKernel().registerImage(image.id, image.w, image.h, image.gray);
+  // L'avviso conta solo le immagini che mancano ai Pattern di tipo Immagine: un `imageId` conservato da un Pattern di un altro tipo non ha effetto
+  const foundIds = new Set(found.map((image) => image.id));
+  const textureIds = new Set(Object.values(scene.nodes).flatMap((node) => (node.type === 'group' && node.pattern?.kind === 'texture' && node.pattern.imageId ? [node.pattern.imageId] : [])));
+  const missing = [...textureIds].filter((id) => !foundIds.has(id)).length;
+  if (missing) notify.error(`${missing === 1 ? "Un'immagine di un Pattern non è più disponibile" : `${missing} immagini dei Pattern non sono più disponibili`}: il Pattern non ha effetto finché non la carichi di nuovo.`);
 }
