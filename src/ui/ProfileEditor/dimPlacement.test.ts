@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { dimLayout, dimText, dimensionValue, dragDimension, fmtDim, insideDrawing, pillWidthPx, placeDimension, pointMap, repositionDimensions } from './dimPlacement';
-import { createDimension } from './dimensions';
+import { angleLayout, arcPoints, dimLayout, dimText, dimensionValue, dragDimension, fmtDim, insideDrawing, pillWidthPx, placeDimension, pointMap, repositionDimensions } from './dimPlacement';
+import { createAngleDimension, createDimension } from './dimensions';
 import { pointInPolygon } from './model';
 import type { PathContour, ProfileConstraint, Vec2 } from '../../scene/types';
 
@@ -189,5 +189,89 @@ describe('trascinamento della quota', () => {
     expect(dragDimension(c, pm, [-50, 0], 'label').at).toBe(0);
     expect(dragDimension(c, pm, [90, 0], 'label').at).toBe(1);
     expect(dragDimension({ ...c, p: ['n1', 'zz'] }, pm, [5, 5], 'label')).toEqual({ off: -3, at: 0.5 });
+  });
+});
+
+describe('quota angolare: arco, trascinamento e posizione', () => {
+  /** Triangolo con l'angolo di 90 gradi in n2: n1 (0,0), n2 (40,0), n3 (40,20). */
+  const tri = poly([[0, 0], [40, 0], [40, 20]]);
+  const pm = pointMap(tri);
+  /** L'angolo in n2 dal raggio verso n3 (su) a quello verso n1 (sinistra): +90 gradi. */
+  const corner90: ProfileConstraint = { id: 'a', t: 'angle', p: ['n2', 'n3', 'n2', 'n1'], v: 90, off: 5, at: 0.5 };
+
+  it('angleLayout: vertice, partenza, ampiezza con segno e etichetta sull\'arco alla posizione `at`', () => {
+    const l = angleLayout(corner90, pm, 0)!;
+    expect(l.vertex).toEqual([40, 0]);
+    expect(l.start).toBeCloseTo(Math.PI / 2, 9);
+    expect(l.span).toBeCloseTo(Math.PI / 2, 9);
+    expect(l.radius).toBe(5);
+    // A metà dell'arco: sulla bisettrice (direzione 135 gradi) a 5 mm dal vertice
+    expect(l.label[0]).toBeCloseTo(40 + 5 * Math.cos((3 * Math.PI) / 4), 9);
+    expect(l.label[1]).toBeCloseTo(5 * Math.sin((3 * Math.PI) / 4), 9);
+    // `at` 0 e 1: gli estremi dell'arco
+    expect(angleLayout({ ...corner90, at: 0 }, pm, 0)!.label[1]).toBeCloseTo(5, 9);
+    expect(angleLayout({ ...corner90, at: 1 }, pm, 0)!.label[0]).toBeCloseTo(35, 9);
+    // Senza `off` vale il raggio di riserva; nodi mancanti: null
+    expect(angleLayout({ ...corner90, off: undefined }, pm, 7)!.radius).toBe(7);
+    expect(angleLayout({ ...corner90, p: ['n2', 'zz', 'n2', 'n1'] }, pm, 7)).toBeNull();
+    const arc = arcPoints(l, 4);
+    expect(arc).toHaveLength(5);
+    for (const q of arc) expect(Math.hypot(q[0] - 40, q[1])).toBeCloseTo(5, 9);
+  });
+
+  it('segmenti lontani: il vertice è dove si incontrano le rette; con due punti l\'angolo è dall\'asse X', () => {
+    const far = new Map<string, Vec2>([['a', [0, 0]], ['b', [10, 0]], ['c', [30, 10]], ['d', [20, 0]]]);
+    // Prima retta: asse X; seconda: da (30,10) a (20,0), diagonale a 45 gradi che incontra l'asse in (20, 0)
+    const l = angleLayout({ id: 'k', t: 'angle', p: ['a', 'b', 'c', 'd'], v: 45, off: 3 }, far, 0)!;
+    expect(l.vertex[0]).toBeCloseTo(20, 9);
+    expect(l.vertex[1]).toBeCloseTo(0, 9);
+    expect(l.start).toBeCloseTo(0, 9);
+    // La seconda retta va da (30,10) a (20,0): direzione a 225 gradi, cioè -135 (l'angolo più breve, in senso orario)
+    expect(l.span).toBeCloseTo(-(3 * Math.PI) / 4, 9);
+    const axis = angleLayout({ id: 'k', t: 'angle', p: ['a', 'c'], v: 18.43, off: 2 }, far, 0)!;
+    expect(axis.vertex).toEqual([0, 0]);
+    expect(axis.start).toBe(0);
+    expect(axis.span).toBeCloseTo(Math.atan2(10, 30), 9);
+  });
+
+  it('dragDimension: l\'etichetta passa per il puntatore (raggio e posizione sull\'arco), la linea cambia solo il raggio', () => {
+    const moved = dragDimension(corner90, pm, [40 + 8 * Math.cos((5 * Math.PI) / 8), 8 * Math.sin((5 * Math.PI) / 8)], 'label');
+    expect(moved.off).toBeCloseTo(8, 9);
+    // 5 pi/8 = 112,5 gradi: un quarto dell'arco dalla partenza (90) a 180
+    expect(moved.at).toBeCloseTo(0.25, 9);
+    const label = angleLayout({ ...corner90, ...moved }, pm, 0)!.label;
+    expect(label[0]).toBeCloseTo(40 + 8 * Math.cos((5 * Math.PI) / 8), 9);
+    const line = dragDimension({ ...corner90, at: 0.8 }, pm, [40, 12], 'line');
+    expect(line).toEqual({ off: 12, at: 0.8 });
+    // Fuori dall'arco: `at` resta tra 0 e 1
+    expect(dragDimension(corner90, pm, [40 + 5, 0], 'label').at).toBe(0);
+    expect(dragDimension(corner90, pm, [40, -5], 'label').at).toBe(0);
+    expect(dragDimension({ ...corner90, p: ['n2', 'zz', 'n2', 'n1'] }, pm, [1, 1], 'label')).toEqual({ off: 5, at: 0.5 });
+  });
+
+  it('due angoli sullo stesso vertice non si sovrappongono, e nessuna etichetta tocca i lati; ridisporre non perde le quote d\'angolo', () => {
+    const quad = poly([[0, 0], [40, 0], [40, 20], [0, 20]]);
+    const first = createAngleDimension(quad, ['n1', 'n2'], ['n2', 'n3'], PX) as Omit<ProfileConstraint, 'id'>;
+    const k1: ProfileConstraint = { ...first, id: 'k1' };
+    const second = createAngleDimension(quad, ['n1', 'n2'], ['n2', 'n3'], PX, [k1]) as Omit<ProfileConstraint, 'id'>;
+    const k2: ProfileConstraint = { ...second, id: 'k2' };
+    const [b1, b2] = [k1, k2].map((c) => {
+      const label = angleLayout(c, pointMap(quad), 0)!.label;
+      const [w, h] = [pillWidthPx(dimText(c, quad)) / PX, 18 / PX];
+      return { x0: label[0] - w / 2, x1: label[0] + w / 2, y0: label[1] - h / 2, y1: label[1] + h / 2 };
+    });
+    const overlaps = b1.x0 < b2.x1 && b2.x0 < b1.x1 && b1.y0 < b2.y1 && b2.y0 < b1.y1;
+    expect(overlaps).toBe(false);
+    expect(k2.off!).toBeGreaterThan(k1.off!);
+    // L'arco è dentro il rettangolo (angolo interno): nessuna etichetta incrocia un lato
+    for (const b of [b1, b2]) {
+      expect(b.x1).toBeLessThanOrEqual(40);
+      expect(b.y0).toBeGreaterThanOrEqual(0);
+    }
+    const mixed: ProfileConstraint[] = [{ id: 'h', t: 'horizontal', p: ['n1', 'n2'] }, { ...k1, off: 1 }, { ...k2, off: 1 }];
+    const out = repositionDimensions(quad, mixed, PX);
+    expect(out[0]).toBe(mixed[0]);
+    expect(out[1].off).toBeGreaterThan(1);
+    expect(out[2].off).toBeGreaterThan(out[1].off!);
   });
 });

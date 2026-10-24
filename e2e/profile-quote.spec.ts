@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { openApp, sceneState, settled } from './helpers';
+import { openApp, readCode, sceneState, settled } from './helpers';
 
 test.beforeEach(async ({ page }) => {
   await openApp(page);
@@ -32,8 +32,8 @@ const FULL = [...SQUARED, { id: 'k6', t: 'dist', p: ['n1', 'n2'], v: 40 }, { id:
 
 type SavedNode = { paths: { nodes: { p: [number, number] }[] }[]; constraints?: { t: string; v?: number }[] };
 
-async function addProfile(page: Page, constraints: unknown[]): Promise<string> {
-  const id = await page.evaluate(([paths, cons]) => window.__construct!.store.getState().addPath({ paths: paths as never, constraints: cons as never, height: 5 }), [RECT, constraints] as const);
+async function addProfile(page: Page, constraints: unknown[], shape: unknown = RECT): Promise<string> {
+  const id = await page.evaluate(([paths, cons]) => window.__construct!.store.getState().addPath({ paths: paths as never, constraints: cons as never, height: 5 }), [shape, constraints] as const);
   await settled(page);
   return id;
 }
@@ -436,4 +436,142 @@ test('con le quote che corrispondono ai nodi non compare nessun avviso di disacc
   await openEditor(page, id);
   await expect(editor(page).getByText('Completamente vincolato: 0 gradi di libertà')).toBeVisible();
   await expect(editor(page).getByText('Le quote non corrispondono al disegno')).toHaveCount(0);
+});
+
+/** Quadrilatero con il lato di destra inclinato (da (40, 0) a (46, 20)) e il lato alto un po' storto: serve a Parallelo e Perpendicolare. */
+const SLANTED = [
+  {
+    closed: true,
+    nodes: [
+      { id: 'n1', p: [0, 0], kind: 'corner' },
+      { id: 'n2', p: [40, 0], kind: 'corner' },
+      { id: 'n3', p: [46, 20], kind: 'corner' },
+      { id: 'n4', p: [0, 24], kind: 'corner' },
+    ],
+  },
+];
+
+/** Alt+clic a metà del segmento tra due nodi; con `additive` anche Maiusc (aggiunge il segmento a quelli scelti). */
+async function altClickSegment(page: Page, from: string, to: string, additive = false) {
+  const [a, b] = [await center(node(page, from)), await center(node(page, to))];
+  await page.keyboard.down('Alt');
+  if (additive) await page.keyboard.down('Shift');
+  await page.mouse.click((a.x + b.x) / 2, (a.y + b.y) / 2);
+  if (additive) await page.keyboard.up('Shift');
+  await page.keyboard.up('Alt');
+}
+
+test('Perpendicolare e Parallelo su un lato inclinato: due segmenti scelti con Alt+clic, i pulsanti si accendono secondo la selezione', async ({ page }) => {
+  const id = await addProfile(page, [], SLANTED);
+  await openEditor(page, id);
+  const button = (type: string) => editor(page).locator(`[data-constraint-button="${type}"]`);
+  // Nessun segmento scelto: spenti
+  await expect(button('perpendicular')).toBeDisabled();
+  await expect(button('midpoint')).toBeDisabled();
+
+  // Un segmento: orizzontale e verticale sì, perpendicolare no; il secondo con Maiusc+Alt+clic accende i vincoli tra due segmenti
+  await altClickSegment(page, '0:0', '0:1');
+  await expect(button('horizontal')).toBeEnabled();
+  await expect(button('perpendicular')).toBeDisabled();
+  await altClickSegment(page, '0:1', '0:2', true);
+  await expect(editor(page).getByText('2 segmenti scelti.')).toBeVisible();
+  for (const type of ['perpendicular', 'parallel', 'equal', 'collinear']) await expect(button(type)).toBeEnabled();
+  await expect(button('horizontal')).toBeDisabled();
+  await expect(button('midpoint')).toBeDisabled();
+  await button('perpendicular').click();
+  await expect(editor(page).locator('[data-constraint]')).toHaveCount(1);
+  await expect(editor(page).locator('[data-constraint-type="perpendicular"]')).toHaveCount(1);
+
+  // Il lato alto parallelo alla base
+  await altClickSegment(page, '0:3', '0:2');
+  await altClickSegment(page, '0:0', '0:1', true);
+  await button('parallel').click();
+  await expect(editor(page).locator('[data-constraint]')).toHaveCount(2);
+
+  await ok(page).click();
+  await expect(editor(page)).toHaveCount(0);
+  await settled(page);
+  const p = (await getNode(page, id)).paths[0].nodes.map((n) => n.p);
+  const vec = (a: [number, number], b: [number, number]): [number, number] => [b[0] - a[0], b[1] - a[1]];
+  const [bottom, right, top] = [vec(p[0], p[1]), vec(p[1], p[2]), vec(p[3], p[2])];
+  // Base e lato destro a 90 gradi; lato alto parallelo alla base
+  expect((bottom[0] * right[0] + bottom[1] * right[1]) / (Math.hypot(...bottom) * Math.hypot(...right))).toBeCloseTo(0, 3);
+  expect((bottom[0] * top[1] - bottom[1] * top[0]) / (Math.hypot(...bottom) * Math.hypot(...top))).toBeCloseTo(0, 3);
+});
+
+test('quota angolare digitata: due segmenti con lo strumento Quota in modo Angolo, i gradi portano i nodi, etichetta con il simbolo dei gradi', async ({ page }) => {
+  const id = await addProfile(page, [{ id: 'k1', t: 'fixed', p: ['n1'], x: 0, y: 0 }, { id: 'k2', t: 'fixed', p: ['n2'], x: 40, y: 0 }]);
+  await openEditor(page, id);
+  await quoteTool(page).click();
+  await editor(page).getByRole('group', { name: 'Modo della quota' }).getByRole('button', { name: 'Angolo', exact: true }).click();
+  // Il lato in basso (A-B) e quello di destra (B-C) sono a 90 gradi: l'angolo in B
+  await clickSegment(page, '0:0', '0:1');
+  await clickSegment(page, '0:1', '0:2');
+  await expect(field(page)).toHaveValue('90');
+  await typeValue(page, '75');
+  await expect(editor(page).locator('[data-constraint-type="angle"]')).toHaveCount(1);
+  await expect(labels(page).last()).toContainText('75°');
+  await ok(page).click();
+  await expect(editor(page)).toHaveCount(0);
+  await settled(page);
+  const saved = await getNode(page, id);
+  const p = saved.paths[0].nodes.map((n) => n.p);
+  // L'angolo in B tra B->A e B->C è 75 gradi (A e B sono fissi, C ha girato attorno a B)
+  const [ba, bc] = [[p[0][0] - p[1][0], p[0][1] - p[1][1]], [p[2][0] - p[1][0], p[2][1] - p[1][1]]];
+  const angle = (Math.acos((ba[0] * bc[0] + ba[1] * bc[1]) / (Math.hypot(ba[0], ba[1]) * Math.hypot(bc[0], bc[1]))) * 180) / Math.PI;
+  expect(angle).toBeCloseTo(75, 2);
+  expect(saved.constraints!.find((c) => c.t === 'angle')!.v).toBe(75);
+  // Riaperto, la quota angolare c'è con lo stesso valore, tra le voci dell'elenco
+  await openEditor(page, id);
+  await expect(labels(page)).toHaveCount(1);
+  await expect(labels(page).first()).toContainText('75°');
+  await expect(editor(page).getByRole('textbox', { name: /Valore di Angolo/ })).toHaveValue('75');
+});
+
+test('il raggio di raccordo di uno spigolo toglie volume al solido, nel disegno e nel codice OpenSCAD', async ({ page }) => {
+  const id = await addProfile(page, []);
+  const volume = () => page.evaluate(() => window.__construct!.results.getState().meshes.reduce((v, m) => v + (m.volume ?? 0), 0));
+  const before = await volume();
+  expect(before).toBeCloseTo(4000, 0);
+  await openEditor(page, id);
+  // Lo spigolo in alto a destra: il campo Raggio nella sezione del nodo
+  await clickNode(page, '0:2');
+  const radius = editor(page).getByLabel('Raggio');
+  await expect(radius).toBeEnabled();
+  await radius.fill('5');
+  await radius.press('Enter');
+  // Il disegno mostra il raccordo (il tracciato ha una curva) e il solido è più piccolo dopo l'OK
+  await expect(editor(page).locator('.profile-editor__curve').first()).toHaveAttribute('d', /C/);
+  await ok(page).click();
+  await expect(editor(page)).toHaveCount(0);
+  await settled(page);
+  // Perde (1 - π/4) r² = 5,36 mm² di area: per 5 mm di altezza, circa 26,8 mm³
+  const after = await volume();
+  expect(before - after).toBeGreaterThan(24);
+  expect(before - after).toBeLessThan(29);
+  expect((await getNode(page, id)).paths[0].nodes[2]).toMatchObject({ r: 5 });
+  // Il codice scrive lo stesso poligono (con l'arco) e la versione 2 del commento; il raggio resta nei nodi
+  const code = await readCode(page);
+  expect(code).toContain('"v":2');
+  expect(code).toContain('"r":5');
+  expect((code.match(/\[-?[\d.]+, -?[\d.]+\]/g) ?? []).length).toBeGreaterThan(8);
+
+  // Riaperto: il raggio c'è; un raggio troppo grande si riduce e il campo lo dice
+  await openEditor(page, id);
+  await clickNode(page, '0:2');
+  await expect(editor(page).getByLabel('Raggio')).toHaveValue('5');
+  await editor(page).getByLabel('Raggio').fill('500');
+  await editor(page).getByLabel('Raggio').press('Enter');
+  await expect(editor(page).locator('[data-fillet-note]')).toContainText('Raggio ridotto a');
+});
+
+test('il raggio non vale su un estremo aperto: il campo è spento e dice perché', async ({ page }) => {
+  const open = [{ closed: false, nodes: [{ id: 'n1', p: [0, 0], kind: 'corner' }, { id: 'n2', p: [40, 0], kind: 'corner' }, { id: 'n3', p: [40, 20], kind: 'corner' }] }];
+  const id = await addProfile(page, [], open);
+  await openEditor(page, id);
+  await clickNode(page, '0:0');
+  await expect(editor(page).getByLabel('Raggio')).toBeDisabled();
+  await expect(editor(page).locator('[data-fillet-note]')).toContainText('un segmento prima e uno dopo');
+  await clickNode(page, '0:1');
+  await expect(editor(page).getByLabel('Raggio')).toBeEnabled();
 });

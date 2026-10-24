@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'r
 import type { KeyboardEvent } from 'react';
 import { ImportError } from '../../import/types';
 import { readSvgPaths } from '../../import/svgPaths';
-import { MAX_PATH_CONTOURS, samplePaths, selfIntersections } from '../../scene/bezier';
+import { MAX_PATH_CONTOURS, assignNodeIds, samplePaths, selfIntersections } from '../../scene/bezier';
 import { crossingsAt, preparePlan, ringCache, ridgeRadius, wallThickness } from '../../scene/planRevolve';
 import type { PlanPrep } from '../../scene/planRevolve';
 import { cleanPlan, DEFAULT_PLAN, featureAngles, isDefaultPlan, isPlainCircle, PLAN_PRESETS, planOutline, planPaths, planTolerance } from '../../scene/planShape';
@@ -19,14 +19,14 @@ import { DrawingCanvas } from './DrawingCanvas';
 import { EditorToolbar } from './EditorToolbar';
 import type { ViewMode } from './EditorToolbar';
 import type { DimHit, GridSettings, QuoteProps, Tool } from './DrawingCanvas';
-import { addConstraint, addReferenceDimension, addSelectionConstraint, createDimension, diagnose, idsOf, isDimension, moveNodesConstrained, quoteMismatch, removeConstraint, repositionDimensions, setConstraintValue, stateText } from './dimensions';
+import { SELECTION_CONSTRAINTS, addConstraint, addReferenceDimension, addSelectionConstraint, canApplyConstraint, createAngleDimension, createDimension, diagnose, idsOf, isDimension, moveNodesConstrained, quoteMismatch, removeConstraint, repositionDimensions, selectionItems, setConstraintValue, stateText } from './dimensions';
 import type { Applied, DimMode, SelectionConstraint } from './dimensions';
 import { validateValue } from './constraints';
 import { clearDraft, flushDrafts, loadDraft, saveDraft } from './draft';
 import { createHistory } from './history';
 import type { History } from './history';
-import { POLYGON_SIDES, canCloseContour, closeContour, contourHoles, deleteNodesWithConstraints, draftContours, draftFromNode, dropLastNode, emptyDraft, moveHandle, moveNodes, normalizeProfile, pathCenter, pruneConstraints, setNodesKind, trimDuplicateTail } from './model';
-import type { Draft, NodeRef } from './model';
+import { POLYGON_SIDES, canCloseContour, closeContour, contourHoles, deleteNodesWithConstraints, draftContours, draftFromNode, dropLastNode, emptyDraft, moveHandle, moveNodes, normalizeProfile, pathCenter, pruneConstraints, setNodeRadius, setNodesKind, trimDuplicateTail } from './model';
+import type { Draft, NodeRef, SegmentRef } from './model';
 import { insertPlanNode } from './planEdit';
 import { PlanSidebar } from './PlanSidebar';
 import type { PlanMeasures } from './PlanSidebar';
@@ -401,8 +401,9 @@ function Editor({ target }: { target: ProfileTarget }) {
     const next = pruneConstraints(draftToCommit);
     history.current!.push(next);
     committed.current = next;
-    // Un'offerta di quota di riferimento riguarda il disegno di prima
+    // Un'offerta di quota di riferimento riguarda il disegno di prima; gli indici dei segmenti scelti possono essere cambiati
     setRefOffer(null);
+    setSegSel([]);
     dispatch({ type: 'replace', draft: next, selection: nextSelection });
   };
   // `constraints` (se c'è, anche vuoto) sostituisce quelli del disegno: serve all'inserimento di un nodo, che può dividere un vincolo
@@ -427,7 +428,7 @@ function Editor({ target }: { target: ProfileTarget }) {
     const prev = history.current!.undo();
     if (prev) {
       committed.current = prev;
-      forgetQuoteState(prev);
+      forgetQuoteState();
       // Con la Penna a metà contorno ogni nodo è un passo: si toglie l'ultimo e la Penna resta sullo stesso contorno
       dispatch({ type: 'replace', draft: prev, selection: [], pen: penStillOpen(prev) });
     }
@@ -441,15 +442,17 @@ function Editor({ target }: { target: ProfileTarget }) {
     const next = history.current!.redo();
     if (next) {
       committed.current = next;
-      forgetQuoteState(next);
+      forgetQuoteState();
       dispatch({ type: 'replace', draft: next, selection: [], pen: penStillOpen(next) });
     }
   };
   /** Annulla e Ripeti cambiano il disegno: i nodi scelti con la Quota, un'offerta di quota di riferimento e il vincolo scelto che non c'è più non hanno più senso. */
-  const forgetQuoteState = (d: Draft) => {
+  const forgetQuoteState = () => {
     setDimPick([]);
+    setAngPick([]);
+    setSegSel([]);
     setRefOffer(null);
-    setSelCon((id) => (id && d.constraints?.some((c) => c.id === id) ? id : null));
+    setSelCon(null);
   };
   /** Il contorno della Penna in corso, se nel disegno `d` c'è ancora ed è aperto (allora la Penna lo continua). */
   const penStillOpen = (d: Draft): number | null => {
@@ -517,6 +520,8 @@ function Editor({ target }: { target: ProfileTarget }) {
   const changeTool = (next: Tool) => {
     finishPen();
     setDimPick([]);
+    setAngPick([]);
+    setSegSel([]);
     // Cambiando strumento l'avviso della quota rifiutata e la quota scelta non servono più
     setRefOffer(null);
     setSelCon(null);
@@ -527,6 +532,9 @@ function Editor({ target }: { target: ProfileTarget }) {
   // Modo e nodi scelti dello strumento Quota; il campo in scrittura (anche in un ref, per i gestori che arrivano dopo la sua chiusura); vincolo scelto e vincoli in evidenza
   const [dimMode, setDimMode] = useState<DimMode>('len');
   const [dimPick, setDimPick] = useState<NodeRef[]>([]);
+  // Segmenti scelti con Alt+clic (valgono finché i loro due nodi restano scelti) e segmenti già scelti per una quota angolare
+  const [segSel, setSegSel] = useState<SegmentRef[]>([]);
+  const [angPick, setAngPick] = useState<SegmentRef[]>([]);
   const [quoteEdit, setQuoteEditState] = useState<QuoteEdit | null>(null);
   const quoteEditRef = useRef<QuoteEdit | null>(null);
   const setQuoteEdit = (next: QuoteEdit | null) => {
@@ -540,7 +548,7 @@ function Editor({ target }: { target: ProfileTarget }) {
   }, [selection]);
   const [flash, setFlash] = useState<Set<string>>(NONE);
   // Quota che il disegno rifiuta perché ridondante o in conflitto: si può aggiungere come quota di riferimento (non vincola)
-  const [refOffer, setRefOffer] = useState<{ message: string; base: Draft; con: Omit<ProfileConstraint, 'id'> } | null>(null);
+  const [refOffer, setRefOffer] = useState<{ message: string; con: Omit<ProfileConstraint, 'id'> } | null>(null);
   // Zoom del disegno (pixel per mm), comunicato dal canvas: serve a ridisporre le quote
   const scaleRef = useRef(8);
   const flashTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -577,19 +585,51 @@ function Editor({ target }: { target: ProfileTarget }) {
     // Gli id dei nodi si danno qui (i nodi disegnati dopo l'apertura non ce li hanno): il passo di cronologia lo fa la conferma
     const base = normalizeProfile(stateRef.current.draft);
     const [idA, idB] = idsOf(base.paths, [a, b]);
-    const dim = idA && idB ? createDimension(base.paths, dimMode, idA, idB, pxPerMm, base.constraints) : 'Scegli due nodi diversi';
+    const dim = idA && idB ? createDimension(base.paths, dimMode === 'ang' ? 'len' : dimMode, idA, idB, pxPerMm, base.constraints) : 'Scegli due nodi diversi';
     if (typeof dim === 'string') {
       notify.error(dim);
       return;
     }
     setQuoteEdit({ base, con: { ...dim, id: 'draft' }, isNew: true, text: fmtField(dim.v ?? 0) });
   };
-  /** Clic con lo strumento Quota: due nodi, oppure un segmento (la quota tra i suoi estremi). */
+  /** Id dei due estremi di un segmento del disegno `paths`. */
+  const segmentIds = (paths: PathContour[], seg: SegmentRef): [string, string] | null => {
+    const c = paths[seg.path];
+    const [a, b] = [c?.nodes[seg.segment]?.id, c?.nodes[(seg.segment + 1) % (c?.nodes.length ?? 1)]?.id];
+    return a && b ? [a, b] : null;
+  };
+  /** Quota angolare tra due segmenti: si propone l'angolo attuale in un campo sull'arco, e Invio la applica. */
+  const startAngle = (first: SegmentRef, second: SegmentRef, pxPerMm: number) => {
+    const base = normalizeProfile(stateRef.current.draft);
+    const [s1, s2] = [segmentIds(base.paths, first), segmentIds(base.paths, second)];
+    const dim = s1 && s2 ? createAngleDimension(base.paths, s1, s2, pxPerMm, base.constraints) : 'Scegli due segmenti';
+    if (typeof dim === 'string') {
+      notify.error(dim);
+      return;
+    }
+    setQuoteEdit({ base, con: { ...dim, id: 'draft' }, isNew: true, text: fmtField(dim.v ?? 0) });
+  };
+  /** Clic con lo strumento Quota: due nodi, oppure un segmento (la quota tra i suoi estremi); in modo Angolo, due segmenti. */
   const onDimClick = (hit: DimHit, pxPerMm: number) => {
     // Con un campo aperto il clic lo conferma (l'uscita dal campo) e non fa altro
     if (quoteEditRef.current) return;
     // L'azione successiva: la quota scelta (anche quella appena creata) non resta tale
     setSelCon(null);
+    if (dimMode === 'ang') {
+      if (hit.kind === 'node') {
+        notify.info('Per la quota angolare scegli due segmenti');
+        return;
+      }
+      if (angPick.some((q) => q.path === hit.seg.path && q.segment === hit.seg.segment)) return;
+      const next = [...angPick, hit.seg];
+      if (next.length < 2) {
+        setAngPick(next);
+        return;
+      }
+      setAngPick([]);
+      startAngle(next[0], next[1], pxPerMm);
+      return;
+    }
     if (hit.kind === 'segment') {
       setDimPick([]);
       const contour = stateRef.current.draft.paths[hit.seg.path];
@@ -640,7 +680,7 @@ function Editor({ target }: { target: ProfileTarget }) {
       } else if (result.reason === 'conflict' || result.reason === 'redundant') {
         // Conflitto o ridondanza: non si applica, ma si offre di aggiungerla come quota di riferimento (misura senza vincolare)
         flashIds(result.ids);
-        setRefOffer({ message: result.message, base: edit.base, con: dim });
+        setRefOffer({ message: result.message, con: dim });
       } else reject(result.message, result.ids);
     } else if (Math.abs(value - (edit.con.v ?? Number.NaN)) > 1e-9) applyResult(setConstraintValue(stateRef.current.draft, edit.con.id, value));
   };
@@ -648,10 +688,34 @@ function Editor({ target }: { target: ProfileTarget }) {
     setQuoteEdit(null);
     refocusRoot();
   };
-  /** Vincolo dai nodi scelti (pulsanti del pannello): si danno gli id ai nodi che ne sono privi, poi si risolve. */
+  /** Vincolo da ciò che è scelto (pulsanti del pannello): si danno gli id ai nodi che ne sono privi, poi si risolve. */
   const applyConstraintButton = (type: SelectionConstraint) => {
     const base = normalizeProfile(stateRef.current.draft);
-    applyResult(addSelectionConstraint(base, type, idsOf(base.paths, stateRef.current.selection)));
+    applyResult(addSelectionConstraint(base, type, selectionItems(base.paths, stateRef.current.selection, segSel)));
+  };
+  /** Alt+clic su un segmento sceglie il segmento (i suoi due nodi); con Maiusc si aggiunge o si toglie dai già scelti (due segmenti per Parallelo...). */
+  const pickSegment = (seg: SegmentRef, additive: boolean) => {
+    const contour = stateRef.current.draft.paths[seg.path];
+    if (!contour) return;
+    const pair: NodeRef[] = [{ path: seg.path, node: seg.segment }, { path: seg.path, node: (seg.segment + 1) % contour.nodes.length }];
+    const sameNode = (a: NodeRef, b: NodeRef) => a.path === b.path && a.node === b.node;
+    const sameSeg = (a: SegmentRef, b: SegmentRef) => a.path === b.path && a.segment === b.segment;
+    setSelCon(null);
+    if (!additive) {
+      setSegSel([seg]);
+      dispatch({ type: 'select', selection: pair });
+      return;
+    }
+    if (segSel.some((q) => sameSeg(q, seg))) {
+      // Già scelto: si toglie, con i suoi nodi (se non servono a un altro segmento scelto)
+      const rest = segSel.filter((q) => !sameSeg(q, seg));
+      const kept = rest.flatMap((q) => [{ path: q.path, node: q.segment }, { path: q.path, node: (q.segment + 1) % (stateRef.current.draft.paths[q.path]?.nodes.length ?? 1) }]);
+      setSegSel(rest);
+      dispatch({ type: 'select', selection: stateRef.current.selection.filter((r) => !pair.some((x) => sameNode(x, r)) || kept.some((x) => sameNode(x, r))) });
+      return;
+    }
+    setSegSel([...segSel, seg]);
+    dispatch({ type: 'select', selection: [...stateRef.current.selection, ...pair.filter((x) => !stateRef.current.selection.some((r) => sameNode(x, r)))] });
   };
   const deleteConstraint = (id: string) => {
     commitDraft(removeConstraint(stateRef.current.draft, id));
@@ -776,7 +840,10 @@ function Editor({ target }: { target: ProfileTarget }) {
       if (isTyping(e.target)) return;
       if (stateRef.current.pen !== null) finishPen();
       else if (refOffer) setRefOffer(null);
-      else if (dimPick.length) setDimPick([]);
+      else if (dimPick.length || angPick.length) {
+        setDimPick([]);
+        setAngPick([]);
+      }
       else void askClose();
       return;
     }
@@ -815,8 +882,8 @@ function Editor({ target }: { target: ProfileTarget }) {
         if (stateRef.current.tool === 'select' && planState.selection.length && !planState.deleteSelected()) notify.info('Una sagoma ha almeno tre nodi: la forma deve restare chiusa');
       } else if (penIndex !== null) penBackspace();
       else if (sel.length && stateRef.current.tool === 'select') commitDraft(deleteNodesWithConstraints(stateRef.current.draft, sel), []);
-      // Nessun nodo scelto ma una quota o un vincolo scelto nell'elenco o sul disegno: Canc lo elimina
-      else if (!sel.length && selCon && stateRef.current.draft.constraints?.some((c) => c.id === selCon)) deleteConstraint(selCon);
+      // Nessun nodo scelto ma una quota o un vincolo scelto nell'elenco o sul disegno (con Seleziona: la Quota sceglie solo per modificare): Canc lo elimina
+      else if (!sel.length && stateRef.current.tool === 'select' && selCon && stateRef.current.draft.constraints?.some((c) => c.id === selCon)) deleteConstraint(selCon);
     } else if (key.startsWith('arrow')) {
       // Frecce: un passo di griglia (Maiusc: dieci)
       e.preventDefault();
@@ -848,13 +915,19 @@ function Editor({ target }: { target: ProfileTarget }) {
   };
   const closeOpen = () => commitPaths(draft.paths.map((c) => (!c.closed && c.nodes.length >= 2 ? { ...c, closed: true } : c)));
 
+  // Che cosa è scelto (nodi sciolti e segmenti) e quali vincoli ci stanno: i nodi senza id si contano lo stesso (gli id si danno al clic)
+  const idPaths = useMemo(() => assignNodeIds(draft.paths), [draft.paths]);
+  const items = useMemo(() => selectionItems(idPaths, selection, segSel), [idPaths, selection, segSel]);
+  const can = useMemo(() => Object.fromEntries(SELECTION_CONSTRAINTS.map((t) => [t, canApplyConstraint(t, items)])) as Record<SelectionConstraint, boolean>, [items]);
+  const selectionText = [items.nodes.length ? `${items.nodes.length} ${items.nodes.length === 1 ? 'nodo' : 'nodi'}` : '', items.segments.length ? `${items.segments.length} ${items.segments.length === 1 ? 'segmento' : 'segmenti'}` : ''].filter(Boolean).join(' e ');
   /** Quote e vincoli per il disegno del profilo (la sagoma non li ha). */
   const quoteProps: QuoteProps = {
     bad: diag?.bad ?? NONE,
     flash,
     selected: selCon,
     states: diag?.states ?? null,
-    pick: dimPick,
+    // I nodi già scelti con la Quota; in modo Angolo i due estremi del primo segmento
+    pick: [...dimPick, ...angPick.flatMap((q) => [{ path: q.path, node: q.segment }, { path: q.path, node: (q.segment + 1) % (draft.paths[q.path]?.nodes.length ?? 1) }])],
     edit: quoteEdit && { con: quoteEdit.con, paths: quoteEdit.base.paths, isNew: quoteEdit.isNew, text: quoteEdit.text },
     onDimClick,
     onLabelClick,
@@ -918,6 +991,7 @@ function Editor({ target }: { target: ProfileTarget }) {
               onDimMode={(mode) => {
                 setDimMode(mode);
                 setDimPick([]);
+                setAngPick([]);
               }}
               onImportSvg={(file) => void importSvg(file)}
               shapesOff={active === 'plan' ? 'Nella sagoma ci sono solo Seleziona, Penna e Sposta vista: la forma è un contorno solo, sempre chiuso' : undefined}
@@ -951,6 +1025,7 @@ function Editor({ target }: { target: ProfileTarget }) {
                     onLive={(paths, sel) => dispatch({ type: 'paths', paths, selection: sel })}
                     constraints={draft.constraints}
                     quote={quoteProps}
+                    onPickSegment={pickSegment}
                     onCommit={commitPaths}
                     onSelect={(sel) => dispatch({ type: 'select', selection: sel })}
                     onPenLive={(paths, current, sel) => dispatch({ type: 'paths', paths, selection: sel, pen: current })}
@@ -1069,6 +1144,7 @@ function Editor({ target }: { target: ProfileTarget }) {
               onLive={liveDraft}
               onPatch={(patch) => commitDraft({ ...draft, ...patch })}
               onKind={(kind: PathNode['kind']) => selection.length && commitPaths(setNodesKind(draft.paths, selection, kind), selection)}
+              onRadius={(r) => selected && commitPaths(setNodeRadius(draft.paths, selected, r), selection)}
               onCoordinate={(axis, value) => {
                 const p = selected && draft.paths[selected.path].nodes[selected.node].p;
                 if (selected && p) commitPaths(moveNodesConstrained(draft.paths, draft.constraints, [selected], axis === 0 ? [value - p[0], 0] : [0, value - p[1]]), selection);
@@ -1078,7 +1154,7 @@ function Editor({ target }: { target: ProfileTarget }) {
               onSelectPath={(i) => dispatch({ type: 'select', selection: draft.paths[i].nodes.map((_, node) => ({ path: i, node })) })}
               onClosePath={(i) => commitPaths(closeContour(draft.paths, i))}
               onDeletePath={(i) => commitDraft(normalizeProfile({ ...draft, paths: draft.paths.filter((_, k) => k !== i) }), [])}
-              quote={{ selectedNodes: selection.length, bad: diag?.bad ?? NONE, selected: selCon, onSelect: setSelCon, onApply: applyConstraintButton, onValue: setConstraintValueFromPanel, onDelete: deleteConstraint, onReposition: repositionQuotes }}
+              quote={{ can, selectionText: selectionText ? `${selectionText} ${items.nodes.length + items.segments.length === 1 ? 'scelto' : 'scelti'}.` : '', bad: diag?.bad ?? NONE, selected: selCon, onSelect: setSelCon, onApply: applyConstraintButton, onValue: setConstraintValueFromPanel, onDelete: deleteConstraint, onReposition: repositionQuotes }}
             />
           )}
         </div>

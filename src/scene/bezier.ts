@@ -139,14 +139,131 @@ function splitAt(c: Cubic, ts: number[]): Cubic[] {
 /** Tolleranza dentro i limiti consentiti (un valore non numerico vale quello predefinito). */
 const clampTolerance = (tol: number): number => (Number.isFinite(tol) ? Math.min(PATH_MAX_TOLERANCE, Math.max(PATH_MIN_TOLERANCE, tol)) : PATH_DEFAULT_TOLERANCE);
 
+// --- Raggio di raccordo per nodo ---------------------------------------------------------------------------------------
+
+/**
+ * Raggio di raccordo (`r` di un nodo): lo spigolo si sostituisce con un arco di cerchio tangente ai due segmenti retti che
+ * vi arrivano. È un'ESPANSIONE A VALLE: i nodi del contorno restano quelli di controllo (il risolutore dei vincoli e le
+ * quote lavorano su di loro, mai sui punti dell'arco) e l'arco nasce solo quando il contorno si campiona. Poiché kernel,
+ * codice OpenSCAD, anteprima e riquadro campionano tutti con `sampleContour`, il poligono è lo stesso ovunque.
+ *
+ * Vale per un nodo `corner` senza maniglie, con un segmento retto prima e uno dopo (un contorno aperto non raccorda i suoi
+ * estremi). Con maniglie o segmenti curvi il raggio si ignora (`filletInfo` lo dice all'interfaccia). Il raggio si riduce
+ * se i segmenti non bastano: la distanza di tangenza non supera la lunghezza del segmento, né la sua metà se il nodo
+ * dall'altra parte è raccordato a sua volta (così due raccordi vicini non si sovrappongono).
+ */
+export interface FilletInfo {
+  /** Il nodo può avere un raggio di raccordo. */
+  eligible: boolean;
+  /** Raggio massimo (mm) con cui l'arco sta nei segmenti; 0 se il nodo non può raccordarsi. */
+  rmax: number;
+  /** Perché non può, per l'interfaccia. */
+  reason?: string;
+}
+
+/** Indici del nodo precedente e di quello successivo, o -1 se non ci sono (estremi di un contorno aperto). */
+function neighbours(c: PathContour, i: number): [number, number] {
+  const n = c.nodes.length;
+  return [i > 0 ? i - 1 : c.closed ? n - 1 : -1, i < n - 1 ? i + 1 : c.closed ? 0 : -1];
+}
+
+/** Direzioni unitarie dal nodo `i` verso il precedente e il successivo, con le lunghezze dei due segmenti; null se non è un angolo valido. */
+function corner(c: PathContour, i: number): { u: Vec2; v: Vec2; lenU: number; lenV: number; phi: number } | null {
+  const [pi, ni] = neighbours(c, i);
+  if (pi < 0 || ni < 0 || pi === ni || c.nodes.length < 3) return null;
+  const [p, q, s] = [c.nodes[pi].p, c.nodes[i].p, c.nodes[ni].p];
+  const [lenU, lenV] = [Math.hypot(p[0] - q[0], p[1] - q[1]), Math.hypot(s[0] - q[0], s[1] - q[1])];
+  if (lenU < 1e-9 || lenV < 1e-9) return null;
+  const u: Vec2 = [(p[0] - q[0]) / lenU, (p[1] - q[1]) / lenU];
+  const v: Vec2 = [(s[0] - q[0]) / lenV, (s[1] - q[1]) / lenV];
+  const cos = u[0] * v[0] + u[1] * v[1];
+  // Segmenti allineati (angolo piatto) o ripiegati l'uno sull'altro: nessun arco
+  if (Math.abs(cos) > 1 - 1e-9) return null;
+  return { u, v, lenU, lenV, phi: Math.acos(Math.max(-1, Math.min(1, cos))) };
+}
+
+/** Il nodo `i` è uno spigolo senza maniglie tra due segmenti retti (a prescindere dal raggio). */
+function isSharpCorner(c: PathContour, i: number): boolean {
+  const n = c.nodes[i];
+  if (!n || n.kind !== 'corner' || hasHandle(n.in) || hasHandle(n.out)) return false;
+  const [pi, ni] = neighbours(c, i);
+  if (pi < 0 || ni < 0 || hasHandle(c.nodes[pi].out) || hasHandle(c.nodes[ni].in)) return false;
+  return corner(c, i) !== null;
+}
+
+/** Il nodo `i` ha un raggio e può raccordarsi. */
+const isFilleted = (c: PathContour, i: number): boolean => (c.nodes[i]?.r ?? 0) > 0 && isSharpCorner(c, i);
+
+/** Se il nodo `i` può avere un raggio di raccordo e fino a quanto. */
+export function filletInfo(c: PathContour, i: number): FilletInfo {
+  const n = c.nodes[i];
+  if (!n) return { eligible: false, rmax: 0, reason: 'Nodo inesistente' };
+  if (n.kind !== 'corner' || hasHandle(n.in) || hasHandle(n.out)) return { eligible: false, rmax: 0, reason: 'Il raccordo vale per uno spigolo senza maniglie' };
+  const [pi, ni] = neighbours(c, i);
+  if (pi < 0 || ni < 0) return { eligible: false, rmax: 0, reason: 'Il raccordo vale per un nodo con un segmento prima e uno dopo' };
+  if (hasHandle(c.nodes[pi].out) || hasHandle(c.nodes[ni].in)) return { eligible: false, rmax: 0, reason: 'Il raccordo vale tra due segmenti retti' };
+  const k = corner(c, i);
+  if (!k) return { eligible: false, rmax: 0, reason: 'I due segmenti sono allineati: non c\'è uno spigolo' };
+  // Distanza di tangenza al massimo: il segmento intero, o la metà se dall'altra parte c'è un altro raccordo
+  const reach = Math.min(k.lenU * (isFilleted(c, pi) ? 0.5 : 1), k.lenV * (isFilleted(c, ni) ? 0.5 : 1));
+  return { eligible: true, rmax: reach * Math.tan(k.phi / 2) };
+}
+
+/** Nodi (con le maniglie) dell'arco di raccordo del nodo `i`, dal punto di tangenza sul segmento prima a quello sul segmento dopo. */
+function filletNodes(c: PathContour, i: number): PathNode[] {
+  const k = corner(c, i)!;
+  const info = filletInfo(c, i);
+  const r = Math.min(c.nodes[i].r as number, info.rmax);
+  const q = c.nodes[i].p;
+  const t = r / Math.tan(k.phi / 2);
+  // Centro dell'arco sulla bisettrice, a r / sin(phi/2) dallo spigolo
+  const bis: Vec2 = [k.u[0] + k.v[0], k.u[1] + k.v[1]];
+  const bl = Math.hypot(bis[0], bis[1]);
+  const d = r / Math.sin(k.phi / 2);
+  const o: Vec2 = [q[0] + (bis[0] / bl) * d, q[1] + (bis[1] / bl) * d];
+  const t1: Vec2 = [q[0] + k.u[0] * t, q[1] + k.u[1] * t];
+  const t2: Vec2 = [q[0] + k.v[0] * t, q[1] + k.v[1] * t];
+  // Arco minore da t1 a t2
+  const a1 = Math.atan2(t1[1] - o[1], t1[0] - o[0]);
+  let sweep = Math.atan2(t2[1] - o[1], t2[0] - o[0]) - a1;
+  if (sweep > Math.PI) sweep -= 2 * Math.PI;
+  if (sweep < -Math.PI) sweep += 2 * Math.PI;
+  // Una cubica per ogni quarto di giro al più: l'errore del cerchio resta sotto lo 0,03% del raggio
+  const pieces = Math.max(1, Math.ceil(Math.abs(sweep) / (Math.PI / 2) - 1e-9));
+  const delta = sweep / pieces;
+  const handle = (4 / 3) * Math.tan(Math.abs(delta) / 4) * r;
+  const dir = Math.sign(delta);
+  const nodes: PathNode[] = [];
+  for (let j = 0; j <= pieces; j++) {
+    const a = a1 + j * delta;
+    // Primo e ultimo punto sono le tangenze esatte (nessun errore di arrotondamento sul segmento retto)
+    const p: Vec2 = j === 0 ? t1 : j === pieces ? t2 : [o[0] + r * Math.cos(a), o[1] + r * Math.sin(a)];
+    const tangent: Vec2 = [-Math.sin(a) * dir * handle, Math.cos(a) * dir * handle];
+    nodes.push({ p, kind: 'smooth', ...(j > 0 ? { in: [-tangent[0], -tangent[1]] as Vec2 } : {}), ...(j < pieces ? { out: tangent } : {}) });
+  }
+  return nodes;
+}
+
+/**
+ * Il contorno con i raccordi espansi in archi (nodi in più, nessuna `id` né `r`). Senza raccordi restituisce lo stesso
+ * contorno. È il contorno che si campiona, si disegna e si esporta; i nodi di controllo restano quelli di `c`.
+ */
+export function expandFillets(c: PathContour): PathContour {
+  if (!c.nodes.some((n) => (n.r ?? 0) > 0)) return c;
+  const nodes = c.nodes.flatMap((n, i) => (isFilleted(c, i) ? filletNodes(c, i) : [n]));
+  return { closed: c.closed, nodes };
+}
+
 /**
  * Poligono che approssima un contorno entro `tol` mm. Ogni cubica si spezza prima nei suoi estremi in x e y, così il
  * riquadro del poligono è quello esatto della curva qualunque sia la tolleranza (D2). Un contorno chiuso non ripete il
  * primo punto in fondo. Oltre il tetto di punti per contorno `flattenCubic` smette di suddividere (il lavoro resta limitato) ma
  * nessun segmento viene saltato: chi chiama riconosce il superamento dalla lunghezza e ricampiona con più tolleranza.
  */
-export function sampleContour(c: PathContour, tol: number): Vec2[] {
+export function sampleContour(source: PathContour, tol: number): Vec2[] {
   const t = clampTolerance(tol);
+  // I raccordi (`r` dei nodi) diventano archi prima del campionamento: poligono unico per kernel, OpenSCAD e disegno
+  const c = expandFillets(source);
   if (c.nodes.length === 0) return [];
   const points: Vec2[] = [c.nodes[0].p];
   for (let i = 0; i < segmentCount(c); i++) {
@@ -432,10 +549,9 @@ interface PathMeta {
 
 /**
  * Commento `// construct:path`: i dati su una sola riga di JSON, senza arrotondamenti (i nodi sono già arrotondati dallo
- * store). La versione è 2 SOLO se ci sono `k` (vincoli) o `q` (parametri): un'app che conosce solo la versione 1 non la
- * riconosce e il poligono resta un Poligono qualsiasi. Senza, resta 1: gli `id` dei nodi e il raccordo `r` che non
- * cambia la forma non rendono illeggibile il commento (il lettore v:1 li ignora o li legge). Quando `r` cambierà la
- * forma, anche `r` dovrà portare alla versione 2.
+ * store). La versione è 2 SOLO se ci sono `k` (vincoli), `q` (parametri) o un raccordo `r` che cambia la forma: un'app che
+ * conosce solo la versione 1 non la riconosce e il poligono resta un Poligono qualsiasi. Senza, resta 1: gli `id` dei nodi
+ * non rendono illeggibile il commento (il lettore v:1 li ignora o li legge).
  */
 export function encodePathMeta(p: PathMeta): string {
   const k = p.constraints?.length ? { k: p.constraints } : {};
@@ -443,9 +559,13 @@ export function encodePathMeta(p: PathMeta): string {
   return JSON.stringify({ v: metaVersion(p), w: p.width, d: p.depth, t: p.tolerance, paths: p.paths, ...k, ...q });
 }
 
-/** Versione del formato del commento e della bozza: 2 solo se ci sono vincoli o parametri, altrimenti 1. */
-export function metaVersion(p: { constraints?: unknown[]; params?: object }): 1 | 2 {
-  return p.constraints?.length || (p.params && Object.keys(p.params).length) ? 2 : 1;
+/**
+ * Versione del formato del commento e della bozza: 2 se ci sono vincoli, parametri o un raccordo (`r` di un nodo: cambia la
+ * forma, e un'app che lo ignorasse rileggerebbe un poligono diverso da quello scritto), altrimenti 1.
+ */
+export function metaVersion(p: { constraints?: unknown[]; params?: object; paths?: PathContour[] }): 1 | 2 {
+  const filleted = p.paths?.some((c) => c.nodes.some((n) => (n.r ?? 0) > 0));
+  return p.constraints?.length || (p.params && Object.keys(p.params).length) || filleted ? 2 : 1;
 }
 
 /**

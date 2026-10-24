@@ -75,6 +75,23 @@ describe('livello delle quote', () => {
     expect(html).toMatch(/<text[^>]*>\(50\)<\/text>/);
   });
 
+  it('una quota angolare è un arco con l\'etichetta in gradi, la linea da afferrare e i colori di stato come le altre', () => {
+    const corner: ProfileConstraint = { id: 'a1', t: 'angle', p: ['n2', 'n3', 'n2', 'n1'], v: 90, off: 4, at: 0.5 };
+    const html = render({ constraints: [corner] });
+    expect(html).toMatch(/<text[^>]*>90°<\/text>/);
+    expect(html).toContain('data-quote-label="a1"');
+    expect(html).toContain('data-qline="a1"');
+    // Un arco: molti segmenti L sulla stessa curva
+    expect(html.match(/L[\d.-]+ [\d.-]+/g)!.length).toBeGreaterThan(20);
+    expect(render({ constraints: [{ ...corner, ref: true }] })).toMatch(/<text[^>]*>\(90°\)<\/text>/);
+    expect(render({ constraints: [corner], bad: new Set(['a1']) })).toContain('profile-editor__qlabel--err');
+    expect(render({ constraints: [corner], selected: 'a1' })).toContain('profile-editor__dim--sel');
+    // Con due punti c'è anche la semiretta di riferimento sull'asse X; non c'è l'icona di un vincolo
+    const axis = render({ constraints: [{ id: 'a2', t: 'angle', p: ['n1', 'n3'], v: 26.57, off: 4 }] });
+    expect(axis).not.toContain('data-constraint-glyph');
+    expect(quoteLabelPoint(corner, paths, toS, 10)).not.toBeNull();
+  });
+
   it('stati: di riferimento, scelta, in conflitto (anche dopo un rifiuto) e nuova', () => {
     expect(render({ constraints: [{ ...width, ref: true }] })).toContain('profile-editor__qlabel--ref');
     expect(render({ constraints: [{ ...width, ref: true }] })).toContain('profile-editor__dim--ref');

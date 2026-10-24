@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { POLYGON_SIDES, appendPenNode, bakeScale, baseShapeContour, canCloseContour, closeContour, contourContains, contourHoles, cycleKind, deleteNodes, deleteNodesWithConstraints, draftContours, draftFromNode, dropLastNode, emptyDraft, gridStep, insertNode, insertNodeWithConstraints, isOpenEnd, joinContours, moveHandle, moveNodes, nearestSegment, normalizeProfile, pathCenter, pruneConstraints, pointInPolygon, resumeContour, setNodeKind, setNodesKind, snapPoint, trimDuplicateTail } from './model';
+import { POLYGON_SIDES, appendPenNode, bakeScale, baseShapeContour, canCloseContour, closeContour, contourContains, contourHoles, cycleKind, deleteNodes, deleteNodesWithConstraints, draftContours, draftFromNode, dropLastNode, emptyDraft, gridStep, insertNode, insertNodeWithConstraints, isOpenEnd, joinContours, moveHandle, moveNodes, nearestSegment, normalizeProfile, pathCenter, pruneConstraints, pointInPolygon, resumeContour, setNodeKind, setNodeRadius, setNodesKind, snapPoint, trimDuplicateTail } from './model';
 import { bboxOf, cubicPoint, segmentOf, signedArea, splitCubic } from '../../scene/bezier';
 import { pathContours, pathNaturalSize } from '../../scene/shapes2d';
 import { shape2dDefaults } from '../../scene/defaults';
@@ -710,7 +710,9 @@ describe('id dei nodi e vincoli nelle operazioni sui nodi', () => {
     const ins = insertNode(c, { path: 0, segment: 0 }, 0.5)!;
     expect(ins.paths[0].nodes.map((n) => n.id)).toEqual(['n1', undefined, 'n2', 'n3']);
     expect(ins.paths[0].nodes[0].r).toBe(3);
-    expect(bakeScale(c, 2, 2, 0, 0)[0].nodes[0]).toMatchObject({ id: 'n1', r: 3 });
+    // Il raggio si scala con la media geometrica dei fattori: ×2 in X e ×2 in Y lo raddoppia
+    expect(bakeScale(c, 2, 2, 0, 0)[0].nodes[0]).toMatchObject({ id: 'n1', r: 6 });
+    expect(bakeScale(c, 4, 1, 0, 0)[0].nodes[0].r).toBeCloseTo(6, 9);
     // Contorno ripreso dal primo nodo: si inverte, gli id restano
     expect(resumeContour(c, { path: 0, node: 0 })!.paths[0].nodes.map((n) => n.id)).toEqual(['n3', 'n2', 'n1']);
   });
@@ -853,5 +855,29 @@ describe('id dei nodi e vincoli nelle operazioni sui nodi', () => {
     expect(out.constraints).toBeUndefined();
     expect(insertNodeWithConstraints(old, { path: 0, segment: 9 }, 0.5)).toBeNull();
     expect(insertNodeWithConstraints(old, { path: 0, segment: 0 }, 1)).toBeNull();
+  });
+});
+
+describe('raggio di raccordo del nodo', () => {
+  const tri = (): PathContour[] => [{ closed: true, nodes: [node([0, 0]), node([40, 0]), node([40, 20]), node([0, 20])] }];
+
+  it('setNodeRadius scrive r sul nodo, lo toglie con zero o un valore non valido, e non cambia gli altri nodi', () => {
+    const paths = freeze(tri());
+    const set = setNodeRadius(paths, { path: 0, node: 2 }, 5);
+    expect(set[0].nodes[2].r).toBe(5);
+    expect(set[0].nodes[1]).toBe(paths[0].nodes[1]);
+    expect('r' in setNodeRadius(set, { path: 0, node: 2 }, 0)[0].nodes[2]).toBe(false);
+    expect('r' in setNodeRadius(set, { path: 0, node: 2 }, -3)[0].nodes[2]).toBe(false);
+    expect('r' in setNodeRadius(set, { path: 0, node: 2 }, NaN)[0].nodes[2]).toBe(false);
+    expect(setNodeRadius(paths, { path: 3, node: 0 }, 5)).toBe(paths);
+    expect(setNodeRadius(paths, { path: 0, node: 0 }, 1e9)[0].nodes[0].r).toBe(1e5);
+  });
+
+  it('il raggio cambia la forma campionata: meno area, e togliendolo si torna al disegno di prima', () => {
+    const area = (paths: PathContour[]) => Math.abs(signedArea(pathContours({ paths, tolerance: 0.01, width: 40, depth: 20, extrusion: 'linear' })[0]));
+    const base = area(tri());
+    const rounded = area(setNodeRadius(tri(), { path: 0, node: 2 }, 5));
+    expect(rounded).toBeLessThan(base - 5);
+    expect(area(setNodeRadius(setNodeRadius(tri(), { path: 0, node: 2 }, 5), { path: 0, node: 2 }, 0))).toBeCloseTo(base, 9);
   });
 });

@@ -174,7 +174,9 @@ Chiusi dalla fase 2: modale di disegno con Penna e Seleziona, anteprima 3D, voce
 
 - **Scala e quote**: Larghezza, Profondità, Scala in percentuale e gizmo di un Profilo con quote avvisano che le quote non si aggiornano (decisione 11a dello studio); scalare insieme nodi e valori è la tappa «c», non fatta. La scala di un gruppo che contiene il Profilo non avvisa: è applicata dal gruppo sopra il disegno e non tocca i nodi né le quote, che restano coerenti nella modale.
 - **Quote senza posizione** (da un file scritto a mano): nascono a 30 pixel sul lato sinistro del segmento, spesso dentro il disegno; «Riposiziona quote» le dispone, ma al caricamento non si fa nulla.
-- **Quote d'angolo e di cerchio**: ci sono nel risolutore, non nell'interfaccia (né la posizione automatica).
+- **Quote di cerchio**: mancano (il cerchio parametrico è la tappa 5 dello studio). Le quote d'angolo ci sono (modo Angolo dello strumento Quota), ma la loro posizione automatica cerca solo il raggio libero dell'arco, non «fuori dal disegno»: l'angolo di un contorno sta di norma dentro.
+- **Raggio di raccordo** (`r` del nodo): vale solo tra due segmenti retti (con maniglie o segmenti curvi il campo è spento e dice perché); la quota del raggio sul disegno (facoltativa) non c'è, il raggio si digita nella sezione del nodo. La scala non uniforme del profilo scala `r` con la media geometrica dei fattori (esatta solo con scala uniforme).
+- **Vincoli con la tastiera**: nessun tasto per i vincoli (come non c'erano per Orizzontale e Verticale); si scelgono dal pannello. I segmenti si scelgono con Alt+clic (Maiusc+Alt+clic per il secondo) e la scelta si azzera a ogni passo di cronologia.
 
 ## Sagoma di rotazione: punti aperti dalla prima versione (0.70.0)
 

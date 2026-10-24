@@ -149,6 +149,14 @@ export function insertNode(paths: PathContour[], seg: SegmentRef, t: number): { 
   return { paths: paths.map((c, i) => (i === seg.path ? { ...c, nodes } : c)), node: { path: seg.path, node: seg.segment + 1 } };
 }
 
+/** Imposta il raggio di raccordo del nodo (mm); zero, negativo o non numerico lo toglie. Se il nodo non può raccordarsi il valore resta scritto ma non ha effetto (vedi `filletInfo`). */
+export function setNodeRadius(paths: PathContour[], ref: NodeRef, r: number): PathContour[] {
+  return mapNode(paths, ref, (n) => {
+    const { r: _old, ...rest } = n;
+    return Number.isFinite(r) && r > 0 ? { ...rest, r: Math.min(r, 1e5) } : rest;
+  });
+}
+
 /** Elimina i nodi indicati; un contorno che resta con meno di 2 nodi sparisce. */
 export function deleteNodes(paths: PathContour[], refs: NodeRef[]): PathContour[] {
   const keys = new Set(refs.map((r) => `${r.path}:${r.node}`));
@@ -460,8 +468,9 @@ export function bakeScale(paths: PathContour[], sx: number, sy: number, cx: numb
   const handle = (h: Vec2): Vec2 => [h[0] * sx, h[1] * sy];
   return paths.map((c) => ({
     ...c,
-    // `id` e `r` passano com'erano (il raggio di raccordo non si scala: ora non cambia la forma)
-    nodes: c.nodes.map((n) => ({ ...(n.id ? { id: n.id } : {}), p: point(n.p), ...(n.in ? { in: handle(n.in) } : {}), ...(n.out ? { out: handle(n.out) } : {}), kind: n.kind, ...(n.r ? { r: n.r } : {}) })),
+    // `id` passa com'era; il raggio di raccordo si scala con la media geometrica dei due fattori (esatta con una scala uniforme:
+    // con scale diverse un arco di cerchio non resta tale, e il raggio è l'approssimazione più vicina)
+    nodes: c.nodes.map((n) => ({ ...(n.id ? { id: n.id } : {}), p: point(n.p), ...(n.in ? { in: handle(n.in) } : {}), ...(n.out ? { out: handle(n.out) } : {}), kind: n.kind, ...(n.r ? { r: n.r * Math.sqrt(sx * sy) } : {}) })),
   }));
 }
 

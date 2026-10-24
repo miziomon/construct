@@ -20,6 +20,8 @@ import { pointInPolygon } from './model';
 /** Distanza (pixel) della linea di quota dal disegno alla sua creazione, e passo con cui si allontana per liberare lo spazio. */
 export const DIM_GAP_PX = 30;
 const STEP_PX = 20;
+/** Raggio (pixel) dell'arco di una quota angolare alla creazione. */
+export const ANGLE_R_PX = 36;
 /** Quanti passi al massimo per cercare uno spazio libero, da una parte e dall'altra. */
 const MAX_STEPS = 16;
 /** Misure dell'etichetta a pillola in pixel (come nel disegno): larghezza per carattere, margine, altezza. */
@@ -29,9 +31,11 @@ const PILL_H_PX = 18;
 /** Margine (pixel) che deve restare libero attorno a un'etichetta. */
 const MARGIN_PX = 3;
 
-/** Quote con una linea di lunghezza: le uniche che hanno una posizione da scegliere. */
+/** Quote con una linea di lunghezza. */
 const LINEAR = new Set<ConstraintType>(['dist', 'distX', 'distY']);
 export const isLinearDimension = (c: Pick<ProfileConstraint, 't'>): boolean => LINEAR.has(c.t);
+/** Quote che hanno una posizione sul disegno da scegliere o trascinare: le lunghezze (linea di quota) e l'angolo (arco). */
+export const isPositionedDimension = (c: Pick<ProfileConstraint, 't'>): boolean => LINEAR.has(c.t) || c.t === 'angle';
 /** Tipi che hanno un valore (le quote); gli altri sono vincoli geometrici. */
 const DIMENSION_TYPES = new Set<ConstraintType>(['dist', 'distX', 'distY', 'angle']);
 export const isDimension = (c: Pick<ProfileConstraint, 't'>): boolean => DIMENSION_TYPES.has(c.t);
@@ -110,8 +114,70 @@ export function dimLayout(c: ProfileConstraint, pm: Map<string, Vec2>, fallbackO
   return { a, b, a2, b2, label: [a2[0] + (b2[0] - a2[0]) * at, a2[1] + (b2[1] - a2[1]) * at] };
 }
 
+/**
+ * Quota angolare: un arco di cerchio centrato nel vertice (dove si incontrano le due rette; con due punti, il primo punto, e
+ * il secondo segmento è l'asse X). `off` è il raggio dell'arco (mm), `at` (0-1) la posizione dell'etichetta lungo l'arco.
+ */
+export interface AngleLayout {
+  vertex: Vec2;
+  /** Direzione (radianti) da cui parte l'arco e ampiezza con segno (antioraria positiva). */
+  start: number;
+  span: number;
+  radius: number;
+  label: Vec2;
+}
+
+/** Porta un angolo in radianti in (-pi, pi]. */
+const wrap = (a: number): number => a - 2 * Math.PI * Math.round(a / (2 * Math.PI));
+
+/** Dove sta l'arco di una quota angolare; null se un nodo citato non c'è. `fallbackRadius` (mm) vale per una quota senza `off`. */
+export function angleLayout(c: ProfileConstraint, pm: Map<string, Vec2>, fallbackRadius: number): AngleLayout | null {
+  const pts = c.p.map((id) => pm.get(id));
+  if (pts.some((q) => !q) || (c.p.length !== 2 && c.p.length !== 4)) return null;
+  const [a, b, cc, d] = pts as Vec2[];
+  let vertex: Vec2 = a;
+  let start = 0;
+  let span: number;
+  if (c.p.length === 2) {
+    span = Math.atan2(b[1] - a[1], b[0] - a[0]);
+  } else {
+    const [u, w]: [Vec2, Vec2] = [[b[0] - a[0], b[1] - a[1]], [d[0] - cc[0], d[1] - cc[1]]];
+    const den = u[0] * w[1] - u[1] * w[0];
+    start = Math.atan2(u[1], u[0]);
+    span = Math.atan2(den, u[0] * w[0] + u[1] * w[1]);
+    // Le due rette si incontrano nel vertice (se sono parallele l'arco sta sul primo punto)
+    if (Math.abs(den) > 1e-9) {
+      const t = ((cc[0] - a[0]) * w[1] - (cc[1] - a[1]) * w[0]) / den;
+      vertex = [a[0] + u[0] * t, a[1] + u[1] * t];
+    }
+  }
+  const radius = Math.max(c.off ?? fallbackRadius, 1e-3);
+  const mid = start + span * (c.at ?? 0.5);
+  return { vertex, start, span, radius, label: [vertex[0] + radius * Math.cos(mid), vertex[1] + radius * Math.sin(mid)] };
+}
+
+/** I punti dell'arco (mm), per disegnarlo e per gli urti. */
+export function arcPoints(l: AngleLayout, steps = 24): Vec2[] {
+  return Array.from({ length: steps + 1 }, (_, i) => {
+    const t = l.start + (l.span * i) / steps;
+    return [l.vertex[0] + l.radius * Math.cos(t), l.vertex[1] + l.radius * Math.sin(t)] as Vec2;
+  });
+}
+
+/** Centro (mm) dell'etichetta di una quota (di lunghezza o angolare), o null se un nodo citato non c'è. */
+export function dimLabel(c: ProfileConstraint, pm: Map<string, Vec2>, fallbackOff: number): Vec2 | null {
+  return c.t === 'angle' ? angleLayout(c, pm, fallbackOff)?.label ?? null : dimLayout(c, pm, fallbackOff)?.label ?? null;
+}
+
 /** Posizione (`off` e `at`) con cui l'etichetta, o la linea, della quota passa per il punto `p` (mm). Per la linea `at` resta com'era. */
 export function dragDimension(c: ProfileConstraint, pm: Map<string, Vec2>, p: Vec2, part: 'label' | 'line'): { off: number; at: number } {
+  if (c.t === 'angle') {
+    // `off` è il raggio dell'arco, `at` la posizione lungo l'arco (l'angolo del puntatore rispetto alla partenza)
+    const l = angleLayout(c, pm, 0);
+    if (!l) return { off: c.off ?? 0, at: c.at ?? 0.5 };
+    const along = Math.abs(l.span) < 1e-9 ? c.at ?? 0.5 : wrap(Math.atan2(p[1] - l.vertex[1], p[0] - l.vertex[0]) - l.start) / l.span;
+    return { off: Math.min(1e5, Math.hypot(p[0] - l.vertex[0], p[1] - l.vertex[1])), at: part === 'label' ? Math.min(1, Math.max(0, along)) : c.at ?? 0.5 };
+  }
   const a = pm.get(c.p[0]);
   const b = pm.get(c.p[1]);
   const keep = c.at ?? 0.5;
@@ -213,6 +279,49 @@ function centroid(points: Vec2[]): Vec2 {
 /** Segmenti della quota: linea di quota e linee di richiamo. */
 const dimSegments = (l: DimLayout): Seg[] => [[l.a2, l.b2], [l.a, l.a2], [l.b, l.b2]];
 
+/** Ingombro delle quote già posizionate: il riquadro dell'etichetta e i segmenti (linea di quota e di richiamo, o arco). */
+function obstaclesOf(paths: PathContour[], others: ProfileConstraint[], pm: Map<string, Vec2>, px: number): { box: Box; segments: Seg[] }[] {
+  return others
+    .filter((o) => isPositionedDimension(o) && o.p.every((id) => pm.has(id)))
+    .flatMap((o) => {
+      if (o.t === 'angle') {
+        const layout = angleLayout(o, pm, ANGLE_R_PX / px);
+        const arc = layout ? arcPoints(layout) : [];
+        return layout ? [{ box: labelBox(layout.label, dimText(o, paths), px), segments: arc.slice(1).map((q, i): Seg => [arc[i], q]) }] : [];
+      }
+      const layout = dimLayout(o, pm, DIM_GAP_PX / px);
+      return layout ? [{ box: labelBox(layout.label, dimText(o, paths), px), segments: dimSegments(layout) }] : [];
+    });
+}
+
+/**
+ * Posizione automatica di una quota angolare: l'arco parte da ANGLE_R_PX pixel dal vertice e si allarga a passi finché
+ * l'etichetta (sull'arco, a metà) non tocca i contorni, le altre etichette o le altre quote. L'angolo di un contorno sta di
+ * norma dentro il disegno, quindi qui non si cerca «fuori».
+ */
+function placeAngle(paths: PathContour[], others: ProfileConstraint[], con: Pick<ProfileConstraint, 't' | 'p' | 'v' | 's' | 'ref'>, px: number): { off: number; at: number } {
+  const pm = pointMap(paths);
+  const at = 0.5;
+  const geometry = contourGeometry(paths);
+  const obstacles = obstaclesOf(paths, others, pm, px);
+  const text = `${fmtDim(con.v ?? Math.abs(measure({ ...con, id: '' } as ProfileConstraint, pointsOf(paths))))}°`;
+  const free = (radius: number): boolean => {
+    const layout = angleLayout({ ...con, id: '', off: radius, at } as ProfileConstraint, pm, 0);
+    if (!layout) return false;
+    const box = labelBox(layout.label, text, px);
+    const arc = arcPoints(layout);
+    const arcSegments = arc.slice(1).map((q, i): Seg => [arc[i], q]);
+    if (geometry.segments.some((s) => segmentHitsBox(s, box))) return false;
+    if (obstacles.some((o) => boxesOverlap(box, o.box) || o.segments.some((s) => segmentHitsBox(s, box)))) return false;
+    return !obstacles.some((o) => arcSegments.some((s) => segmentHitsBox(s, o.box)));
+  };
+  for (let step = 0; step < MAX_STEPS; step++) {
+    const radius = (ANGLE_R_PX + STEP_PX * step) / px;
+    if (free(radius)) return { off: radius, at };
+  }
+  return { off: ANGLE_R_PX / px, at };
+}
+
 /**
  * Posizione automatica di una quota nuova: fuori dal disegno pieno, dalla parte opposta al baricentro del contorno del primo
  * nodo (su un foro «fuori» è anche dentro il foro, che è vuoto: una quota sul bordo di un foro può finirci dentro, se c'è posto), a `DIM_GAP_PX` pixel; se l'etichetta cadrebbe dentro il disegno, su un contorno, su un'altra etichetta o linea di
@@ -225,6 +334,7 @@ export function placeDimension(paths: PathContour[], others: ProfileConstraint[]
   const a = pm.get(con.p[0]);
   const b = pm.get(con.p[1]);
   const at = 0.5;
+  if (con.t === 'angle') return con.p.every((id) => pm.has(id)) ? placeAngle(paths, others, con, Math.max(pxPerMm, 1e-6)) : { off: 0, at };
   if (!a || !b || !isLinearDimension(con)) return { off: 0, at };
   const px = Math.max(pxPerMm, 1e-6);
   const geometry = contourGeometry(paths);
@@ -241,11 +351,7 @@ export function placeDimension(paths: PathContour[], others: ProfileConstraint[]
   // Per distX e distY la linea sta a metà tra i nodi + off: per non tagliare tra i due nodi parte oltre il più lontano
   const half = con.t === 'distX' ? Math.abs(b[1] - a[1]) / 2 : con.t === 'distY' ? Math.abs(b[0] - a[0]) / 2 : 0;
 
-  const placed = others.filter((o) => isLinearDimension(o) && o.p.every((id) => pm.has(id)));
-  const obstacles = placed.flatMap((o) => {
-    const layout = dimLayout(o, pm, DIM_GAP_PX / px);
-    return layout ? [{ box: labelBox(layout.label, dimText(o, paths), px), segments: dimSegments(layout) }] : [];
-  });
+  const obstacles = obstaclesOf(paths, others, pm, px);
   const text = fmtDim(con.v ?? measure({ ...con, id: '' } as ProfileConstraint, pointsOf(paths)));
 
   const free = (off: number): boolean => {
@@ -274,13 +380,13 @@ export function placeDimension(paths: PathContour[], others: ProfileConstraint[]
 }
 
 /**
- * Ridispone tutte le quote di lunghezza una dopo l'altra, nell'ordine dell'elenco: ognuna tiene conto di quelle già
- * ridisposte. Le altre voci (vincoli, quote d'angolo) restano com'erano.
+ * Ridispone tutte le quote (di lunghezza e angolari) una dopo l'altra, nell'ordine dell'elenco: ognuna tiene conto di quelle già
+ * ridisposte. Le altre voci (i vincoli) restano com'erano.
  */
 export function repositionDimensions(paths: PathContour[], constraints: ProfileConstraint[], pxPerMm: number): ProfileConstraint[] {
   const placed: ProfileConstraint[] = [];
   return constraints.map((c) => {
-    if (!isLinearDimension(c) || !c.p.every((id) => pointMap(paths).has(id))) return c;
+    if (!isPositionedDimension(c) || !c.p.every((id) => pointMap(paths).has(id))) return c;
     const next = { ...c, ...placeDimension(paths, placed, c, pxPerMm) };
     placed.push(next);
     return next;

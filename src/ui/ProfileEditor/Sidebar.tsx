@@ -1,4 +1,4 @@
-import { PATH_MAX_TOLERANCE, PATH_MIN_TOLERANCE } from '../../scene/bezier';
+import { PATH_MAX_TOLERANCE, PATH_MIN_TOLERANCE, filletInfo } from '../../scene/bezier';
 import type { PathContour, PathNode } from '../../scene/types';
 import { NumberField } from '../NumberField/NumberField';
 import { SliderField } from '../SliderField/SliderField';
@@ -25,6 +25,8 @@ interface Props {
   /** Modifica conclusa di un parametro (campo numerico): un passo. */
   onPatch: (patch: Partial<Draft>) => void;
   onKind: (kind: PathNode['kind']) => void;
+  /** Raggio di raccordo (mm) del nodo selezionato; assente nella sagoma, che non ha raccordi. */
+  onRadius?: (radius: number) => void;
   /** Porta il nodo selezionato alla coordinata indicata (asse 0 = X, 1 = Y). */
   onCoordinate: (axis: 0 | 1, value: number) => void;
   /** Imposta lunghezza (mm) e angolo (gradi) di una maniglia del nodo selezionato. */
@@ -53,7 +55,7 @@ const GRID_STEPS = [0.1, 0.5, 1, 5, 10];
 const comma = (n: number) => String(n).replace('.', ',');
 
 /** «Punto selezionato»: coordinate, tipo di nodo e maniglie del nodo scelto (con più nodi solo il conteggio). Condivisa da profilo e sagoma. */
-export function NodeSection({ paths, selection, onKind, onCoordinate, onHandle }: { paths: PathContour[]; selection: NodeRef[]; onKind: Props['onKind']; onCoordinate: Props['onCoordinate']; onHandle: Props['onHandle'] }) {
+export function NodeSection({ paths, selection, onKind, onRadius, onCoordinate, onHandle }: { paths: PathContour[]; selection: NodeRef[]; onKind: Props['onKind']; onRadius?: Props['onRadius']; onCoordinate: Props['onCoordinate']; onHandle: Props['onHandle'] }) {
   const ref = selection.length === 1 ? selection[0] : null;
   const contour = ref ? paths[ref.path] : undefined;
   const node = ref && contour ? contour.nodes[ref.node] : undefined;
@@ -71,6 +73,18 @@ export function NodeSection({ paths, selection, onKind, onCoordinate, onHandle }
               </button>
             ))}
           </div>
+          {onRadius && node.kind === 'corner' && (() => {
+            // Raggio di raccordo: per gli spigoli (i nodi lisci e simmetrici non l'hanno); vale tra due segmenti retti, e se non bastano si riduce
+            const info = filletInfo(contour, ref.node);
+            const radius = node.r ?? 0;
+            const note = !info.eligible ? info.reason : radius > info.rmax + 1e-9 ? `Raggio ridotto a ${comma(Math.round(info.rmax * 100) / 100)} mm: i segmenti non bastano` : undefined;
+            return (
+              <div data-fillet="">
+                <NumberField label="Raggio" unit="mm" min={0} disabled={!info.eligible} value={radius} onCommit={onRadius} />
+                {note && <p className="profile-editor__hint" data-fillet-note="">{note}</p>}
+              </div>
+            );
+          })()}
           {(['in', 'out'] as const).map((side) => {
             const h = node[side];
             const length = h ? Math.hypot(h[0], h[1]) : 0;
@@ -170,7 +184,7 @@ export function SectionControl({ z, min, max, show, onZ, onShow }: SectionProps)
 }
 
 /** Colonna di destra della modale: estrusione, punto selezionato, percorsi, griglia e snap, qualità. */
-export function Sidebar({ draft, selection, holes, grid, sampling, boundFields, onExtrusion, onLive, onPatch, onKind, onCoordinate, onHandle, onGrid, onSelectPath, onClosePath, onDeletePath, section, quote }: Props) {
+export function Sidebar({ draft, selection, holes, grid, sampling, boundFields, onExtrusion, onLive, onPatch, onKind, onRadius, onCoordinate, onHandle, onGrid, onSelectPath, onClosePath, onDeletePath, section, quote }: Props) {
   const rotate = draft.extrusion === 'rotate';
   // Uno slider legato a un parametro non si muove da qui: la formula decide il valore (si cambia dalle Proprietà)
   const bound = (field: string) => boundFields.includes(field);
@@ -205,7 +219,7 @@ export function Sidebar({ draft, selection, holes, grid, sampling, boundFields, 
         {rotate && section && <SectionControl {...section} />}
       </section>
 
-      <NodeSection paths={draft.paths} selection={selection} onKind={onKind} onCoordinate={onCoordinate} onHandle={onHandle} />
+      <NodeSection paths={draft.paths} selection={selection} onKind={onKind} onRadius={onRadius} onCoordinate={onCoordinate} onHandle={onHandle} />
 
       <ConstraintsPanel paths={draft.paths} constraints={draft.constraints ?? []} {...quote} />
 

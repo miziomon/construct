@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { CONSTRAINT_GLYPHS, DIM_GAP_PX, dimLayout, dimText, isDimension, nodeNames, pillWidthPx, pointMap, describeConstraint } from './dimensions';
+import { ANGLE_R_PX, CONSTRAINT_GLYPHS, DIM_GAP_PX, angleLayout, arcPoints, dimLabel, dimLayout, dimText, isDimension, nodeNames, pillWidthPx, pointMap, describeConstraint } from './dimensions';
 import type { NodeRef } from './model';
 import type { PathContour, ProfileConstraint, Vec2 } from '../../scene/types';
 
@@ -7,8 +7,8 @@ import type { PathContour, ProfileConstraint, Vec2 } from '../../scene/types';
 const f1 = (n: number) => n.toFixed(1);
 /** Punto (pixel) al centro dell'etichetta di una quota, o null se un nodo citato non c'è: serve a posizionare il campo che la modifica. */
 export function quoteLabelPoint(c: ProfileConstraint, paths: PathContour[], toS: (p: Vec2) => Vec2, pxPerMm: number): Vec2 | null {
-  const layout = dimLayout(c, pointMap(paths), DIM_GAP_PX / Math.max(pxPerMm, 1e-6));
-  return layout ? toS(layout.label) : null;
+  const label = dimLabel(c, pointMap(paths), (c.t === 'angle' ? ANGLE_R_PX : DIM_GAP_PX) / Math.max(pxPerMm, 1e-6));
+  return label ? toS(label) : null;
 }
 
 /** Nome di classe BEM con i modificatori di stato: `bem('x', ['ref', 'sel'])` = «x x--ref x--sel». */
@@ -66,7 +66,28 @@ export function QuoteOverlay({ paths, constraints, toS, pxPerMm, bad, flash, sel
     );
   };
 
+  /** Quota angolare: l'arco centrato nel vertice (con due soli punti anche il riferimento sull'asse X) e l'etichetta sull'arco. */
+  const angle = (c: ProfileConstraint, ps: PathContour[], state: string[], key: string): ReactNode => {
+    const layout = angleLayout(c, ps === paths ? pm : pointMap(ps), ANGLE_R_PX / Math.max(pxPerMm, 1e-6));
+    if (!layout) return null;
+    const arc = arcPoints(layout).map(toS);
+    const d = arc.map((q, i) => `${i ? 'L' : 'M'}${f1(q[0])} ${f1(q[1])}`).join('');
+    const [V, L] = [toS(layout.vertex), toS(layout.label)];
+    // Con due punti l'angolo è rispetto all'asse X: una semiretta di riferimento oltre l'arco
+    const ray = c.p.length === 2 ? (() => { const e = toS([layout.vertex[0] + layout.radius * 1.3, layout.vertex[1]]); return `M${f1(V[0])} ${f1(V[1])}L${f1(e[0])} ${f1(e[1])}`; })() : '';
+    return (
+      <g key={`d:${key}`}>
+        <g className={bem('profile-editor__dim', state)}>
+          <path d={`${d}${ray}`} />
+        </g>
+        {key !== 'draft' && <path className="profile-editor__qline" d={d} data-qline={key} />}
+        {pill(key, L[0], L[1], dimText(c, ps), state)}
+      </g>
+    );
+  };
+
   const dimension = (c: ProfileConstraint, ps: PathContour[], state: string[], key: string): ReactNode => {
+    if (c.t === 'angle') return angle(c, ps, state, key);
     const layout = dimLayout(c, ps === paths ? pm : pointMap(ps), fallback);
     if (!layout) return null;
     const [A, B, A2, B2, L] = [toS(layout.a), toS(layout.b), toS(layout.a2), toS(layout.b2), toS(layout.label)];
@@ -144,7 +165,7 @@ export function QuoteOverlay({ paths, constraints, toS, pxPerMm, bad, flash, sel
       {constraints.map((c) => {
         if (!c.p.every((id) => pm.has(id))) return null;
         const state = [...(c.ref ? ['ref'] : []), ...(selected === c.id ? ['sel'] : []), ...(bad.has(c.id) || flash.has(c.id) ? ['err'] : [])];
-        return isDimension(c) && c.t !== 'angle' ? dimension(c, paths, state, c.id) : glyph(c, state);
+        return isDimension(c) ? dimension(c, paths, state, c.id) : glyph(c, state);
       })}
       {draft && dimension(draft.con, draft.paths, ['draft'], 'draft')}
     </g>

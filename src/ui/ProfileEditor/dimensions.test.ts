@@ -5,6 +5,8 @@ import {
   addReferenceDimension,
   addSelectionConstraint,
   canApplyConstraint,
+  constraintPoints,
+  createAngleDimension,
   createDimension,
   diagnose,
   dimLayout,
@@ -19,12 +21,14 @@ import {
   pointsOf,
   quoteMismatch,
   removeConstraint,
+  selectionItems,
   setConstraintValue,
   settlePaths,
   stateText,
   validConstraints,
   writeBack,
 } from './dimensions';
+import { measure } from './constraints';
 import { deleteNodesWithConstraints, normalizeProfile } from './model';
 import type { Applied } from './dimensions';
 import { roundPaths } from '../../scene/store';
@@ -252,15 +256,15 @@ describe('aggiunta di vincoli e quote', () => {
   });
 
   it('addSelectionConstraint e canApplyConstraint: due nodi diversi, o almeno uno per Fisso', () => {
-    expect(canApplyConstraint('horizontal', 2)).toBe(true);
-    expect(canApplyConstraint('vertical', 1)).toBe(false);
-    expect(canApplyConstraint('coincident', 3)).toBe(false);
-    expect(canApplyConstraint('fixed', 1)).toBe(true);
-    expect(canApplyConstraint('fixed', 0)).toBe(false);
-    expect(addSelectionConstraint(start(), 'horizontal', ['n1']).ok).toBe(false);
-    expect(addSelectionConstraint(start(), 'vertical', ['n1', 'n1']).ok).toBe(false);
-    expect(addSelectionConstraint(start(), 'fixed', []).ok).toBe(false);
-    const ok = must(addSelectionConstraint(start(), 'coincident', ['n1', 'n2']));
+    const nodes = (...ids: string[]) => ({ nodes: ids, segments: [] as [string, string][], all: ids });
+    expect(canApplyConstraint('horizontal', nodes('n1', 'n2'))).toBe(true);
+    expect(canApplyConstraint('vertical', nodes('n1'))).toBe(false);
+    expect(canApplyConstraint('coincident', nodes('n1', 'n2', 'n3'))).toBe(false);
+    expect(canApplyConstraint('fixed', nodes('n1'))).toBe(true);
+    expect(canApplyConstraint('fixed', nodes())).toBe(false);
+    expect(addSelectionConstraint(start(), 'horizontal', nodes('n1')).ok).toBe(false);
+    expect(addSelectionConstraint(start(), 'fixed', nodes()).ok).toBe(false);
+    const ok = must(addSelectionConstraint(start(), 'coincident', nodes('n1', 'n2')));
     expect(pos(ok, 'n1')[0]).toBeCloseTo(pos(ok, 'n2')[0], 6);
     expect(pos(ok, 'n1')[1]).toBeCloseTo(pos(ok, 'n2')[1], 6);
   });
@@ -521,7 +525,7 @@ describe('scenari dei test e2e della Quota', () => {
     const diagonal = quote(d, 'n1', 'n3', 10);
     expect(diagonal.ok).toBe(false);
     if (!diagonal.ok) expect(diagonal.message).toMatch(/^Quota in conflitto con /);
-    const again = addSelectionConstraint(d, 'horizontal', ['n1', 'n2']);
+    const again = addSelectionConstraint(d, 'horizontal', { nodes: ['n1', 'n2'], segments: [], all: ['n1', 'n2'] });
     expect(again.ok).toBe(false);
     if (!again.ok) expect(again.message).toMatch(/^Vincolo ridondante/);
     // Il disegno di partenza non è stato toccato
@@ -537,5 +541,211 @@ describe('scenari dei test e2e della Quota', () => {
     expect(text(saved)).toBe('Completamente vincolato: 0 gradi di libertà');
     expect(diagnose(saved)!.report.conflicting).toEqual([]);
     expect(saved.paths[0].nodes[2].p[1]).toBeCloseTo(25, 6);
+  });
+});
+
+describe('vincoli dalla selezione (nodi e segmenti)', () => {
+  /** Trapezio: base in basso n1-n2, lato alto n3-n4 inclinato, lati n2-n3 e n4-n1. */
+  const trapezoid = (): Geo => ({
+    paths: [
+      {
+        closed: true,
+        nodes: [
+          { id: 'n1', p: [0, 0], kind: 'corner' },
+          { id: 'n2', p: [40, 0], kind: 'corner' },
+          { id: 'n3', p: [30, 20], kind: 'corner' },
+          { id: 'n4', p: [0, 15], kind: 'corner' },
+        ],
+      },
+    ],
+  });
+  /** Elementi scelti: indici dei nodi e dei segmenti (il segmento i va dal nodo i al successivo). */
+  const pick = (d: Geo, nodes: number[], segments: number[] = []) => selectionItems(d.paths, nodes.map((node) => ({ path: 0, node })), segments.map((segment) => ({ path: 0, segment })));
+  const cross = (d: Geo, a: string, b: string, c: string, e: string) => {
+    const [pa, pb, pc, pe] = [pos(d, a), pos(d, b), pos(d, c), pos(d, e)];
+    return (pb[0] - pa[0]) * (pe[1] - pc[1]) - (pb[1] - pa[1]) * (pe[0] - pc[0]);
+  };
+
+  it('selectionItems: un segmento vale se i suoi due nodi sono scelti e i suoi estremi non contano come nodi sciolti', () => {
+    const d = trapezoid();
+    expect(pick(d, [0, 1], [0])).toEqual({ nodes: [], segments: [['n1', 'n2']], all: ['n1', 'n2'] });
+    // Due nodi scelti uno a uno: sciolti
+    expect(pick(d, [0, 1])).toEqual({ nodes: ['n1', 'n2'], segments: [], all: ['n1', 'n2'] });
+    // Un segmento il cui nodo non è più scelto non vale; un nodo in più resta sciolto
+    expect(pick(d, [0], [0])).toEqual({ nodes: ['n1'], segments: [], all: ['n1'] });
+    expect(pick(d, [0, 1, 2], [0])).toEqual({ nodes: ['n3'], segments: [['n1', 'n2']], all: ['n1', 'n2', 'n3'] });
+    // L'ultimo segmento di un contorno chiuso torna al primo nodo; lo stesso segmento due volte conta una volta
+    expect(pick(d, [3, 0], [3, 3]).segments).toEqual([['n4', 'n1']]);
+    // I nodi senza id non si contano
+    const bare: Geo = { paths: [{ closed: false, nodes: [{ p: [0, 0], kind: 'corner' }, { id: 'n2', p: [1, 0], kind: 'corner' }] }] };
+    expect(selectionItems(bare.paths, [{ path: 0, node: 0 }, { path: 0, node: 1 }], [])).toEqual({ nodes: ['n2'], segments: [], all: ['n2'] });
+  });
+
+  it('constraintPoints: i punti nell\'ordine del risolutore, e null se la selezione non basta o non è compatibile', () => {
+    const d = trapezoid();
+    const seg = (i: number) => pick(d, [i, (i + 1) % 4], [i]);
+    const two = pick(d, [0, 1], [0]);
+    expect(constraintPoints('horizontal', seg(0))).toEqual(['n1', 'n2']);
+    expect(constraintPoints('vertical', pick(d, [2, 3]))).toEqual(['n3', 'n4']);
+    expect(constraintPoints('coincident', pick(d, [0, 2]))).toEqual(['n1', 'n3']);
+    expect(constraintPoints('coincident', two)).toBeNull();
+    expect(constraintPoints('fixed', pick(d, [0, 1, 2]))).toEqual(['n1', 'n2', 'n3']);
+    expect(constraintPoints('fixed', pick(d, []))).toBeNull();
+    // Due segmenti (lontani o adiacenti): parallelo, perpendicolare, uguale, collineare
+    const bottomAndTop = pick(d, [0, 1, 2, 3], [0, 2]);
+    for (const type of ['parallel', 'perpendicular', 'equal', 'collinear'] as const) expect(constraintPoints(type, bottomAndTop)).toEqual(['n1', 'n2', 'n3', 'n4']);
+    expect(constraintPoints('parallel', pick(d, [0, 1, 2], [0, 1]))).toEqual(['n1', 'n2', 'n2', 'n3']);
+    expect(constraintPoints('parallel', seg(0))).toBeNull();
+    expect(constraintPoints('parallel', pick(d, [0, 1, 2, 3], [0]))).toBeNull();
+    // Punto medio: un nodo e un segmento; simmetrico: due nodi e un segmento (l'asse)
+    expect(constraintPoints('midpoint', pick(d, [0, 1, 2], [0]))).toEqual(['n3', 'n1', 'n2']);
+    expect(constraintPoints('midpoint', seg(0))).toBeNull();
+    expect(constraintPoints('symmetric', pick(d, [0, 1, 2, 3], [0]))).toEqual(['n3', 'n4', 'n1', 'n2']);
+    expect(constraintPoints('symmetric', pick(d, [0, 1, 2], [0]))).toBeNull();
+    // Orizzontale con due segmenti o con un segmento e un nodo non vale
+    expect(constraintPoints('horizontal', bottomAndTop)).toBeNull();
+    expect(constraintPoints('horizontal', pick(d, [0, 1, 2], [0]))).toBeNull();
+    expect(canApplyConstraint('midpoint', pick(d, [0, 1, 2], [0]))).toBe(true);
+    expect(canApplyConstraint('midpoint', pick(d, []))).toBe(false);
+  });
+
+  it('parallelo: il lato alto diventa parallelo alla base (con la base orizzontale, orizzontale anch\'esso)', () => {
+    let d = must(addConstraint(trapezoid(), { t: 'horizontal', p: ['n1', 'n2'] }));
+    d = must(addSelectionConstraint(d, 'parallel', pick(d, [0, 1, 2, 3], [0, 2])));
+    expect(d.constraints!.at(-1)).toMatchObject({ t: 'parallel', p: ['n1', 'n2', 'n3', 'n4'] });
+    expect(cross(d, 'n1', 'n2', 'n3', 'n4')).toBeCloseTo(0, 6);
+    expect(pos(d, 'n3')[1]).toBeCloseTo(pos(d, 'n4')[1], 6);
+  });
+
+  it('perpendicolare: due lati adiacenti (nodo in comune) a 90 gradi', () => {
+    const d = must(addSelectionConstraint(trapezoid(), 'perpendicular', pick(trapezoid(), [0, 1, 2], [0, 1])));
+    const [a, b, c] = [pos(d, 'n1'), pos(d, 'n2'), pos(d, 'n3')];
+    expect((a[0] - b[0]) * (c[0] - b[0]) + (a[1] - b[1]) * (c[1] - b[1])).toBeCloseTo(0, 5);
+  });
+
+  it('uguale e collineare: stessa lunghezza, stessa retta', () => {
+    const t = trapezoid();
+    const equal = must(addSelectionConstraint(t, 'equal', pick(t, [0, 1, 2, 3], [0, 2])));
+    const len = (d: Geo, a: string, b: string) => Math.hypot(pos(d, a)[0] - pos(d, b)[0], pos(d, a)[1] - pos(d, b)[1]);
+    expect(len(equal, 'n1', 'n2')).toBeCloseTo(len(equal, 'n3', 'n4'), 6);
+    const collinear = must(addSelectionConstraint(t, 'collinear', pick(t, [0, 1, 2, 3], [0, 2])));
+    expect(cross(collinear, 'n1', 'n2', 'n3', 'n4')).toBeCloseTo(0, 5);
+    expect(cross(collinear, 'n1', 'n2', 'n1', 'n3')).toBeCloseTo(0, 5);
+  });
+
+  it('punto medio e simmetrico: il nodo a metà del segmento, due nodi speculari rispetto all\'asse', () => {
+    const t = trapezoid();
+    const mid = must(addSelectionConstraint(t, 'midpoint', pick(t, [0, 1, 2], [0])));
+    const [a, b, m] = [pos(mid, 'n1'), pos(mid, 'n2'), pos(mid, 'n3')];
+    expect(m[0]).toBeCloseTo((a[0] + b[0]) / 2, 6);
+    expect(m[1]).toBeCloseTo((a[1] + b[1]) / 2, 6);
+    // Simmetrici rispetto alla base: il segmento tra i due è perpendicolare all'asse e il suo punto medio sta sull'asse
+    const sym = must(addSelectionConstraint(t, 'symmetric', pick(t, [0, 1, 2, 3], [0])));
+    const [s1, s2, p3, p4] = [pos(sym, 'n1'), pos(sym, 'n2'), pos(sym, 'n3'), pos(sym, 'n4')];
+    expect((p3[0] - p4[0]) * (s2[0] - s1[0]) + (p3[1] - p4[1]) * (s2[1] - s1[1])).toBeCloseTo(0, 5);
+    const centre = [(p3[0] + p4[0]) / 2, (p3[1] + p4[1]) / 2];
+    expect((centre[0] - s1[0]) * (s2[1] - s1[1]) - (centre[1] - s1[1]) * (s2[0] - s1[0])).toBeCloseTo(0, 5);
+  });
+
+  it('conflitti e ridondanze con i nuovi vincoli: rifiutati con il motivo, il disegno di partenza intatto', () => {
+    // Due lati opposti di un rettangolo con orizzontali: parallelo è già implicato (ridondante)
+    const rectangle = squared();
+    const redundant = addSelectionConstraint(rectangle, 'parallel', selectionItems(rectangle.paths, [0, 1, 2, 3].map((node) => ({ path: 0, node })), [{ path: 0, segment: 0 }, { path: 0, segment: 2 }]));
+    expect(redundant.ok).toBe(false);
+    if (!redundant.ok) expect(redundant.reason).toBe('redundant');
+    // Perpendicolare tra base e lato destro, entrambi già orizzontale e verticale: ridondante
+    const perp = addSelectionConstraint(rectangle, 'perpendicular', selectionItems(rectangle.paths, [0, 1, 2].map((node) => ({ path: 0, node })), [{ path: 0, segment: 0 }, { path: 0, segment: 1 }]));
+    expect(perp.ok).toBe(false);
+    // Uguale con due quote diverse: in conflitto
+    let d = must(addConstraint(rectangle, { t: 'dist', p: ['n1', 'n2'], v: 40 }));
+    d = must(addConstraint(d, { t: 'dist', p: ['n2', 'n3'], v: 20 }));
+    const conflict = addSelectionConstraint(d, 'equal', selectionItems(d.paths, [0, 1, 2].map((node) => ({ path: 0, node })), [{ path: 0, segment: 0 }, { path: 0, segment: 1 }]));
+    expect(conflict.ok).toBe(false);
+    if (!conflict.ok) {
+      expect(conflict.reason).toBe('conflict');
+      expect(conflict.message).toMatch(/^Vincolo in conflitto con .* non applicato$/);
+    }
+    // Selezione incompatibile: il messaggio dice che cosa serve
+    const wrong = addSelectionConstraint(rectangle, 'symmetric', selectionItems(rectangle.paths, [{ path: 0, node: 0 }], []));
+    expect(wrong).toMatchObject({ ok: false, reason: 'invalid' });
+    if (!wrong.ok) expect(wrong.message).toBe('Simmetrico: scegli due nodi e un segmento (Alt+clic) che fa da asse');
+    // Lo stesso segmento due volte non è una coppia
+    const same = addSelectionConstraint(rectangle, 'parallel', { nodes: [], segments: [['n1', 'n2'], ['n2', 'n1']], all: ['n1', 'n2'] });
+    expect(same).toMatchObject({ ok: false, message: 'Parallelo: scegli due segmenti diversi' });
+  });
+});
+
+describe('quota angolare', () => {
+  /** Triangolo con l'angolo in n2 di 90 gradi: n1 (0,0), n2 (40,0), n3 (40,20). */
+  const corner = (): Geo => ({ paths: [{ closed: true, nodes: [{ id: 'n1', p: [0, 0], kind: 'corner' }, { id: 'n2', p: [40, 0], kind: 'corner' }, { id: 'n3', p: [40, 20], kind: 'corner' }] }] });
+  const angleOf = (d: Geo, c: ProfileConstraint) => measure(c, pointsOf(d.paths));
+
+  it('createAngleDimension: due segmenti con un nodo in comune danno i due raggi dal vertice, sempre con l\'angolo positivo', () => {
+    const d = corner();
+    const dim = createAngleDimension(d.paths, ['n1', 'n2'], ['n2', 'n3'], 10) as Omit<ProfileConstraint, 'id'>;
+    expect(dim.t).toBe('angle');
+    expect(dim.v).toBeCloseTo(90, 9);
+    // Da n2 verso n3 (su) a n2 verso n1 (sinistra) è antiorario, +90
+    expect(dim.p).toEqual(['n2', 'n3', 'n2', 'n1']);
+    expect(dim.at).toBe(0.5);
+    expect(dim.off).toBeGreaterThan(0);
+    // Scegliere i segmenti nell'altro ordine dà la stessa quota
+    const other = createAngleDimension(d.paths, ['n2', 'n3'], ['n1', 'n2'], 10) as Omit<ProfileConstraint, 'id'>;
+    expect(other.p).toEqual(dim.p);
+    expect(other.v).toBeCloseTo(90, 9);
+  });
+
+  it('segmenti paralleli o uguali: un messaggio, non una quota', () => {
+    const d = corner();
+    const flat: Geo = { paths: [{ closed: false, nodes: [{ id: 'a', p: [0, 0], kind: 'corner' }, { id: 'b', p: [10, 0], kind: 'corner' }, { id: 'c', p: [0, 5], kind: 'corner' }, { id: 'e', p: [10, 5], kind: 'corner' }] }] };
+    expect(createAngleDimension(flat.paths, ['a', 'b'], ['c', 'e'], 10)).toBe('I due segmenti sono paralleli: usa il vincolo Parallelo');
+    expect(createAngleDimension(d.paths, ['n1', 'n2'], ['n2', 'n1'], 10)).toBe('Scegli due segmenti diversi');
+    expect(createAngleDimension(d.paths, ['n1', 'n2'], ['zz', 'n3'], 10)).toBe('Scegli due segmenti');
+  });
+
+  it('segmenti lontani: l\'angolo è quello tra le due rette; il valore digitato porta i nodi all\'angolo', () => {
+    const d: Geo = { paths: [{ closed: false, nodes: [{ id: 'a', p: [0, 0], kind: 'corner' }, { id: 'b', p: [10, 0], kind: 'corner' }, { id: 'c', p: [20, 0], kind: 'corner' }, { id: 'e', p: [30, 10], kind: 'corner' }] }] };
+    const dim = createAngleDimension(d.paths, ['a', 'b'], ['c', 'e'], 10) as Omit<ProfileConstraint, 'id'>;
+    expect(dim.v).toBeCloseTo(45, 9);
+    const fixedStart = must(addFixed(d, ['a', 'b', 'c']));
+    const out = must(addConstraint(fixedStart, { ...dim, v: 60 }));
+    expect(angleOf(out, out.constraints!.at(-1)!)).toBeCloseTo(60, 5);
+    expect(diagnose(out)!.report.state).toBe('under');
+  });
+
+  it('da 10 a 170 gradi (e il contrario) si risolve senza spostare i nodi di decine di mm: prima si ruota il segmento', () => {
+    const d: Geo = { paths: [{ closed: false, nodes: [{ id: 'a', p: [0, 0], kind: 'corner' }, { id: 'b', p: [30, 0], kind: 'corner' }, { id: 'c', p: [30 - 30 * Math.cos(Math.PI / 18), 30 * Math.sin(Math.PI / 18)], kind: 'corner' }] }] };
+    const dim = createAngleDimension(d.paths, ['a', 'b'], ['b', 'c'], 10) as Omit<ProfileConstraint, 'id'>;
+    const base = must(addFixed(d, ['a', 'b']));
+    const added = must(addConstraint(base, { ...dim, v: 170 }));
+    const con = added.constraints!.at(-1)!;
+    expect(angleOf(added, con)).toBeCloseTo(170, 5);
+    // La lunghezza dei segmenti non cambia (solo c gira attorno a b)
+    expect(Math.hypot(pos(added, 'c')[0] - 30, pos(added, 'c')[1])).toBeCloseTo(30, 4);
+    const back = must(setConstraintValue(added, con.id, 10));
+    expect(angleOf(back, back.constraints!.at(-1)!)).toBeCloseTo(10, 5);
+  });
+
+  it('il valore si valida con validateValue; una quota di riferimento mostra l\'angolo misurato tra parentesi e non vincola', () => {
+    const d = must(addConstraint(corner(), { ...(createAngleDimension(corner().paths, ['n1', 'n2'], ['n2', 'n3'], 10) as ProfileConstraint), v: 90 }));
+    const id = d.constraints![0].id;
+    expect(setConstraintValue(d, id, 400)).toMatchObject({ ok: false, message: 'L\'angolo deve stare tra -360 e 360 gradi', reason: 'invalid' });
+    expect(setConstraintValue(d, id, NaN).ok).toBe(false);
+    // L'angolo già imposto non si può aggiungere due volte: ridondante, e allora si offre il riferimento
+    const dup = addConstraint(d, { ...(createAngleDimension(d.paths, ['n1', 'n2'], ['n2', 'n3'], 10) as ProfileConstraint), v: 90 });
+    expect(dup.ok).toBe(false);
+    const ref = addReferenceDimension(d, { t: 'angle', p: ['n2', 'n3', 'n2', 'n1'], v: 33 })!;
+    const con = ref.constraints!.at(-1)!;
+    expect(con.ref).toBe(true);
+    expect(dimText(con, ref.paths)).toBe('(90°)');
+    expect(ref.paths).toBe(d.paths);
+  });
+
+  it('angolo con due punti: rispetto all\'asse X', () => {
+    const d: Geo = { paths: [{ closed: false, nodes: [{ id: 'a', p: [0, 0], kind: 'corner' }, { id: 'b', p: [10, 10], kind: 'corner' }] }] };
+    const fixedA = must(addFixed(d, ['a']));
+    const out = must(addConstraint(fixedA, { t: 'angle', p: ['a', 'b'], v: 30 }));
+    expect(angleOf(out, out.constraints!.at(-1)!)).toBeCloseTo(30, 5);
+    expect(Math.hypot(pos(out, 'b')[0], pos(out, 'b')[1])).toBeCloseTo(Math.hypot(10, 10), 4);
   });
 });

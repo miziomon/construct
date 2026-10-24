@@ -2,6 +2,8 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { ConstraintsPanel } from './ConstraintsPanel';
+import { SELECTION_CONSTRAINTS, canApplyConstraint, selectionItems } from './dimensions';
+import type { SelectionConstraint } from './dimensions';
 import type { ConstraintsPanelProps } from './ConstraintsPanel';
 import type { PathContour, ProfileConstraint } from '../../scene/types';
 
@@ -16,8 +18,13 @@ const paths: PathContour[] = [
   },
 ];
 const noop = () => {};
+/** Quali pulsanti si accendono con i nodi (indici) e i segmenti scelti nel triangolo di prova. */
+const canFor = (nodes: number[], segments: number[]): Record<SelectionConstraint, boolean> => {
+  const items = selectionItems(paths, nodes.map((node) => ({ path: 0, node })), segments.map((segment) => ({ path: 0, segment })));
+  return Object.fromEntries(SELECTION_CONSTRAINTS.map((t) => [t, canApplyConstraint(t, items)])) as Record<SelectionConstraint, boolean>;
+};
 const render = (patch: Partial<ConstraintsPanelProps> = {}) =>
-  renderToStaticMarkup(createElement(ConstraintsPanel, { paths, constraints: [], selectedNodes: 0, bad: new Set<string>(), selected: null, onSelect: noop, onApply: noop, onValue: noop, onDelete: noop, onReposition: noop, ...patch }));
+  renderToStaticMarkup(createElement(ConstraintsPanel, { paths, constraints: [], can: canFor([], []), selectionText: '', bad: new Set<string>(), selected: null, onSelect: noop, onApply: noop, onValue: noop, onDelete: noop, onReposition: noop, ...patch }));
 
 /** Il pulsante di un vincolo (il suo tag di apertura) nel markup. */
 const button = (html: string, type: string) => html.match(new RegExp(`<button[^>]*data-constraint-button="${type}"[^>]*>`))![0];
@@ -25,22 +32,30 @@ const button = (html: string, type: string) => html.match(new RegExp(`<button[^>
 describe('sezione Quote e vincoli', () => {
   it('senza nodi scelti i pulsanti sono spenti e c\'è il suggerimento; l\'elenco è vuoto', () => {
     const html = render();
-    for (const type of ['horizontal', 'vertical', 'fixed', 'coincident']) expect(button(html, type)).toContain('disabled');
+    for (const type of SELECTION_CONSTRAINTS) expect(button(html, type)).toContain('disabled');
     expect(html).toContain('Scegli dei nodi con Seleziona');
     expect(html).toContain('Nessuna quota né vincolo.');
     expect(html).not.toContain('data-constraint=');
   });
 
-  it('con un nodo scelto si accende solo Fisso; con due nodi tutti e quattro; con tre solo Fisso', () => {
-    const one = render({ selectedNodes: 1 });
-    expect(button(one, 'fixed')).not.toContain('disabled');
-    expect(button(one, 'horizontal')).toContain('disabled');
-    const two = render({ selectedNodes: 2 });
-    for (const type of ['horizontal', 'vertical', 'fixed', 'coincident']) expect(button(two, type)).not.toContain('disabled');
-    const three = render({ selectedNodes: 3 });
-    expect(button(three, 'fixed')).not.toContain('disabled');
-    expect(button(three, 'coincident')).toContain('disabled');
-    expect(three).toContain('3 nodi scelti.');
+  it('i pulsanti si accendono secondo ciò che è scelto: un nodo, due nodi, un segmento, due segmenti, nodo e segmento, due nodi e un segmento', () => {
+    const on = (html: string) => SELECTION_CONSTRAINTS.filter((t) => !button(html, t).includes('disabled'));
+    expect(on(render({ can: canFor([0], []), selectionText: '1 nodo scelto.' }))).toEqual(['fixed']);
+    expect(on(render({ can: canFor([0, 1], []) }))).toEqual(['horizontal', 'vertical', 'fixed', 'coincident']);
+    // Un segmento (Alt+clic): orizzontale e verticale e fisso, non coincidente
+    expect(on(render({ can: canFor([0, 1], [0]) }))).toEqual(['horizontal', 'vertical', 'fixed']);
+    // Due segmenti: parallelo, perpendicolare, uguale, collineare, fisso
+    expect(on(render({ can: canFor([0, 1, 2], [0, 1]) }))).toEqual(['fixed', 'parallel', 'perpendicular', 'equal', 'collinear']);
+    // Un nodo e un segmento: punto medio; due nodi e un segmento: simmetrico
+    expect(on(render({ can: canFor([0, 1, 2], [0]) }))).toEqual(['fixed', 'midpoint']);
+    expect(on(render({ can: canFor([0, 1, 2], [0]) }))).not.toContain('symmetric');
+    expect(button(render({ can: canFor([0, 1], []) }), 'parallel')).toContain('disabled');
+    // Il testo della selezione e i suggerimenti dei pulsanti
+    expect(render({ can: canFor([0, 1], []), selectionText: '2 nodi scelti.' })).toContain('2 nodi scelti.');
+    const html = render();
+    expect(html).toContain('Serve: due segmenti (Alt+clic, poi Maiusc+Alt+clic sul secondo)');
+    expect(html).toContain('Serve: un nodo e un segmento (Alt+clic)');
+    expect(html).toContain('Serve: due nodi e un segmento (Alt+clic) che fa da asse');
   });
 
   it('l\'elenco ha una riga per vincolo con il nome, il pulsante Elimina e per le quote il valore', () => {

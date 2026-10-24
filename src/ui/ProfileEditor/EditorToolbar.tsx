@@ -34,6 +34,7 @@ const DIM_MODES: [DimMode, string, string][] = [
   ['len', 'Allineata', 'Distanza tra i due nodi, nella loro direzione'],
   ['h', 'Orizzontale', 'Solo la distanza in orizzontale (X) tra i due nodi'],
   ['v', 'Verticale', 'Solo la distanza in verticale (Y) tra i due nodi'],
+  ['ang', 'Angolo', 'Angolo tra due segmenti: clic sul primo e sul secondo segmento (con un nodo in comune è l\'angolo tra i due lati), poi digita i gradi'],
 ];
 
 const VIEWS: [ViewMode, string][] = [

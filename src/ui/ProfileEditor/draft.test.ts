@@ -148,7 +148,7 @@ describe('store della modale del Profilo', () => {
 describe('bozza v:2 con id, vincoli e parametri', () => {
   const withIds: Draft = {
     ...triangle,
-    paths: [{ closed: true, nodes: [{ id: 'n1', p: [0, 0], kind: 'corner' }, { id: 'n2', r: 1, p: [10, 0], kind: 'corner' }, { id: 'n3', p: [5, 8], kind: 'corner' }] }],
+    paths: [{ closed: true, nodes: [{ id: 'n1', p: [0, 0], kind: 'corner' }, { id: 'n2', p: [10, 0], kind: 'corner' }, { id: 'n3', p: [5, 8], kind: 'corner' }] }],
     constraints: [{ id: 'k1', t: 'dist', p: ['n1', 'n2'], v: 10, off: 3 }],
     params: { w: 10 },
   };
@@ -159,6 +159,15 @@ describe('bozza v:2 con id, vincoli e parametri', () => {
     vi.advanceTimersByTime(500);
     expect(JSON.parse(s.data.get('construct:profile-draft:abc')!).v).toBe(2);
     expect(loadDraft('abc', s)).toEqual(withIds);
+  });
+
+  it('con un raccordo (cambia la forma) la bozza è versione 2 anche senza vincoli', () => {
+    const s = fakeStorage();
+    const filleted: Draft = { ...withIds, constraints: undefined, params: undefined, paths: [{ closed: true, nodes: withIds.paths[0].nodes.map((n) => (n.id === 'n2' ? { ...n, r: 1.5 } : n)) }] };
+    saveDraft('abc', filleted, s);
+    vi.advanceTimersByTime(500);
+    expect(JSON.parse(s.data.get('construct:profile-draft:abc')!).v).toBe(2);
+    expect(loadDraft('abc', s)?.paths[0].nodes[1].r).toBe(1.5);
   });
 
   it('senza vincoli né parametri la bozza si salva ancora in versione 1, con gli id dei nodi', () => {

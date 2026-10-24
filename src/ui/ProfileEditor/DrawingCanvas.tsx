@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type MutableRefObject, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { TrianglesCenterlineDashedVertical, Maximize, ZoomIn, ZoomOut } from 'lucide-react';
-import { MAX_PATH_CONTOURS, cubicPoint, segmentOf } from '../../scene/bezier';
+import { MAX_PATH_CONTOURS, cubicPoint, expandFillets, segmentOf } from '../../scene/bezier';
 import type { PathContour, PathNode, ProfileConstraint, Vec2 } from '../../scene/types';
 import { appendPenNode, baseShapeContour, contourContains, cycleKind, gridStep, insertNodeWithConstraints, joinContours, moveHandle, moveNodes, nearestSegment, resumeContour, setNodeKind, snapPoint } from './model';
 import type { HandleRef, NodeRef, SegmentRef } from './model';
-import { DIM_GAP_PX, dimLayout, dragDimension, dragFrame, isLinearDimension, pointMap, settlePaths } from './dimensions';
+import { ANGLE_R_PX, DIM_GAP_PX, dimLabel, dragDimension, dragFrame, isPositionedDimension, pointMap, settlePaths } from './dimensions';
 import type { NodeState } from './dimensions';
 import { QuoteOverlay, quoteLabelPoint } from './QuoteOverlay';
 
@@ -75,6 +75,8 @@ interface Props {
   constraints?: ProfileConstraint[];
   /** Quote e vincoli sul disegno; assente nella sagoma. */
   quote?: QuoteProps;
+  /** Alt+clic su un segmento (con Maiusc: in aggiunta): sceglie il segmento. Senza, sceglie i suoi due nodi. */
+  onPickSegment?: (seg: SegmentRef, additive: boolean) => void;
   /** Disegno sotto i contorni (ingombro, livelli, assi di simmetria...). */
   underlay?: (ctx: CanvasContext) => ReactNode;
   /** Riquadro (x0, y0, x1, y1) in mm che «Adatta» e l'apertura inquadrano, al posto dei nodi; cambiandolo si inquadra di nuovo. */
@@ -202,8 +204,8 @@ type Drag =
   // Quota di sezione: si trascina solo con Seleziona, dopo nodi, maniglie e curve
   | { type: 'section' }
   // Etichetta (`label`: cambia `at` e `off`) o linea (`line`: cambia `off`) di una quota di lunghezza; senza movimento un clic sull'etichetta apre il campo
-  // `grab`: scarto (mm) dal puntatore al centro dell'etichetta al clic, così al primo movimento l'etichetta non salta sotto il puntatore
-  | { type: 'quote'; id: string; part: 'label' | 'line'; sx: number; sy: number; moved: boolean; grab: Vec2 }
+  // `grab`: scarto (mm) dal puntatore al centro dell'etichetta, `grabOff` quello (mm) dal puntatore alla linea, al clic: al primo movimento niente salta sotto il puntatore
+  | { type: 'quote'; id: string; part: 'label' | 'line'; sx: number; sy: number; moved: boolean; grab: Vec2; grabOff: number }
   // Penna, ripresa da un estremo (maniglia in uscita) o chiusura sul primo nodo (`close`, maniglia in entrata opposta al mouse): il trascinamento la disegna
   // (nodo liscio, spigolo con Alt); `last` parte dal nodo reso liscio
   | { type: 'resume'; ref: HandleRef; current: number; close: boolean; base: PathContour[]; last: PathContour[]; frozen: PathContour[]; to: Vec2 | null; sx: number; sy: number; moved: boolean; alt: boolean }
@@ -219,7 +221,7 @@ type Drag =
  * zoom sul puntatore, Spazio o tasto centrale per la panoramica. Le modifiche passano da `onLive` (durante il gesto) e
  * `onCommit` (al rilascio): un gesto è un solo passo della cronologia.
  */
-export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, insertOverride, constraints, quote, underlay, fitBox, section, onSection, refit, contours, crossings, holes, selection, grid, spaceDown, onLive, onCommit, onSelect, tool, flip, onFlip, pen, onPenLive, onPenResume, onPenClose, onPenFinish, onPenLimit, onPenStep, onShapeLimit, onShapeCancel, fitRequest, sides }: Props) {
+export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, insertOverride, constraints, quote, onPickSegment, underlay, fitBox, section, onSection, refit, contours, crossings, holes, selection, grid, spaceDown, onLive, onCommit, onSelect, tool, flip, onFlip, pen, onPenLive, onPenResume, onPenClose, onPenFinish, onPenLimit, onPenStep, onShapeLimit, onShapeCancel, fitRequest, sides }: Props) {
   const wrap = useRef<HTMLDivElement>(null);
   const svg = useRef<SVGSVGElement>(null);
   const [size, setSize] = useState({ w: 600, h: 400 });
@@ -489,19 +491,22 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
     const target = quote && (tool === 'select' || tool === 'dim') && e.target instanceof Element ? e.target : null;
     const labelId = target?.closest('[data-qid]')?.getAttribute('data-qid');
     if (labelId && quote) {
-      const con = constraints?.find((c) => c.id === labelId && isLinearDimension(c));
+      const con = constraints?.find((c) => c.id === labelId && isPositionedDimension(c));
       if (con) {
-        const label = dimLayout(con, pointMap(paths), DIM_GAP_PX / view.s)?.label;
+        const label = dimLabel(con, pointMap(paths), (con.t === 'angle' ? ANGLE_R_PX : DIM_GAP_PX) / view.s);
         const at = toW(sx, sy);
-        drag.current = { type: 'quote', id: labelId, part: 'label', sx, sy, moved: false, grab: label ? [label[0] - at[0], label[1] - at[1]] : [0, 0] };
+        drag.current = { type: 'quote', id: labelId, part: 'label', sx, sy, moved: false, grab: label ? [label[0] - at[0], label[1] - at[1]] : [0, 0], grabOff: 0 };
       } else quote.onLabelClick(labelId);
       return;
     }
     const lineId = target?.closest('[data-qline]')?.getAttribute('data-qline');
     if (lineId && quote) {
       const under = hitTest(sx, sy);
-      if (under.type !== 'node' && under.type !== 'handle') {
-        drag.current = { type: 'quote', id: lineId, part: 'line', sx, sy, moved: false, grab: [0, 0] };
+      const con = constraints?.find((c) => c.id === lineId && isPositionedDimension(c));
+      if (con && under.type !== 'node' && under.type !== 'handle') {
+        // Lo scarto dalla linea (proiettato sulla sua normale, o sul raggio) si tiene, così la linea non salta sotto il puntatore
+        const shown = con.off ?? (con.t === 'angle' ? ANGLE_R_PX : DIM_GAP_PX) / view.s;
+        drag.current = { type: 'quote', id: lineId, part: 'line', sx, sy, moved: false, grab: [0, 0], grabOff: shown - dragDimension(con, pointMap(paths), toW(sx, sy), 'line').off };
         return;
       }
     }
@@ -511,6 +516,8 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
       const hit = hitTest(sx, sy);
       if (hit.type === 'node') quote.onDimClick({ kind: 'node', ref: hit.ref }, view.s);
       else if (hit.type === 'segment') quote.onDimClick({ kind: 'segment', seg: hit.seg }, view.s);
+      // Clic nel vuoto: nessuna quota o vincolo resta scelto
+      else if (hit.type === 'none') quote.onDeselect();
       return;
     }
     const w = toW(sx, sy);
@@ -611,8 +618,9 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
       };
     } else if (hit.type === 'segment' && e.altKey) {
       // Alt+clic su un segmento: sceglie i suoi due nodi (così Orizzontale, Verticale o Coincidente valgono per quel lato con un clic)
-      const contour = paths[hit.seg.path];
-      onSelect([{ path: hit.seg.path, node: hit.seg.segment }, { path: hit.seg.path, node: (hit.seg.segment + 1) % contour.nodes.length }]);
+      // Con Maiusc si aggiunge a quelli già scelti (due segmenti per Parallelo, Perpendicolare, Uguale, Collineare)
+      if (onPickSegment) onPickSegment(hit.seg, e.shiftKey);
+      else onSelect([{ path: hit.seg.path, node: hit.seg.segment }, { path: hit.seg.path, node: (hit.seg.segment + 1) % paths[hit.seg.path].nodes.length }]);
     } else if (hit.type === 'segment') {
       // Il clic su una curva seleziona tutto il contorno (Maiusc lo aggiunge o lo toglie) e trascinandola lo si sposta
       const all: NodeRef[] = paths[hit.seg.path].nodes.map((_, node) => ({ path: hit.seg.path, node }));
@@ -731,7 +739,7 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
       const con = constraints?.find((c) => c.id === d.id);
       if (con && quote) {
         const moved = dragDimension(con, pointMap(paths), [w[0] + d.grab[0], w[1] + d.grab[1]], d.part);
-        quote.onQuoteMove(d.id, moved.off, moved.at);
+        quote.onQuoteMove(d.id, moved.off + d.grabOff, moved.at);
       }
     } else if (d.type === 'pan') {
       changeView({ ...view, cx: d.cx - (sgn * (sx - d.sx)) / view.s, cy: d.cy + (sy - d.sy) / view.s });
@@ -983,7 +991,7 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
         )}
         <path className="profile-editor__fill" fillRule="evenodd" d={fill} />
         {paths.map((c, pi) => (
-          <path key={pi} className={`profile-editor__curve${holes[pi] ? ' profile-editor__curve--hole' : ''}${stateMod('profile-editor__curve', contourState(c))}`} d={contourPath(c, toS)} />
+          <path key={pi} className={`profile-editor__curve${holes[pi] ? ' profile-editor__curve--hole' : ''}${stateMod('profile-editor__curve', contourState(c))}`} d={contourPath(expandFillets(c), toS)} />
         ))}
         {/* Maniglie dei nodi selezionati e dei loro vicini */}
         {[...shown].map((key) => {

@@ -1,8 +1,8 @@
-import { dragSketch, maxResidual, solveSketch, validateValue } from './constraints';
+import { dragSketch, maxResidual, measure, solveSketch, validateValue } from './constraints';
 import type { ConstraintType, Pt, Report } from './constraints';
 import { dimensionValue, isDimension, placeDimension, pointMap, pointsOf } from './dimPlacement';
 import { constraintIdMaker, moveNodes } from './model';
-import type { NodeRef, ProfileGeometry } from './model';
+import type { NodeRef, ProfileGeometry, SegmentRef } from './model';
 import type { PathContour, ProfileConstraint, Vec2 } from '../../scene/types';
 
 /**
@@ -13,14 +13,18 @@ import type { PathContour, ProfileConstraint, Vec2 } from '../../scene/types';
  *
  * Regola di fondo: il disegno si risolve SOLO quando l'utente aggiunge o cambia un vincolo o una quota, o rilascia un
  * trascinamento; mai al caricamento (le coordinate salvate sono già la soluzione).
+ *
+ * Il risolutore lavora sempre e solo sui NODI DI CONTROLLO (le coordinate `p` dei nodi con id): i raccordi (`r` di un nodo)
+ * sono un'espansione a valle, calcolata quando il contorno si campiona (`expandFillets` in scene/bezier.ts). Un vincolo
+ * o una quota su un nodo raccordato riguarda lo spigolo (il punto in cui si incontrerebbero i due segmenti), non l'arco.
  */
 
 // La geometria delle quote (posizione, testo, disposizione automatica) sta in dimPlacement.ts: da qui si riesporta
-export { DIM_GAP_PX, dimLayout, dimText, dimensionValue, dragDimension, fmtDim, isDimension, isLinearDimension, pillWidthPx, placeDimension, pointMap, pointsOf, repositionDimensions } from './dimPlacement';
-export type { DimLayout } from './dimPlacement';
+export { ANGLE_R_PX, DIM_GAP_PX, angleLayout, arcPoints, dimLabel, dimLayout, dimText, dimensionValue, dragDimension, fmtDim, isDimension, isLinearDimension, isPositionedDimension, pillWidthPx, placeDimension, pointMap, pointsOf, repositionDimensions } from './dimPlacement';
+export type { AngleLayout, DimLayout } from './dimPlacement';
 
-/** Come si misura una quota di lunghezza: allineata ai due nodi, solo in orizzontale (distX) o solo in verticale (distY). */
-export type DimMode = 'len' | 'h' | 'v';
+/** Come si misura una quota: lunghezza allineata ai due nodi, solo in orizzontale (distX) o solo in verticale (distY), oppure l'angolo tra due segmenti. */
+export type DimMode = 'len' | 'h' | 'v' | 'ang';
 
 /** Nomi dei tipi di vincolo, come nell'elenco del pannello. */
 export const CONSTRAINT_NAMES: Record<ConstraintType, string> = {
@@ -59,7 +63,7 @@ export const CONSTRAINT_GLYPHS: Record<ConstraintType, string> = {
 };
 
 /** Vincoli che si creano dalla selezione di nodi nella modale (le quote si creano con lo strumento Quota). */
-export const SELECTION_CONSTRAINTS = ['horizontal', 'vertical', 'fixed', 'coincident'] as const;
+export const SELECTION_CONSTRAINTS = ['horizontal', 'vertical', 'fixed', 'coincident', 'parallel', 'perpendicular', 'equal', 'midpoint', 'symmetric', 'collinear'] as const;
 export type SelectionConstraint = (typeof SELECTION_CONSTRAINTS)[number];
 
 // --- Punti del risolutore ---------------------------------------------------------------------------------------------
@@ -168,7 +172,8 @@ const UNSOLVED = 'Il risolutore non è arrivato a una soluzione (non è detto ch
 
 /** Descrizione breve di un vincolo, per i messaggi e il pannello: «Distanza P1.1-P1.2». */
 export function describeConstraint(c: ProfileConstraint, names: Map<string, string>): string {
-  return `${CONSTRAINT_NAMES[c.t]} ${c.p.map((id) => names.get(id) ?? '?').join('-')}`;
+  // Un nodo condiviso tra due segmenti (angolo, parallelo...) si nomina una volta
+  return `${CONSTRAINT_NAMES[c.t]} ${[...new Set(c.p)].map((id) => names.get(id) ?? '?').join('-')}`;
 }
 
 /** Fino a tre vincoli per nome, per dire con quali va in conflitto quello nuovo. */
@@ -219,7 +224,35 @@ export function addConstraint<T extends ProfileGeometry>(d: T, con: Omit<Profile
   const list = d.constraints ?? [];
   const id = con.id ?? constraintIdMaker(list)();
   const added: ProfileConstraint = { ...con, id };
-  return solveWith(d, [...list, added], added, messagesFor(isDimension(added) ? 'Quota' : 'Vincolo'));
+  // Una quota angolare nuova: prima si ruota il segmento al nuovo angolo, così il risolutore parte vicino alla soluzione
+  const start = added.t === 'angle' && !added.ref ? preRotated(d, added, added.v ?? 0) : d;
+  return solveWith(start, [...list, added], added, messagesFor(isDimension(added) ? 'Quota' : 'Vincolo'));
+}
+
+/**
+ * Prima di risolvere una quota angolare si ruota il segmento al nuovo angolo (come nel prototipo dello studio): da 10 a 170
+ * gradi la via a norma minima sposterebbe i nodi di decine di mm e incontrerebbe il salto a 180 gradi. Gira attorno all'estremo
+ * più vincolato (quello senza gradi di libertà, altrimenti il primo). Il risultato è solo il punto di partenza: la risoluzione
+ * decide, e se non va il disegno originale non si tocca.
+ */
+function preRotated<T extends ProfileGeometry>(d: T, c: ProfileConstraint, value: number): T {
+  const pm = pointMap(d.paths);
+  if (!c.p.every((id) => pm.has(id))) return d;
+  const delta = ((value - measure(c, pointsOf(d.paths))) * Math.PI) / 180;
+  if (!Number.isFinite(delta) || Math.abs(delta) < 1e-12) return d;
+  // Chi gira: di preferenza un estremo libero. Ruotando il secondo segmento (cd) di +delta l'angolo cresce di delta, ruotando il
+  // primo (ab) cala di delta (con due soli punti il primo segmento misura l'angolo dall'asse X, quindi cresce)
+  const [a, b, e, f] = c.p;
+  const all: [string, string, number][] = c.p.length === 2 ? [[a, b, 1], [b, a, 1]] : [[e, f, 1], [f, e, 1], [a, b, -1], [b, a, -1]];
+  // Chi gira non può essere un nodo dell'altro segmento (il vertice in comune): ruoterebbero tutti e due
+  const options = all.filter(([, m, sg]) => c.p.length === 2 || !(sg === 1 ? [a, b] : [e, f]).includes(m));
+  if (!options.length) return d;
+  const free = new Set(diagnose(d)?.report.free ?? []);
+  const [pivot, mover, sign] = options.find(([, m]) => free.has(m)) ?? options[0];
+  const [o, q] = [pm.get(pivot)!, pm.get(mover)!];
+  const [cos, sin] = [Math.cos(sign * delta), Math.sin(sign * delta)];
+  const [dx, dy] = [q[0] - o[0], q[1] - o[1]];
+  return { ...d, paths: writeBack(d.paths, [{ id: mover, x: o[0] + dx * cos - dy * sin, y: o[1] + dx * sin + dy * cos }]) };
 }
 
 /** Fissa i nodi dati nella posizione attuale (quelli già fissi si saltano). Tutti o nessuno: se il disegno diventa sovravincolato non si applica. */
@@ -235,15 +268,93 @@ export function addFixed<T extends ProfileGeometry>(d: T, ids: string[]): Applie
   return solveWith(d, [...list, ...added], null, { conflict: () => over, redundant: over }, true);
 }
 
-/** Un vincolo si può creare con tanti nodi scelti? Due per orizzontale, verticale e coincidente; almeno uno per fisso. */
-export function canApplyConstraint(type: SelectionConstraint, count: number): boolean {
-  return type === 'fixed' ? count >= 1 : count === 2;
+// --- Vincoli dalla selezione ---------------------------------------------------------------------------------------------
+
+/**
+ * Ciò che è scelto nella modale, in id: i nodi SCIOLTI (scelti uno a uno), i segmenti (scelti con Alt+clic: la coppia di id dei
+ * due estremi) e tutti i nodi. Un segmento vale solo se i suoi due nodi sono ancora scelti; i suoi estremi non contano come nodi sciolti.
+ */
+export interface SelectionItems {
+  nodes: string[];
+  segments: [string, string][];
+  all: string[];
 }
 
-/** Crea il vincolo scelto dai nodi indicati (id), oppure spiega perché non si può. */
-export function addSelectionConstraint<T extends ProfileGeometry>(d: T, type: SelectionConstraint, ids: string[]): Applied<T> {
-  if (!canApplyConstraint(type, ids.length) || new Set(ids).size !== ids.length) return { ok: false, message: type === 'fixed' ? 'Scegli almeno un nodo' : 'Scegli due nodi diversi', ids: [] };
-  return type === 'fixed' ? addFixed(d, ids) : addConstraint(d, { t: type, p: [ids[0], ids[1]] });
+/** Gli elementi scelti, dai nodi selezionati e dai segmenti scelti con Alt+clic (i nodi senza id non si contano: servono prima gli id). */
+export function selectionItems(paths: PathContour[], selection: NodeRef[], segments: SegmentRef[]): SelectionItems {
+  const key = (r: NodeRef) => `${r.path}:${r.node}`;
+  const selected = new Set(selection.map(key));
+  const idOf = (r: NodeRef) => paths[r.path]?.nodes[r.node]?.id;
+  const inSegment = new Set<string>();
+  const pairs: [string, string][] = [];
+  for (const seg of segments) {
+    const c = paths[seg.path];
+    if (!c) continue;
+    const [a, b] = [{ path: seg.path, node: seg.segment }, { path: seg.path, node: (seg.segment + 1) % c.nodes.length }];
+    const [ida, idb] = [idOf(a), idOf(b)];
+    if (!ida || !idb || !selected.has(key(a)) || !selected.has(key(b)) || pairs.some(([x, y]) => (x === ida && y === idb) || (x === idb && y === ida))) continue;
+    pairs.push([ida, idb]);
+    inSegment.add(key(a));
+    inSegment.add(key(b));
+  }
+  const unique = (ids: (string | undefined)[]) => [...new Set(ids.filter((id): id is string => !!id))];
+  return { nodes: unique(selection.filter((r) => !inSegment.has(key(r))).map(idOf)), segments: pairs, all: unique(selection.map(idOf)) };
+}
+
+/**
+ * I punti (id) del vincolo che la selezione può avere, nell'ordine che il risolutore vuole, o null se non basta o non è compatibile:
+ * - orizzontale, verticale: un segmento, oppure due nodi;
+ * - coincidente: due nodi; fisso: uno o più nodi (tutti quelli scelti);
+ * - parallelo, perpendicolare, uguale, collineare: due segmenti diversi (anche con un nodo in comune);
+ * - punto medio: un nodo e un segmento; simmetrico: due nodi e un segmento (l'asse).
+ */
+export function constraintPoints(type: SelectionConstraint, items: SelectionItems): string[] | null {
+  const { nodes, segments } = items;
+  switch (type) {
+    case 'horizontal':
+    case 'vertical':
+      if (segments.length === 1 && !nodes.length) return [...segments[0]];
+      return !segments.length && nodes.length === 2 ? nodes : null;
+    case 'coincident':
+      return !segments.length && nodes.length === 2 ? nodes : null;
+    case 'fixed':
+      return items.all.length >= 1 ? items.all : null;
+    case 'parallel':
+    case 'perpendicular':
+    case 'equal':
+    case 'collinear':
+      return segments.length === 2 && !nodes.length ? [...segments[0], ...segments[1]] : null;
+    case 'midpoint':
+      return nodes.length === 1 && segments.length === 1 ? [nodes[0], ...segments[0]] : null;
+    case 'symmetric':
+      return nodes.length === 2 && segments.length === 1 ? [...nodes, ...segments[0]] : null;
+  }
+}
+
+/** Un vincolo si può creare con ciò che è scelto? */
+export const canApplyConstraint = (type: SelectionConstraint, items: SelectionItems): boolean => constraintPoints(type, items) !== null;
+
+/** Che cosa serve scegliere per ogni vincolo (per i messaggi e le descrizioni dei pulsanti). */
+export const CONSTRAINT_NEEDS: Record<SelectionConstraint, string> = {
+  horizontal: 'un segmento (Alt+clic) o due nodi',
+  vertical: 'un segmento (Alt+clic) o due nodi',
+  fixed: 'uno o più nodi',
+  coincident: 'due nodi',
+  parallel: 'due segmenti (Alt+clic, poi Maiusc+Alt+clic sul secondo)',
+  perpendicular: 'due segmenti (Alt+clic, poi Maiusc+Alt+clic sul secondo)',
+  equal: 'due segmenti (Alt+clic, poi Maiusc+Alt+clic sul secondo)',
+  collinear: 'due segmenti (Alt+clic, poi Maiusc+Alt+clic sul secondo)',
+  midpoint: 'un nodo e un segmento (Alt+clic)',
+  symmetric: 'due nodi e un segmento (Alt+clic) che fa da asse',
+};
+
+/** Crea il vincolo scelto dalla selezione, oppure spiega che cosa serve scegliere. */
+export function addSelectionConstraint<T extends ProfileGeometry>(d: T, type: SelectionConstraint, items: SelectionItems): Applied<T> {
+  const p = constraintPoints(type, items);
+  if (!p) return { ok: false, message: `${CONSTRAINT_NAMES[type]}: scegli ${CONSTRAINT_NEEDS[type]}`, ids: [], reason: 'invalid' };
+  // Due segmenti uguali (la stessa coppia di nodi) non sono due segmenti
+  if (p.length === 4 && ((p[0] === p[2] && p[1] === p[3]) || (p[0] === p[3] && p[1] === p[2]))) return { ok: false, message: `${CONSTRAINT_NAMES[type]}: scegli due segmenti diversi`, ids: [], reason: 'invalid' };
+  return type === 'fixed' ? addFixed(d, p) : addConstraint(d, { t: type, p });
 }
 
 /** Cambia il valore di una quota e risolve; se il valore non è ammesso o non è raggiungibile il disegno resta com'era. */
@@ -256,7 +367,7 @@ export function setConstraintValue<T extends ProfileGeometry>(d: T, id: string, 
   const edited: ProfileConstraint = { ...con, v: value };
   // Per una modifica la frase è «Valore non raggiungibile» (la quota c'era già); il valore uguale all'attuale non è mai ridondante
   const messages: Messages = { conflict: (who) => `Valore non raggiungibile: va in conflitto con ${who || 'i vincoli'}`, redundant: 'Valore non raggiungibile: il disegno è già vincolato da altri vincoli' };
-  return solveWith(d, list.map((c) => (c.id === id ? edited : c)), edited, messages);
+  return solveWith(con.t === 'angle' ? preRotated(d, con, value) : d, list.map((c) => (c.id === id ? edited : c)), edited, messages);
 }
 
 /** Toglie un vincolo o una quota. Non risolve (togliere un vincolo non può sovravincolare): il disegno resta dov'è. Senza più vincoli il campo non c'è. */
@@ -295,6 +406,34 @@ export function createDimension(paths: PathContour[], mode: DimMode, idA: string
     if (v < 1e-6) return 'I due nodi hanno la stessa y: prima separali';
     dim = { t: 'distY', p: [idA, idB], s: b[1] >= a[1] ? 1 : -1, v };
   }
+  return { ...dim, ...placeDimension(paths, existing, dim as ProfileConstraint, pxPerMm) };
+}
+
+/**
+ * Nuova quota angolare tra due segmenti (coppie di id degli estremi), con l'angolo che hanno adesso: l'arco sta nel vertice
+ * (con un nodo in comune sono i due raggi uscenti da lì) e l'angolo si presenta sempre positivo. Il raggio dell'arco e la
+ * posizione dell'etichetta sono quelli scelti da `placeDimension`. Restituisce un messaggio se i due segmenti sono paralleli
+ * (serve il vincolo Parallelo) o coincidono. Non risolve e non assegna l'id.
+ */
+export function createAngleDimension(paths: PathContour[], first: [string, string], second: [string, string], pxPerMm: number, existing: ProfileConstraint[] = []): Omit<ProfileConstraint, 'id'> | string {
+  const pm = pointMap(paths);
+  if (![...first, ...second].every((id) => pm.has(id))) return 'Scegli due segmenti';
+  if ((first[0] === second[0] && first[1] === second[1]) || (first[0] === second[1] && first[1] === second[0])) return 'Scegli due segmenti diversi';
+  // Con un nodo in comune l'angolo si misura tra i due raggi che escono da lì
+  const shared = first.find((id) => id === second[0] || id === second[1]);
+  let l1: [string, string] = first;
+  let l2: [string, string] = second;
+  if (shared) {
+    l1 = [shared, first[0] === shared ? first[1] : first[0]];
+    l2 = [shared, second[0] === shared ? second[1] : second[0]];
+  }
+  const pts = pointsOf(paths);
+  let con: Omit<ProfileConstraint, 'id'> = { t: 'angle', p: [...l1, ...l2] };
+  // L'angolo si presenta sempre positivo: se è negativo i segmenti si scambiano
+  if (measure(con as ProfileConstraint, pts) < 0) con = { t: 'angle', p: [...l2, ...l1] };
+  const v = measure(con as ProfileConstraint, pts);
+  if (Math.abs(v) < 1e-6 || Math.abs(Math.abs(v) - 180) < 1e-6) return 'I due segmenti sono paralleli: usa il vincolo Parallelo';
+  const dim = { ...con, v };
   return { ...dim, ...placeDimension(paths, existing, dim as ProfileConstraint, pxPerMm) };
 }
 

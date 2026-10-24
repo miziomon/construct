@@ -483,6 +483,21 @@ describe('import di file OpenSCAD: Profilo di Bézier (andata e ritorno)', () =>
     expect(strip(codeOf(original))).toBe(strip(codeOf(node({ paths: withIds, width: 20, depth: 18 } as Partial<Shape2DNode>))));
   });
 
+  it('il raggio di raccordo: il codice scrive lo stesso poligono del kernel (con l\'arco), il commento è v:2 e si rilegge come Profilo con r', () => {
+    const rounded = [{ closed: true, nodes: [{ p: [0, 0] as [number, number], kind: 'corner' as const, r: 4 }, { p: [30, 0] as [number, number], kind: 'corner' as const }, { p: [30, 20] as [number, number], kind: 'corner' as const, r: 6 }, { p: [0, 20] as [number, number], kind: 'corner' as const }] }];
+    const original = node({ paths: rounded, width: 30, depth: 20 } as Partial<Shape2DNode>);
+    const code = codeOf(original);
+    expect(code).toContain('"v":2');
+    // I punti scritti sono quelli del kernel (pathContours, arrotondati a 4 decimali come il codice): più dei 4 spigoli, con gli archi
+    const written = [...code.matchAll(/\[(-?[\d.]+), (-?[\d.]+)\]/g)].length;
+    expect(written).toBeGreaterThan(4);
+    const result = back(code) as Extract<Shape2DNode, { kind: 'path' }>;
+    expect(result.kind).toBe('path');
+    expect(result.paths).toStrictEqual(rounded);
+    // Un file v:1 con un raggio (scritto a mano) si legge lo stesso, con lo stesso poligono
+    expect((back(code.replace('"v":2', '"v":1')) as Extract<Shape2DNode, { kind: 'path' }>).paths).toStrictEqual(rounded);
+  });
+
   it('un commento v:1 di un file vecchio si importa ancora come Profilo', () => {
     // Senza vincoli il file è scritto in versione 1 (anche gli id dei nodi vi stanno senza cambiarla)
     const v1 = codeOf(node());

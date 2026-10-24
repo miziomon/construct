@@ -330,14 +330,17 @@ describe('id dei nodi, raccordo, vincoli e parametri (formato v:2)', () => {
     expect(text).not.toContain('\n');
     expect(JSON.parse(text)).toMatchObject({ v: 2, k: meta.constraints, q: meta.params });
     expect(decodePathMeta(text)).toStrictEqual(meta);
-    const plain = encodePathMeta({ paths: tri(), tolerance: 0.05, width: 10, depth: 10 });
+    // Senza raggi: gli id dei nodi non cambiano la versione
+    const noRadius = tri().map((c) => ({ ...c, nodes: c.nodes.map(({ r: _r, ...n }) => n) }));
+    const plain = encodePathMeta({ paths: noRadius, tolerance: 0.05, width: 10, depth: 10 });
     expect(Object.keys(JSON.parse(plain))).toEqual(['v', 'w', 'd', 't', 'paths']);
-    // La versione è 2 solo con vincoli o parametri: senza, resta 1 anche con gli id nei nodi, e un'app v:1 lo legge
+    // La versione è 2 solo con vincoli, parametri o un raccordo (che cambia la forma): senza, resta 1 anche con gli id nei nodi
     expect(JSON.parse(plain).v).toBe(1);
+    expect(JSON.parse(encodePathMeta({ paths: tri(), tolerance: 0.05, width: 10, depth: 10 })).v).toBe(2);
     expect(JSON.parse(encodePathMeta({ ...meta, constraints: undefined })).v).toBe(2);
     expect(JSON.parse(encodePathMeta({ ...meta, params: undefined })).v).toBe(2);
-    expect(JSON.parse(encodePathMeta({ ...meta, constraints: [], params: {} })).v).toBe(1);
-    expect(decodePathMeta(plain)).toStrictEqual({ paths: tri(), tolerance: 0.05, width: 10, depth: 10 });
+    expect(JSON.parse(encodePathMeta({ ...meta, paths: noRadius, constraints: [], params: {} })).v).toBe(1);
+    expect(decodePathMeta(plain)).toStrictEqual({ paths: noRadius, tolerance: 0.05, width: 10, depth: 10 });
   });
 
   it('un commento v:1 si legge ancora (senza vincoli, anche se ne contiene) e uno v:2 con vincoli rovinati si legge senza di essi', () => {
