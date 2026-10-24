@@ -48,10 +48,46 @@ describe('decodeImage: memoria limitata', () => {
     expect([flat.w, flat.h]).toEqual([512, 512]);
   });
 
-  it('input vuoto o troncato: errore, senza eccezioni grezze di lettura', () => {
-    expect(() => decodeImage('img-e', '')).toThrow();
-    const encoded = encodeImage({ id: 'img-t', w: 4, h: 4, gray: new Uint8Array(16) });
-    expect(decodeImage('img-t', encoded).w).toBe(4);
-    expect(() => decodeImage('img-t', encoded.slice(0, 8))).toThrow();
+  it('dati non validi: sempre il messaggio generico, mai gli errori grezzi di fflate o di atob', () => {
+    const generic = /^Immagine del progetto non valida\.$/;
+    const gray = Uint8Array.from({ length: 64 * 64 }, (_, i) => (i * 31) % 256);
+    const zlib = zlibSync(Uint8Array.from([...new Uint8Array(new Uint32Array([64, 64]).buffer), ...gray]), { level: 6 });
+    expect(zlib.length).toBeGreaterThan(100);
+    const encode = (bytes: Uint8Array) => toBase64(bytes);
+    const cases: [string, string][] = [
+      ['zlib troncato a metà', encode(zlib.subarray(0, zlib.length >> 1))],
+      ['zlib senza l\'ultimo byte', encode(zlib.subarray(0, zlib.length - 1))],
+      ['zlib senza il controllo Adler-32', encode(zlib.subarray(0, zlib.length - 4))],
+      ['zlib con il solo inizio', encode(zlib.subarray(0, 3))],
+      ['zlib con intestazione sbagliata', encode(Uint8Array.from([0, 1, 2, 3, 4, 5, 6, 7]))],
+      ['spazzatura (byte casuali validi in base64)', encode(Uint8Array.from({ length: 300 }, (_, i) => (i * 97 + 13) % 256))],
+      ['input vuoto', ''],
+      ['base64 non valido (carattere)', 'non è base64!!'],
+      ['base64 non valido (lunghezza)', 'AAAAA'],
+      ['solo spazi', '    '],
+    ];
+    for (const [what, input] of cases) {
+      let message = '';
+      try {
+        decodeImage('img-x', input);
+      } catch (e) {
+        message = e instanceof Error ? `${e.constructor.name}: ${e.message}` : String(e);
+      }
+      expect(message, what).toMatch(/^Error: Immagine del progetto non valida\.$/);
+      expect(message, what).toMatch(new RegExp(`^Error: ${generic.source.slice(1, -1)}$`));
+    }
+    // Con dati validi nessun errore
+    expect(decodeImage('img-v', encode(zlib)).w).toBe(64);
+  });
+
+  it('il tetto di memoria dà il suo messaggio preciso (non quello generico)', () => {
+    const raw = new Uint8Array(8 + 8 * 1024 * 1024);
+    new Uint32Array(raw.buffer, 0, 2).set([512, 512]);
+    expect(() => decodeImage('img-big', toBase64(zlibSync(raw, { level: 9 })))).toThrow(/più grande di 512 pixel di lato/);
+  });
+
+  it('intestazione e lunghezza incoerenti: messaggio generico', () => {
+    expect(() => decodeImage('img-i', encodeImage({ id: 'img-i', w: 8, h: 8, gray: new Uint8Array(16) }))).toThrow(/^Immagine del progetto non valida\.$/);
+    expect(() => decodeImage('img-z', encodeImage({ id: 'img-z', w: 0, h: 0, gray: new Uint8Array(0) }))).toThrow(/^Immagine del progetto non valida\.$/);
   });
 });

@@ -279,6 +279,23 @@ describe('Pattern Immagine su una faccia inclinata', () => {
   });
 });
 
+describe('Pattern con campi conservati dal pannello: kernel e codice non li vedono', () => {
+  it('un Pattern a celle con imageId, texture e sample rimasti dà lo stesso solido, lo stesso codice e la stessa chiave', () => {
+    const stale = { imageId: 'img-abc', sample: 'waves', texture: { ...base, mode: 'both' }, textureAlgorithm: 1 } as Partial<PatternParams>;
+    for (const kind of ['hexagon', 'brick', 'studs', 'hammered', 'wood'] as const) {
+      const clean = scene({ kind, sample: undefined, texture: undefined }, {});
+      const dirty = scene({ kind, ...stale });
+      (clean.nodes.g as GroupNode).pattern = { ...patternOf(clean), sample: undefined, texture: undefined };
+      const a = new Evaluator(wasm);
+      const b = new Evaluator(wasm);
+      const key = (ev: Evaluator, s: Scene) => (ev as unknown as { key: (scene: Scene, node: unknown) => string }).key(s, s.nodes.g);
+      expect(key(b, dirty)).toBe(key(a, clean));
+      expect(sceneToOpenScad(dirty)).toBe(sceneToOpenScad(clean));
+      expect(run(dirty, b).volume).toBe(run(clean, a).volume);
+    }
+  });
+});
+
 describe('Pattern Immagine nel codice OpenSCAD', () => {
   const mapOf = (code: string, id = ''): HeightGrid => {
     const num = (name: string) => Number(new RegExp(`${name}${id} = (-?[\\d.e-]+);`).exec(code)![1]);

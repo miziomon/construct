@@ -80,9 +80,13 @@ export function imageOf(p: { imageId?: string; sample?: SampleKind }, lookup?: I
   return p.imageId ? lookup?.(p.imageId) : sampleImage(p.sample ?? 'knurl');
 }
 
-/** Gli id delle immagini caricate usate dai Pattern «Immagine» di una scena (senza ripetizioni). */
-export function usedImageIds(scene: { nodes: Record<string, { type: string; pattern?: { kind: string; imageId?: string } }> }): string[] {
+/**
+ * Gli id delle immagini caricate presenti nei Pattern di una scena (senza ripetizioni), qualunque sia il tipo del Pattern: il pannello
+ * delle Proprietà non normalizza, quindi cambiando tipo da Immagine a un altro il nodo conserva `imageId` (come lo strumento, vedi
+ * `normalizeKeepingGroups`) e tornando a Immagine l'immagine deve esserci anche dopo aver salvato e riaperto il progetto.
+ */
+export function usedImageIds(scene: { nodes: Record<string, { type: string; pattern?: { imageId?: string } }> }): string[] {
   const ids = new Set<string>();
-  for (const node of Object.values(scene.nodes)) if (node.type === 'group' && node.pattern?.kind === 'texture' && node.pattern.imageId) ids.add(node.pattern.imageId);
+  for (const node of Object.values(scene.nodes)) if (node.type === 'group' && node.pattern?.imageId) ids.add(node.pattern.imageId);
   return [...ids];
 }

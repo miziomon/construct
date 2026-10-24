@@ -68,7 +68,8 @@ describe('immagini: decodifica e impronta', () => {
   it('usedImageIds: le immagini dei Pattern Immagine, senza ripetizioni', () => {
     const group = (id: string, pattern: Partial<PatternParams>) => ({ id, type: 'group', op: 'pattern', children: [], pattern }) as unknown as GroupNode;
     const scene = { nodes: { a: group('a', { kind: 'texture', imageId: 'img-1' }), b: group('b', { kind: 'texture', imageId: 'img-1' }), c: group('c', { kind: 'texture', imageId: 'img-2' }), d: group('d', { kind: 'texture' }), e: group('e', { kind: 'brick', imageId: 'img-9' }) }, rootIds: [] } as unknown as Scene;
-    expect(usedImageIds(scene).sort()).toEqual(['img-1', 'img-2']);
+    // Ogni imageId presente in un Pattern conta, qualunque sia il tipo (il pannello delle Proprietà conserva i campi cambiando tipo)
+    expect(usedImageIds(scene).sort()).toEqual(['img-1', 'img-2', 'img-9']);
   });
 });
 

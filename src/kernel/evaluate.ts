@@ -21,7 +21,7 @@ import { separateParts, thinWalls, type PartBox } from './analyze';
 import type { DeepResult, DetachedFinding, ThinFinding } from '../scene/printability';
 import { dieSolid, maxPolyhedronRadius, polygonMaxRadius, polygonShrunkRadius, polyhedronVertices, roundedPolyhedronCenters } from '../scene/polyhedra';
 import type { Transform } from '../scene/math';
-import type { CornerNode, EdgeNode, GroupNode, MeshNode, PrimitiveNode, Scene, SceneNode, Shape2DNode, ShellParams, Vec3 } from '../scene/types';
+import type { CornerNode, EdgeNode, GroupNode, MeshNode, PatternParams, PrimitiveNode, Scene, SceneNode, Shape2DNode, ShellParams, Vec3 } from '../scene/types';
 
 /** Risultato del calcolo per un oggetto (mesh in mm, Z verso l'alto). Un Raggruppa produce una mesh per ogni figlio. */
 export interface NodeMesh {
@@ -84,6 +84,16 @@ export class Evaluator {
 
   constructor(private readonly wasm: ManifoldToplevel) {}
 
+  /**
+   * Parte della chiave di un Pattern: i parametri normalizzati (senza i campi dell'altro gruppo di tipi che il pannello delle Proprietà
+   * conserva) e, per l'Immagine, se l'immagine è registrata (la chiave non porta i pixel, solo l'id).
+   */
+  private patternKey(pattern: PatternParams | undefined): string {
+    if (!pattern) return `,${JSON.stringify(null)}`;
+    const normalized = normalizePattern(pattern);
+    return `,${JSON.stringify(normalized)}${normalized.imageId ? `,i${this.images.has(normalized.imageId) ? 1 : 0}` : ''}`;
+  }
+
   /** Chiave di cache: dipende dai soli parametri geometrici e trasformazione, non da id, nome, colore, modo. */
   private key(scene: Scene, node: SceneNode): string {
     if (node.type === 'group') {
@@ -94,7 +104,7 @@ export class Evaluator {
         return `${scene.nodes[c].mode === 'hole' ? '-' : '+'}${k}`;
       });
       // Il Guscio ha in più i suoi spessori (e l'ingombro usato dalla cavità scalata)
-      const shell = node.op === 'shell' ? `,${JSON.stringify(node.shell ?? null)}` : node.op === 'array' ? `,${JSON.stringify(node.array ?? null)}` : node.op === 'pattern' ? `,${JSON.stringify(node.pattern ? normalizePattern(node.pattern) : null)}${node.pattern?.imageId ? `,i${this.images.has(node.pattern.imageId) ? 1 : 0}` : ''}` : '';
+      const shell = node.op === 'shell' ? `,${JSON.stringify(node.shell ?? null)}` : node.op === 'array' ? `,${JSON.stringify(node.array ?? null)}` : node.op === 'pattern' ? this.patternKey(node.pattern) : '';
       return `G(${node.op},${node.position},${node.rotation}${node.mirror ? `,m${node.mirror.map(Number)}` : ''}${node.groupScale ? `,s${node.groupScale}` : ''}${shell})[${kids.join('|')}]`;
     }
     const { id: _id, name: _name, color: _color, mode: _mode, locked: _locked, hidden: _hidden, lockRatio: _lockRatio, ...geometry } = node;

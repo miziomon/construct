@@ -182,13 +182,19 @@ export function decodeImage(id: string, base64: string): ImageAsset {
   const limit = 8 + MAX_IMAGE_SIDE * MAX_IMAGE_SIDE;
   const chunks: Uint8Array[] = [];
   let total = 0;
+  // L'errore del tetto è questo (e si rilancia com'è); ogni altro (base64 non valido, zlib troncato o corrotto) diventa il messaggio generico
+  const tooBig = new Error('Immagine del progetto non valida: più grande di 512 pixel di lato.');
   const inflate = new Unzlib((chunk) => {
     total += chunk.length;
-    if (total > limit) throw new Error('Immagine del progetto non valida: più grande di 512 pixel di lato.');
+    if (total > limit) throw tooBig;
     chunks.push(chunk);
   });
-  const input = fromBase64(base64);
-  for (let i = 0; i === 0 || i < input.length; i += INFLATE_SLICE) inflate.push(input.subarray(i, i + INFLATE_SLICE), i + INFLATE_SLICE >= input.length);
+  try {
+    const input = fromBase64(base64);
+    for (let i = 0; i === 0 || i < input.length; i += INFLATE_SLICE) inflate.push(input.subarray(i, i + INFLATE_SLICE), i + INFLATE_SLICE >= input.length);
+  } catch (err) {
+    throw err === tooBig ? err : new Error('Immagine del progetto non valida.');
+  }
   const raw = new Uint8Array(total);
   let offset = 0;
   for (const chunk of chunks) {

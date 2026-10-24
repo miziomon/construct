@@ -57,6 +57,33 @@ describe('progetto con immagini', () => {
     expect((back.scene.nodes.g2 as GroupNode).pattern!.imageId).toBeUndefined();
   });
 
+  it("Immagine → cambio tipo dal pannello (nessuna normalizzazione) → salva → riapri → torna a Immagine: l'immagine c'è", async () => {
+    const photo = { w: 32, h: 32, data: Uint8Array.from({ length: 32 * 32 }, (_, i) => (i * 11 + (i >> 5)) % 256) };
+    const asset = await addImage(photo);
+    const scene = sceneWith([asset.id]);
+    // Il pannello delle Proprietà: `patch({ pattern: { ...node.pattern, ...change } })`, senza normalizzare
+    const group = scene.nodes.g0 as GroupNode;
+    group.pattern = { ...group.pattern!, kind: 'hexagon' };
+    expect(group.pattern.imageId).toBe(asset.id);
+    const json = sceneToJson(scene);
+    // Il file salva l'immagine anche se il Pattern non è più di tipo Immagine
+    expect(Object.keys(JSON.parse(json).assets)).toEqual([asset.id]);
+    const back = sceneFromJson(json);
+    expect(back.images).toHaveLength(1);
+    expect(Array.from(back.images[0].gray)).toEqual(Array.from(photo.data));
+    // Ripristino all'apertura: l'immagine va nel kernel anche se il tipo corrente non la usa
+    const { restoreAssets } = await import('../import/restore');
+    await restoreAssets(back.scene);
+    expect(kernelCalls.filter((c) => c.id === asset.id)).toHaveLength(1);
+    // Si torna a Immagine dal pannello: l'immagine è quella
+    const reopened = { ...(back.scene.nodes.g0 as GroupNode) };
+    reopened.pattern = { ...reopened.pattern!, kind: 'texture' };
+    const { imageOf } = await import('./textureImage');
+    const { getImage } = await import('../import/assets');
+    expect(imageOf(reopened.pattern, getImage)).toBeDefined();
+    expect(Array.from(imageOf(reopened.pattern, getImage)!.data)).toEqual(Array.from(photo.data));
+  });
+
   it('mesh e immagini nello stesso file non si confondono', async () => {
     const mesh = await addAsset(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]), new Uint32Array([0, 2, 1, 0, 1, 3, 1, 2, 3, 0, 3, 2]));
     const image = await addImage({ w: 4, h: 4, data: new Uint8Array(16).fill(77) });
