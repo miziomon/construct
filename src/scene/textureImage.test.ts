@@ -180,10 +180,10 @@ describe('Pattern Immagine: normalizzazione, limiti e avvisi', () => {
   });
 
   it("cambiando tipo si tolgono i campi dell'altro gruppo (e la chiave di cache non li vede)", () => {
-    const stale = { design: 'basket', relief: { kind: 'wood', gap: 3 }, reliefAlgorithm: 1, imageId: 'img-abc', sample: 'waves', texture: { mode: 'relief' }, textureAlgorithm: 1 } as unknown as Partial<PatternParams>;
-    const keys = (p: PatternParams) => Object.keys(p).filter((k) => ['design', 'relief', 'reliefAlgorithm', 'imageId', 'sample', 'texture', 'textureAlgorithm'].includes(k) && (p as unknown as Record<string, unknown>)[k] !== undefined).sort();
+    const stale = { design: 'basket', relief: { kind: 'wood', gap: 3 }, reliefAlgorithm: 1, imageId: 'img-abc', sample: 'waves', sampleDesign: 'fan', texture: { mode: 'relief' }, textureAlgorithm: 1 } as unknown as Partial<PatternParams>;
+    const keys = (p: PatternParams) => Object.keys(p).filter((k) => ['design', 'relief', 'reliefAlgorithm', 'imageId', 'sample', 'sampleDesign', 'texture', 'textureAlgorithm'].includes(k) && (p as unknown as Record<string, unknown>)[k] !== undefined).sort();
     // Immagine: niente campi dei rilievi
-    expect(keys(normalizePattern(params({ ...stale, kind: 'texture' })))).toEqual(['imageId', 'sample', 'texture', 'textureAlgorithm']);
+    expect(keys(normalizePattern(params({ ...stale, kind: 'texture' })))).toEqual(['imageId', 'sample', 'sampleDesign', 'texture', 'textureAlgorithm']);
     // Rilievi: niente campi dell'Immagine (anche per il legno, che ha il suo `relief`)
     for (const kind of ['brick', 'studs', 'hammered', 'wood'] as const) expect(keys(normalizePattern(params({ ...stale, kind })))).toEqual(['design', 'relief', 'reliefAlgorithm']);
     // Tipi a celle: nessuno dei due gruppi
@@ -192,8 +192,31 @@ describe('Pattern Immagine: normalizzazione, limiti e avvisi', () => {
     expect(normalizePattern(params({ ...stale, kind: 'brick' })).relief).toMatchObject({ kind: 'brick', brickW: 24 });
     // La chiave di cache (il Pattern normalizzato) è la stessa con o senza i campi vecchi
     const clean = JSON.stringify(normalizePattern(params({ kind: 'texture' })));
-    expect(JSON.stringify(normalizePattern(params({ ...stale, kind: 'texture', imageId: undefined, sample: undefined, texture: undefined, textureAlgorithm: undefined })))).toBe(clean);
+    expect(JSON.stringify(normalizePattern(params({ ...stale, kind: 'texture', imageId: undefined, sample: undefined, sampleDesign: undefined, texture: undefined, textureAlgorithm: undefined })))).toBe(clean);
     expect(JSON.stringify(normalizePattern(params({ ...stale, kind: 'hexagon' })))).toBe(JSON.stringify(normalizePattern(params({ kind: 'hexagon' }))));
+  });
+
+  it('variante dell\'esempio: la prima di partenza, normalizzata come gli altri disegni, e i mattoni di prima diventano pietra', () => {
+    expect(normalizePattern(params({})).sampleDesign).toBe('diamond');
+    expect(normalizePattern(params({ sample: 'knurl', sampleDesign: 'dots' })).sampleDesign).toBe('dots');
+    // Una variante di un'altra texture o sconosciuta torna alla prima della texture scelta
+    expect(normalizePattern(params({ sample: 'knurl', sampleDesign: 'reptile' })).sampleDesign).toBe('diamond');
+    expect(normalizePattern(params({ sample: 'stone', sampleDesign: 'nonesiste' })).sampleDesign).toBe('cobbles');
+    expect(normalizePattern(params({ sample: 'leather', sampleDesign: 'reptile' })).sampleDesign).toBe('reptile');
+    // Cambiando esempio senza dire la variante: la prima del nuovo esempio
+    expect(normalizePattern(params({ sample: 'waves', sampleDesign: 'dots' })).sampleDesign).toBe('parallel');
+    // I mattoni della libreria di una versione precedente si leggono come pietra
+    const old = normalizePattern(params({ sample: 'bricks' as never }));
+    expect([old.sample, old.sampleDesign]).toEqual(['stone', 'cobbles']);
+    // imageOf dà l'immagine della variante: tre varianti, tre immagini diverse e stabili; una immagine caricata ha la precedenza
+    const picks = ['diamond', 'straight', 'dots'].map((sampleDesign) => imageOf({ sample: 'knurl', sampleDesign }));
+    expect(new Set(picks).size).toBe(3);
+    expect(imageOf({ sample: 'knurl', sampleDesign: 'dots' })).toBe(picks[2]);
+    expect(imageOf({ sample: 'knurl' })).toBe(picks[0]);
+    expect(imageOf({ sample: 'knurl', sampleDesign: 'reptile' })).toBe(picks[0]);
+    expect(imageOf({ imageId: 'img-1', sample: 'knurl', sampleDesign: 'dots' }, () => undefined)).toBeUndefined();
+    // La variante entra nella chiave di cache (il Pattern normalizzato): cambiarla cambia la chiave
+    expect(JSON.stringify(normalizePattern(params({ sampleDesign: 'dots' })))).not.toBe(JSON.stringify(normalizePattern(params({ sampleDesign: 'straight' }))));
   });
 
   it('imageId si conserva, un esempio sconosciuto torna a knurl, la versione salvata non si sovrascrive', () => {

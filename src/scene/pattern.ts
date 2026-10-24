@@ -5,7 +5,8 @@ import { BRICK_DESIGNS, HAMMERED_DESIGNS, STUD_SHAPES, WOOD_DESIGNS, brickModule
 import type { BrickParams, HammeredParams, ReliefDesign, ReliefParams, StudParams, WoodParams } from './relief';
 import { normalizeTexture } from './textureMap';
 import type { TextureParams } from './textureMap';
-import { SAMPLE_KINDS } from './textureSamples';
+import { SAMPLE_KINDS, SAMPLE_VARIANTS } from './textureSamples';
+import type { SampleKind } from './textureSamples';
 import { imageOf, pixelSize } from './textureImage';
 import type { ImageLookup } from './textureImage';
 import { PATTERN_ALGORITHM, randomVoronoi } from './voronoi';
@@ -200,15 +201,18 @@ export function gridWarning(nodes: number): string[] {
 }
 
 /**
- * Campi salvati del Pattern «Immagine»: `imageId` (se c'è), la texture di esempio (se manca l'immagine, 'knurl' di partenza),
+ * Campi salvati del Pattern «Immagine»: `imageId` (se c'è), la texture di esempio e la sua variante (di partenza 'knurl' e la prima),
  * i parametri della texture normalizzati (modo di partenza incavo) e la versione della formula del grigio. Non c'è `design`.
  */
 function textureFields(p: PatternParams): Partial<PatternParams> {
   const imageId = typeof p.imageId === 'string' && p.imageId ? p.imageId : undefined;
+  // I mattoni di una versione precedente della libreria si leggono come pietra; un esempio sconosciuto torna a knurl
+  const sample: SampleKind = (p.sample as string) === 'bricks' ? 'stone' : SAMPLE_KINDS.includes(p.sample as never) ? (p.sample as SampleKind) : 'knurl';
   return {
     // Senza immagine (anche una stringa vuota) vale la texture di esempio
     imageId,
-    sample: SAMPLE_KINDS.includes(p.sample as never) ? p.sample : 'knurl',
+    sample,
+    sampleDesign: SAMPLE_VARIANTS[sample].includes(p.sampleDesign ?? '') ? p.sampleDesign : SAMPLE_VARIANTS[sample][0],
     texture: normalizeTexture({ mode: 'groove', ...p.texture }),
     textureAlgorithm: p.textureAlgorithm ?? 1,
   };
@@ -418,7 +422,7 @@ export function sameFace(a: PatternFace, b: PatternFace): boolean {
 }
 
 /** I campi dei gruppi «rilievo» e «immagine» del Pattern: `normalizePattern` tiene solo quelli del tipo scelto. */
-const GROUP_KEYS = ['design', 'relief', 'reliefAlgorithm', 'imageId', 'sample', 'texture', 'textureAlgorithm'] as const;
+const GROUP_KEYS = ['design', 'relief', 'reliefAlgorithm', 'imageId', 'sample', 'sampleDesign', 'texture', 'textureAlgorithm'] as const;
 
 /**
  * Come `normalizePattern`, ma conserva i campi dei gruppi che quel tipo non usa (il disegno e le misure del rilievo, l'immagine
@@ -441,7 +445,7 @@ export function normalizePattern(p: PatternParams): PatternParams {
   const int = (v: number, min: number, max: number) => Math.min(max, Math.max(min, Math.round(num(v, min))));
   // I campi dei rilievi (disegno, misure, versione) e dell'Immagine (immagine, esempio, texture, versione) si tolgono tutti e si
   // riscrivono sotto solo per il tipo scelto: cambiando tipo non restano quelli dell'altro gruppo (e la chiave di cache non li vede)
-  const { face: legacy, design: _design, relief: _relief, reliefAlgorithm: _reliefAlgorithm, imageId: _imageId, sample: _sample, texture: _texture, textureAlgorithm: _textureAlgorithm, ...rest } = p;
+  const { face: legacy, design: _design, relief: _relief, reliefAlgorithm: _reliefAlgorithm, imageId: _imageId, sample: _sample, sampleDesign: _sampleDesign, texture: _texture, textureAlgorithm: _textureAlgorithm, ...rest } = p;
   const given = p.faces?.length ? p.faces : legacy ? [legacy] : [faceFromBounds(p.bounds, 'z+')];
   const faces = given.map(normalizeFace).filter((f, i, all) => all.findIndex((o) => sameFace(o, f)) === i);
   const kind = (['voronoi', 'hexagon', 'circle', 'diamond', 'triangle', 'brick', 'studs', 'hammered', 'wood', 'texture'] as string[]).includes(p.kind) ? p.kind : 'voronoi';

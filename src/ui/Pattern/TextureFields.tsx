@@ -1,24 +1,36 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { getImage } from '../../import/assets';
 import { importImageFile } from '../../import/imageImport';
-import { textureAmplitudeLimit, textureOf } from '../../scene/pattern';
+import { normalizePattern, textureAmplitudeLimit, textureOf } from '../../scene/pattern';
 import { normalizeTexture } from '../../scene/textureMap';
 import type { GrayImage, TextureMode, TextureParams } from '../../scene/textureMap';
-import { SAMPLE_KINDS } from '../../scene/textureSamples';
+import { SAMPLE_KINDS, SAMPLE_VARIANTS } from '../../scene/textureSamples';
 import type { SampleKind } from '../../scene/textureSamples';
-import { imageOf } from '../../scene/textureImage';
+import { imageOf, sampleImage } from '../../scene/textureImage';
 import type { PatternParams } from '../../scene/types';
 import { SliderField } from '../SliderField/SliderField';
 import '../Array/ArrayFields.scss';
 
 /** Nomi delle texture di esempio della libreria. */
-const SAMPLE_LABELS: Record<SampleKind, string> = { knurl: 'Zigrinatura', carbon: 'Fibra di carbonio', leather: 'Pelle', bricks: 'Mattoni', waves: 'Onde', noise: 'Rumore' };
+const SAMPLE_LABELS: Record<SampleKind, string> = { knurl: 'Zigrinatura', carbon: 'Fibra di carbonio', leather: 'Pelle', bricks: 'Pietra', stone: 'Pietra', fabric: 'Tessuto', waves: 'Onde', noise: 'Rumore' };
+
+/** Nomi delle varianti di ogni texture di esempio (vedi `SAMPLE_VARIANTS`). */
+const VARIANT_LABELS: Record<SampleKind, Record<string, string>> = {
+  knurl: { diamond: 'A diamante', straight: 'Dritta', dots: 'A punti' },
+  carbon: { twill: 'Twill', plain: 'Tela', forged: 'Forgiato' },
+  leather: { fine: 'Fine', coarse: 'Grossa', reptile: 'Rettile' },
+  bricks: { plain: 'Mattoni' },
+  stone: { cobbles: 'Ciottoli', slabs: 'Lastroni', gravel: 'Ghiaia' },
+  fabric: { plain: 'Tela', basket: 'Panama', ribbed: 'Costine' },
+  waves: { parallel: 'Parallele', concentric: 'Concentriche', fan: 'A ventaglio' },
+  noise: { fine: 'Fine', clouds: 'A nuvole', grains: 'A granuli' },
+};
 
 /** Valore della tendina per l'immagine caricata dall'utente. */
 const UPLOADED = '__uploaded';
 
-/** Miniatura del grigio dell'immagine (la stessa che il Pattern usa): un canvas con i pixel, mostrato a 72 px di lato. */
-function GrayThumb({ image }: { image: GrayImage | undefined }) {
+/** Miniatura del grigio dell'immagine (la stessa che il Pattern usa): un canvas con i pixel, mostrato a `size` px di lato (72 di partenza). */
+function GrayThumb({ image, size = 72 }: { image: GrayImage | undefined; size?: number }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const el = canvas.current;
@@ -31,7 +43,7 @@ function GrayThumb({ image }: { image: GrayImage | undefined }) {
     context.putImageData(pixels, 0, 0);
   }, [image]);
   if (!image) return <span className="array-fields__total">Immagine non disponibile</span>;
-  return <canvas ref={canvas} aria-label="Anteprima in grigio dell'immagine" style={{ width: 72, height: (72 * image.h) / image.w, imageRendering: 'pixelated', border: '1px solid currentColor' }} />;
+  return <canvas ref={canvas} aria-label="Anteprima in grigio dell'immagine" style={{ width: size, height: (size * image.h) / image.w, imageRendering: 'pixelated', border: '1px solid currentColor' }} />;
 }
 
 interface Props {
@@ -52,6 +64,11 @@ export function TextureFields({ params: p, onChange, disabled, history = true }:
   const [loading, setLoading] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const image = imageOf(p, getImage);
+  // Esempio e variante come li leggono kernel e codice (un esempio sconosciuto o una variante di un'altra texture tornano ai valori di partenza)
+  const { sample, sampleDesign } = normalizePattern(p);
+  const kind = sample ?? 'knurl';
+  const variant = sampleDesign ?? SAMPLE_VARIANTS[kind][0];
+  const variantId = useId();
   // Parametri salvati (da cui si parte per modificare) ed effettivi (con il limite di profondità, quelli mostrati)
   const stored = normalizeTexture({ mode: 'groove', ...p.texture });
   const tex = textureOf(p);
@@ -90,16 +107,36 @@ export function TextureFields({ params: p, onChange, disabled, history = true }:
     <>
       <div className="array-fields__row" title="Libreria di texture di esempio generate nel codice, oppure l'immagine che hai caricato.">
         <label className="array-fields__label" htmlFor={sourceId}>Sorgente</label>
-        <select id={sourceId} className="array-fields__select" value={p.imageId ? UPLOADED : (p.sample ?? 'knurl')} disabled={disabled} onChange={(e) => (e.target.value === UPLOADED ? undefined : onChange({ sample: e.target.value as SampleKind, imageId: undefined }))}>
+        <select id={sourceId} className="array-fields__select" value={p.imageId ? UPLOADED : kind} disabled={disabled} onChange={(e) => (e.target.value === UPLOADED ? undefined : onChange({ sample: e.target.value as SampleKind, sampleDesign: undefined, imageId: undefined }))}>
           {p.imageId && <option value={UPLOADED}>Immagine caricata</option>}
           {SAMPLE_KINDS.map((k) => (
             <option key={k} value={k}>{SAMPLE_LABELS[k]}</option>
           ))}
         </select>
       </div>
-      <div className="array-fields__row" title="PNG o JPG fino a 20 MB: si converte in scala di grigi (Rec. 601, la trasparenza sul bianco) e si riduce a 512 pixel sul lato maggiore; il progetto conserva il grigio, non il file.">
+      {!p.imageId && (
+        <div className="array-fields__row" title="Tre versioni di ogni texture di esempio (la zigrinatura dritta, a diamante o a punti, la pelle fine, grossa o di rettile...).">
+          <label className="array-fields__label" htmlFor={variantId}>Variante</label>
+          <select id={variantId} className="array-fields__select" value={variant} disabled={disabled} onChange={(e) => onChange({ sampleDesign: e.target.value })}>
+            {SAMPLE_VARIANTS[kind].map((v) => (
+              <option key={v} value={v}>{VARIANT_LABELS[kind][v]}</option>
+            ))}
+          </select>
+        </div>
+      )}
+      {!p.imageId && (
+        <div className="array-fields__row" role="group" aria-label="Miniature delle varianti">
+          <span className="array-fields__label" />
+          {SAMPLE_VARIANTS[kind].map((v) => (
+            <button key={v} type="button" className="array-fields__button" aria-pressed={v === variant} aria-label={`Variante ${VARIANT_LABELS[kind][v]}`} title={VARIANT_LABELS[kind][v]} disabled={disabled} onClick={() => onChange({ sampleDesign: v })} style={{ padding: 2, outline: v === variant ? '2px solid currentColor' : undefined }}>
+              <GrayThumb image={sampleImage(kind, v)} size={40} />
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="array-fields__row" title="PNG, JPG o SVG: si converte in scala di grigi (Rec. 601, la trasparenza sul bianco) e si riduce a 512 pixel sul lato maggiore; il progetto conserva il grigio, non il file.">
         <span className="array-fields__label" />
-        <input ref={fileInput} type="file" accept="image/png,image/jpeg" hidden aria-label="File immagine" disabled={disabled} onChange={(e) => void load(e.target.files?.[0])} />
+        <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/svg+xml,.svg" hidden aria-label="File immagine" disabled={disabled} onChange={(e) => void load(e.target.files?.[0])} />
         <button type="button" className="array-fields__button" disabled={disabled || loading} onClick={() => fileInput.current?.click()}>
           {loading ? 'Carico...' : 'Carica immagine'}
         </button>

@@ -1,4 +1,4 @@
-import { makeSample } from './textureSamples';
+import { SAMPLE_VARIANTS, makeSample, sampleVariantIndex } from './textureSamples';
 import type { SampleKind } from './textureSamples';
 import { resizeGray, rgbaToGray } from './textureMap';
 import type { GrayImage } from './textureMap';
@@ -19,14 +19,17 @@ export const MAX_IMAGE_SIDE = 512;
 /** Lato (pixel) delle immagini di esempio generate nel codice: 256 px bastano, sono ripetibili senza cucitura. */
 export const SAMPLE_SIZE = 256;
 
-const samples = new Map<SampleKind, GrayImage>();
+/** Immagini di esempio già generate, per texture e variante. */
+const samples = new Map<string, GrayImage>();
 
-/** Immagine di una texture di esempio (generata una volta sola, deterministica). */
-export function sampleImage(kind: SampleKind): GrayImage {
-  let image = samples.get(kind);
+/** Immagine di una texture di esempio e della sua variante (generata una volta sola, deterministica; la prima variante se manca o non è di questa texture). */
+export function sampleImage(kind: SampleKind, variant?: string): GrayImage {
+  const index = sampleVariantIndex(kind, variant);
+  const key = `${kind}:${SAMPLE_VARIANTS[kind][index]}`;
+  let image = samples.get(key);
   if (!image) {
-    image = makeSample(kind, SAMPLE_SIZE);
-    samples.set(kind, image);
+    image = makeSample(kind, SAMPLE_SIZE, index);
+    samples.set(key, image);
   }
   return image;
 }
@@ -74,10 +77,10 @@ export const pixelSize = (tile: number, img: GrayImage): number => tile / img.w;
 
 /**
  * L'immagine di un Pattern «Immagine»: quella caricata (`imageId`, risolta da `lookup`: indefinita se non è registrata) oppure,
- * senza `imageId`, la texture di esempio `sample` (di partenza 'knurl').
+ * senza `imageId`, la texture di esempio `sample` nella variante `sampleDesign` (di partenza 'knurl' e la prima variante).
  */
-export function imageOf(p: { imageId?: string; sample?: SampleKind }, lookup?: ImageLookup): GrayImage | undefined {
-  return p.imageId ? lookup?.(p.imageId) : sampleImage(p.sample ?? 'knurl');
+export function imageOf(p: { imageId?: string; sample?: SampleKind; sampleDesign?: string }, lookup?: ImageLookup): GrayImage | undefined {
+  return p.imageId ? lookup?.(p.imageId) : sampleImage(p.sample ?? 'knurl', p.sampleDesign);
 }
 
 /**

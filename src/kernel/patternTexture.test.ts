@@ -115,7 +115,7 @@ describe('Pattern Immagine nel kernel', () => {
   it('inversione, scostamento e ripetizione cambiano il risultato; il margine lascia la cornice intatta', () => {
     const plain = run(scene({}));
     // 'waves' è simmetrica rispetto al livello medio: per l'inversione serve una texture che non lo sia
-    expect(run(scene({ sample: 'bricks' }, { invert: true })).volume).not.toBeCloseTo(run(scene({ sample: 'bricks' })).volume, 2);
+    expect(run(scene({ sample: 'stone' }, { invert: true })).volume).not.toBeCloseTo(run(scene({ sample: 'stone' })).volume, 2);
     // Con la ripetizione lo scostamento di una piastrella intera non cambia il volume: senza, sposta l'immagine unica fuori dal centro
     expect(run(scene({}, { repeat: false, offset: [30, 20] })).volume).not.toBeCloseTo(run(scene({}, { repeat: false })).volume, 2);
     // Senza ripetizione l'immagine compare una volta sola (piastrella di 20 mm su una faccia di 80 × 60)

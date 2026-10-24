@@ -377,6 +377,8 @@ export interface PatternParams {
   imageId?: string;
   /** Immagine: texture di esempio della libreria (generata nel codice, non si salva); vale se `imageId` manca, e di partenza è 'knurl'. */
   sample?: SampleKind;
+  /** Immagine: variante della texture di esempio (vedi `SAMPLE_VARIANTS`: per la zigrinatura diamond, straight, dots...); se manca o non è di questa texture vale la prima. */
+  sampleDesign?: string;
   /** Immagine: piastrella, ripetizione, rotazione, scostamento, inversione, livello medio, ampiezza, sfocatura e modo (incavo, rilievo, entrambi). */
   texture?: TextureParams;
   /** Immagine: versione della formula del grigio e del campionamento (src/scene/textureMap.ts). */
