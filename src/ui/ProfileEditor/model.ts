@@ -1,4 +1,4 @@
-import { MAX_PATH_CONTOURS, MAX_PATH_NODES, PATH_DEFAULT_TOLERANCE, assignNodeIds, bboxOf, cubicPoint, nodeIds, samplePaths, segmentOf, signedArea, splitCubic } from '../../scene/bezier';
+import { MAX_PATH_CONTOURS, MAX_PATH_NODES, PATH_DEFAULT_TOLERANCE, assignNodeIds, bboxOf, cubicPoint, filletInfo, nodeIds, samplePaths, segmentOf, signedArea, splitCubic } from '../../scene/bezier';
 import { ellipseContour, polygonContour, regularPolygon } from '../../scene/pathShapes';
 import { REVOLVE_DEFAULT_ANGLE, REVOLVE_DEFAULT_SEGMENTS, pathContours, pathNaturalBox } from '../../scene/shapes2d';
 import { hasBoundDimension } from '../../scene/resize';
@@ -155,6 +155,15 @@ export function setNodeRadius(paths: PathContour[], ref: NodeRef, r: number): Pa
     const { r: _old, ...rest } = n;
     return Number.isFinite(r) && r > 0 ? { ...rest, r: Math.min(r, 1e5) } : rest;
   });
+}
+
+/**
+ * Raggio di raccordo per più nodi: lo stesso valore a tutti quelli che possono raccordarsi (spigoli senza maniglie tra due
+ * segmenti retti); gli altri restano com'erano. Se nessuno può, i contorni sono gli stessi.
+ */
+export function setNodesRadius(paths: PathContour[], refs: NodeRef[], r: number): PathContour[] {
+  const eligible = refs.filter((ref) => paths[ref.path] && filletInfo(paths[ref.path], ref.node).eligible);
+  return eligible.reduce((current, ref) => setNodeRadius(current, ref, r), paths);
 }
 
 /** Elimina i nodi indicati; un contorno che resta con meno di 2 nodi sparisce. */

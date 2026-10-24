@@ -575,3 +575,222 @@ test('il raggio non vale su un estremo aperto: il campo è spento e dice perché
   await clickNode(page, '0:1');
   await expect(editor(page).getByLabel('Raggio')).toBeEnabled();
 });
+
+/** Apre la modale su un Profilo nuovo (vuoto) e attende il disegno. */
+async function openNewProfile(page: Page) {
+  await page.evaluate(() => window.__construct!.profileEditor.getState().open({ new: true }));
+  await expect(editor(page)).toBeVisible();
+}
+
+const svgCanvas = (page: Page) => editor(page).locator('.profile-editor__svg');
+/** Centro dell'area di disegno in pixel di pagina. */
+async function canvasCenter(page: Page) {
+  const b = (await svgCanvas(page).boundingBox())!;
+  return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+}
+const penTool = (page: Page) => editor(page).getByRole('button', { name: 'Penna', exact: true });
+const lengthField = (page: Page) => editor(page).getByRole('textbox', { name: 'Lunghezza in mm' });
+const angleField = (page: Page) => editor(page).getByRole('textbox', { name: 'Angolo in gradi' });
+
+/** Penna: scrive lunghezza e angolo nei campi che si aprono con la prima cifra, Tab passa all'angolo, Invio conferma il nodo. */
+async function typeSegment(page: Page, length: string, angle: string) {
+  await page.keyboard.press(length[0]);
+  await expect(lengthField(page)).toBeFocused();
+  if (length.length > 1) await page.keyboard.type(length.slice(1));
+  await page.keyboard.press('Tab');
+  await expect(angleField(page)).toBeFocused();
+  await page.keyboard.type(angle);
+  await page.keyboard.press('Enter');
+  await expect(lengthField(page)).toHaveCount(0);
+  // Il fuoco torna al disegno: la cifra successiva apre i campi del segmento seguente
+  await expect(editor(page).getByRole('group', { name: 'Disegno del profilo' })).toBeFocused();
+}
+
+test('Penna con lunghezza e angolo digitati: un rettangolo 60 x 40 con le quote, il quarto lato chiude il contorno con quote di riferimento', async ({ page }) => {
+  await openNewProfile(page);
+  await penTool(page).click();
+  // Primo punto al centro, poi quattro segmenti digitati: 60 a 0°, 40 a 90°, 60 a 180°, 40 a 270° (torna al primo nodo e chiude)
+  const c = await canvasCenter(page);
+  await page.mouse.click(c.x, c.y);
+  await typeSegment(page, '60', '0');
+  await expect(editor(page).locator('[data-constraint]')).toHaveCount(2);
+  await typeSegment(page, '40', '90');
+  await typeSegment(page, '60', '180');
+  await typeSegment(page, '40', '270');
+  await expect(editor(page).getByText('1 contorno, 4 nodi')).toBeVisible();
+  // Tre lati con distanza e angolo, il quarto con le due quote di riferimento (tra parentesi): otto voci e otto etichette
+  await expect(editor(page).locator('[data-constraint]')).toHaveCount(8);
+  await expect(labels(page)).toHaveCount(8);
+  await expect(editor(page).locator('[data-quote-label]', { hasText: '(40)' })).toHaveCount(1);
+  // Sottovincolato solo per la posizione: due gradi di libertà. Fissato il primo nodo, completamente vincolato
+  await expect(editor(page).getByText('Sottovincolato: 2 gradi di libertà')).toBeVisible();
+  await editor(page).getByRole('button', { name: 'Seleziona', exact: true }).click();
+  await clickNode(page, '0:0');
+  await editor(page).locator('[data-constraint-button="fixed"]').click();
+  await expect(editor(page).getByText('Completamente vincolato: 0 gradi di libertà')).toBeVisible();
+
+  await ok(page).click();
+  await expect(editor(page)).toHaveCount(0);
+  await settled(page);
+  const nodes = Object.values((await sceneState(page)).nodes) as unknown as SavedNode[];
+  const p = nodes[0].paths[0].nodes.map((n) => n.p);
+  expect(p).toHaveLength(4);
+  expect(p[1][0] - p[0][0]).toBeCloseTo(60, 3);
+  expect(p[1][1] - p[0][1]).toBeCloseTo(0, 3);
+  expect(p[2][1] - p[1][1]).toBeCloseTo(40, 3);
+  expect(p[3][0] - p[2][0]).toBeCloseTo(-60, 3);
+  expect(nodes[0].constraints!.filter((q) => q.t === 'dist' && q.v === 60)).toHaveLength(2);
+});
+
+test('Penna digitata: Esc chiude i campi senza toccare il disegno, un valore non valido dà un messaggio, un campo vuoto segue il cursore', async ({ page }) => {
+  await openNewProfile(page);
+  await penTool(page).click();
+  const c = await canvasCenter(page);
+  await page.mouse.click(c.x, c.y);
+  // Esc: i campi si chiudono, il contorno (un nodo) resta e la Penna continua
+  await page.keyboard.press('5');
+  await expect(lengthField(page)).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(lengthField(page)).toHaveCount(0);
+  await expect(editor(page).getByText('0 contorni, 1 nodo')).toBeVisible();
+  await expect(editor(page)).toBeVisible();
+  // Lunghezza zero: il messaggio resta sotto i campi e nessun nodo nasce
+  await page.keyboard.press('0');
+  await page.keyboard.press('Tab');
+  await page.keyboard.type('45');
+  await page.keyboard.press('Enter');
+  await expect(editor(page).getByRole('alert').filter({ hasText: 'maggiore di zero' })).toBeVisible();
+  await expect(editor(page).getByText('0 contorni, 1 nodo')).toBeVisible();
+  // Corretta la lunghezza: nasce il nodo con la sola quota... e l'angolo digitato (45)
+  await lengthField(page).fill('10');
+  await angleField(page).press('Enter');
+  await expect(editor(page).getByText('1 contorno, 2 nodi')).toBeVisible();
+  await expect(editor(page).locator('[data-constraint-type="angle"]')).toHaveCount(1);
+  // Un solo angolo digitato (lunghezza vuota): una sola quota, la lunghezza segue il cursore
+  await page.mouse.move(c.x + 120, c.y + 60);
+  await page.keyboard.press('Tab');
+  await expect(lengthField(page)).toBeFocused();
+  await page.keyboard.press('Tab');
+  await page.keyboard.type('0');
+  await page.keyboard.press('Enter');
+  await expect(editor(page).locator('[data-constraint-type="dist"]')).toHaveCount(1);
+  await expect(editor(page).locator('[data-constraint-type="angle"]')).toHaveCount(2);
+  // I tasti delle scorciatoie non scattano mentre si digita: una D nel campo non cambia strumento
+  await page.keyboard.press('5');
+  await page.keyboard.press('d');
+  await expect(editor(page).getByRole('button', { name: 'Quota', exact: true })).toHaveAttribute('aria-pressed', 'false');
+});
+
+test('vincoli dedotti: un segmento tracciato quasi orizzontale riceve l\'orizzontale; la casella Vincoli automatici lo disattiva', async ({ page }) => {
+  await openNewProfile(page);
+  const auto = editor(page).getByLabel('Vincoli automatici');
+  // Nelle prove la casella parte spenta: si accende dal pannello e l'impostazione resta salvata
+  await expect(auto).not.toBeChecked();
+  await auto.check();
+  expect(await page.evaluate(() => window.__construct!.ui.getState().profileAutoConstraints)).toBe(true);
+  await penTool(page).click();
+  const c = await canvasCenter(page);
+  await page.mouse.click(c.x - 150, c.y);
+  // Con Ctrl l'aggancio è sospeso: un punto 8 pixel sopra la retta, circa un grado e mezzo su 300 pixel
+  await page.keyboard.down('Control');
+  await page.mouse.click(c.x + 150, c.y - 8);
+  await page.keyboard.up('Control');
+  await expect(editor(page).locator('[data-constraint-type="horizontal"]')).toHaveCount(1);
+  await expect(editor(page).locator('[data-constraint-glyph="horizontal"]')).toHaveCount(1);
+  // Un terzo punto lontano da ogni angolo notevole non aggiunge vincoli
+  await page.keyboard.down('Control');
+  await page.mouse.click(c.x + 50, c.y + 150);
+  await page.keyboard.up('Control');
+  await expect(editor(page).locator('[data-constraint]')).toHaveCount(1);
+  await page.keyboard.press('Enter');
+  // Con la casella spenta il segmento resta com'è
+  await auto.uncheck();
+  expect(await page.evaluate(() => window.__construct!.ui.getState().profileAutoConstraints)).toBe(false);
+  await page.keyboard.down('Control');
+  await page.mouse.click(c.x - 150, c.y + 110);
+  await page.mouse.click(c.x + 100, c.y + 102);
+  await page.keyboard.up('Control');
+  await expect(editor(page).locator('[data-constraint]')).toHaveCount(1);
+  // Un OK dà il disegno con i primi due nodi alla stessa quota Y (il risolutore ha reso orizzontale il segmento)
+  await page.keyboard.press('Enter');
+  await ok(page).click();
+  await expect(editor(page)).toHaveCount(0);
+  await settled(page);
+  const nodes = Object.values((await sceneState(page)).nodes) as unknown as SavedNode[];
+  const p = nodes[0].paths[0].nodes.map((n) => n.p);
+  expect(p[0][1]).toBeCloseTo(p[1][1], 3);
+  expect(nodes[0].constraints!.some((q) => q.t === 'horizontal')).toBe(true);
+});
+
+test('il rettangolo base nasce con lati orizzontali e verticali (con i vincoli automatici); con la casella spenta nasce libero', async ({ page }) => {
+  await openNewProfile(page);
+  const auto = editor(page).getByLabel('Vincoli automatici');
+  await auto.check();
+  await editor(page).getByRole('button', { name: 'Rettangolo', exact: true }).click();
+  const c = await canvasCenter(page);
+  await dragBy(page, { x: c.x - 80, y: c.y - 50 }, 160, 100);
+  await expect(editor(page).locator('[data-constraint-type="horizontal"]')).toHaveCount(2);
+  await expect(editor(page).locator('[data-constraint-type="vertical"]')).toHaveCount(2);
+  // Spenta la casella, un secondo rettangolo non porta vincoli (restano i quattro del primo)
+  await auto.uncheck();
+  await dragBy(page, { x: c.x + 120, y: c.y + 20 }, 60, 40);
+  await expect(editor(page).locator('[data-constraint]')).toHaveCount(4);
+  await expect(editor(page).getByText('2 contorni, 8 nodi')).toBeVisible();
+});
+
+test('più nodi scelti: un solo raggio di raccordo per tutti gli spigoli, un passo di Annulla', async ({ page }) => {
+  const id = await addProfile(page, []);
+  await openEditor(page, id);
+  await clickNode(page, '0:1');
+  await page.keyboard.down('Shift');
+  await clickNode(page, '0:2');
+  await page.keyboard.up('Shift');
+  await expect(editor(page).getByText('2 nodi selezionati')).toBeVisible();
+  const radius = editor(page).getByLabel('Raggio');
+  await expect(radius).toHaveValue('0');
+  await radius.fill('4');
+  await radius.press('Enter');
+  // Un solo Annulla toglie il raggio a tutti e due
+  await expect(editor(page).locator('.profile-editor__curve').first()).toHaveAttribute('d', /C/);
+  await editor(page).locator('.profile-editor').focus();
+  await page.keyboard.press('Control+z');
+  await expect(editor(page).locator('.profile-editor__curve').first()).not.toHaveAttribute('d', /C/);
+  await page.keyboard.press('Control+Shift+z');
+  await expect(editor(page).locator('.profile-editor__curve').first()).toHaveAttribute('d', /C/);
+  await ok(page).click();
+  await expect(editor(page)).toHaveCount(0);
+  await settled(page);
+  const nodes = (await getNode(page, id)).paths[0].nodes as unknown as { r?: number }[];
+  expect(nodes.map((n) => n.r)).toEqual([undefined, 4, 4, undefined]);
+  // Riaperto con uno spigolo diverso: il raggio comune è «—»
+  await openEditor(page, id);
+  await clickNode(page, '0:0');
+  await page.keyboard.down('Shift');
+  await clickNode(page, '0:1');
+  await page.keyboard.up('Shift');
+  await expect(editor(page).getByLabel('Raggio')).toHaveAttribute('placeholder', '—');
+});
+
+test('più quote scelte nell\'elenco: un valore comune per tutte, in un solo passo', async ({ page }) => {
+  const id = await addProfile(page, FULL);
+  await openEditor(page, id);
+  const name = (k: string) => editor(page).locator(`[data-constraint="${k}"] .profile-editor__constraint-name`);
+  await name('k6').click();
+  await name('k7').click({ modifiers: ['Shift'] });
+  await expect(editor(page).locator('[data-quote-group]')).toContainText('2 quote scelte');
+  const common = editor(page).getByLabel('Valore comune delle quote scelte');
+  // Valori diversi (40 e 20): il campo è vuoto con «—»
+  await expect(common).toHaveAttribute('placeholder', '—');
+  await common.fill('30');
+  await common.press('Enter');
+  await expect(editor(page).getByText('Completamente vincolato: 0 gradi di libertà')).toBeVisible();
+  await expect(editor(page).getByLabel('Valore di Distanza P1.1-P1.2')).toHaveValue('30');
+  await expect(editor(page).getByLabel('Valore di Distanza P1.2-P1.3')).toHaveValue('30');
+  await ok(page).click();
+  await expect(editor(page)).toHaveCount(0);
+  await settled(page);
+  const saved = await getNode(page, id);
+  expect(saved.constraints!.filter((q) => q.t === 'dist').map((q) => q.v)).toEqual([30, 30]);
+  expect(saved.paths[0].nodes[2].p[0]).toBeCloseTo(30, 3);
+  expect(saved.paths[0].nodes[2].p[1]).toBeCloseTo(30, 3);
+});

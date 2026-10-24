@@ -33,6 +33,13 @@ describe('impostazioni', () => {
     expect(cleanSettings({ experimentalPlan: true }).experimentalPlan).toBe(true);
   });
 
+  it('i vincoli automatici del Profilo sono accesi di default; chi ha salvato false li tiene spenti, un valore non booleano torna acceso', () => {
+    expect(DEFAULT_SETTINGS.profileAutoConstraints).toBe(true);
+    expect(cleanSettings({}).profileAutoConstraints).toBe(true);
+    expect(cleanSettings({ profileAutoConstraints: false }).profileAutoConstraints).toBe(false);
+    expect(cleanSettings({ profileAutoConstraints: 'no' }).profileAutoConstraints).toBe(true);
+  });
+
   it('setSettings cambia solo quanto richiesto e rispetta i limiti', () => {
     useUiStore.getState().setSettings({ nudgeStep: 2.5, autosave: false });
     const s = useUiStore.getState();

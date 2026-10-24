@@ -203,7 +203,11 @@ export function filletInfo(c: PathContour, i: number): FilletInfo {
   if (pi < 0 || ni < 0) return { eligible: false, rmax: 0, reason: 'Il raccordo vale per un nodo con un segmento prima e uno dopo' };
   if (hasHandle(c.nodes[pi].out) || hasHandle(c.nodes[ni].in)) return { eligible: false, rmax: 0, reason: 'Il raccordo vale tra due segmenti retti' };
   const k = corner(c, i);
-  if (!k) return { eligible: false, rmax: 0, reason: 'I due segmenti sono allineati: non c\'è uno spigolo' };
+  if (!k) {
+    // Nodi coincidenti: un segmento senza lunghezza; altrimenti i due segmenti sono sulla stessa retta
+    const zero = [pi, ni].some((j) => Math.hypot(c.nodes[j].p[0] - n.p[0], c.nodes[j].p[1] - n.p[1]) < 1e-9);
+    return { eligible: false, rmax: 0, reason: zero ? 'Un segmento ha lunghezza zero' : 'I due segmenti sono allineati: non c\'è uno spigolo' };
+  }
   // Distanza di tangenza al massimo: il segmento intero, o la metà se dall'altra parte c'è un altro raccordo
   const reach = Math.min(k.lenU * (isFilleted(c, pi) ? 0.5 : 1), k.lenV * (isFilleted(c, ni) ? 0.5 : 1));
   return { eligible: true, rmax: reach * Math.tan(k.phi / 2) };
@@ -275,8 +279,10 @@ export function sampleContour(source: PathContour, tol: number): Vec2[] {
     }
   }
   // Un contorno chiuso torna al primo punto: il duplicato finale si toglie. Si tolgono anche i doppioni consecutivi
-  const unique = points.filter((p, i) => i === 0 || p[0] !== points[i - 1][0] || p[1] !== points[i - 1][1]);
-  if (c.closed && unique.length > 1 && unique[unique.length - 1][0] === unique[0][0] && unique[unique.length - 1][1] === unique[0][1]) unique.pop();
+  // (con una tolleranza di 1e-9 mm: un raccordo che arriva al massimo del raggio ha l'estremo dell'arco sul nodo vicino, a meno di un errore di calcolo)
+  const same = (p: Vec2, q: Vec2) => Math.hypot(p[0] - q[0], p[1] - q[1]) < 1e-9;
+  const unique = points.filter((p, i) => i === 0 || !same(p, points[i - 1]));
+  if (c.closed && unique.length > 1 && same(unique[unique.length - 1], unique[0])) unique.pop();
   return unique;
 }
 

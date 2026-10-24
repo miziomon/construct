@@ -486,6 +486,58 @@
     stroke-width: 2.5;
   }
 
+  // Penna con valori digitati: i campi Lunghezza e Angolo vicino al nodo di partenza
+  &__penin {
+    position: absolute;
+    z-index: 4;
+    display: flex;
+    flex-direction: column;
+    gap: $space-1;
+    width: 232px;
+    padding: $space-2 $space-3;
+    border: 2px solid color('accent');
+    border-radius: $radius-md;
+    background: color('panel-raised');
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+    font-size: 12px;
+
+    label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: $space-2;
+    }
+
+    input {
+      width: 92px;
+      padding: 2px $space-2;
+      border: 1px solid color('border');
+      border-radius: $radius-sm;
+      background: color('panel');
+      color: color('text');
+      font-family: $font-mono;
+      font-size: 12px;
+      text-align: right;
+      @include focus-ring;
+    }
+  }
+
+  &__penin-error {
+    margin: 0;
+    color: color('danger');
+    font-size: 12px;
+  }
+
+  // Più quote scelte nell'elenco: valore comune e «Rendi uguali»
+  &__group {
+    display: flex;
+    flex-direction: column;
+    gap: $space-1;
+    padding: $space-1 $space-2;
+    border: 1px dashed color('accent');
+    border-radius: $radius-sm;
+  }
+
   // Campo che scrive il valore di una quota, sopra l'etichetta
   &__qedit {
     position: absolute;

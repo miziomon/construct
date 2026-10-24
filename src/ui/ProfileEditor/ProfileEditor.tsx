@@ -19,13 +19,16 @@ import { DrawingCanvas } from './DrawingCanvas';
 import { EditorToolbar } from './EditorToolbar';
 import type { ViewMode } from './EditorToolbar';
 import type { DimHit, GridSettings, QuoteProps, Tool } from './DrawingCanvas';
-import { SELECTION_CONSTRAINTS, addConstraint, addReferenceDimension, addSelectionConstraint, canApplyConstraint, createAngleDimension, createDimension, diagnose, idsOf, isDimension, moveNodesConstrained, quoteMismatch, removeConstraint, repositionDimensions, selectionItems, setConstraintValue, stateText } from './dimensions';
+import { SELECTION_CONSTRAINTS, addConstraint, addReferenceDimension, addSelectionConstraint, canApplyConstraint, createAngleDimension, createDimension, diagnose, idsOf, isDimension, equalizeLengths, moveNodesConstrained, quoteMismatch, removeConstraint, repositionDimensions, selectionItems, setCommonValue, setConstraintValue, stateText } from './dimensions';
+import { applyInferred, inferNodeConstraints, inferShapeConstraints } from './infer';
+import { typedPenNode } from './penInput';
+import type { PenTarget } from './penInput';
 import type { Applied, DimMode, SelectionConstraint } from './dimensions';
 import { validateValue } from './constraints';
 import { clearDraft, flushDrafts, loadDraft, saveDraft } from './draft';
 import { createHistory } from './history';
 import type { History } from './history';
-import { POLYGON_SIDES, canCloseContour, closeContour, contourHoles, deleteNodesWithConstraints, draftContours, draftFromNode, dropLastNode, emptyDraft, moveHandle, moveNodes, normalizeProfile, pathCenter, pruneConstraints, setNodeRadius, setNodesKind, trimDuplicateTail } from './model';
+import { POLYGON_SIDES, canCloseContour, closeContour, contourHoles, deleteNodesWithConstraints, draftContours, draftFromNode, dropLastNode, emptyDraft, moveHandle, moveNodes, normalizeProfile, pathCenter, pruneConstraints, setNodeRadius, setNodesKind, setNodesRadius, trimDuplicateTail } from './model';
 import type { Draft, NodeRef, SegmentRef } from './model';
 import { insertPlanNode } from './planEdit';
 import { PlanSidebar } from './PlanSidebar';
@@ -188,6 +191,9 @@ function Editor({ target }: { target: ProfileTarget }) {
 
   // Sagoma di rotazione (sperimentale): disegni mostrati, quello su cui si lavora, quota di sezione (frazione dell'altezza del profilo)
   const experimental = useUiStore((s) => s.experimentalPlan);
+  // Vincoli automatici mentre si disegna (impostazione persistente, anche nelle Impostazioni)
+  const autoConstraints = useUiStore((s) => s.profileAutoConstraints);
+  const setSettings = useUiStore((s) => s.setSettings);
   const [viewMode, setViewMode] = useState<ViewMode>('profile');
   const [activeView, setActiveView] = useState<'profile' | 'plan'>('profile');
   const [section, setSection] = useState(0.5);
@@ -395,7 +401,7 @@ function Editor({ target }: { target: ProfileTarget }) {
   }, [settle, settlePlan]);
 
   /** Modifica conclusa: un passo della cronologia locale. */
-  const commitDraft = (draftToCommit: Draft, nextSelection?: NodeRef[]) => {
+  const commitDraft = (draftToCommit: Draft, nextSelection?: NodeRef[], pen?: number | null) => {
     settle();
     // A ogni passo i vincoli appesi a nodi che non esistono più spariscono (solo il filtro: gli id li assegna il modello)
     const next = pruneConstraints(draftToCommit);
@@ -404,7 +410,7 @@ function Editor({ target }: { target: ProfileTarget }) {
     // Un'offerta di quota di riferimento riguarda il disegno di prima; gli indici dei segmenti scelti possono essere cambiati
     setRefOffer(null);
     setSegSel([]);
-    dispatch({ type: 'replace', draft: next, selection: nextSelection });
+    dispatch({ type: 'replace', draft: next, selection: nextSelection, pen });
   };
   // `constraints` (se c'è, anche vuoto) sostituisce quelli del disegno: serve all'inserimento di un nodo, che può dividere un vincolo
   const commitPaths = (paths: PathContour[], nextSelection: NodeRef[] = stateRef.current.selection, constraints?: ProfileConstraint[]) =>
@@ -468,12 +474,53 @@ function Editor({ target }: { target: ProfileTarget }) {
   /** Nodo della Penna aggiunto (al rilascio): un passo della cronologia, la Penna resta sul contorno. */
   const penStep = (paths: PathContour[]) => {
     settle();
-    const next = pruneConstraints({ ...stateRef.current.draft, paths });
+    let next = pruneConstraints({ ...stateRef.current.draft, paths });
+    // Vincoli dedotti: un nodo appena aggiunto quasi orizzontale o verticale, perpendicolare al precedente o sopra un altro nodo
+    // porta il suo vincolo (nello stesso passo di cronologia); quelli in conflitto o ridondanti non si aggiungono
+    const index = stateRef.current.pen;
+    const added = index !== null && !!paths[index] && paths[index].nodes.length > (committed.current.paths[index]?.nodes.length ?? 0);
+    let inferred = false;
+    if (autoConstraints && added && index !== null) {
+      const base = normalizeProfile(next);
+      const candidates = inferNodeConstraints(base.paths, { path: index, node: base.paths[index].nodes.length - 1 });
+      const applied = applyInferred(base, candidates);
+      if (applied !== base) {
+        next = applied;
+        inferred = true;
+      }
+    }
     history.current!.push(next);
     committed.current = next;
     resumedPaths.current = null;
     setRefOffer(null);
     setSettled((n) => n + 1);
+    // Con vincoli dedotti i nodi sono stati ritoccati dal risolutore: lo stato prende il disegno nuovo (la Penna resta sul contorno)
+    if (inferred) dispatch({ type: 'replace', draft: next, pen: index });
+  };
+  /**
+   * Penna con valori digitati: il nodo nasce nel punto calcolato da lunghezza e angolo, e i valori scritti diventano quote
+   * (distanza e angolo dall'asse X) già posizionate fuori dal disegno. Se il punto cade sul primo nodo di un contorno con
+   * almeno tre nodi il contorno si chiude (nessun nodo in più). Una quota già implicata dalle altre o in conflitto entra come
+   * quota di riferimento (tra parentesi): i numeri dell'utente non si perdono mai. Un solo passo di cronologia per segmento.
+   */
+  const typePenNode = (target: Extract<PenTarget, { ok: true }>) => {
+    const index = stateRef.current.pen;
+    if (index === null) return;
+    const result = typedPenNode(stateRef.current.draft, index, target, scaleRef.current);
+    if ('error' in result) {
+      notify.info(result.error);
+      return;
+    }
+    commitDraft(result.draft, [result.selection], result.closing ? null : index);
+  };
+  /** Forma base disegnata: il rettangolo nasce con i lati orizzontali e verticali (se i vincoli automatici sono accesi). */
+  const commitShape = (tool: 'rect' | 'ellipse' | 'polygon', paths: PathContour[], nextSelection: NodeRef[]) => {
+    if (!autoConstraints || tool !== 'rect') {
+      commitPaths(paths, nextSelection);
+      return;
+    }
+    const base = normalizeProfile({ ...stateRef.current.draft, paths });
+    commitDraft(applyInferred(base, inferShapeConstraints(base.paths, base.paths.length - 1)), nextSelection);
   };
   /** Termina il contorno della Penna in corso (i nodi sono già passi della cronologia). Con meno di 2 nodi sparisce. */
   const finishPen = () => {
@@ -542,6 +589,24 @@ function Editor({ target }: { target: ProfileTarget }) {
     setQuoteEditState(next);
   };
   const [selCon, setSelCon] = useState<string | null>(null);
+  // Quote scelte insieme nell'elenco (Maiusc+clic sul nome): solo se la quota scelta ultima è tra loro, altrimenti si azzera
+  const [groupSel, setGroupSel] = useState<string[]>([]);
+  useEffect(() => {
+    setGroupSel((g) => (selCon && g.includes(selCon) ? g : []));
+  }, [selCon]);
+  const group = groupSel.filter((id) => draft.constraints?.some((c) => c.id === id));
+  /** Sceglie una quota o un vincolo dall'elenco; con Maiusc la aggiunge o la toglie dalle quote scelte insieme. */
+  const selectConstraint = (id: string | null, additive = false) => {
+    if (!additive || id === null) {
+      setGroupSel([]);
+      setSelCon(id);
+      return;
+    }
+    const base = groupSel.length ? groupSel : selCon ? [selCon] : [];
+    const next = base.includes(id) ? base.filter((x) => x !== id) : [...base, id];
+    setGroupSel(next);
+    setSelCon(next.at(-1) ?? null);
+  };
   // Cambiando la selezione dei nodi nessuna quota resta «scelta» (Canc deve eliminare i nodi o niente, non una quota di prima)
   useEffect(() => {
     setSelCon(null);
@@ -717,10 +782,12 @@ function Editor({ target }: { target: ProfileTarget }) {
     setSegSel([...segSel, seg]);
     dispatch({ type: 'select', selection: [...stateRef.current.selection, ...pair.filter((x) => !stateRef.current.selection.some((r) => sameNode(x, r)))] });
   };
-  const deleteConstraint = (id: string) => {
-    commitDraft(removeConstraint(stateRef.current.draft, id));
-    if (selCon === id) setSelCon(null);
+  /** Elimina uno o più vincoli e quote (le quote scelte insieme), in un solo passo. */
+  const deleteConstraints = (ids: string[]) => {
+    commitDraft(ids.reduce((d, id) => removeConstraint(d, id), stateRef.current.draft));
+    if (selCon && ids.includes(selCon)) setSelCon(null);
   };
+  const deleteConstraint = (id: string) => deleteConstraints([id]);
   const setConstraintValueFromPanel = (id: string, value: number) => {
     applyResult(setConstraintValue(stateRef.current.draft, id, value));
   };
@@ -883,7 +950,7 @@ function Editor({ target }: { target: ProfileTarget }) {
       } else if (penIndex !== null) penBackspace();
       else if (sel.length && stateRef.current.tool === 'select') commitDraft(deleteNodesWithConstraints(stateRef.current.draft, sel), []);
       // Nessun nodo scelto ma una quota o un vincolo scelto nell'elenco o sul disegno (con Seleziona: la Quota sceglie solo per modificare): Canc lo elimina
-      else if (!sel.length && stateRef.current.tool === 'select' && selCon && stateRef.current.draft.constraints?.some((c) => c.id === selCon)) deleteConstraint(selCon);
+      else if (!sel.length && stateRef.current.tool === 'select' && selCon && stateRef.current.draft.constraints?.some((c) => c.id === selCon)) deleteConstraints(group.length > 1 ? group : [selCon]);
     } else if (key.startsWith('arrow')) {
       // Frecce: un passo di griglia (Maiusc: dieci)
       e.preventDefault();
@@ -924,7 +991,7 @@ function Editor({ target }: { target: ProfileTarget }) {
   const quoteProps: QuoteProps = {
     bad: diag?.bad ?? NONE,
     flash,
-    selected: selCon,
+    selected: group.length > 1 ? group : selCon,
     states: diag?.states ?? null,
     // I nodi già scelti con la Quota; in modo Angolo i due estremi del primo segmento
     pick: [...dimPick, ...angPick.flatMap((q) => [{ path: q.path, node: q.segment }, { path: q.path, node: (q.segment + 1) % (draft.paths[q.path]?.nodes.length ?? 1) }])],
@@ -1027,7 +1094,11 @@ function Editor({ target }: { target: ProfileTarget }) {
                     quote={quoteProps}
                     onPickSegment={pickSegment}
                     onCommit={commitPaths}
-                    onSelect={(sel) => dispatch({ type: 'select', selection: sel })}
+                    onSelect={(sel) => {
+                      // Un clic normale cambia i nodi scelti: i segmenti scelti con Alt+clic non valgono più
+                      setSegSel([]);
+                      dispatch({ type: 'select', selection: sel });
+                    }}
                     onPenLive={(paths, current, sel) => dispatch({ type: 'paths', paths, selection: sel, pen: current })}
                     onPenResume={(paths, current, sel) => {
                       resumedPaths.current = paths;
@@ -1036,6 +1107,8 @@ function Editor({ target }: { target: ProfileTarget }) {
                     onPenClose={closePen}
                     onPenFinish={finishPen}
                     onPenStep={penStep}
+                    onPenType={typePenNode}
+                    onShape={commitShape}
                     onPenLimit={() => notify.info('Limite raggiunto: al massimo 500 nodi per contorno e 100 contorni. Termina il contorno (Invio) o chiudilo')}
                   />
                   {refOffer && (
@@ -1144,7 +1217,11 @@ function Editor({ target }: { target: ProfileTarget }) {
               onLive={liveDraft}
               onPatch={(patch) => commitDraft({ ...draft, ...patch })}
               onKind={(kind: PathNode['kind']) => selection.length && commitPaths(setNodesKind(draft.paths, selection, kind), selection)}
-              onRadius={(r) => selected && commitPaths(setNodeRadius(draft.paths, selected, r), selection)}
+              onRadius={(r) => {
+                // Un nodo: il suo raggio; più nodi: lo stesso raggio a tutti gli spigoli compatibili, in un passo
+                if (selection.length === 1 && selected) commitPaths(setNodeRadius(draft.paths, selected, r), selection);
+                else if (selection.length > 1) commitPaths(setNodesRadius(draft.paths, selection, r), selection);
+              }}
               onCoordinate={(axis, value) => {
                 const p = selected && draft.paths[selected.path].nodes[selected.node].p;
                 if (selected && p) commitPaths(moveNodesConstrained(draft.paths, draft.constraints, [selected], axis === 0 ? [value - p[0], 0] : [0, value - p[1]]), selection);
@@ -1154,7 +1231,7 @@ function Editor({ target }: { target: ProfileTarget }) {
               onSelectPath={(i) => dispatch({ type: 'select', selection: draft.paths[i].nodes.map((_, node) => ({ path: i, node })) })}
               onClosePath={(i) => commitPaths(closeContour(draft.paths, i))}
               onDeletePath={(i) => commitDraft(normalizeProfile({ ...draft, paths: draft.paths.filter((_, k) => k !== i) }), [])}
-              quote={{ can, selectionText: selectionText ? `${selectionText} ${items.nodes.length + items.segments.length === 1 ? 'scelto' : 'scelti'}.` : '', bad: diag?.bad ?? NONE, selected: selCon, onSelect: setSelCon, onApply: applyConstraintButton, onValue: setConstraintValueFromPanel, onDelete: deleteConstraint, onReposition: repositionQuotes }}
+              quote={{ auto: autoConstraints, onAuto: (v) => setSettings({ profileAutoConstraints: v }), can, selectionText: selectionText ? `${selectionText} ${items.nodes.length + items.segments.length === 1 ? 'scelto' : 'scelti'}.` : '', bad: diag?.bad ?? NONE, selected: selCon, onSelect: selectConstraint, group, onGroupValue: (v) => applyResult(setCommonValue(stateRef.current.draft, group, v)), onEqualize: () => applyResult(equalizeLengths(stateRef.current.draft, group)), onApply: applyConstraintButton, onValue: setConstraintValueFromPanel, onDelete: deleteConstraint, onReposition: repositionQuotes }}
             />
           )}
         </div>

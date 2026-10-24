@@ -45,3 +45,29 @@ describe('campo Raggio nella sezione del nodo', () => {
     expect(render(square(5), 2, false)).not.toContain('data-fillet');
   });
 });
+
+describe('campi comuni con più nodi scelti', () => {
+  const pair = (paths: PathContour[], nodes: number[]) => renderToStaticMarkup(createElement(NodeSection, { paths, selection: nodes.map((node) => ({ path: 0, node })), onKind: noop, onRadius: noop, onCoordinate: noop, onHandle: noop }));
+  const rects = (radii: number[]): PathContour[] => [{ closed: true, nodes: [corner([0, 0], radii[0] ? { r: radii[0] } : {}), corner([40, 0], radii[1] ? { r: radii[1] } : {}), corner([40, 40], radii[2] ? { r: radii[2] } : {}), corner([0, 40])] }];
+
+  it('il raggio è uno solo per tutti gli spigoli compatibili: il valore comune se uguale, vuoto con «—» se diverso', () => {
+    const same = pair(rects([5, 5, 0]), [0, 1]);
+    expect(same).toContain('data-fillet');
+    expect(same).toMatch(/Raggio<\/span><input[^>]*value="5"/);
+    expect(same).toContain('2 di 2 nodi possono raccordarsi');
+    const mixed = pair(rects([5, 8, 0]), [0, 1]);
+    expect(mixed).toMatch(/Raggio<\/span><input[^>]*placeholder="—"[^>]*value=""|Raggio<\/span><input[^>]*value=""[^>]*placeholder="—"/);
+    // Con un nodo senza raggio e uno con: diversi
+    expect(pair(rects([5, 0, 0]), [0, 1])).toMatch(/placeholder="—"/);
+    // Il tipo resta comune
+    expect(same).toContain('2 nodi selezionati: il tipo e il raggio valgono per tutti');
+  });
+
+  it('conta solo i nodi compatibili; se nessuno lo è il campo non c\'è', () => {
+    const open: PathContour[] = [{ closed: false, nodes: [corner([0, 0]), corner([40, 0]), corner([40, 40])] }];
+    const html = pair(open, [0, 1]);
+    expect(html).toContain('1 di 2 nodi possono raccordarsi');
+    expect(pair(open, [0, 2])).not.toContain('data-fillet');
+    expect(pair(rects([0, 0, 0]), [0, 1])).toContain('value="0"');
+  });
+});

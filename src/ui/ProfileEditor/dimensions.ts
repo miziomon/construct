@@ -223,10 +223,31 @@ function solveWith<T extends ProfileGeometry>(d: T, list: ProfileConstraint[], a
 export function addConstraint<T extends ProfileGeometry>(d: T, con: Omit<ProfileConstraint, 'id'> & { id?: string }): Applied<T> {
   const list = d.constraints ?? [];
   const id = con.id ?? constraintIdMaker(list)();
-  const added: ProfileConstraint = { ...con, id };
+  let added: ProfileConstraint = { ...con, id };
+  if (added.t === 'angle' && !added.ref) {
+    // L'angolo si porta in (-180, 180] (con un segno negativo e quattro punti i segmenti si scambiano: l'angolo torna positivo)
+    const normal = normalizeAngle(added);
+    if (typeof normal === 'string') return { ok: false, message: normal, ids: [], reason: 'invalid' };
+    added = normal;
+  }
   // Una quota angolare nuova: prima si ruota il segmento al nuovo angolo, così il risolutore parte vicino alla soluzione
   const start = added.t === 'angle' && !added.ref ? preRotated(d, added, added.v ?? 0) : d;
   return solveWith(start, [...list, added], added, messagesFor(isDimension(added) ? 'Quota' : 'Vincolo'));
+}
+
+/**
+ * Porta il valore di una quota angolare in (-180, 180]. Con quattro punti, se è negativo si scambiano i due segmenti e il
+ * valore diventa positivo (l'angolo da cd ad ab è l'opposto di quello da ab a cd): l'arco e l'etichetta dicono la stessa
+ * cosa. Con due punti (angolo dall'asse X) resta con il segno. Un angolo nullo (a meno di giri interi) tra due lati che hanno
+ * un nodo in comune li sovrapporrebbe: si rifiuta con un messaggio (restituito come stringa).
+ */
+export function normalizeAngle(c: ProfileConstraint): ProfileConstraint | string {
+  if (c.v === undefined || !Number.isFinite(c.v)) return c;
+  let v = c.v - 360 * Math.round(c.v / 360);
+  if (v === -180) v = 180;
+  if (c.p.length === 4 && c.p[0] === c.p[2] && Math.abs(v) < 1e-9) return 'I due lati si sovrapporrebbero: un angolo di 0 gradi tra due lati con un nodo in comune non è un angolo';
+  if (v < 0 && c.p.length === 4) return { ...c, p: [c.p[2], c.p[3], c.p[0], c.p[1]], v: -v };
+  return { ...c, v: v + 0 };
 }
 
 /**
@@ -364,10 +385,70 @@ export function setConstraintValue<T extends ProfileGeometry>(d: T, id: string, 
   if (!con || !isDimension(con) || con.ref) return { ok: false, message: 'Questa quota non ha un valore da cambiare', ids: [], reason: 'invalid' };
   const invalid = validateValue(con.t, value);
   if (invalid) return { ok: false, message: invalid, ids: [], reason: 'invalid' };
-  const edited: ProfileConstraint = { ...con, v: value };
+  let edited: ProfileConstraint = { ...con, v: value };
+  if (con.t === 'angle') {
+    const normal = normalizeAngle(edited);
+    if (typeof normal === 'string') return { ok: false, message: normal, ids: [], reason: 'invalid' };
+    edited = normal;
+  }
   // Per una modifica la frase è «Valore non raggiungibile» (la quota c'era già); il valore uguale all'attuale non è mai ridondante
   const messages: Messages = { conflict: (who) => `Valore non raggiungibile: va in conflitto con ${who || 'i vincoli'}`, redundant: 'Valore non raggiungibile: il disegno è già vincolato da altri vincoli' };
-  return solveWith(con.t === 'angle' ? preRotated(d, con, value) : d, list.map((c) => (c.id === id ? edited : c)), edited, messages);
+  return solveWith(con.t === 'angle' ? preRotated(d, edited, edited.v ?? value) : d, list.map((c) => (c.id === id ? edited : c)), edited, messages);
+}
+
+// --- Più quote scelte ----------------------------------------------------------------------------------------------------
+
+/** Ciò che si può fare con più quote scelte nell'elenco. */
+export interface GroupInfo {
+  /** Quante delle quote scelte esistono ancora. */
+  count: number;
+  /** Tutte quote pilotanti (non di riferimento) dello stesso tipo: hanno un valore comune da cambiare. */
+  type: ConstraintType | null;
+  /** Il valore comune se sono tutti uguali (entro 1e-9), altrimenti null (il campo mostra «—»). */
+  value: number | null;
+  /** Due o più distanze tra coppie diverse di nodi: si possono rendere uguali con vincoli Uguale. */
+  canEqualize: boolean;
+}
+
+/** Che cosa dicono le quote scelte (gli id che non ci sono più si ignorano). */
+export function groupInfo(constraints: ProfileConstraint[] | undefined, ids: string[]): GroupInfo {
+  const chosen = ids.flatMap((id) => constraints?.find((c) => c.id === id) ?? []);
+  const driving = chosen.length > 0 && chosen.every((c) => isDimension(c) && !c.ref && c.v !== undefined);
+  const sameType = driving && chosen.every((c) => c.t === chosen[0].t);
+  const value = sameType && chosen.every((c) => Math.abs((c.v as number) - (chosen[0].v as number)) < 1e-9) ? (chosen[0].v as number) : null;
+  const pairs = new Set(chosen.filter((c) => c.t === 'dist').map((c) => [...c.p].sort().join('|')));
+  return { count: chosen.length, type: sameType ? chosen[0].t : null, value, canEqualize: chosen.length >= 2 && chosen.every((c) => c.t === 'dist') && pairs.size === chosen.length };
+}
+
+/**
+ * Dà lo stesso valore a tutte le quote scelte (dello stesso tipo, pilotanti) e risolve una volta sola: o tutte o nessuna.
+ * Il valore si valida come quello di una quota; se il disegno non lo raggiunge non cambia nulla.
+ */
+export function setCommonValue<T extends ProfileGeometry>(d: T, ids: string[], value: number): Applied<T> {
+  const info = groupInfo(d.constraints, ids);
+  if (info.count < 2 || !info.type) return { ok: false, message: 'Scegli due o più quote pilotanti dello stesso tipo', ids: [], reason: 'invalid' };
+  const invalid = validateValue(info.type, value);
+  if (invalid) return { ok: false, message: invalid, ids: [], reason: 'invalid' };
+  const chosen = new Set(ids);
+  const messages: Messages = { conflict: (who) => `Valore non raggiungibile: va in conflitto con ${who || 'i vincoli'}`, redundant: 'Valore non raggiungibile: il disegno è già vincolato da altri vincoli' };
+  return solveWith(d, (d.constraints ?? []).map((c) => (chosen.has(c.id) ? { ...c, v: value } : c)), null, messages);
+}
+
+/**
+ * Rende uguali le distanze scelte con vincoli Uguale tra i loro segmenti (ognuno con il seguente, nell'ordine dell'elenco),
+ * in un solo passo: se uno non si può aggiungere (conflitto con i valori digitati, ridondanza) non si aggiunge nessuno.
+ */
+export function equalizeLengths<T extends ProfileGeometry>(d: T, ids: string[]): Applied<T> {
+  const info = groupInfo(d.constraints, ids);
+  if (!info.canEqualize) return { ok: false, message: 'Scegli due o più distanze tra coppie diverse di nodi', ids: [], reason: 'invalid' };
+  const chosen = (d.constraints ?? []).filter((c) => ids.includes(c.id));
+  let current = d;
+  for (let i = 1; i < chosen.length; i++) {
+    const result = addConstraint(current, { t: 'equal', p: [chosen[i - 1].p[0], chosen[i - 1].p[1], chosen[i].p[0], chosen[i].p[1]] });
+    if (!result.ok) return result;
+    current = result.draft;
+  }
+  return { ok: true, draft: current, report: solveSketch(pointsOf(current.paths), validConstraints(current.paths, current.constraints)) };
 }
 
 /** Toglie un vincolo o una quota. Non risolve (togliere un vincolo non può sovravincolare): il disegno resta dov'è. Senza più vincoli il campo non c'è. */

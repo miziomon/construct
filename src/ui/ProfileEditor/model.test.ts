@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { POLYGON_SIDES, appendPenNode, bakeScale, baseShapeContour, canCloseContour, closeContour, contourContains, contourHoles, cycleKind, deleteNodes, deleteNodesWithConstraints, draftContours, draftFromNode, dropLastNode, emptyDraft, gridStep, insertNode, insertNodeWithConstraints, isOpenEnd, joinContours, moveHandle, moveNodes, nearestSegment, normalizeProfile, pathCenter, pruneConstraints, pointInPolygon, resumeContour, setNodeKind, setNodeRadius, setNodesKind, snapPoint, trimDuplicateTail } from './model';
+import { POLYGON_SIDES, appendPenNode, bakeScale, baseShapeContour, canCloseContour, closeContour, contourContains, contourHoles, cycleKind, deleteNodes, deleteNodesWithConstraints, draftContours, draftFromNode, dropLastNode, emptyDraft, gridStep, insertNode, insertNodeWithConstraints, isOpenEnd, joinContours, moveHandle, moveNodes, nearestSegment, normalizeProfile, pathCenter, pruneConstraints, pointInPolygon, resumeContour, setNodeKind, setNodeRadius, setNodesKind, setNodesRadius, snapPoint, trimDuplicateTail } from './model';
 import { bboxOf, cubicPoint, segmentOf, signedArea, splitCubic } from '../../scene/bezier';
 import { pathContours, pathNaturalSize } from '../../scene/shapes2d';
 import { shape2dDefaults } from '../../scene/defaults';
@@ -879,5 +879,21 @@ describe('raggio di raccordo del nodo', () => {
     const rounded = area(setNodeRadius(tri(), { path: 0, node: 2 }, 5));
     expect(rounded).toBeLessThan(base - 5);
     expect(area(setNodeRadius(setNodeRadius(tri(), { path: 0, node: 2 }, 5), { path: 0, node: 2 }, 0))).toBeCloseTo(base, 9);
+  });
+});
+
+describe('raggio di raccordo a più nodi', () => {
+  const sq = (): PathContour[] => [{ closed: true, nodes: [node([0, 0]), node([40, 0]), { ...node([40, 40]), r: 3 }, node([0, 40])] }, { closed: false, nodes: [node([100, 0]), node([140, 0]), node([140, 40])] }];
+
+  it('lo stesso raggio a tutti gli spigoli compatibili in un passo; gli estremi aperti e i nodi lisci restano com\'erano', () => {
+    const paths = freeze(sq());
+    const out = setNodesRadius(paths, [{ path: 0, node: 0 }, { path: 0, node: 2 }, { path: 1, node: 0 }, { path: 1, node: 1 }], 6);
+    expect(out[0].nodes.map((n) => n.r)).toEqual([6, undefined, 6, undefined]);
+    // Il nodo di mezzo del contorno aperto si raccorda, l'estremo no
+    expect(out[1].nodes.map((n) => n.r)).toEqual([undefined, 6, undefined]);
+    // Zero toglie il raggio a tutti
+    expect(setNodesRadius(out, [{ path: 0, node: 0 }, { path: 0, node: 2 }], 0)[0].nodes.map((n) => n.r)).toEqual([undefined, undefined, undefined, undefined]);
+    // Nessuno compatibile (solo un estremo aperto, un riferimento inesistente): gli stessi contorni
+    expect(setNodesRadius(paths, [{ path: 1, node: 0 }, { path: 7, node: 0 }], 6)).toBe(paths);
   });
 });

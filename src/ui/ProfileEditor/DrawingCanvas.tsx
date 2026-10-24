@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type MutableRefObject, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type MutableRefObject, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { TrianglesCenterlineDashedVertical, Maximize, ZoomIn, ZoomOut } from 'lucide-react';
 import { MAX_PATH_CONTOURS, cubicPoint, expandFillets, segmentOf } from '../../scene/bezier';
 import type { PathContour, PathNode, ProfileConstraint, Vec2 } from '../../scene/types';
@@ -7,6 +7,8 @@ import type { HandleRef, NodeRef, SegmentRef } from './model';
 import { ANGLE_R_PX, DIM_GAP_PX, dimLabel, dragDimension, dragFrame, isPositionedDimension, pointMap, settlePaths } from './dimensions';
 import type { NodeState } from './dimensions';
 import { QuoteOverlay, quoteLabelPoint } from './QuoteOverlay';
+import { penTarget } from './penInput';
+import type { PenTarget } from './penInput';
 
 /** Aggancio e griglia: il passo (mm) serve anche a disegnare le righe; gli interruttori dicono a cosa ci si aggancia. */
 export interface GridSettings {
@@ -29,8 +31,8 @@ export interface QuoteProps {
   /** Vincoli in conflitto o ridondanti (rossi) e vincoli da evidenziare per qualche secondo dopo un rifiuto. */
   bad: Set<string>;
   flash: Set<string>;
-  /** Vincolo scelto nell'elenco del pannello. */
-  selected: string | null;
+  /** Vincolo scelto nell'elenco del pannello (o più quote scelte insieme). */
+  selected: string | string[] | null;
   /** Stato di ogni nodo con id (gradi di libertà), null se il disegno non ha vincoli. */
   states: Map<string, NodeState> | null;
   /** Nodi già scelti con lo strumento Quota. */
@@ -77,6 +79,10 @@ interface Props {
   quote?: QuoteProps;
   /** Alt+clic su un segmento (con Maiusc: in aggiunta): sceglie il segmento. Senza, sceglie i suoi due nodi. */
   onPickSegment?: (seg: SegmentRef, additive: boolean) => void;
+  /** Penna: Invio nei campi Lunghezza e Angolo digitati: il nodo nasce nel punto calcolato (`typedLength` e `typedAngle` dicono quali campi non erano vuoti). */
+  onPenType?: (target: Extract<PenTarget, { ok: true }>) => void;
+  /** Forma base disegnata (rettangolo, ellisse, poligono): al posto di `onCommit`, così la modale può aggiungere i vincoli ovvi. */
+  onShape?: (tool: 'rect' | 'ellipse' | 'polygon', paths: PathContour[], selection: NodeRef[]) => void;
   /** Disegno sotto i contorni (ingombro, livelli, assi di simmetria...). */
   underlay?: (ctx: CanvasContext) => ReactNode;
   /** Riquadro (x0, y0, x1, y1) in mm che «Adatta» e l'apertura inquadrano, al posto dei nodi; cambiandolo si inquadra di nuovo. */
@@ -221,7 +227,7 @@ type Drag =
  * zoom sul puntatore, Spazio o tasto centrale per la panoramica. Le modifiche passano da `onLive` (durante il gesto) e
  * `onCommit` (al rilascio): un gesto è un solo passo della cronologia.
  */
-export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, insertOverride, constraints, quote, onPickSegment, underlay, fitBox, section, onSection, refit, contours, crossings, holes, selection, grid, spaceDown, onLive, onCommit, onSelect, tool, flip, onFlip, pen, onPenLive, onPenResume, onPenClose, onPenFinish, onPenLimit, onPenStep, onShapeLimit, onShapeCancel, fitRequest, sides }: Props) {
+export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, insertOverride, constraints, quote, onPickSegment, onPenType, onShape, underlay, fitBox, section, onSection, refit, contours, crossings, holes, selection, grid, spaceDown, onLive, onCommit, onSelect, tool, flip, onFlip, pen, onPenLive, onPenResume, onPenClose, onPenFinish, onPenLimit, onPenStep, onShapeLimit, onShapeCancel, fitRequest, sides }: Props) {
   const wrap = useRef<HTMLDivElement>(null);
   const svg = useRef<SVGSVGElement>(null);
   const [size, setSize] = useState({ w: 600, h: 400 });
@@ -245,6 +251,20 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
   const insertOnCurve = (seg: SegmentRef, t: number): { paths: PathContour[]; node: NodeRef; constraints?: ProfileConstraint[] } | null =>
     insertOverride ? insertOverride(paths, seg, t) : insertNodeWithConstraints({ paths, constraints }, seg, t);
   const [endHot, setEndHot] = useState<NodeRef | null>(null);
+  // Penna con valori digitati: i campi Lunghezza e Angolo vicino al nodo (testi e campo con il fuoco) e l'errore dell'ultimo Invio
+  const [penField, setPenField] = useState<{ length: string; angle: string; focus: 'length' | 'angle' } | null>(null);
+  const [penError, setPenError] = useState<string | null>(null);
+  const lengthInput = useRef<HTMLInputElement>(null);
+  const angleInput = useRef<HTMLInputElement>(null);
+  const penOpen = penField !== null;
+  const penFocus = penField?.focus;
+  useEffect(() => {
+    if (!penOpen) return;
+    const el = penFocus === 'angle' ? angleInput.current : lengthInput.current;
+    el?.focus();
+    const end = el?.value.length ?? 0;
+    el?.setSelectionRange(end, end);
+  }, [penOpen, penFocus]);
   // Lo zoom si comunica alla modale (disposizione automatica delle quote); `quote` cambia a ogni render, quindi si legge da un ref
   const quoteRef = useRef(quote);
   quoteRef.current = quote;
@@ -475,6 +495,11 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
   const onPointerDown = (e: ReactPointerEvent<SVGSVGElement>) => {
     e.currentTarget.setPointerCapture(e.pointerId);
     wrap.current?.focus();
+    // Un clic nel disegno chiude i campi digitati della Penna (il nodo si decide con il clic)
+    if (penField) {
+      setPenField(null);
+      setPenError(null);
+    }
     const [sx, sy] = pos(e);
     // Panoramica: tasto destro o centrale, barra spaziatrice, o lo strumento Sposta vista
     if (e.button === 1 || e.button === 2 || spaceDown.current || tool === 'pan') {
@@ -617,7 +642,8 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
         soft: false,
       };
     } else if (hit.type === 'segment' && e.altKey) {
-      // Alt+clic su un segmento: sceglie i suoi due nodi (così Orizzontale, Verticale o Coincidente valgono per quel lato con un clic)
+      // Alt+clic su un segmento: sceglie il segmento, cioè i suoi due nodi (così Orizzontale e Verticale valgono per quel lato con un clic;
+      // Coincidente no: serve a due nodi scelti uno a uno, non a un segmento)
       // Con Maiusc si aggiunge a quelli già scelti (due segmenti per Parallelo, Perpendicolare, Uguale, Collineare)
       if (onPickSegment) onPickSegment(hit.seg, e.shiftKey);
       else onSelect([{ path: hit.seg.path, node: hit.seg.segment }, { path: hit.seg.path, node: (hit.seg.segment + 1) % paths[hit.seg.path].nodes.length }]);
@@ -843,7 +869,11 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
       if (d.moved) onCommit(d.last, selection);
     } else if (d.type === 'shape') {
       // Il contorno nuovo resta selezionato e lo strumento resta attivo
-      if (d.last !== d.base) onCommit(d.last, d.last[d.base.length].nodes.map((_, node) => ({ path: d.base.length, node })));
+      if (d.last !== d.base) {
+        const created = d.last[d.base.length].nodes.map((_, node) => ({ path: d.base.length, node }));
+        if (onShape) onShape(d.tool, d.last, created);
+        else onCommit(d.last, created);
+      }
       // Una forma mostrata e poi tornata a misura nulla: non c'è nulla da concludere, il disegno è quello di prima
       else if (d.live) onShapeCancel();
     } else if (d.type === 'box') {
@@ -913,6 +943,50 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
   const outsideWidth = flip ? Math.max(0, size.w - outsideX) : Math.max(0, Math.min(size.w, origin[0]));
   const fill = contours.map((poly) => `M${poly.map((p) => toS(p).map(f1).join(' ')).join('L')}Z`).join(' ');
 
+  // Penna con valori digitati: il punto che nascerebbe dai due campi (con il cursore per i campi vuoti) e il segmento di anteprima
+  const penLast = activePen ? activePen.nodes[activePen.nodes.length - 1].p : null;
+  const penTyped = penField && penLast ? penTarget(penLast, cursor, penField.length, penField.angle) : null;
+  const previewTo = penField ? (penTyped?.ok ? penTyped.p : null) : hover;
+  /** Invio nei campi: il nodo nasce nel punto calcolato, oppure l'errore resta sotto i campi (Esc, Tab e gli altri tasti non lo toccano). */
+  const confirmPenField = () => {
+    if (!penTyped) return;
+    if (!penTyped.ok) {
+      setPenError(penTyped.message);
+      return;
+    }
+    onPenType?.(penTyped);
+    setPenField(null);
+    setPenError(null);
+    // Il fuoco torna al disegno: la cifra successiva apre i campi per il segmento seguente
+    setTimeout(() => wrap.current?.focus(), 0);
+  };
+  const onPenFieldKey = (e: ReactKeyboardEvent<HTMLInputElement>) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      confirmPenField();
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+      setPenField((f) => (f ? { ...f, focus: f.focus === 'length' ? 'angle' : 'length' } : f));
+    } else if (e.key === 'Escape') {
+      // Esc chiude i campi ma non il disegno: il contorno della Penna resta com'è
+      e.preventDefault();
+      setPenField(null);
+      setPenError(null);
+      setTimeout(() => wrap.current?.focus(), 0);
+    }
+  };
+  /** Penna con un contorno in corso: una cifra (o il segno, il punto, la virgola) o Tab apre i campi Lunghezza e Angolo. */
+  const onCanvasKey = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (tool !== 'pen' || !activePen || closedOnly || penField || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (/^[0-9.,-]$/.test(e.key) || e.key === 'Tab') {
+      e.preventDefault();
+      e.stopPropagation();
+      setPenField({ length: e.key === 'Tab' ? '' : e.key, angle: '', focus: 'length' });
+      setPenError(null);
+    }
+  };
+
   /** Stato di vincolo del nodo (`def` = completamente vincolato, `err` = in conflitto; `free` è l'aspetto di sempre). */
   const nodeState = (n: PathNode): NodeState | '' => (quote?.states && n.id ? quote.states.get(n.id) ?? 'free' : '');
   /** Stato del contorno: rosso se un nodo è in conflitto, altrimenti scuro solo se tutti i nodi sono completamente vincolati. */
@@ -929,7 +1003,7 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
     kind === 'corner' ? <rect x={-4.5} y={-4.5} width={9} height={9} /> : kind === 'symmetric' ? <polygon points="0,-6 6,0 0,6 -6,0" /> : <circle r={5} />;
 
   return (
-    <div ref={wrap} className={`profile-editor__canvas${closedOnly ? ' profile-editor__canvas--plan' : ''}`} tabIndex={0} role="group" aria-label={label ?? 'Disegno del profilo'} data-tool={tool} data-panning={panning || undefined} data-closed-only={closedOnly || undefined}>
+    <div ref={wrap} className={`profile-editor__canvas${closedOnly ? ' profile-editor__canvas--plan' : ''}`} tabIndex={0} role="group" aria-label={label ?? 'Disegno del profilo'} data-tool={tool} data-panning={panning || undefined} data-closed-only={closedOnly || undefined} onKeyDown={onCanvasKey}>
       <svg
         ref={svg}
         className="profile-editor__svg"
@@ -940,7 +1014,8 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
         onPointerLeave={() => {
-          setCursor(null);
+          // Con i campi della Penna aperti il cursore resta l'ultimo visto: passare sul pannello non deve far saltare i campi vuoti a 10 mm e 0 gradi
+          if (!penField) setCursor(null);
           setHover(null);
           setInsertAt(null);
           setEndHot(null);
@@ -1041,9 +1116,9 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
           />
         )}
         {/* Penna: il segmento che nascerebbe dal prossimo clic (curvo se l'ultimo nodo ha la maniglia) e il punto agganciato */}
-        {activePen && hover && (() => {
+        {activePen && previewTo && (() => {
           const last = activePen.nodes[activePen.nodes.length - 1];
-          const [a, b] = [toS(last.p), toS(hover)];
+          const [a, b] = [toS(last.p), toS(previewTo)];
           const d = last.out ? `M${a.map(f1).join(' ')} C${toS(add(last.p, last.out)).map(f1).join(' ')} ${b.map(f1).join(' ')} ${b.map(f1).join(' ')}` : `M${a.map(f1).join(' ')} L${b.map(f1).join(' ')}`;
           return <path className="profile-editor__preview" d={d} />;
         })()}
@@ -1058,6 +1133,33 @@ export function DrawingCanvas({ paths, rotate, label, closedOnly, onClosedOnly, 
         {tool === 'pen' && hover && <circle className="profile-editor__snap" cx={toS(hover)[0]} cy={toS(hover)[1]} r={4} />}
         {rubber && <rect className="profile-editor__rubber" x={Math.min(rubber.x0, rubber.x1)} y={Math.min(rubber.y0, rubber.y1)} width={Math.abs(rubber.x1 - rubber.x0)} height={Math.abs(rubber.y1 - rubber.y0)} />}
       </svg>
+      {penField && penLast && penTyped && (
+        <div className="profile-editor__penin" role="group" aria-label="Lunghezza e angolo del segmento" style={{ left: Math.max(4, Math.min(size.w - 236, toS(penLast)[0] + 16)), top: Math.max(4, Math.min(size.h - 118, toS(penLast)[1] + 16)) }}>
+          {(() => {
+            const d: Vec2 = cursor ? [cursor[0] - penLast[0], cursor[1] - penLast[1]] : [10, 0];
+            return (
+              <>
+                <label>
+                  Lunghezza
+                  <input ref={lengthInput} type="text" inputMode="decimal" aria-label="Lunghezza in mm" placeholder={fmt(Math.hypot(d[0], d[1]))} value={penField.length} onChange={(e) => { setPenError(null); setPenField({ ...penField, length: e.target.value }); }} onKeyDown={onPenFieldKey} />
+                  mm
+                </label>
+                <label>
+                  Angolo
+                  <input ref={angleInput} type="text" inputMode="decimal" aria-label="Angolo in gradi" placeholder={fmt((Math.atan2(d[1], d[0]) * 180) / Math.PI)} value={penField.angle} onChange={(e) => { setPenError(null); setPenField({ ...penField, angle: e.target.value }); }} onKeyDown={onPenFieldKey} />
+                  °
+                </label>
+              </>
+            );
+          })()}
+          {penError && (
+            <p className="profile-editor__penin-error" role="alert">
+              {penError}
+            </p>
+          )}
+          <p className="profile-editor__hint">Tab cambia campo, Invio conferma il nodo, Esc chiude. Un campo vuoto segue il cursore.</p>
+        </div>
+      )}
       {quote?.edit && editAt && (
         <input
           key={editKey}

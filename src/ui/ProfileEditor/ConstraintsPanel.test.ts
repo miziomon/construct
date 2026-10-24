@@ -24,7 +24,7 @@ const canFor = (nodes: number[], segments: number[]): Record<SelectionConstraint
   return Object.fromEntries(SELECTION_CONSTRAINTS.map((t) => [t, canApplyConstraint(t, items)])) as Record<SelectionConstraint, boolean>;
 };
 const render = (patch: Partial<ConstraintsPanelProps> = {}) =>
-  renderToStaticMarkup(createElement(ConstraintsPanel, { paths, constraints: [], can: canFor([], []), selectionText: '', bad: new Set<string>(), selected: null, onSelect: noop, onApply: noop, onValue: noop, onDelete: noop, onReposition: noop, ...patch }));
+  renderToStaticMarkup(createElement(ConstraintsPanel, { paths, constraints: [], can: canFor([], []), selectionText: '', bad: new Set<string>(), selected: null, onSelect: noop, onApply: noop, onValue: noop, onDelete: noop, onReposition: noop, auto: true, onAuto: noop, group: [], onGroupValue: noop, onEqualize: noop, ...patch }));
 
 /** Il pulsante di un vincolo (il suo tag di apertura) nel markup. */
 const button = (html: string, type: string) => html.match(new RegExp(`<button[^>]*data-constraint-button="${type}"[^>]*>`))![0];
@@ -80,6 +80,37 @@ describe('sezione Quote e vincoli', () => {
     // Stati della riga
     expect(html).toContain('profile-editor__constraint--selected');
     expect(html).toContain('profile-editor__constraint--bad');
+  });
+
+  it('più quote scelte: il campo valore comune (vuoto con «—» se diverse) e Rendi uguali per le distanze', () => {
+    const constraints: ProfileConstraint[] = [
+      { id: 'k1', t: 'dist', p: ['n1', 'n2'], v: 40 },
+      { id: 'k2', t: 'dist', p: ['n2', 'n3'], v: 20 },
+      { id: 'k3', t: 'horizontal', p: ['n1', 'n2'] },
+    ];
+    const html = render({ constraints, group: ['k1', 'k2'], selected: 'k2' });
+    expect(html).toContain('data-quote-group');
+    expect(html).toContain('2 quote scelte');
+    expect(html).toContain('aria-label="Valore comune delle quote scelte"');
+    expect(html).toMatch(/placeholder="—"/);
+    expect(html).toContain('data-equalize');
+    // Uguali tra loro: il valore comune; con un vincolo geometrico non c'è il valore e nemmeno Uguale
+    expect(render({ constraints: [constraints[0], { ...constraints[1], v: 40 }], group: ['k1', 'k2'] })).toMatch(/aria-label="Valore comune delle quote scelte"[^>]*value="40"/);
+    const mixedKinds = render({ constraints, group: ['k1', 'k3'] });
+    expect(mixedKinds).toContain('data-quote-group');
+    expect(mixedKinds).not.toContain('Valore comune');
+    expect(mixedKinds).not.toContain('data-equalize');
+    // Una sola quota nel gruppo: nessuna sezione
+    expect(render({ constraints, group: ['k1'] })).not.toContain('data-quote-group');
+    // Le righe del gruppo sono evidenziate
+    expect(html.match(/profile-editor__constraint--selected/g)).toHaveLength(2);
+  });
+
+  it('la casella Vincoli automatici riflette l\'impostazione', () => {
+    expect(render({ auto: true })).toMatch(/<input type="checkbox" checked=""\/>\s*Vincoli automatici|Vincoli automatici/);
+    expect(render({ auto: true })).toContain('checked=""');
+    expect(render({ auto: false })).not.toContain('checked=""');
+    expect(render()).toContain('Vincoli automatici');
   });
 
   it('Riposiziona quote c\'è solo se ci sono quote di lunghezza (non per i soli vincoli o per le quote di riferimento senza linea)', () => {

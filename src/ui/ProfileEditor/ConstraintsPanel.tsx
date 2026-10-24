@@ -1,5 +1,5 @@
 import { NumberField } from '../NumberField/NumberField';
-import { CONSTRAINT_GLYPHS, CONSTRAINT_NAMES, CONSTRAINT_NEEDS, SELECTION_CONSTRAINTS, describeConstraint, dimensionValue, isDimension, isPositionedDimension, nodeNames } from './dimensions';
+import { CONSTRAINT_GLYPHS, CONSTRAINT_NAMES, CONSTRAINT_NEEDS, SELECTION_CONSTRAINTS, describeConstraint, dimensionValue, groupInfo, isDimension, isPositionedDimension, nodeNames } from './dimensions';
 import type { SelectionConstraint } from './dimensions';
 import type { PathContour, ProfileConstraint } from '../../scene/types';
 
@@ -14,12 +14,20 @@ export interface ConstraintsPanelProps {
   bad: Set<string>;
   /** Vincolo scelto nell'elenco (anche l'icona o l'etichetta sul disegno lo sceglie). */
   selected: string | null;
-  onSelect: (id: string | null) => void;
+  /** Sceglie un vincolo (null: nessuno); con `additive` (Maiusc+clic sul nome) lo aggiunge o lo toglie dalle quote scelte. */
+  onSelect: (id: string | null, additive?: boolean) => void;
+  /** Quote scelte insieme (due o più): un campo valore comune e «Rendi uguali». */
+  group: string[];
+  onGroupValue: (value: number) => void;
+  onEqualize: () => void;
   /** Aggiunge il vincolo ai nodi scelti. */
   onApply: (type: SelectionConstraint) => void;
   /** Cambia il valore di una quota. */
   onValue: (id: string, value: number) => void;
   onDelete: (id: string) => void;
+  /** Vincoli automatici mentre si disegna (impostazione persistente): casella nella sezione. */
+  auto: boolean;
+  onAuto: (value: boolean) => void;
   /** Ridispone tutte le quote di lunghezza fuori dal disegno e senza sovrapposizioni (un passo di cronologia). */
   onReposition: () => void;
 }
@@ -42,11 +50,15 @@ const BUTTON_TIPS: Record<SelectionConstraint, string> = {
  * Sezione «Quote e vincoli» della colonna di destra: i pulsanti dei vincoli (Orizzontale, Verticale, Fisso, Coincidente,
  * Parallelo, Perpendicolare, Uguale, Punto medio, Simmetrico, Collineare) per ciò che è scelto e l'elenco di tutte le quote e i vincoli del disegno, con il valore modificabile delle quote.
  */
-export function ConstraintsPanel({ paths, constraints, can, selectionText, bad, selected, onSelect, onApply, onValue, onDelete, onReposition }: ConstraintsPanelProps) {
+export function ConstraintsPanel({ paths, constraints, auto, onAuto, can, selectionText, bad, selected, group, onGroupValue, onEqualize, onSelect, onApply, onValue, onDelete, onReposition }: ConstraintsPanelProps) {
   const names = nodeNames(paths);
   return (
     <section className="profile-editor__section" data-quotes-panel="">
       <h3 className="profile-editor__section-title">Quote e vincoli</h3>
+      <label className="profile-editor__check" title="Mentre disegni, i vincoli ovvii si aggiungono da soli: orizzontale o verticale (entro 3 gradi), perpendicolare al segmento precedente, coincidente con un altro nodo, e il rettangolo nasce con lati orizzontali e verticali. Si tolgono dall'elenco o con Annulla.">
+        <input type="checkbox" checked={auto} onChange={(e) => onAuto(e.target.checked)} />
+        Vincoli automatici
+      </label>
       <div className="profile-editor__constraint-buttons" role="group" aria-label="Vincoli per i nodi scelti">
         {SELECTION_CONSTRAINTS.map((type) => (
           <button key={type} type="button" disabled={!can[type]} title={`${BUTTON_TIPS[type]}. Serve: ${CONSTRAINT_NEEDS[type]}`} data-constraint-button={type} onClick={() => onApply(type)}>
@@ -62,6 +74,22 @@ export function ConstraintsPanel({ paths, constraints, can, selectionText, bad, 
           Riposiziona quote
         </button>
       )}
+      {group.length >= 2 && (() => {
+        // Più quote scelte: un solo valore per tutte (se sono dello stesso tipo e pilotanti) e, per le distanze, Uguale
+        const info = groupInfo(constraints, group);
+        if (info.count < 2) return null;
+        return (
+          <div className="profile-editor__group" data-quote-group="">
+            <p className="profile-editor__hint">{info.count} quote scelte (Maiusc+clic sul nome per aggiungere o togliere).</p>
+            {info.type && <NumberField label="Valore comune" ariaLabel="Valore comune delle quote scelte" unit={info.type === 'angle' ? '°' : 'mm'} value={info.value ?? 0} mixed={info.value === null} onCommit={onGroupValue} />}
+            {info.canEqualize && (
+              <button type="button" className="profile-editor__mini" data-equalize="" title="Aggiunge un vincolo Uguale tra i segmenti delle distanze scelte" onClick={onEqualize}>
+                Rendi uguali
+              </button>
+            )}
+          </div>
+        );
+      })()}
       {constraints.length === 0 ? (
         <p className="profile-editor__hint">Nessuna quota né vincolo.</p>
       ) : (
@@ -70,11 +98,11 @@ export function ConstraintsPanel({ paths, constraints, can, selectionText, bad, 
             const label = describeConstraint(c, names);
             const dim = isDimension(c);
             const unit = c.t === 'angle' ? '°' : 'mm';
-            const className = `profile-editor__constraint${selected === c.id ? ' profile-editor__constraint--selected' : ''}${bad.has(c.id) ? ' profile-editor__constraint--bad' : ''}`;
+            const className = `profile-editor__constraint${selected === c.id || group.includes(c.id) ? ' profile-editor__constraint--selected' : ''}${bad.has(c.id) ? ' profile-editor__constraint--bad' : ''}`;
             return (
               <li key={c.id} className={className} data-constraint={c.id} data-constraint-type={c.t}>
                 <div className="profile-editor__constraint-head">
-                  <button type="button" className="profile-editor__constraint-name" title={label} onClick={() => onSelect(selected === c.id ? null : c.id)}>
+                  <button type="button" className="profile-editor__constraint-name" title={`${label}. Maiusc+clic: scegli più quote insieme`} onClick={(e) => onSelect(selected === c.id && !e.shiftKey && group.length < 2 ? null : c.id, e.shiftKey)}>
                     <span aria-hidden="true">{CONSTRAINT_GLYPHS[c.t]}</span> {label}
                   </button>
                   <button type="button" className="profile-editor__mini" aria-label={`Elimina ${label}`} title="Elimina" onClick={() => onDelete(c.id)}>

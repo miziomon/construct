@@ -122,4 +122,14 @@ describe('raggio di raccordo per nodo: espansione in un arco tangente', () => {
     const shoelace = (pts: Vec2[]) => Math.abs(pts.reduce((a, p, i) => a + p[0] * pts[(i + 1) % pts.length][1] - pts[(i + 1) % pts.length][0] * p[1], 0) / 2);
     expect(shoelace(contour)).toBeCloseTo(1600 - 4 * (1 - Math.PI / 4) * 25, 0);
   });
+
+  it('nodi coincidenti: un motivo dedicato (un segmento senza lunghezza); punti doppi quando il raggio arriva al massimo si tolgono', () => {
+    const zero: PathContour = { closed: true, nodes: [corner([0, 0]), corner([0, 0], 5), corner([40, 0]), corner([40, 40])] };
+    expect(filletInfo(zero, 1)).toMatchObject({ eligible: false, reason: 'Un segmento ha lunghezza zero' });
+    // r = rmax: l'arco arriva sul nodo vicino e il punto non si ripete (distanza minore di 1e-9)
+    for (const radii of [[100, 0, 0, 0], [0, 100, 0, 0], [100, 100, 100, 100]]) {
+      const points = sampleContour(square(radii), 0.01);
+      for (let i = 0; i < points.length; i++) expect(dist(points[i], points[(i + 1) % points.length])).toBeGreaterThan(1e-6);
+    }
+  });
 });

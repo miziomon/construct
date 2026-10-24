@@ -28,8 +28,8 @@ interface Props {
   bad: Set<string>;
   /** Vincoli da evidenziare per qualche secondo (dopo un rifiuto). */
   flash: Set<string>;
-  /** Vincolo scelto nell'elenco del pannello. */
-  selected: string | null;
+  /** Vincolo scelto nell'elenco del pannello (o più quote scelte insieme). */
+  selected: string | string[] | null;
   /** Quota nuova in attesa del valore: tratteggiata, con i nodi del disegno com'erano quando è stata scelta. */
   draft: { con: ProfileConstraint; paths: PathContour[] } | null;
   /** Nodi già scelti con lo strumento Quota (il primo dei due). */
@@ -164,7 +164,7 @@ export function QuoteOverlay({ paths, constraints, toS, pxPerMm, bad, flash, sel
       {pick.map(ring)}
       {constraints.map((c) => {
         if (!c.p.every((id) => pm.has(id))) return null;
-        const state = [...(c.ref ? ['ref'] : []), ...(selected === c.id ? ['sel'] : []), ...(bad.has(c.id) || flash.has(c.id) ? ['err'] : [])];
+        const state = [...(c.ref ? ['ref'] : []), ...((Array.isArray(selected) ? selected.includes(c.id) : selected === c.id) ? ['sel'] : []), ...(bad.has(c.id) || flash.has(c.id) ? ['err'] : [])];
         return isDimension(c) ? dimension(c, paths, state, c.id) : glyph(c, state);
       })}
       {draft && dimension(draft.con, draft.paths, ['draft'], 'draft')}

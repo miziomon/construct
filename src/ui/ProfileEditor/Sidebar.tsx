@@ -103,7 +103,7 @@ export function NodeSection({ paths, selection, onKind, onRadius, onCoordinate, 
       ) : (
         selection.length > 1 ? (
           <>
-            <p className="profile-editor__hint">{selection.length} nodi selezionati: il tipo vale per tutti.</p>
+            <p className="profile-editor__hint">{selection.length} nodi selezionati: il tipo e il raggio valgono per tutti.</p>
             <div className="profile-editor__segmented" role="group" aria-label="Tipo dei nodi selezionati">
               {KINDS.map((k) => {
                 const kinds = selection.map((r) => paths[r.path]?.nodes[r.node]?.kind);
@@ -114,6 +114,21 @@ export function NodeSection({ paths, selection, onKind, onRadius, onCoordinate, 
                 );
               })}
             </div>
+            {onRadius && (() => {
+              // Raggio comune: a tutti gli spigoli compatibili tra i nodi scelti; «—» se i valori sono diversi
+              const eligible = selection.filter((r) => paths[r.path] && filletInfo(paths[r.path], r.node).eligible);
+              if (!eligible.length) return null;
+              const radii = eligible.map((r) => paths[r.path].nodes[r.node].r ?? 0);
+              const same = radii.every((v) => Math.abs(v - radii[0]) < 1e-9);
+              return (
+                <div data-fillet="">
+                  <NumberField label="Raggio" unit="mm" min={0} value={same ? radii[0] : 0} mixed={!same} onCommit={onRadius} />
+                  <p className="profile-editor__hint" data-fillet-note="">
+                    {eligible.length} di {selection.length} nodi possono raccordarsi: il raggio vale per quelli.
+                  </p>
+                </div>
+              );
+            })()}
           </>
         ) : (
           <p className="profile-editor__hint">Seleziona un nodo per leggerne e cambiarne le coordinate. Doppio clic su un nodo: cambia il tipo.</p>

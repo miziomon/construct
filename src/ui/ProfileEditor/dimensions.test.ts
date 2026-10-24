@@ -10,18 +10,22 @@ import {
   createDimension,
   diagnose,
   dimLayout,
+  equalizeLengths,
+  groupInfo,
   dimText,
   dimensionValue,
   dragFrame,
   fmtDim,
   idsOf,
   moveNodesConstrained,
+  normalizeAngle,
   nodeNames,
   pointMap,
   pointsOf,
   quoteMismatch,
   removeConstraint,
   selectionItems,
+  setCommonValue,
   setConstraintValue,
   settlePaths,
   stateText,
@@ -747,5 +751,115 @@ describe('quota angolare', () => {
     const out = must(addConstraint(fixedA, { t: 'angle', p: ['a', 'b'], v: 30 }));
     expect(angleOf(out, out.constraints!.at(-1)!)).toBeCloseTo(30, 5);
     expect(Math.hypot(pos(out, 'b')[0], pos(out, 'b')[1])).toBeCloseTo(Math.hypot(10, 10), 4);
+  });
+});
+
+describe('angoli oltre 180 gradi e angoli nulli', () => {
+  /** Due lati con un nodo in comune (n2): da n2 verso n1 (sinistra) e da n2 verso n3 (su). */
+  const hinge = (): Geo => ({ paths: [{ closed: false, nodes: [{ id: 'n1', p: [0, 0], kind: 'corner' }, { id: 'n2', p: [40, 0], kind: 'corner' }, { id: 'n3', p: [40, 20], kind: 'corner' }] }] });
+  const angle = (d: Geo) => measure(d.constraints!.at(-1)!, pointsOf(d.paths));
+
+  it('normalizeAngle: in (-180, 180]; con quattro punti il negativo scambia i segmenti e torna positivo; con due resta con il segno', () => {
+    const four: ProfileConstraint = { id: 'k', t: 'angle', p: ['a', 'b', 'c', 'e'], v: 270 };
+    expect(normalizeAngle(four)).toMatchObject({ p: ['c', 'e', 'a', 'b'], v: 90 });
+    expect(normalizeAngle({ ...four, v: -30 })).toMatchObject({ p: ['c', 'e', 'a', 'b'], v: 30 });
+    expect(normalizeAngle({ ...four, v: 540 })).toMatchObject({ p: ['a', 'b', 'c', 'e'], v: 180 });
+    expect(normalizeAngle({ ...four, v: -180 })).toMatchObject({ v: 180 });
+    expect(normalizeAngle({ ...four, v: 45 })).toMatchObject({ p: ['a', 'b', 'c', 'e'], v: 45 });
+    // Nessun valore o non numerico: com'è
+    expect(normalizeAngle({ ...four, v: undefined })).toEqual({ ...four, v: undefined });
+    // Due punti: angolo dall'asse X con il segno
+    const two: ProfileConstraint = { id: 'k', t: 'angle', p: ['a', 'b'], v: 270 };
+    expect(normalizeAngle(two)).toMatchObject({ p: ['a', 'b'], v: -90 });
+    expect(normalizeAngle({ ...two, v: 200 })).toMatchObject({ v: -160 });
+    // Con due punti 0 va bene (orizzontale); con quattro punti non uniti pure (paralleli)
+    expect(normalizeAngle({ ...two, v: 360 })).toMatchObject({ v: 0 });
+    expect(normalizeAngle({ ...four, v: 0 })).toMatchObject({ v: 0 });
+  });
+
+  it('un angolo nullo (anche 360 o -720) tra due lati con un nodo in comune si rifiuta: si sovrapporrebbero', () => {
+    const d = hinge();
+    const dim = createAngleDimension(d.paths, ['n1', 'n2'], ['n2', 'n3'], 10) as ProfileConstraint;
+    for (const bad of [0, 360, -360, 720]) {
+      const r = addConstraint(d, { ...dim, v: bad });
+      expect(r).toMatchObject({ ok: false, reason: 'invalid' });
+      if (!r.ok) expect(r.message).toMatch(/^I due lati si sovrapporrebbero/);
+    }
+    // Lo stesso con il valore di una quota esistente
+    const ok = must(addConstraint(d, { ...dim, v: 60 }));
+    const same = setConstraintValue(ok, ok.constraints![0].id, 360);
+    expect(same).toMatchObject({ ok: false, reason: 'invalid' });
+  });
+
+  it('270 gradi si risolve come -90 con i segmenti scambiati: l\'arco e l\'etichetta dicono 90; 400 si porta a 40', () => {
+    const d = must(addFixed(hinge(), ['n1', 'n2']));
+    const dim = createAngleDimension(d.paths, ['n1', 'n2'], ['n2', 'n3'], 10) as ProfileConstraint;
+    const out = must(addConstraint(d, { ...dim, v: 270 }));
+    const con = out.constraints!.at(-1)!;
+    // Il valore salvato è positivo e quello che il disegno misura con i punti salvati
+    expect(con.v).toBeCloseTo(90, 9);
+    expect(angle(out)).toBeCloseTo(90, 5);
+    expect(dimText(con, out.paths)).toBe('90°');
+    const forty = must(setConstraintValue(out, con.id, 340));
+    const edited = forty.constraints!.at(-1)!;
+    expect(edited.v).toBeCloseTo(20, 9);
+    expect(angle(forty)).toBeCloseTo(20, 4);
+    expect(dimText(edited, forty.paths)).toBe('20°');
+  });
+});
+
+describe('più quote scelte insieme', () => {
+  /** Rettangolo 40 x 20 con n1 fisso, lati orizzontali e verticali e le due quote (40 e 20). */
+  const sized = (): Geo => {
+    let d = squared();
+    d = must(addConstraint(d, { t: 'dist', p: ['n1', 'n2'], v: 40 }));
+    return must(addConstraint(d, { t: 'dist', p: ['n2', 'n3'], v: 20 }));
+  };
+  const dist = (d: Geo, a: string, b: string) => d.constraints!.find((c) => c.t === 'dist' && c.p[0] === a && c.p[1] === b)!;
+
+  it('groupInfo: valore comune se uguale, tipo comune solo per quote pilotanti dello stesso tipo, Uguale per distanze di coppie diverse', () => {
+    const d = sized();
+    const [w, h] = [dist(d, 'n1', 'n2').id, dist(d, 'n2', 'n3').id];
+    expect(groupInfo(d.constraints, [w, h])).toEqual({ count: 2, type: 'dist', value: null, canEqualize: true });
+    const same = must(setConstraintValue(d, h, 40));
+    expect(groupInfo(same.constraints, [w, h])).toMatchObject({ type: 'dist', value: 40 });
+    // Un vincolo geometrico o una quota di riferimento fanno perdere il tipo comune; la stessa coppia due volte non si rende uguale
+    expect(groupInfo(d.constraints, [w, d.constraints![1].id]).type).toBeNull();
+    const withRef = addReferenceDimension(d, { t: 'dist', p: ['n1', 'n3'], v: 1 })!;
+    const ref = withRef.constraints!.at(-1)!.id;
+    expect(groupInfo(withRef.constraints, [w, ref])).toMatchObject({ type: null, canEqualize: true });
+    expect(groupInfo(d.constraints, [w, w]).canEqualize).toBe(false);
+    // Id inesistenti e selezione vuota
+    expect(groupInfo(d.constraints, ['zz', w])).toMatchObject({ count: 1, canEqualize: false });
+    expect(groupInfo(undefined, [w])).toEqual({ count: 0, type: null, value: null, canEqualize: false });
+  });
+
+  it('setCommonValue: lo stesso valore a tutte in un solo risultato, validato; se non è raggiungibile nessuna cambia', () => {
+    const d = sized();
+    const ids = [dist(d, 'n1', 'n2').id, dist(d, 'n2', 'n3').id];
+    const out = must(setCommonValue(d, ids, 30));
+    expect(out.constraints!.filter((c) => c.t === 'dist').map((c) => c.v)).toEqual([30, 30]);
+    expect(pos(out, 'n3')[0]).toBeCloseTo(30, 6);
+    expect(pos(out, 'n3')[1]).toBeCloseTo(30, 6);
+    expect(setCommonValue(d, ids, 0)).toMatchObject({ ok: false, message: 'La misura deve essere maggiore di zero' });
+    expect(setCommonValue(d, [ids[0]], 30)).toMatchObject({ ok: false, reason: 'invalid' });
+    expect(setCommonValue(d, [ids[0], d.constraints![1].id], 30)).toMatchObject({ ok: false, reason: 'invalid' });
+  });
+
+  it('equalizeLengths: vincoli Uguale tra i segmenti, in un passo; ridondante o in conflitto non ne aggiunge nessuno', () => {
+    // Senza quote: due lati liberi diventano uguali
+    let d: Geo = squared();
+    d = { ...d, constraints: d.constraints!.filter((c) => c.t !== 'fixed') };
+    const free: Geo = { paths: rect(), constraints: [{ id: 'k1', t: 'dist', p: ['n1', 'n2'], v: 40, ref: true }, { id: 'k2', t: 'dist', p: ['n2', 'n3'], v: 20, ref: true }] };
+    const out = must(equalizeLengths(free, ['k1', 'k2']));
+    expect(out.constraints!.at(-1)).toMatchObject({ t: 'equal', p: ['n1', 'n2', 'n2', 'n3'] });
+    const len = (a: string, b: string) => Math.hypot(pos(out, a)[0] - pos(out, b)[0], pos(out, a)[1] - pos(out, b)[1]);
+    expect(len('n1', 'n2')).toBeCloseTo(len('n2', 'n3'), 6);
+    // Con le quote pilotanti 40 e 20 il vincolo Uguale è in conflitto: niente
+    const driven = sized();
+    const blocked = equalizeLengths(driven, [dist(driven, 'n1', 'n2').id, dist(driven, 'n2', 'n3').id]);
+    expect(blocked).toMatchObject({ ok: false, reason: 'conflict' });
+    // Una sola quota o la stessa coppia: messaggio
+    expect(equalizeLengths(free, ['k1'])).toMatchObject({ ok: false, message: 'Scegli due o più distanze tra coppie diverse di nodi' });
   });
 });
