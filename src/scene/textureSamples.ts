@@ -7,6 +7,9 @@ import type { GrayImage } from './textureMap';
  */
 export type SampleKind = 'knurl' | 'carbon' | 'leather' | 'bricks' | 'waves' | 'noise';
 
+/** Le texture di esempio, nell'ordine della libreria del pannello. */
+export const SAMPLE_KINDS: SampleKind[] = ['knurl', 'carbon', 'leather', 'bricks', 'waves', 'noise'];
+
 /** Hash intero 2D (nessuna tabella, stesso risultato ovunque) in 0..1. */
 function hash2(x: number, y: number, seed: number): number {
   let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^ Math.imul(seed | 0, 1274126177);

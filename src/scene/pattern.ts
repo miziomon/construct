@@ -3,6 +3,11 @@ import type { Mat3, Transform } from './math';
 import { rotationToDown } from './layFlat';
 import { BRICK_DESIGNS, HAMMERED_DESIGNS, STUD_SHAPES, WOOD_DESIGNS, brickModule, fitBrick, gridNodeCount, hammerCapped, MAX_GRID_NODES, normalizeRelief, reliefDefaults, scaleSize, studCentersFor, studInnerRect } from './relief';
 import type { BrickParams, HammeredParams, ReliefDesign, ReliefParams, StudParams, WoodParams } from './relief';
+import { normalizeTexture } from './textureMap';
+import type { TextureParams } from './textureMap';
+import { SAMPLE_KINDS } from './textureSamples';
+import { imageOf, pixelSize } from './textureImage';
+import type { ImageLookup } from './textureImage';
 import { PATTERN_ALGORITHM, randomVoronoi } from './voronoi';
 import type { Rect, Vec2 } from './voronoi';
 import type { PatternFace, PatternParams, Vec3 } from './types';
@@ -37,7 +42,7 @@ export function faceFromBounds(bounds: Bounds, direction: FaceDirection): Patter
 }
 
 /** Vero per i Pattern in rilievo (gruppo «Rilievo» della tendina): una texture sulla faccia invece di celle forate. */
-export const isReliefKind = (kind: PatternParams['kind']) => kind === 'brick' || kind === 'studs' || kind === 'hammered' || kind === 'wood';
+export const isReliefKind = (kind: PatternParams['kind']) => kind === 'brick' || kind === 'studs' || kind === 'hammered' || kind === 'wood' || kind === 'texture';
 
 /** Vero per i rilievi additivi (borchie): il solido cresce sulla normale della faccia invece di essere scavato. */
 export const isAdditiveKind = (kind: PatternParams['kind']) => kind === 'studs';
@@ -136,7 +141,8 @@ export function woodRelief(p: PatternParams): { design: ReliefDesign; relief: Wo
  */
 export function patternRelief(p: PatternParams, faceIndex = 0): { design: ReliefDesign; relief: BrickParams | StudParams | HammeredParams | WoodParams } {
   if (p.kind === 'studs') return studRelief(p);
-  if (p.kind === 'brick') return brickRelief(p);
+  // L'Immagine non ha un rilievo parametrico (usa `textureOf`): per chi lo chiede comunque, quello dei Mattoni di partenza
+  if (p.kind === 'brick' || p.kind === 'texture') return brickRelief(p);
   const found = p.kind === 'hammered' ? hammeredRelief(p) : woodRelief(p);
   return { design: found.design, relief: { ...found.relief, seed: found.relief.seed + faceIndex } };
 }
@@ -177,6 +183,32 @@ export function gridWarning(nodes: number): string[] {
   return [`Mappa di altezze di circa ${thousands(nodes)} nodi: il codice OpenSCAD pesa circa ${thousands((nodes * SCAD_BYTES_PER_NODE) / 1024)} KB (oltre ${thousands(MAX_GRID_NODES)} nodi il passo si allarga).`];
 }
 
+/**
+ * Campi salvati del Pattern «Immagine»: `imageId` (se c'è), la texture di esempio (se manca l'immagine, 'knurl' di partenza),
+ * i parametri della texture normalizzati (modo di partenza incavo) e la versione della formula del grigio. Non c'è `design`.
+ */
+function textureFields(p: PatternParams): Partial<PatternParams> {
+  const imageId = typeof p.imageId === 'string' && p.imageId ? p.imageId : undefined;
+  return {
+    // Senza immagine (anche una stringa vuota) vale la texture di esempio
+    imageId,
+    sample: SAMPLE_KINDS.includes(p.sample as never) ? p.sample : 'knurl',
+    texture: normalizeTexture({ mode: 'groove', ...p.texture }),
+    textureAlgorithm: p.textureAlgorithm ?? 1,
+  };
+}
+
+/**
+ * Parametri effettivi della texture di un Pattern «Immagine»: quelli salvati, con l'ampiezza limitata perché la parte sotto la
+ * faccia non superi il limite di profondità (`reliefDepthLimit`: incavo fino a `amplitude`, «entrambi» fino a `amplitude` ·
+ * livello medio; il rilievo non scende). Il valore salvato non si riduce.
+ */
+export function textureOf(p: PatternParams): TextureParams {
+  const t = normalizeTexture({ mode: 'groove', ...p.texture });
+  const down = t.mode === 'groove' ? 1 : t.mode === 'both' ? t.midlevel : 0;
+  return down > 0 ? { ...t, amplitude: Math.min(t.amplitude, reliefDepthLimit(p) / down) } : t;
+}
+
 /** Misura in mm per i testi (una cifra decimale, virgola). */
 const mm = (v: number) => String(round(v, 1)).replace('.', ',');
 
@@ -185,10 +217,25 @@ const mm = (v: number) => String(round(v, 1)).replace('.', ',');
  * allo spessore dell'ingombro, mattone arrotondato dal disegno (spina di pesce e cesto) o ingrandito dal tetto di mattoni della
  * faccia. Borchie: troppo vicine tra loro o troppo piccole per la stampa.
  */
-export function reliefWarnings(p: PatternParams): string[] {
+export function reliefWarnings(p: PatternParams, lookup?: ImageLookup): string[] {
   if (!isReliefKind(p.kind)) return [];
   const q = normalizePattern(p);
   const out: string[] = [];
+  if (q.kind === 'texture') {
+    const stored = q.texture as TextureParams;
+    const texture = textureOf(q);
+    const image = imageOf(q, lookup);
+    if (!image) {
+      // Solo con una funzione di ricerca: senza, il chiamante non sa dire se l'immagine c'è
+      if (lookup) out.push('Immagine non disponibile: caricala di nuovo, finché manca il Pattern non ha effetto.');
+    } else if (pixelSize(texture.tile, image) > 0.3) {
+      out.push(`I pixel dell'immagine misurano ${mm(pixelSize(texture.tile, image))} mm sulla faccia: l'aspetto sarà a gradini. Riduci la piastrella o aumenta la sfocatura.`);
+    }
+    if (stored.mode !== 'relief' && stored.amplitude > texture.amplitude + 1e-9) out.push(`Profondità ridotta a ${mm(texture.amplitude)} mm (sull'ingombro del pezzo): l'incavo non deve attraversare il pezzo.`);
+    if (texture.amplitude > 0 && texture.amplitude < 0.2) out.push(`Ampiezza sotto ${mm(0.2)} mm, lo spessore di uno strato: la texture non si vede in stampa.`);
+    out.push(...gridWarning(Math.max(...q.faces.map((face) => gridNodeCount(frameRect(q, face), 0.5)))));
+    return out;
+  }
   if (q.kind === 'studs') {
     const { relief } = studRelief(q);
     if (relief.pitch < 2 * relief.radius + MIN_STUD_GAP) out.push(`Borchie troppo vicine: tra una base e l'altra servono almeno ${mm(MIN_STUD_GAP)} mm (passo di almeno ${mm(2 * relief.radius + MIN_STUD_GAP)} mm).`);
@@ -353,12 +400,12 @@ export function normalizePattern(p: PatternParams): PatternParams {
   const { face: legacy, ...rest } = p;
   const given = p.faces?.length ? p.faces : legacy ? [legacy] : [faceFromBounds(p.bounds, 'z+')];
   const faces = given.map(normalizeFace).filter((f, i, all) => all.findIndex((o) => sameFace(o, f)) === i);
-  const kind = (['voronoi', 'hexagon', 'circle', 'diamond', 'triangle', 'brick', 'studs', 'hammered', 'wood'] as string[]).includes(p.kind) ? p.kind : 'voronoi';
+  const kind = (['voronoi', 'hexagon', 'circle', 'diamond', 'triangle', 'brick', 'studs', 'hammered', 'wood', 'texture'] as string[]).includes(p.kind) ? p.kind : 'voronoi';
   // Disegno e misure dei rilievi: solo per i Pattern in rilievo, così gli altri progetti restano identici a prima
   // Il disegno si salva solo in `design` (non dentro `relief`) e la profondità senza il limite dello spessore (si applica in
   // `brickRelief`, così aggiungere e togliere una faccia opposta non cambia il valore salvato); la versione del rilievo già
   // salvata non si sovrascrive
-  const reliefFields = isReliefKind(kind) ? { design: reliefBase({ ...p, kind }).design, relief: reliefToStore({ ...p, kind, faces }), reliefAlgorithm: p.reliefAlgorithm ?? (RELIEF_ALGORITHM as 1) } : {};
+  const reliefFields = kind === 'texture' ? textureFields(p) : isReliefKind(kind) ? { design: reliefBase({ ...p, kind }).design, relief: reliefToStore({ ...p, kind, faces }), reliefAlgorithm: p.reliefAlgorithm ?? (RELIEF_ALGORITHM as 1) } : {};
   return {
     ...rest,
     kind,

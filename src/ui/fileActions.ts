@@ -8,7 +8,7 @@ import type { ImageBackground } from '../viewport/snapshot';
 import { activePlateId, allRootIds, hasManyPlates, PLATE_GAP, platesOf } from '../scene/plates';
 import { useUiStore } from './uiStore';
 import { sceneFromJson, sceneToJson } from '../scene/persistence';
-import { addAsset } from '../import/assets';
+import { addAsset, addImage } from '../import/assets';
 import { restoreAssets } from '../import/restore';
 import { strToU8, zipSync } from 'fflate';
 import { fontsUsed } from '../scene/fontCatalog';
@@ -183,9 +183,11 @@ export async function saveProject(): Promise<void> {
 
 /** Carica nella scena il testo di un progetto JSON (file aperto o esempio incorporato); `name` è il nome proposto al salvataggio. */
 async function loadProjectText(text: string, name: string): Promise<void> {
-  const { scene, assets } = sceneFromJson(text);
+  const { scene, assets, images } = sceneFromJson(text);
   // Le mesh del progetto entrano nell'archivio locale, poi si registrano nel kernel
   for (const asset of assets) await addAsset(asset.positions, asset.indices);
+  // Le immagini dei Pattern «Immagine»: nel registro (e in IndexedDB); `restoreAssets` le registra nel kernel
+  for (const image of images) await addImage({ w: image.w, h: image.h, data: image.gray });
   useSceneStore.getState().loadScene(await restoreAssets(scene));
   // Il nome si ricorda per il prossimo salvataggio; il file aperto non si può riscrivere (nessun handle)
   projectName = name;

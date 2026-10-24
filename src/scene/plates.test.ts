@@ -89,7 +89,7 @@ describe('piatti: funzioni pure', () => {
     scene = moveRootsToPlate(scene, ['b'], 'p2');
     const loaded = sceneFromJson(sceneToJson(scene)).scene;
     expect(loaded).toEqual(scene);
-    expect(JSON.parse(sceneToJson(scene)).version).toBe(7);
+    expect(JSON.parse(sceneToJson(scene)).version).toBe(8);
     const old = JSON.parse(sceneToJson(sceneOf(['a'])));
     old.version = 3;
     expect(platesOf(sceneFromJson(JSON.stringify(old)).scene)).toHaveLength(1);

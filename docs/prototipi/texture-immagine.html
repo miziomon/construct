@@ -656,6 +656,15 @@ function makeDisplacement(img, params, projection = {}) {
 }
 
 /* ---------- scene/textureSamples.ts ---------- */
+/** Le texture di esempio, nell'ordine della libreria del pannello. */
+const SAMPLE_KINDS = [
+	"knurl",
+	"carbon",
+	"leather",
+	"bricks",
+	"waves",
+	"noise"
+];
 /** Hash intero 2D (nessuna tabella, stesso risultato ovunque) in 0..1. */
 function hash2(x, y, seed) {
 	let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^ Math.imul(seed | 0, 1274126177);
@@ -777,8 +786,11 @@ function regionRect(region) {
 		maxY: b.max[1]
 	};
 }
-/** Superficie della texture sul rettangolo; null se la quota è nulla ovunque (ampiezza 0, livello medio agli estremi). */
-function faceSurface(img, params, rect, step = .5) {
+/**
+* Superficie della texture sul rettangolo; null se la quota è nulla ovunque (ampiezza 0, livello medio agli estremi). `embed` è
+* quanto la pelle (rilievo) entra nel pezzo: `EMBED`, ma il Pattern lo limita a metà dello spessore (come per le borchie).
+*/
+function faceSurface(img, params, rect, step = .5, embed = EMBED) {
 	const tex = normalizeTexture(params);
 	const h = makeTextureHeight(img, tex);
 	const [lo, hi] = heightRange(tex);
@@ -800,9 +812,9 @@ function faceSurface(img, params, rect, step = .5) {
 		return {
 			op: "add",
 			grid: sampleGrid(rect, step, (x, y) => h(x, y) < FLOOR ? -FLOOR : h(x, y)),
-			planeZ: -EMBED,
+			planeZ: -embed,
 			side: "below",
-			zFrom: -EMBED,
+			zFrom: -embed,
 			zTo: hi + 1,
 			column: null
 		};
@@ -812,9 +824,9 @@ function faceSurface(img, params, rect, step = .5) {
 	return {
 		op: "skin",
 		grid: sampleGrid(rect, step, h),
-		planeZ: base - EMBED,
+		planeZ: base - embed,
 		side: "below",
-		zFrom: base - EMBED,
+		zFrom: base - embed,
 		zTo: hi + 1,
 		column: [base, hi + 1]
 	};

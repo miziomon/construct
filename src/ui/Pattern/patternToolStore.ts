@@ -123,9 +123,12 @@ export const NODES_PER_CELL = 200;
 
 /** Nodi della mappa di altezze dell'anteprima (Legno con venatura), sommati sulle facce; 0 per i tipi senza mappa. */
 export function estimatedNodes(p: PatternParams): number {
-  if (p.kind !== 'wood') return 0;
-  const { relief } = patternRelief(p);
-  if (relief.kind !== 'wood' || !(relief.grainDepth > 0)) return 0;
+  // Immagine: sempre una mappa; Legno: solo con la venatura
+  if (p.kind !== 'wood' && p.kind !== 'texture') return 0;
+  if (p.kind === 'wood') {
+    const { relief } = patternRelief(p);
+    if (relief.kind !== 'wood' || !(relief.grainDepth > 0)) return 0;
+  }
   return p.faces.reduce((sum, face) => sum + gridNodeCount(frameRect(p, face), PREVIEW_MAP_STEP), 0);
 }
 
@@ -139,7 +142,7 @@ export function estimatedCells(p: PatternParams): number {
     const { relief } = patternRelief(p);
     return relief.kind === 'hammered' ? p.faces.reduce((sum, face) => { const r = frameRect(p, face); return sum + Math.min(MAX_DENTS, Math.round(((r.maxX - r.minX) * (r.maxY - r.minY)) / (0.785 * relief.size * relief.size))); }, 0) : 0;
   }
-  if (p.kind === 'wood') return Math.ceil(estimatedNodes(p) / NODES_PER_CELL);
+  if (p.kind === 'wood' || p.kind === 'texture') return Math.ceil(estimatedNodes(p) / NODES_PER_CELL);
   // Gli altri rilievi sono leggeri: niente avviso delle celle
   if (isReliefKind(p.kind)) return 0;
   return (p.kind === 'voronoi' ? p.cells : 60) * p.faces.length;

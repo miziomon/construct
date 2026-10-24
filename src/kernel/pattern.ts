@@ -1,8 +1,12 @@
 import type { CrossSection, Manifold, ManifoldToplevel } from 'manifold-3d';
-import { patternRelief, cutReach, faceFrame, frameRect, isAdditiveKind, isAxisFace, isReliefKind, normalizePattern, patternCells, studCentersOf, studEmbedOf, studRelief } from '../scene/pattern';
+import { patternRelief, cutReach, faceFrame, frameRect, isAdditiveKind, isAxisFace, isReliefKind, normalizePattern, patternCells, studCentersOf, studEmbedOf, studRelief, textureOf } from '../scene/pattern';
+import { imageOf } from '../scene/textureImage';
+import type { ImageLookup } from '../scene/textureImage';
 import type { FaceFrame } from '../scene/pattern';
 import type { PatternFace, PatternParams, Vec3 } from '../scene/types';
-import { BEST_ENGINE, reliefAddition, reliefCutter } from './relief';
+import { BEST_ENGINE, clipToRegion, heightSolid, prism, reliefAddition, reliefCutter } from './relief';
+import { faceSurface } from './textureMap';
+import type { GrayImage } from '../scene/textureMap';
 
 /** Segmenti del cerchio nelle giunzioni arrotondate (gli stessi degli angoli arrotondati delle forme 2D). */
 const ROUND_SEGMENTS = 32;
@@ -100,6 +104,31 @@ function studAdditionFor(wasm: ManifoldToplevel, child: Manifold, p: PatternPara
 }
 
 /**
+ * Texture da immagine di una faccia: gli utensili nel riferimento del pezzo. Incavo: un solido da togliere; rilievo: una pelle da
+ * unire (entra nel pezzo di `studEmbedOf`); entrambi: la colonna da togliere e poi la pelle da unire. La superficie
+ * (`faceSurface`) è la griglia di quote che scrive anche il codice OpenSCAD; la regione è il contorno della faccia meno il
+ * margine. Vuoto se la quota è nulla ovunque.
+ */
+function textureToolsFor(wasm: ManifoldToplevel, child: Manifold, p: PatternParams, face: PatternFace, image: GrayImage): { cut: Manifold[]; add: Manifold[] } {
+  const found = faceRegion(child, p, face, false, ROUND_SEGMENTS);
+  const none = { cut: [] as Manifold[], add: [] as Manifold[] };
+  if (!found) return none;
+  const { region, frame } = found;
+  const surface = faceSurface(image, textureOf(p), frameRect(p, face), p.preview ? PREVIEW_STEP : 0.5, studEmbedOf(face));
+  const tool = surface ? clipToRegion(wasm, heightSolid(wasm, surface.grid, surface.planeZ, surface.side), region, surface.zFrom, surface.zTo) : null;
+  if (!surface || !tool) {
+    region.delete();
+    return none;
+  }
+  const out = { cut: [] as Manifold[], add: [] as Manifold[] };
+  (surface.op === 'subtract' ? out.cut : out.add).push(backToPiece(tool, frame));
+  // Entrambi: prima si toglie la colonna della regione fino sotto l'incavo più profondo, poi si unisce la pelle
+  if (surface.column) out.cut.push(backToPiece(prism(wasm, region, surface.column[0], surface.column[1]), frame));
+  region.delete();
+  return out;
+}
+
+/**
  * Il solido da togliere per una faccia, nel riferimento del pezzo (o null se la faccia non taglia nulla).
  * Passi: 1) regione della faccia (vedi `faceRegion`); 2) le celle si riducono
  * per la parete, si arrotondano e si intersecano con la regione (Fori) oppure si tolgono da essa (Solchi); 3) si estrude
@@ -148,11 +177,26 @@ function cutterFor(wasm: ManifoldToplevel, child: Manifold, p: PatternParams, fa
 
 /**
  * Applica il pattern al pezzo (di proprietà del chiamante, non si libera) e restituisce un nuovo Manifold: il pezzo meno
- * i tagli di tutte le facce scelte (o, per le Borchie, più le borchie). Se nessuna faccia cambia nulla, il pezzo resta com'è.
+ * i tagli di tutte le facce scelte (o, per le Borchie, più le borchie; per l'Immagine meno l'incavo e più il rilievo, `images` dà il grigio delle immagini caricate). Se nessuna faccia cambia nulla, il pezzo resta com'è.
  */
-export function buildPattern(wasm: ManifoldToplevel, child: Manifold, params: PatternParams): Manifold {
+export function buildPattern(wasm: ManifoldToplevel, child: Manifold, params: PatternParams, images?: ImageLookup): Manifold {
   const { Manifold } = wasm;
   const p = normalizePattern(params);
+  // Texture da immagine: utensili da togliere e da unire per ogni faccia; senza l'immagine (non caricata) il pezzo resta com'è
+  if (p.kind === 'texture') {
+    const image = imageOf(p, images);
+    if (!image) return child.translate([0, 0, 0]);
+    const tools = p.faces.map((face) => textureToolsFor(wasm, child, p, face, image));
+    const cuts = tools.flatMap((t) => t.cut);
+    const adds = tools.flatMap((t) => t.add);
+    const base = cuts.length ? Manifold.difference([child, ...cuts]) : child.translate([0, 0, 0]);
+    cuts.forEach((c) => c.delete());
+    if (!adds.length) return base;
+    const joined = Manifold.union([base, ...adds]);
+    base.delete();
+    adds.forEach((a) => a.delete());
+    return joined;
+  }
   // Rilievo additivo (Borchie): il pezzo più le borchie di ogni faccia, `depth` e `sides` non contano
   if (isAdditiveKind(p.kind)) {
     const additions = p.faces.map((face) => studAdditionFor(wasm, child, p, face)).filter((a): a is Manifold => a !== null);

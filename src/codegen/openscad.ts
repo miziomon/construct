@@ -1,4 +1,4 @@
-import type { ArrayParams, Binding, CornerNode, EdgeNode, GroupNode, MeshNode, PatternParams, PrimitiveNode, Scene, SceneNode, Shape2DNode, ShellParams, Vec3 } from '../scene/types';
+import type { ArrayParams, Binding, CornerNode, EdgeNode, GroupNode, MeshNode, PatternFace, PatternParams, PrimitiveNode, Scene, SceneNode, Shape2DNode, ShellParams, Vec3 } from '../scene/types';
 import { cavityOf, openName, SHELL_OPEN_MARGIN } from '../scene/shell';
 import { cornerCutter } from '../scene/cornerProfile';
 import { isCutter } from '../scene/treatment';
@@ -10,10 +10,14 @@ import { resolveEnds } from '../scene/edgeEnds';
 import { stretchFactors } from '../scene/ellipse';
 import { isScaled, scaleOf } from '../scene/groupScale';
 import { circularStep, linearStep, normalizeArray } from '../scene/arrayPattern';
-import { cutReach, faceFrame, frameRect, isAdditiveKind, isAxisFace, isReliefKind, normalizePattern, patternCells, patternRelief, studCentersOf, studEmbedOf } from '../scene/pattern';
+import { cutReach, faceFrame, frameRect, isAdditiveKind, isAxisFace, isReliefKind, normalizePattern, patternCells, patternRelief, studCentersOf, studEmbedOf, textureOf } from '../scene/pattern';
+import { imageOf } from '../scene/textureImage';
+import type { ImageLookup } from '../scene/textureImage';
+import { faceSurface } from '../kernel/textureMap';
+import { getImage } from '../import/assets';
 import { woodMaxDepth } from '../scene/relief';
 import { BEST_ENGINE } from '../kernel/relief';
-import { brickScad, hammeredScad, studScad, woodScad } from './reliefScad';
+import { brickScad, hammeredScad, polyhedronInline, studScad, woodScad } from './reliefScad';
 import { isRotational, pathContours, revolveParams, shapeContours, svgContours } from '../scene/shapes2d';
 import { hasPlan, planSolid } from '../scene/planSolid';
 import type { PlanSolid } from '../scene/planSolid';
@@ -485,67 +489,114 @@ function arrayLines(params: ArrayParams, child: (depth: number) => string[], dep
 }
 
 /**
+ * Come il generatore ottiene i pixel delle immagini (Pattern «Immagine»): il codice parte dai soli parametri della scena, e per
+ * le mesh importate `meshLines` scrive solo il nome del file (non legge mai l'asset). Il `zmap` invece ha bisogno dei pixel, quindi
+ * `sceneToOpenScad` riceve una funzione `images` (id dell'asset a grigio decodificato) che di partenza legge il registro delle
+ * immagini del thread principale (`getImage`, src/import/assets.ts). Una variabile del modulo la porta fino a `patternLines`
+ * senza cambiare le firme di tutte le funzioni intermedie; si imposta e si ripristina dentro `sceneToOpenScad`.
+ */
+let imageLookup: ImageLookup | undefined;
+
+/**
  * Codice di un Pattern in rilievo, per ogni faccia i dati del disegno e poi:
  * - Mattoni, Rame battuto, Legno (sottrattivi): `difference()` con il rilievo nel riferimento della faccia, ritagliato sulla
  *   regione (sempre il contorno della faccia, meno il margine) come fa il kernel con `reliefCutter`;
  * - Borchie (additivo): `union()` con le borchie, di cui si esporta l'elenco dei centri già calcolato (gli stessi del kernel,
- *   `studCentersOf`), ritagliate sullo stesso contorno.
- * Le mappe di altezze (venatura del legno) hanno il passo del risultato (0,5 mm) e i nomi dei dati suffissati con la faccia.
+ *   `studCentersOf`), ritagliate sullo stesso contorno;
+ * - Immagine: la mappa di altezze (`zmap`, la griglia di `faceSurface` come nel kernel) dell'incavo (`difference()`), del rilievo
+ *   (`union()`) o di entrambi (`union()` di una `difference()` che toglie la colonna e della pelle).
+ * Le mappe di altezze hanno il passo del risultato (0,5 mm) e i nomi dei dati suffissati con la faccia.
  * `depth` e `sides` del Pattern non contano.
  */
 function reliefPatternLines(p: PatternParams, child: (depth: number) => string[], depth: number): string[] {
   const pad = IND.repeat(depth);
   const at = (d: number, text: string) => `${IND.repeat(d)}${text}`;
   const additive = isAdditiveKind(p.kind);
+  const texture = p.kind === 'texture';
   const { design } = patternRelief(p);
-  // Dati e solido di ogni faccia (con più facce i nomi dei dati hanno il numero della faccia); le facce senza borchie si saltano
-  const faces = p.faces
-    .map((face, i) => {
+  /** Un taglio o un'aggiunta di una faccia: dati, e righe `solido` (o nessuno, per la colonna) con la quota del prisma di ritaglio. */
+  interface Piece {
+    face: PatternFace;
+    solid: string[] | null;
+    below: number;
+    above: number;
+  }
+  const data: string[] = [];
+  const cuts: Piece[] = [];
+  const adds: Piece[] = [];
+  let what = '';
+  if (texture) {
+    // Immagine: la superficie è quella del kernel (`faceSurface`), la mappa è il suo `zmap`
+    const image = imageOf(p, imageLookup);
+    const tex = textureOf(p);
+    what = `immagine ${p.imageId ?? p.sample}, modo ${tex.mode}`;
+    if (!image) data.push(`${pad}// Immagine non disponibile: caricala di nuovo, senza la mappa il Pattern non ha effetto`);
+    else {
+      p.faces.forEach((face, i) => {
+        const surface = faceSurface(image, tex, frameRect(p, face), 0.5, studEmbedOf(face));
+        if (!surface) return;
+        const poly = polyhedronInline(surface.grid, surface.planeZ, surface.side, p.faces.length > 1 ? `_${i + 1}` : '');
+        data.push(...poly.data.map((l) => `${pad}${l}`));
+        (surface.op === 'subtract' ? cuts : adds).push({ face, solid: poly.solid, below: -surface.zFrom, above: surface.zTo });
+        if (surface.column) cuts.push({ face, solid: null, below: -surface.column[0], above: surface.column[1] });
+      });
+    }
+  } else {
+    // Dati e solido di ogni faccia (con più facce i nomi dei dati hanno il numero della faccia); le facce senza borchie si saltano
+    p.faces.forEach((face, i) => {
       const id = p.faces.length > 1 ? `_${i + 1}` : '';
       const { relief } = patternRelief(p, i);
       const rect = frameRect(p, face);
-      switch (relief.kind) {
-        case 'studs': {
-          const { centers } = studCentersOf(p, face);
-          return { face, centers, below: 1, ...studScad(relief, centers, id, studEmbedOf(face)) };
+      const part = (() => {
+        switch (relief.kind) {
+          case 'studs': {
+            const { centers } = studCentersOf(p, face);
+            return centers.length ? { ...studScad(relief, centers, id, studEmbedOf(face)), below: 1, above: (relief.shape === 'dome' ? Math.min(relief.height, relief.radius) : relief.height) + 1 } : null;
+          }
+          case 'brick':
+            return { ...brickScad(rect, relief, id), below: relief.depth + 1, above: 2 };
+          case 'hammered':
+            // Quanto in basso arrivano al massimo le calotte (come `zMin` del kernel)
+            return { ...hammeredScad(rect, relief, id), below: relief.depth * (1 + relief.jitter) + 1.1, above: 2 };
+          case 'wood':
+            return { ...woodScad(rect, relief, BEST_ENGINE.wood, 0.5, id), below: woodMaxDepth(relief) + 1, above: 2 };
         }
-        case 'brick':
-          return { face, centers: [], below: relief.depth + 1, ...brickScad(rect, relief, id) };
-        case 'hammered':
-          // Quanto in basso arrivano al massimo le calotte (come `zMin` del kernel)
-          return { face, centers: [], below: relief.depth * (1 + relief.jitter) + 1.1, ...hammeredScad(rect, relief, id) };
-        case 'wood':
-          return { face, centers: [], below: woodMaxDepth(relief) + 1, ...woodScad(rect, relief, BEST_ENGINE.wood, 0.5, id) };
-      }
-    })
-    .filter((f) => !additive || f.centers.length > 0);
-  // Quota del prisma di ritaglio: oltre il solido del rilievo (le borchie arrivano a `height`, i tagli a ABOVE)
-  const { relief } = patternRelief(p);
-  const above = relief.kind === 'studs' ? (relief.shape === 'dome' ? Math.min(relief.height, relief.radius) : relief.height) + 1 : 2;
-  const what =
-    relief.kind === 'studs' ? `${faces.reduce((sum, f) => sum + f.centers.length, 0)} borchie unite`
-    : relief.kind === 'brick' ? `fughe di ${n(relief.depth)} mm scavate`
-    : relief.kind === 'hammered' ? `rame battuto di ${n(relief.depth)} mm scavato`
-    : 'fughe e venatura scavate';
-  const out: string[] = [`${pad}// Pattern ${p.kind}, disegno ${design}: ${what} sulle facce scelte`];
-  faces.forEach((f) => out.push(...f.data.map((l) => `${pad}${l}`)));
-  out.push(`${pad}${additive ? 'union' : 'difference'}() {`, ...child(depth + 1));
-  faces.forEach(({ face, solid, below }) => {
+      })();
+      if (!part) return;
+      data.push(...part.data.map((l) => `${pad}${l}`));
+      (additive ? adds : cuts).push({ face, solid: part.solid, below: part.below, above: part.above });
+    });
+    const { relief } = patternRelief(p);
+    what =
+      relief.kind === 'studs' ? `${adds.length ? 'borchie unite' : 'nessuna borchia'}`
+      : relief.kind === 'brick' ? `fughe di ${n(relief.depth)} mm scavate`
+      : relief.kind === 'hammered' ? `rame battuto di ${n(relief.depth)} mm scavato`
+      : 'fughe e venatura scavate';
+  }
+  const out: string[] = [`${pad}// Pattern ${p.kind}, ${texture ? what : `disegno ${design}: ${what}`} sulle facce scelte`, ...data];
+
+  /** Blocco di una faccia: il solido nel riferimento della faccia, ritagliato sulla regione (la sezione della faccia meno il margine, estrusa tra le quote del prisma). */
+  const block = (d: number, { face, solid, below, above }: Piece): string[] => {
     const frame = faceFrame(face);
-    let d = depth + 1;
-    out.push(at(d, `translate(${vec(frame.origin)}) rotate(${vec(frame.inverseEuler)}) intersection() {`));
-    d++;
-    out.push(...solid.map((l) => at(d, l)));
-    // Regione: sezione della faccia ridotta del margine, estrusa oltre il rilievo (come il prisma di ritaglio del kernel)
-    out.push(
-      at(d, `translate([0, 0, ${n(-below)}]) linear_extrude(height = ${n(below + above)})`),
-      at(d + 1, `${p.margin > 0 ? `offset(delta = -${n(p.margin)}) ` : ''}projection(cut = true) translate([0, 0, 0.01]) rotate(${vec(frame.euler)}) translate(${vec(frame.origin.map((v) => -v))}) {`),
-      ...child(d + 2),
-      at(d + 1, '}'),
-    );
-    out.push(at(d - 1, '}'));
-  });
-  out.push(`${pad}}`);
+    const region = [
+      at(d + 1, `translate([0, 0, ${n(-below)}]) linear_extrude(height = ${n(below + above)})`),
+      at(d + 2, `${p.margin > 0 ? `offset(delta = -${n(p.margin)}) ` : ''}projection(cut = true) translate([0, 0, 0.01]) rotate(${vec(frame.euler)}) translate(${vec(frame.origin.map((v) => -v))}) {`),
+      ...child(d + 3),
+      at(d + 2, '}'),
+    ];
+    const head = `translate(${vec(frame.origin)}) rotate(${vec(frame.inverseEuler)})`;
+    // Con un solido il prisma lo ritaglia (intersezione); la colonna è il solo prisma
+    return solid ? [at(d, `${head} intersection() {`), ...solid.map((l) => at(d + 1, l)), ...region, at(d, '}')] : [at(d, `${head} {`), ...region, at(d, '}')];
+  };
+
+  // Aggiunte: `union()` del pezzo (già senza i tagli) con la pelle; solo tagli: `difference()`
+  let d = depth;
+  if (adds.length) out.push(at(d++, 'union() {'));
+  if (cuts.length || !adds.length) {
+    out.push(at(d, 'difference() {'), ...child(d + 1), ...cuts.flatMap((c) => block(d + 1, c)), at(d, '}'));
+  } else out.push(...child(d));
+  adds.forEach((a) => out.push(...block(d, a)));
+  if (adds.length) out.push(`${pad}}`);
   return out;
 }
 
@@ -665,7 +716,7 @@ export const plateComment = (index: number, name: string) => `// === Piatto ${in
  * Genera il codice OpenSCAD dell'intera scena. Gli hole alla radice non producono geometria. Con più piatti ognuno è un
  * `module piatto_N()` e i moduli sono richiamati affiancati lungo X di `plateSpacing` mm, come nell'esportazione 3MF.
  */
-export function sceneToOpenScad(source: Scene, options: { plateSpacing?: number } = {}): string {
+function generateScad(source: Scene, options: { plateSpacing?: number }): string {
   // I campi con una formula che non si calcola (parametro rotto o mancante) escono come numeri: il codice resta valido
   const { values } = resolveParams(source.params);
   const scene = dropBrokenBindings(source, values);
@@ -700,4 +751,18 @@ export function sceneToOpenScad(source: Scene, options: { plateSpacing?: number 
   if (!roots.length) return [...header, '// Scena vuota'].join('\n') + '\n';
   const lines = roots.flatMap((nd) => [...nodeLines(scene, nd, 0), '']);
   return [...header, ...lines].join('\n').trimEnd() + '\n';
+}
+
+/**
+ * Codice OpenSCAD della scena (vedi `generateScad`). `images` dà il grigio delle immagini del Pattern «Immagine» dall'id
+ * dell'asset (di partenza il registro delle immagini del thread principale): senza i pixel il Pattern esce con un commento.
+ */
+export function sceneToOpenScad(source: Scene, options: { plateSpacing?: number; images?: ImageLookup } = {}): string {
+  const previous = imageLookup;
+  imageLookup = options.images ?? getImage;
+  try {
+    return generateScad(source, options);
+  } finally {
+    imageLookup = previous;
+  }
 }

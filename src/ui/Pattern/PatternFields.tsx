@@ -5,6 +5,8 @@ import type { BrickDesign, ReliefDesign, ReliefParams, StudLayout, StudShape } f
 import type { PatternParams } from '../../scene/types';
 import { NumberField } from '../NumberField/NumberField';
 import { SliderField } from '../SliderField/SliderField';
+import { TextureFields } from './TextureFields';
+import { getImage } from '../../import/assets';
 import { SLOW_PREVIEW_CELLS, SLOW_PREVIEW_MS, estimatedCells, estimatedNodes } from './patternToolStore';
 // Stesso aspetto dei campi della Ripetizione
 import '../Array/ArrayFields.scss';
@@ -28,10 +30,10 @@ interface Props {
   refreshBlocked?: string;
 }
 
-const KIND_LABELS: Record<PatternParams['kind'], string> = { voronoi: 'Voronoi', hexagon: 'Esagoni', circle: 'Cerchi', diamond: 'Rombi', triangle: 'Triangoli', brick: 'Mattoni', studs: 'Borchie', hammered: 'Rame battuto', wood: 'Legno' };
+const KIND_LABELS: Record<PatternParams['kind'], string> = { voronoi: 'Voronoi', hexagon: 'Esagoni', circle: 'Cerchi', diamond: 'Rombi', triangle: 'Triangoli', brick: 'Mattoni', studs: 'Borchie', hammered: 'Rame battuto', wood: 'Legno', texture: 'Immagine' };
 /** Tipi a celle e tipi in rilievo: due gruppi della tendina. */
 const CELL_KINDS: PatternParams['kind'][] = ['voronoi', 'hexagon', 'circle', 'diamond', 'triangle'];
-const RELIEF_KINDS: PatternParams['kind'][] = ['brick', 'studs', 'hammered', 'wood'];
+const RELIEF_KINDS: PatternParams['kind'][] = ['brick', 'studs', 'hammered', 'wood', 'texture'];
 /** Disegni di ogni rilievo: muratura dei Mattoni, forma delle Borchie, lavorazione del Rame, composizione del Legno. */
 const DESIGN_LABELS: Record<ReliefDesign, string> = { running: 'Sfalsati', herringbone: 'Spina di pesce', basket: 'Cesto', dome: 'Cupola', chamfered: 'Cilindro smussato', pyramid: 'Piramide', dimples: 'Martellato', facets: 'Sfaccettato', scales: 'Scaglie', planks: 'Doghe', parquet: 'Parquet (spina di pesce)', single: 'Tavola unica' };
 const DESIGNS_OF: Record<'brick' | 'studs' | 'hammered' | 'wood', ReliefDesign[]> = { brick: ['running', 'herringbone', 'basket'] as BrickDesign[], studs: ['dome', 'chamfered', 'pyramid'] as StudShape[], hammered: ['dimples', 'facets', 'scales'], wood: ['planks', 'parquet', 'single'] };
@@ -53,6 +55,7 @@ const SLOW_TIPS: Record<PatternParams['kind'], string> = {
   studs: 'Aumenta il passo o il raggio delle borchie, oppure riduci le facce.',
   hammered: 'Aumenta il diametro o riduci le facce.',
   wood: 'Aumenta la larghezza della doga o metti a 0 la venatura, oppure riduci le facce.',
+  texture: 'Riduci la faccia o le facce, oppure scegli una texture meno fitta (la mappa ha un nodo ogni 0,5 mm).',
 };
 /** Sotto questa parete (circa due passate di un ugello da 0,4 mm) la stampa è inaffidabile. */
 const MIN_PRINTABLE_WALL = 0.8;
@@ -123,7 +126,9 @@ export function PatternFields({ params: p, onChange, disabled, history = true, o
         </select>
       </div>
 
-      {relief && (
+      {p.kind === 'texture' && <TextureFields params={p} onChange={onChange} disabled={disabled} history={history} />}
+
+      {relief && p.kind !== 'texture' && (
         <>
           <div className="array-fields__row" title={DESIGN_TIPS[p.kind as 'brick' | 'studs' | 'hammered' | 'wood']}>
             <label className="array-fields__label" htmlFor={designId}>Disegno</label>
@@ -226,13 +231,13 @@ export function PatternFields({ params: p, onChange, disabled, history = true, o
       {!relief && slider('Profondità', 'Quanto entra il taglio dalla faccia, in mm. 0 = passante.', 'depth', { min: 0, max: Math.max(1, Math.round(Math.max(...p.faces.map((f) => f.thickness)))), step: 0.1, hardMin: 0, unit: 'mm' })}
       {!relief && partial && bothSides && choice('Lati', 'Il taglio parte dalla sola faccia scelta oppure anche da quella opposta, con la stessa profondità.', p.sides, [['one', 'Una faccia'], ['both', 'Entrambe']], (sides) => onChange({ sides }))}
       {!relief && p.wall < MIN_PRINTABLE_WALL && <p className="array-fields__total" role="status">Parete sotto {MIN_PRINTABLE_WALL} mm: difficile da stampare.</p>}
-      {reliefWarnings(p).map((text) => (
+      {reliefWarnings(p, getImage).map((text) => (
         <p key={text} className="array-fields__total" role="status">{text}</p>
       ))}
 
       {slow && (
         <p className="array-fields__total array-fields__warning" role="alert">
-          {ms > SLOW_PREVIEW_MS ? `Calcolo lento (${Math.round(ms)} ms).` : p.kind === 'wood' ? `Mappa di altezze grande (circa ${estimatedNodes(p)} nodi): il calcolo può essere lento.` : `Molte celle (circa ${estimatedCells(p)}): il calcolo può essere lento.`} {SLOW_TIPS[p.kind]}
+          {ms > SLOW_PREVIEW_MS ? `Calcolo lento (${Math.round(ms)} ms).` : p.kind === 'wood' || p.kind === 'texture' ? `Mappa di altezze grande (circa ${estimatedNodes(p)} nodi): il calcolo può essere lento.` : `Molte celle (circa ${estimatedCells(p)}): il calcolo può essere lento.`} {SLOW_TIPS[p.kind]}
         </p>
       )}
       {onSimplified && !relief && (

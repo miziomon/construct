@@ -230,3 +230,107 @@ test('Pattern Legno: fughe e venatura tolgono volume, il codice ha l\'elenco e l
   await expect(page.locator('.slider-field').filter({ has: page.getByText('Profondità fuga', { exact: true }) })).toHaveCount(0);
   await expect(page.locator('.slider-field').filter({ has: page.getByText('Venatura', { exact: true }) })).toHaveCount(1);
 });
+
+test('Pattern Immagine: una texture della libreria incava la faccia, il codice ha la mappa e modo ed esempio si cambiano dalle proprietà', async ({ page }) => {
+  await addShape(page, 'Cubo');
+  await page.keyboard.press('z');
+  const panel = page.getByRole('region', { name: 'Pattern' });
+  await expect(panel).toBeVisible();
+  await panel.getByLabel('Tipo').selectOption({ label: 'Immagine' });
+  await settled(page);
+
+  // Anteprima viva: di partenza il modo è incavo (la zigrinatura scava il cubo senza forarlo)
+  await expect.poll(() => volume(page)).toBeLessThan(8000);
+  expect(await volume(page)).toBeGreaterThan(7000);
+
+  await panel.getByRole('button', { name: 'OK' }).click();
+  await settled(page);
+  const scene = await sceneState(page);
+  const id = scene.rootIds[0];
+  expect(scene.nodes[id]).toMatchObject({ type: 'group', op: 'pattern', name: 'Pattern Immagine: Cubo' });
+  expect(scene.nodes[id].pattern).toMatchObject({ kind: 'texture', sample: 'knurl', textureAlgorithm: 1 });
+  expect(scene.nodes[id].pattern.imageId).toBeUndefined();
+  expect(scene.nodes[id].pattern.texture).toMatchObject({ mode: 'groove', tile: 20, amplitude: 0.6, midlevel: 0.5 });
+  await expect(page.locator('.status-bar')).toContainText('Mesh valida');
+  const groove = await volume(page);
+  expect(groove).toBeLessThan(8000);
+
+  // Il codice OpenSCAD ha la mappa di altezze (zmap) in un solo file, ritagliata sulla faccia
+  let code = await readCode(page);
+  expect(code).toContain('difference() {');
+  expect(code).toContain('zmap = [');
+  expect(code).toContain('polyhedron(pts, faces, convexity = 10);');
+  expect(code).toContain('projection(cut = true)');
+  expect(code).not.toContain('surface(');
+
+  // Un altro esempio della libreria
+  await page.getByLabel('Sorgente').selectOption({ label: 'Onde' });
+  await settled(page);
+  expect((await sceneState(page)).nodes[id].pattern.sample).toBe('waves');
+  expect(await volume(page)).toBeLessThan(8000);
+  expect(await volume(page)).not.toBeCloseTo(groove, 3);
+
+  // Rilievo: il solido cresce e il codice unisce la pelle; Entrambi: scava e aggiunge
+  await page.getByRole('group', { name: 'Modo texture' }).getByRole('button', { name: 'Rilievo' }).click();
+  await settled(page);
+  expect((await sceneState(page)).nodes[id].pattern.texture.mode).toBe('relief');
+  expect(await volume(page)).toBeGreaterThan(8000);
+  expect(await readCode(page)).toContain('union() {');
+  await page.getByRole('group', { name: 'Modo texture' }).getByRole('button', { name: 'Entrambi' }).click();
+  await settled(page);
+  await expect(page.locator('.status-bar')).toContainText('Mesh valida');
+  code = await readCode(page);
+  expect(code).toContain('union() {');
+  expect(code).toContain('difference() {');
+});
+
+test('Pattern Immagine: un PNG caricato si converte in grigio, si salva una volta sola e un file illeggibile dà un errore chiaro', async ({ page }) => {
+  await addShape(page, 'Cubo');
+  await page.keyboard.press('z');
+  const panel = page.getByRole('region', { name: 'Pattern' });
+  await panel.getByLabel('Tipo').selectOption({ label: 'Immagine' });
+  await settled(page);
+  await panel.getByRole('button', { name: 'OK' }).click();
+  await settled(page);
+  const id = (await sceneState(page)).rootIds[0];
+
+  // Un PNG di prova generato in memoria nel browser: scacchiera 64 × 64 a quadri di 8 pixel
+  const png = Buffer.from(
+    await page.evaluate(async () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 64;
+      const context = canvas.getContext('2d')!;
+      for (let j = 0; j < 8; j++) for (let i = 0; i < 8; i++) {
+        context.fillStyle = (i + j) % 2 ? '#ffffff' : '#000000';
+        context.fillRect(i * 8, j * 8, 8, 8);
+      }
+      const blob = await new Promise<Blob>((resolve) => canvas.toBlob((b) => resolve(b!), 'image/png'));
+      return Array.from(new Uint8Array(await blob.arrayBuffer()));
+    }),
+  );
+  const input = page.locator('input[type=file][aria-label="File immagine"]');
+  await input.setInputFiles({ name: 'scacchiera.png', mimeType: 'image/png', buffer: png });
+  await expect.poll(async () => (await sceneState(page)).nodes[id].pattern.imageId).toMatch(/^img-[0-9a-f]{16}$/);
+  await settled(page);
+  const pattern = (await sceneState(page)).nodes[id].pattern;
+  expect(pattern.sample).toBeUndefined();
+  await expect(page.getByLabel('Sorgente')).toHaveValue('__uploaded');
+  await expect(page.getByLabel("Anteprima in grigio dell'immagine")).toBeVisible();
+  // Il cubo è inciso dai quadri neri: meno volume, e il codice ha la mappa
+  expect(await volume(page)).toBeLessThan(8000);
+  expect(await readCode(page)).toContain('zmap = [');
+
+  // Lo stesso file di nuovo: stesso id (una sola copia)
+  await input.setInputFiles({ name: 'scacchiera-bis.png', mimeType: 'image/png', buffer: png });
+  await settled(page);
+  expect((await sceneState(page)).nodes[id].pattern.imageId).toBe(pattern.imageId);
+
+  // Un file che non è un'immagine: errore leggibile, il Pattern resta com'era
+  await input.setInputFiles({ name: 'finto.png', mimeType: 'image/png', buffer: Buffer.from('questo non è un PNG') });
+  await expect(page.getByRole('alert').filter({ hasText: 'immagine leggibile' })).toBeVisible();
+  expect((await sceneState(page)).nodes[id].pattern.imageId).toBe(pattern.imageId);
+
+  // Formato non supportato (GIF): messaggio chiaro
+  await input.setInputFiles({ name: 'animata.gif', mimeType: 'image/gif', buffer: Buffer.from('GIF89a') });
+  await expect(page.getByRole('alert').filter({ hasText: 'PNG o JPG' })).toBeVisible();
+});

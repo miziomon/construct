@@ -4,6 +4,7 @@ import { edgeProfile, endMargin, endOvershoot, endPlanesOf, hasPerpendicularEnds
 import { resolveEnds } from '../scene/edgeEnds';
 import { stretchFactors } from '../scene/ellipse';
 import { buildPattern } from './pattern';
+import type { GrayImage } from '../scene/textureMap';
 import { subdivideContours, twistPieceLength } from './twist';
 import { brushSegments, minkowskiOf } from './minkowski';
 import { arrayCopies } from '../scene/arrayPattern';
@@ -73,6 +74,8 @@ export class Evaluator {
   private cache = new Map<string, Manifold>();
   /** Mesh importate: restano per tutta la sessione, non fanno parte della cache a scansione. */
   private assets = new Map<string, Manifold>();
+  /** Grigio delle immagini del Pattern «Immagine» (id = impronta): immutabili, restano per la sessione. */
+  private images = new Map<string, GrayImage>();
   /** Chiavi toccate nella valutazione corrente, per liberare le altre a fine giro. */
   private touched = new Set<string>();
   /** Esito dell'analisi di ogni oggetto alla radice per chiave geometrica e parete minima: un oggetto non modificato non si rianalizza. */
@@ -90,7 +93,7 @@ export class Evaluator {
         return `${scene.nodes[c].mode === 'hole' ? '-' : '+'}${k}`;
       });
       // Il Guscio ha in più i suoi spessori (e l'ingombro usato dalla cavità scalata)
-      const shell = node.op === 'shell' ? `,${JSON.stringify(node.shell ?? null)}` : node.op === 'array' ? `,${JSON.stringify(node.array ?? null)}` : node.op === 'pattern' ? `,${JSON.stringify(node.pattern ?? null)}` : '';
+      const shell = node.op === 'shell' ? `,${JSON.stringify(node.shell ?? null)}` : node.op === 'array' ? `,${JSON.stringify(node.array ?? null)}` : node.op === 'pattern' ? `,${JSON.stringify(node.pattern ?? null)}${node.pattern?.imageId ? `,i${this.images.has(node.pattern.imageId) ? 1 : 0}` : ''}` : '';
       return `G(${node.op},${node.position},${node.rotation}${node.mirror ? `,m${node.mirror.map(Number)}` : ''}${node.groupScale ? `,s${node.groupScale}` : ''}${shell})[${kids.join('|')}]`;
     }
     const { id: _id, name: _name, color: _color, mode: _mode, locked: _locked, hidden: _hidden, lockRatio: _lockRatio, ...geometry } = node;
@@ -235,6 +238,14 @@ export class Evaluator {
     this.assets.get(id)?.delete();
     this.assets.set(id, solid);
     return { ok: true, status: 'NoError', triangles: solid.numTri(), volume: solid.volume() };
+  }
+
+  /**
+   * Registra il grigio di un'immagine del Pattern «Immagine». La chiave di cache dei Pattern porta solo l'id (l'impronta dei pixel)
+   * e se l'immagine è registrata, mai i pixel; l'id non cambia contenuto, quindi non serve altro.
+   */
+  registerImage(id: string, gray: GrayImage): void {
+    this.images.set(id, gray);
   }
 
   /** Mesh importata nelle sue dimensioni, già scalata e centrata sull'origine dell'asset. */
@@ -566,7 +577,7 @@ export class Evaluator {
       if (node.op === 'pattern' && node.pattern && kids.length === 1) {
         // PATTERN: il pezzo con le celle (Voronoi, esagoni, cerchi) tagliate da una faccia, oppure il reticolo 3D
         const original = this.build(scene, kids[0]);
-        const result = buildPattern(this.wasm, original, node.pattern);
+        const result = buildPattern(this.wasm, original, node.pattern, (id) => this.images.get(id));
         const placed = this.place(result, node);
         result.delete();
         this.cache.set(key, placed);
