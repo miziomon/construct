@@ -236,7 +236,7 @@ Studi e prototipi: `docs/studio-pattern-rilievo.md` (mattoni, legno, ruggine, bo
 Tutti i rilievi sono tipi del Pattern (`kind`), hanno `design` e parametri in `relief`, il margine e le facce come il Pattern a celle, `depth` e `sides` ignorati, e stesso codice nel kernel e in OpenSCAD (coerenza verificata da test sui dati scritti):
 
 - **Mattoni** (sfalsati, spina di pesce, cesto), **Borchie** (cupola, cilindro smussato, piramide; griglia quadrata o sfalsata; additivo), **Rame battuto** (martellato, sfaccettato, scaglie), **Legno** (doghe, parquet, tavola unica con nodi).
-- **Immagine** (motore F): libreria di 7 texture di esempio con 3 varianti ciascuna (zigrinatura, fibra di carbonio, pelle, pietra, tessuto, onde, rumore: 21 immagini generate nel codice, periodiche, 256 px), oppure un file PNG, JPG o SVG; modo incavo (predefinito), rilievo o entrambi; piastrella, ripetizione, rotazione, scostamento, inversione, livello medio, ampiezza, sfocatura.
+- **Immagine** (motore F, funzione sperimentale: si accende in Impostazioni > Funzioni sperimentali): libreria di 7 texture di esempio con 3 varianti ciascuna (zigrinatura, fibra di carbonio, pelle, pietra, tessuto, onde, rumore: 21 immagini generate nel codice, periodiche, 256 px), oppure un file PNG, JPG o SVG; modo incavo (predefinito), rilievo o entrambi; piastrella, ripetizione, rotazione, scostamento, inversione, livello medio, ampiezza, sfocatura.
 - I campi dei gruppi (rilievo, immagine) si conservano nello strumento e nelle Proprietà cambiando tipo (`normalizeKeepingGroups`); `normalizePattern` (salvataggio, chiave di cache, kernel, codice) toglie quelli dell'altro gruppo.
 
 ### Decisioni prese

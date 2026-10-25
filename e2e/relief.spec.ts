@@ -1,9 +1,12 @@
 import { expect, test } from '@playwright/test';
-import { addShape, openApp, readCode, sceneState, settled } from './helpers';
+import { addShape, openApp, openMenuItem, readCode, sceneState, settled } from './helpers';
 
 test.beforeEach(async ({ page }) => {
   await openApp(page);
 });
+
+/** La texture da immagine è sperimentale: si accende nelle Impostazioni (qui direttamente nello store). */
+const enableTexture = (page: import('@playwright/test').Page) => page.evaluate(() => window.__construct!.ui.setState({ experimentalTexture: true }));
 
 /** Volume del primo solido calcolato dal kernel. */
 const volume = (page: import('@playwright/test').Page) => page.evaluate(() => window.__construct!.results.getState().meshes[0].volume);
@@ -232,11 +235,12 @@ test('Pattern Legno: fughe e venatura tolgono volume, il codice ha l\'elenco e l
 });
 
 test('Pattern Immagine: una texture della libreria incava la faccia, il codice ha la mappa e modo ed esempio si cambiano dalle proprietà', async ({ page }) => {
+  await enableTexture(page);
   await addShape(page, 'Cubo');
   await page.keyboard.press('z');
   const panel = page.getByRole('region', { name: 'Pattern' });
   await expect(panel).toBeVisible();
-  await panel.getByLabel('Tipo').selectOption({ label: 'Immagine' });
+  await panel.getByLabel('Tipo').selectOption({ label: 'Immagine (sperimentale)' });
   await settled(page);
 
   // Anteprima viva: di partenza il modo è incavo (la zigrinatura scava il cubo senza forarlo)
@@ -285,10 +289,11 @@ test('Pattern Immagine: una texture della libreria incava la faccia, il codice h
 });
 
 test('Pattern Immagine: un PNG caricato si converte in grigio, si salva una volta sola e un file illeggibile dà un errore chiaro', async ({ page }) => {
+  await enableTexture(page);
   await addShape(page, 'Cubo');
   await page.keyboard.press('z');
   const panel = page.getByRole('region', { name: 'Pattern' });
-  await panel.getByLabel('Tipo').selectOption({ label: 'Immagine' });
+  await panel.getByLabel('Tipo').selectOption({ label: 'Immagine (sperimentale)' });
   await settled(page);
   await panel.getByRole('button', { name: 'OK' }).click();
   await settled(page);
@@ -342,10 +347,11 @@ test('Pattern Immagine: un PNG caricato si converte in grigio, si salva una volt
 });
 
 test('Pattern Immagine: ogni esempio ha tre varianti, la variante cambia il volume e il codice e si ritrova scegliendola dalla miniatura', async ({ page }) => {
+  await enableTexture(page);
   await addShape(page, 'Cubo');
   await page.keyboard.press('z');
   const panel = page.getByRole('region', { name: 'Pattern' });
-  await panel.getByLabel('Tipo').selectOption({ label: 'Immagine' });
+  await panel.getByLabel('Tipo').selectOption({ label: 'Immagine (sperimentale)' });
   await settled(page);
   await panel.getByRole('button', { name: 'OK' }).click();
   await settled(page);
@@ -396,10 +402,11 @@ test('Pattern Immagine: ogni esempio ha tre varianti, la variante cambia il volu
 });
 
 test('Pattern Immagine: un SVG si rasterizza in grigio e incava il cubo; uno con script e riferimenti esterni si ripulisce', async ({ page }) => {
+  await enableTexture(page);
   await addShape(page, 'Cubo');
   await page.keyboard.press('z');
   const panel = page.getByRole('region', { name: 'Pattern' });
-  await panel.getByLabel('Tipo').selectOption({ label: 'Immagine' });
+  await panel.getByLabel('Tipo').selectOption({ label: 'Immagine (sperimentale)' });
   await settled(page);
   await panel.getByRole('button', { name: 'OK' }).click();
   await settled(page);
@@ -458,4 +465,51 @@ test('Pattern Immagine: un SVG si rasterizza in grigio e incava il cubo; uno con
     await expect(page.getByRole('alert').filter({ hasText: 'Formato non supportato' }), `caso ${name}: non è un formato sconosciuto`).toHaveCount(0);
     expect((await sceneState(page)).nodes[id].pattern.imageId, `caso ${name}: il Pattern resta com'era`).toBe(kept);
   }
+});
+
+test('Pattern Immagine è sperimentale: spenta di default, la voce nelle Impostazioni la accende e il tipo compare nella tendina', async ({ page }) => {
+  expect(await page.evaluate(() => window.__construct!.ui.getState().experimentalTexture)).toBe(false);
+  await addShape(page, 'Cubo');
+  await page.keyboard.press('z');
+  const panel = page.getByRole('region', { name: 'Pattern' });
+  await expect(panel).toBeVisible();
+  const kinds = panel.getByLabel('Tipo').locator('option');
+  await expect(kinds.filter({ hasText: 'Mattoni' })).toHaveCount(1);
+  await expect(kinds.filter({ hasText: 'Immagine' })).toHaveCount(0);
+  await page.keyboard.press('Escape');
+
+  // La voce è nelle Impostazioni > Funzioni sperimentali, spenta di partenza
+  await openMenuItem(page, 'Impostazioni');
+  const dialog = page.getByRole('dialog', { name: 'Impostazioni' });
+  const toggle = dialog.getByLabel('Texture da immagine del Pattern');
+  await expect(toggle).not.toBeChecked();
+  await toggle.check();
+  expect(await page.evaluate(() => window.__construct!.ui.getState().experimentalTexture)).toBe(true);
+  await page.keyboard.press('Escape');
+
+  // Con la funzione accesa il tipo compare, marcato come sperimentale
+  await page.keyboard.press('z');
+  await expect(kinds.filter({ hasText: 'Immagine (sperimentale)' })).toHaveCount(1);
+});
+
+test('Pattern Immagine: a funzione spenta un Pattern già creato resta modificabile e calcolato', async ({ page }) => {
+  await enableTexture(page);
+  await addShape(page, 'Cubo');
+  await page.keyboard.press('z');
+  const panel = page.getByRole('region', { name: 'Pattern' });
+  await panel.getByLabel('Tipo').selectOption({ label: 'Immagine (sperimentale)' });
+  await settled(page);
+  await panel.getByRole('button', { name: 'OK' }).click();
+  await settled(page);
+  const id = (await sceneState(page)).rootIds[0];
+  const before = await volume(page);
+
+  // Si spegne la funzione: il Pattern resta, con lo stesso volume, e il tipo resta in tendina
+  await page.evaluate(() => window.__construct!.ui.setState({ experimentalTexture: false }));
+  await settled(page);
+  expect(await volume(page)).toBeCloseTo(before, 3);
+  await page.evaluate((nodeId) => window.__construct!.store.getState().select([nodeId]), id);
+  const kind = page.getByLabel('Tipo');
+  await expect(kind).toHaveValue('texture');
+  await expect(kind.locator('option', { hasText: 'Immagine (sperimentale)' })).toHaveCount(1);
 });

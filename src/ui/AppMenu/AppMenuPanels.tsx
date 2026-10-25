@@ -42,7 +42,7 @@ const SHORTCUTS: { title: string; rows: [string, string][] }[] = [
       ['Doppio clic', 'Seleziona l\'oggetto e passa a Sposta'],
       ['Ctrl+G', 'Raggruppa (gli oggetti restano separati)'],
       ['U', 'Unisci in un solo solido (unione booleana)'],
-      ['Z', 'Pattern: fora l\'oggetto con celle Voronoi casuali (seme), esagoni, cerchi, rombi o triangoli, da una faccia scelta con il clic (anche inclinata; per altre facce si applica di nuovo); Invio conferma, Esc annulla; il risultato è un gruppo Pattern modificabile'],
+      ['Z', 'Pattern: fora l\'oggetto con celle Voronoi casuali (seme), esagoni, cerchi, rombi o triangoli, da una faccia scelta con il clic (anche inclinata; per altre facce si applica di nuovo); con i tipi del gruppo Rilievo dà alla faccia mattoni, borchie, rame battuto o legno senza forarla; Invio conferma, Esc annulla; il risultato è un gruppo Pattern modificabile'],
       ['O', 'Serie: ripete l\'oggetto in fila, in griglia o in cerchio (Invio conferma, Esc annulla); il risultato è un gruppo Ripetizione modificabile'],
       ['J', 'Inviluppo convesso: la forma più piccola e senza concavità che contiene gli oggetti selezionati'],
       ['Maiusc+J', 'Minkowski: il primo oggetto selezionato si allarga della forma degli altri (somma di Minkowski)'],

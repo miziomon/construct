@@ -101,7 +101,8 @@
       color: color('text-muted');
     }
 
-    ul {
+    ul,
+    ol {
       margin: 0 0 $space-2;
       padding-left: $space-5;
     }
@@ -125,6 +126,15 @@
     p {
       margin: 0 0 $space-1;
     }
+  }
+
+  // Avviso di una funzione sperimentale
+  &__note {
+    margin: 0 0 $space-2;
+    padding: $space-2 $space-3;
+    border-left: 3px solid color('accent');
+    border-radius: $radius-sm;
+    background: color('accent-soft');
   }
 
   &__how {

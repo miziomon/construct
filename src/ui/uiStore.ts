@@ -22,7 +22,7 @@ const cleanBedSide = (value: unknown, fallback: number): number =>
   typeof value === 'number' && Number.isFinite(value) ? Math.round(Math.min(BED_LIMITS.max, Math.max(BED_LIMITS.min, value)) * 10) / 10 : fallback;
 
 /** Le sole impostazioni di uno stato dello store. */
-const pickSettings = (s: Settings): Settings => ({ showDimensions: s.showDimensions, nudgeStep: s.nudgeStep, snapMove: s.snapMove, snapRotate: s.snapRotate, autosave: s.autosave, welcomeAlways: s.welcomeAlways, printChecks: s.printChecks, overhangAngle: s.overhangAngle, bedHeight: s.bedHeight, minWall: s.minWall, experimentalPlan: s.experimentalPlan, profileAutoConstraints: s.profileAutoConstraints });
+const pickSettings = (s: Settings): Settings => ({ showDimensions: s.showDimensions, nudgeStep: s.nudgeStep, snapMove: s.snapMove, snapRotate: s.snapRotate, autosave: s.autosave, welcomeAlways: s.welcomeAlways, printChecks: s.printChecks, overhangAngle: s.overhangAngle, bedHeight: s.bedHeight, minWall: s.minWall, experimentalPlan: s.experimentalPlan, experimentalTexture: s.experimentalTexture, profileAutoConstraints: s.profileAutoConstraints });
 
 /** Lato maggiore del piano (mm): limite morbido dei cursori delle misure. Il piano non ha altezza, quindi vale anche per lo Z. */
 export const bedReach = (bed: BedSize): number => Math.max(bed.width, bed.depth);
@@ -69,11 +69,13 @@ export interface Settings {
   minWall: number;
   /** Funzione sperimentale: nella modale del Profilo la vista Sagoma (rotazione lungo una sagoma vista dall'alto, non salvata con OK). */
   experimentalPlan: boolean;
+  /** Funzione sperimentale: nel Pattern compare il tipo «Immagine» (texture da immagine PNG, JPG o SVG su una faccia piana). I Pattern già salvati con l'immagine restano modificabili anche a funzione spenta. */
+  experimentalTexture: boolean;
   /** Modale del Profilo: i vincoli ovvii si aggiungono da soli mentre si disegna (orizzontale, verticale, perpendicolare, coincidente; il rettangolo nasce con orizzontali e verticali). */
   profileAutoConstraints: boolean;
 }
 
-export const DEFAULT_SETTINGS: Settings = { showDimensions: true, nudgeStep: 1, snapMove: 1, snapRotate: 15, autosave: true, welcomeAlways: true, printChecks: true, overhangAngle: 45, bedHeight: 256, minWall: 0.8, experimentalPlan: false, profileAutoConstraints: true };
+export const DEFAULT_SETTINGS: Settings = { showDimensions: true, nudgeStep: 1, snapMove: 1, snapRotate: 15, autosave: true, welcomeAlways: true, printChecks: true, overhangAngle: 45, bedHeight: 256, minWall: 0.8, experimentalPlan: false, experimentalTexture: false, profileAutoConstraints: true };
 
 /** Limiti dei valori numerici delle impostazioni. */
 export const SETTING_LIMITS = {
@@ -93,7 +95,7 @@ export function cleanSettings(value: unknown): Settings {
     const { min, max } = SETTING_LIMITS[key];
     return typeof n === 'number' && Number.isFinite(n) ? Math.round(Math.min(max, Math.max(min, n)) * 100) / 100 : DEFAULT_SETTINGS[key];
   };
-  const bool = (key: 'showDimensions' | 'autosave' | 'welcomeAlways' | 'printChecks' | 'experimentalPlan' | 'profileAutoConstraints') => (typeof v[key] === 'boolean' ? (v[key] as boolean) : DEFAULT_SETTINGS[key]);
+  const bool = (key: 'showDimensions' | 'autosave' | 'welcomeAlways' | 'printChecks' | 'experimentalPlan' | 'experimentalTexture' | 'profileAutoConstraints') => (typeof v[key] === 'boolean' ? (v[key] as boolean) : DEFAULT_SETTINGS[key]);
   return {
     showDimensions: bool('showDimensions'),
     nudgeStep: num('nudgeStep'),
@@ -106,6 +108,7 @@ export function cleanSettings(value: unknown): Settings {
     bedHeight: num('bedHeight'),
     minWall: num('minWall'),
     experimentalPlan: bool('experimentalPlan'),
+    experimentalTexture: bool('experimentalTexture'),
     profileAutoConstraints: bool('profileAutoConstraints'),
   };
 }
