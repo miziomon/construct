@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { addShape, openApp, readCode, sceneState, settled } from './helpers';
+import { addShape, openApp, openMenuItem, readCode, sceneState, settled } from './helpers';
 
 test.beforeEach(async ({ page }) => {
   await openApp(page);
@@ -467,7 +467,8 @@ test('Pattern Immagine: un SVG si rasterizza in grigio e incava il cubo; uno con
   }
 });
 
-test('Pattern Immagine è sperimentale: senza l\'opzione nelle Impostazioni il tipo non compare, con l\'opzione sì', async ({ page }) => {
+test('Pattern Immagine è sperimentale: spenta di default, la voce nelle Impostazioni la accende e il tipo compare nella tendina', async ({ page }) => {
+  expect(await page.evaluate(() => window.__construct!.ui.getState().experimentalTexture)).toBe(false);
   await addShape(page, 'Cubo');
   await page.keyboard.press('z');
   const panel = page.getByRole('region', { name: 'Pattern' });
@@ -475,8 +476,40 @@ test('Pattern Immagine è sperimentale: senza l\'opzione nelle Impostazioni il t
   const kinds = panel.getByLabel('Tipo').locator('option');
   await expect(kinds.filter({ hasText: 'Mattoni' })).toHaveCount(1);
   await expect(kinds.filter({ hasText: 'Immagine' })).toHaveCount(0);
-  await enableTexture(page);
-  await expect(kinds.filter({ hasText: 'Immagine (sperimentale)' })).toHaveCount(1);
-  // Dalle Impostazioni: la voce c'è, spenta di partenza
+  await page.keyboard.press('Escape');
+
+  // La voce è nelle Impostazioni > Funzioni sperimentali, spenta di partenza
+  await openMenuItem(page, 'Impostazioni');
+  const dialog = page.getByRole('dialog', { name: 'Impostazioni' });
+  const toggle = dialog.getByLabel('Texture da immagine del Pattern');
+  await expect(toggle).not.toBeChecked();
+  await toggle.check();
   expect(await page.evaluate(() => window.__construct!.ui.getState().experimentalTexture)).toBe(true);
+  await page.keyboard.press('Escape');
+
+  // Con la funzione accesa il tipo compare, marcato come sperimentale
+  await page.keyboard.press('z');
+  await expect(kinds.filter({ hasText: 'Immagine (sperimentale)' })).toHaveCount(1);
+});
+
+test('Pattern Immagine: a funzione spenta un Pattern già creato resta modificabile e calcolato', async ({ page }) => {
+  await enableTexture(page);
+  await addShape(page, 'Cubo');
+  await page.keyboard.press('z');
+  const panel = page.getByRole('region', { name: 'Pattern' });
+  await panel.getByLabel('Tipo').selectOption({ label: 'Immagine (sperimentale)' });
+  await settled(page);
+  await panel.getByRole('button', { name: 'OK' }).click();
+  await settled(page);
+  const id = (await sceneState(page)).rootIds[0];
+  const before = await volume(page);
+
+  // Si spegne la funzione: il Pattern resta, con lo stesso volume, e il tipo resta in tendina
+  await page.evaluate(() => window.__construct!.ui.setState({ experimentalTexture: false }));
+  await settled(page);
+  expect(await volume(page)).toBeCloseTo(before, 3);
+  await page.evaluate((nodeId) => window.__construct!.store.getState().select([nodeId]), id);
+  const kind = page.getByLabel('Tipo');
+  await expect(kind).toHaveValue('texture');
+  await expect(kind.locator('option', { hasText: 'Immagine (sperimentale)' })).toHaveCount(1);
 });

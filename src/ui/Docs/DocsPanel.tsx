@@ -292,7 +292,7 @@ export default function DocsPanel() {
       </Section>
 
       <Section id="ripetizioni" title="Ripetizioni">
-        <p>Serie e Pattern creano gruppi modificabili: si cambiano i parametri, non le singole copie. I tipi di Pattern in rilievo (mattoni, borchie, rame, legno, immagine) sono spiegati nella sezione Pattern e rilievi.</p>
+        <p>Serie e Pattern creano gruppi modificabili: si cambiano i parametri, non le singole copie. I tipi di Pattern in rilievo (mattoni, borchie, rame, legno e, come funzione sperimentale, immagine) sono spiegati nella sezione Pattern e rilievi.</p>
         <Command id="array" />
         <Command id="pattern" />
       </Section>
@@ -359,7 +359,7 @@ export default function DocsPanel() {
         <h4>Come si usa</h4>
         <ol>
           <li>Accendi la funzione nelle Impostazioni, come indicato sopra.</li>
-          <li>Seleziona un oggetto, premi Z e, nella tendina Tipo, scegli <strong>Immagine</strong> (gruppo Rilievo).</li>
+          <li>Seleziona un oggetto, premi Z e, nella tendina Tipo, scegli <strong>Immagine (sperimentale)</strong> (gruppo Rilievo).</li>
           <li>Scegli la <strong>Sorgente</strong>. Dalla libreria: Zigrinatura, Fibra di carbonio, Pelle, Pietra, Tessuto, Onde o Rumore, ciascuna con <strong>tre varianti</strong> (la tendina Variante o le miniature sotto). Oppure <strong>Carica immagine</strong> e scegli un file PNG, JPG o SVG (al massimo 20 MB).</li>
           <li>Guarda la miniatura in grigio, che è ciò che il Pattern usa davvero, e regola i campi qui sotto.</li>
           <li>Premi OK: il risultato è un gruppo Pattern modificabile come gli altri.</li>
@@ -517,10 +517,10 @@ export default function DocsPanel() {
           Ridimensionando un Profilo i valori delle quote non vengono riscritti: un avviso nella finestra del Profilo dice di quanto è stato scalato e, finché non lo modifichi, il disegno non cambia. Alla prossima modifica del disegno i nodi tornano alle misure delle quote. Per cambiare le dimensioni di un Profilo quotato modifica i valori delle quote.
         </Faq>
         <Faq q="Perché il Pattern a rilievo non fora?">
-          È il suo scopo. I tipi del gruppo Celle (Voronoi, Esagoni, Cerchi, Rombi, Triangoli) forano il pezzo; i tipi del gruppo Rilievo (Mattoni, Borchie, Rame battuto, Legno, Immagine) scavano fughe o aggiungono bozze sulla faccia e lasciano il pezzo pieno. Le Borchie, in più, fanno crescere il pezzo dell&apos;altezza della borchia. Per forare scegli un tipo a celle.
+          È il suo scopo. I tipi del gruppo Celle (Voronoi, Esagoni, Cerchi, Rombi, Triangoli) forano il pezzo; i tipi del gruppo Rilievo (Mattoni, Borchie, Rame battuto, Legno e, come funzione sperimentale, Immagine) scavano fughe o aggiungono bozze sulla faccia e lasciano il pezzo pieno. Le Borchie, in più, fanno crescere il pezzo dell&apos;altezza della borchia. Per forare scegli un tipo a celle.
         </Faq>
         <Faq q="Come uso un&apos;immagine come texture?">
-          È una funzione sperimentale: accendila in Impostazioni &gt; Funzioni sperimentali (Texture da immagine del Pattern). Poi seleziona il pezzo, premi Z, scegli il tipo Immagine, carica un PNG, JPG o SVG (o scegli un esempio della libreria) e regola modo, piastrella e ampiezza. Tutti i passi sono nella sezione Texture da immagine.
+          È una funzione sperimentale: accendila in Impostazioni &gt; Funzioni sperimentali (Texture da immagine del Pattern). Poi seleziona il pezzo, premi Z, scegli il tipo Immagine (sperimentale), carica un PNG, JPG o SVG (o scegli un esempio della libreria) e regola modo, piastrella e ampiezza. Tutti i passi sono nella sezione Texture da immagine.
         </Faq>
         <Faq q="Il benvenuto compare a ogni avvio: come lo tolgo?">
           Togli la spunta da &quot;Mostra ogni volta&quot; nella schermata di benvenuto o nelle Impostazioni. Dal menu la schermata si riapre sempre.

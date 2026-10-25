@@ -18,6 +18,12 @@ I messaggi di commit seguono i [Conventional Commits](https://www.conventionalco
 
 ## [Non rilasciato]
 
+## [0.75.1] - 2026-10-25
+
+### Modificato
+- **La texture da immagine del Pattern diventa una funzione sperimentale**, come la sagoma di rotazione del Profilo: il tipo «Immagine (sperimentale)» compare nella tendina del Pattern solo se si accende «Texture da immagine del Pattern» in Impostazioni > Funzioni sperimentali (spenta di default). I Pattern già creati con un'immagine restano calcolati, esportati e modificabili anche a funzione spenta; kernel, codice OpenSCAD e formato del progetto non cambiano.
+- **Documentazione riscritta per le ultime funzioni**, con passi brevi e semplici: il vecchio paragrafo unico del Profilo è diviso nelle sezioni «Disegnare un Profilo» e «Quote e vincoli del Profilo» (Penna, forme, quote, vincoli, raggio di raccordo, Penna digitata, vincoli automatici, cerchio quotato, parametri ed espressioni, selezione multipla); nuove sezioni «Pattern e rilievi» (Mattoni, Borchie, Rame battuto, Legno) e «Texture da immagine (sperimentale)», cinque domande frequenti nuove, scorciatoie e README aggiornati.
+
 ## [0.75.0] - 2026-10-24
 
 ### Aggiunto
