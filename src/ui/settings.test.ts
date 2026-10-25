@@ -33,6 +33,13 @@ describe('impostazioni', () => {
     expect(cleanSettings({ experimentalPlan: true }).experimentalPlan).toBe(true);
   });
 
+  it('la texture da immagine del Pattern è sperimentale: spenta di default, accesa solo se salvata come vero', () => {
+    expect(DEFAULT_SETTINGS.experimentalTexture).toBe(false);
+    expect(cleanSettings({}).experimentalTexture).toBe(false);
+    expect(cleanSettings({ experimentalTexture: 'sì' }).experimentalTexture).toBe(false);
+    expect(cleanSettings({ experimentalTexture: true }).experimentalTexture).toBe(true);
+  });
+
   it('i vincoli automatici del Profilo sono accesi di default; chi ha salvato false li tiene spenti, un valore non booleano torna acceso', () => {
     expect(DEFAULT_SETTINGS.profileAutoConstraints).toBe(true);
     expect(cleanSettings({}).profileAutoConstraints).toBe(true);

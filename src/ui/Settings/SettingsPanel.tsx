@@ -121,6 +121,7 @@ export function SettingsPanel({ run }: { run: (action: () => void | Promise<void
       <section>
         <h3><FlaskConical size={14} />Funzioni sperimentali</h3>
         <Toggle id="set-experimental-plan" label="Sagoma di rotazione del Profilo" hint="Nella modale del Profilo compare la vista Sagoma: la rotazione segue una forma vista dall'alto (poligoni, stelle, squircle, forme libere con simmetria). Con OK la sagoma si salva nel Profilo e il solido la segue (anche nel codice OpenSCAD, come poliedro)." checked={ui.experimentalPlan} onChange={set('experimentalPlan')} />
+        <Toggle id="set-experimental-texture" label="Texture da immagine del Pattern" hint="Nel Pattern compare il tipo «Immagine» (gruppo Rilievo): una foto o un disegno PNG, JPG o SVG, oppure un esempio della libreria, diventa un rilievo in scala di grigi sulla faccia scelta (incavo, rilievo o entrambi). Può essere lento e va provato con una stampa. I Pattern già creati con un'immagine restano modificabili anche a funzione spenta." checked={ui.experimentalTexture} onChange={set('experimentalTexture')} />
       </section>
 
       <section className="settings__wide">

@@ -5,6 +5,7 @@ import type { BrickDesign, ReliefDesign, ReliefParams, StudLayout, StudShape } f
 import type { PatternParams } from '../../scene/types';
 import { NumberField } from '../NumberField/NumberField';
 import { SliderField } from '../SliderField/SliderField';
+import { useUiStore } from '../uiStore';
 import { TextureFields } from './TextureFields';
 import { getImage } from '../../import/assets';
 import { SLOW_PREVIEW_CELLS, SLOW_PREVIEW_MS, estimatedCells, estimatedNodes } from './patternToolStore';
@@ -30,7 +31,7 @@ interface Props {
   refreshBlocked?: string;
 }
 
-const KIND_LABELS: Record<PatternParams['kind'], string> = { voronoi: 'Voronoi', hexagon: 'Esagoni', circle: 'Cerchi', diamond: 'Rombi', triangle: 'Triangoli', brick: 'Mattoni', studs: 'Borchie', hammered: 'Rame battuto', wood: 'Legno', texture: 'Immagine' };
+const KIND_LABELS: Record<PatternParams['kind'], string> = { voronoi: 'Voronoi', hexagon: 'Esagoni', circle: 'Cerchi', diamond: 'Rombi', triangle: 'Triangoli', brick: 'Mattoni', studs: 'Borchie', hammered: 'Rame battuto', wood: 'Legno', texture: 'Immagine (sperimentale)' };
 /** Tipi a celle e tipi in rilievo: due gruppi della tendina. */
 const CELL_KINDS: PatternParams['kind'][] = ['voronoi', 'hexagon', 'circle', 'diamond', 'triangle'];
 const RELIEF_KINDS: PatternParams['kind'][] = ['brick', 'studs', 'hammered', 'wood', 'texture'];
@@ -66,6 +67,9 @@ const MIN_PRINTABLE_WALL = 0.8;
  */
 export function PatternFields({ params: p, onChange, disabled, history = true, onPickFace, picking, onSimplified, simplified, onRefreshBounds, refreshBlocked }: Props) {
   const ms = useResultStore((s) => s.ms);
+  // «Immagine» è una funzione sperimentale: nella tendina compare solo se accesa nelle Impostazioni, o se il Pattern la usa già
+  const experimentalTexture = useUiStore((s) => s.experimentalTexture);
+  const reliefKinds = RELIEF_KINDS.filter((k) => k !== 'texture' || experimentalTexture || p.kind === 'texture');
   // Id per collegare l'etichetta "Tipo" alla tendina
   const kindId = useId();
   /** Pulsanti alternativi (come i selettori della Ripetizione). */
@@ -119,7 +123,7 @@ export function PatternFields({ params: p, onChange, disabled, history = true, o
             ))}
           </optgroup>
           <optgroup label="Rilievo">
-            {RELIEF_KINDS.map((k) => (
+            {reliefKinds.map((k) => (
               <option key={k} value={k}>{KIND_LABELS[k]}</option>
             ))}
           </optgroup>

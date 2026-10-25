@@ -5,6 +5,9 @@ test.beforeEach(async ({ page }) => {
   await openApp(page);
 });
 
+/** La texture da immagine è sperimentale: si accende nelle Impostazioni (qui direttamente nello store). */
+const enableTexture = (page: import('@playwright/test').Page) => page.evaluate(() => window.__construct!.ui.setState({ experimentalTexture: true }));
+
 /** Volume del primo solido calcolato dal kernel. */
 const volume = (page: import('@playwright/test').Page) => page.evaluate(() => window.__construct!.results.getState().meshes[0].volume);
 
@@ -232,11 +235,12 @@ test('Pattern Legno: fughe e venatura tolgono volume, il codice ha l\'elenco e l
 });
 
 test('Pattern Immagine: una texture della libreria incava la faccia, il codice ha la mappa e modo ed esempio si cambiano dalle proprietà', async ({ page }) => {
+  await enableTexture(page);
   await addShape(page, 'Cubo');
   await page.keyboard.press('z');
   const panel = page.getByRole('region', { name: 'Pattern' });
   await expect(panel).toBeVisible();
-  await panel.getByLabel('Tipo').selectOption({ label: 'Immagine' });
+  await panel.getByLabel('Tipo').selectOption({ label: 'Immagine (sperimentale)' });
   await settled(page);
 
   // Anteprima viva: di partenza il modo è incavo (la zigrinatura scava il cubo senza forarlo)
@@ -285,10 +289,11 @@ test('Pattern Immagine: una texture della libreria incava la faccia, il codice h
 });
 
 test('Pattern Immagine: un PNG caricato si converte in grigio, si salva una volta sola e un file illeggibile dà un errore chiaro', async ({ page }) => {
+  await enableTexture(page);
   await addShape(page, 'Cubo');
   await page.keyboard.press('z');
   const panel = page.getByRole('region', { name: 'Pattern' });
-  await panel.getByLabel('Tipo').selectOption({ label: 'Immagine' });
+  await panel.getByLabel('Tipo').selectOption({ label: 'Immagine (sperimentale)' });
   await settled(page);
   await panel.getByRole('button', { name: 'OK' }).click();
   await settled(page);
@@ -342,10 +347,11 @@ test('Pattern Immagine: un PNG caricato si converte in grigio, si salva una volt
 });
 
 test('Pattern Immagine: ogni esempio ha tre varianti, la variante cambia il volume e il codice e si ritrova scegliendola dalla miniatura', async ({ page }) => {
+  await enableTexture(page);
   await addShape(page, 'Cubo');
   await page.keyboard.press('z');
   const panel = page.getByRole('region', { name: 'Pattern' });
-  await panel.getByLabel('Tipo').selectOption({ label: 'Immagine' });
+  await panel.getByLabel('Tipo').selectOption({ label: 'Immagine (sperimentale)' });
   await settled(page);
   await panel.getByRole('button', { name: 'OK' }).click();
   await settled(page);
@@ -396,10 +402,11 @@ test('Pattern Immagine: ogni esempio ha tre varianti, la variante cambia il volu
 });
 
 test('Pattern Immagine: un SVG si rasterizza in grigio e incava il cubo; uno con script e riferimenti esterni si ripulisce', async ({ page }) => {
+  await enableTexture(page);
   await addShape(page, 'Cubo');
   await page.keyboard.press('z');
   const panel = page.getByRole('region', { name: 'Pattern' });
-  await panel.getByLabel('Tipo').selectOption({ label: 'Immagine' });
+  await panel.getByLabel('Tipo').selectOption({ label: 'Immagine (sperimentale)' });
   await settled(page);
   await panel.getByRole('button', { name: 'OK' }).click();
   await settled(page);
@@ -458,4 +465,18 @@ test('Pattern Immagine: un SVG si rasterizza in grigio e incava il cubo; uno con
     await expect(page.getByRole('alert').filter({ hasText: 'Formato non supportato' }), `caso ${name}: non è un formato sconosciuto`).toHaveCount(0);
     expect((await sceneState(page)).nodes[id].pattern.imageId, `caso ${name}: il Pattern resta com'era`).toBe(kept);
   }
+});
+
+test('Pattern Immagine è sperimentale: senza l\'opzione nelle Impostazioni il tipo non compare, con l\'opzione sì', async ({ page }) => {
+  await addShape(page, 'Cubo');
+  await page.keyboard.press('z');
+  const panel = page.getByRole('region', { name: 'Pattern' });
+  await expect(panel).toBeVisible();
+  const kinds = panel.getByLabel('Tipo').locator('option');
+  await expect(kinds.filter({ hasText: 'Mattoni' })).toHaveCount(1);
+  await expect(kinds.filter({ hasText: 'Immagine' })).toHaveCount(0);
+  await enableTexture(page);
+  await expect(kinds.filter({ hasText: 'Immagine (sperimentale)' })).toHaveCount(1);
+  // Dalle Impostazioni: la voce c'è, spenta di partenza
+  expect(await page.evaluate(() => window.__construct!.ui.getState().experimentalTexture)).toBe(true);
 });
